@@ -26,10 +26,16 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Check C compiler
         run: gcc --version
+      - name: Check Node.js 18 or newer
+        run: |
+          node --version
+          node -e 'if (Number(process.versions.node.split(".")[0]) < 18) process.exit(1)'
       - name: Run regression tests
         run: make test
       - name: Build all examples
         run: make examples
+      - name: Build and syntax-check JavaScript examples
+        run: make examples-js
   emacs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10

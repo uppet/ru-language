@@ -1,8 +1,8 @@
 """Resolve local imports once, with a deterministic, self-contained module graph.
 
 Imports are string literals, resolved relative to the file containing them.
-Both backends use this loader; the native backend bundles the resulting ASTs
-at build time, so the executable never needs the source files.
+The interpreter and both compilers use this loader. Both compilers lower all
+resolved modules into standalone outputs that need no source files at runtime.
 """
 from pathlib import Path
 

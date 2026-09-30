@@ -1,4 +1,4 @@
-"""Command-line entry point, native compilation and incremental REPL."""
+"""Command-line entry point, C/JavaScript compilation and incremental REPL."""
 import argparse
 import os
 from pathlib import Path
@@ -25,7 +25,11 @@ def report(error, name, source=""):
         print("  " + lines[error.line-1], file=sys.stderr)
 
 
-def build(program, source_path, output, cc=None, emit_c=None, modules=None):
+def build(program, source_path, output, cc=None, emit_c=None, modules=None, target="c"):
+    if target not in ("c", "js"):
+        raise RuError("编译目标须为 c 或 js", category="编译错误")
+    if target == "js" and (cc is not None or emit_c is not None):
+        raise RuError("JavaScript 目标不能使用 --cc 或 --emit-c", category="编译错误")
     source_path = Path(source_path).resolve()
     modules = load_module_graph(source_path, program) if modules is None else modules
     output = Path(output).resolve()
@@ -36,6 +40,20 @@ def build(program, source_path, output, cc=None, emit_c=None, modules=None):
         cpath = Path(emit_c).resolve()
         if cpath in source_paths or cpath == output:
             raise RuError("C 输出、程序输出、源文件及外言依赖必须使用不同路径", category="编译错误")
+    if target == "js":
+        from .js_compiler import JSCompiler
+        generated = JSCompiler(program, str(source_path), modules=modules).compile()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        # Generation does not invoke Node or run user code. Publish only the
+        # complete artifact, preserving any previous output on compile failure.
+        with tempfile.TemporaryDirectory(prefix=".ru-build-", dir=output.parent) as temp:
+            script = Path(temp) / "program.js"
+            with script.open("w", encoding="utf-8", newline="\n") as stream:
+                stream.write(generated)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(script, output)
+        return output, "JavaScript (Node.js)"
     generated = Compiler(program, str(source_path), modules=modules).compile()
     if emit_c:
         cpath.parent.mkdir(parents=True, exist_ok=True)
@@ -128,7 +146,7 @@ def repl():
 
 
 def make_parser():
-    parser = argparse.ArgumentParser(prog="ru", description=f"如 {__version__}：中文关键词语言，带 REPL 与 C99 原生编译后端")
+    parser = argparse.ArgumentParser(prog="ru", description=f"如 {__version__}：中文关键词语言，带 REPL、C99 原生与 JavaScript 编译后端")
     parser.add_argument("--version", action="version", version=f"如 {__version__}")
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("repl", help="启动保留状态的多行 REPL")
@@ -137,14 +155,16 @@ def make_parser():
         p.add_argument("source")
         if name == "run":
             p.add_argument("args", nargs=argparse.REMAINDER, help="传给元初的外参；可使用 -- 分隔")
-    p = sub.add_parser("build", help="把源码编译成真正独立的原生程序")
+    p = sub.add_parser("build", help="编译为独立原生程序或 Node.js JavaScript")
     p.add_argument("source")
-    p.add_argument("-o", "--output", help="输出路径；默认去掉源文件扩展名")
+    p.add_argument("-o", "--output", help="输出路径；C 默认去掉源文件扩展名，JS 默认为同名 .js")
+    p.add_argument("--target", choices=("c", "js"), default="c", help="编译目标：c（默认）或 js（Node.js）")
     p.add_argument("--cc", help="C 编译器（默认依次查找 clang、gcc、cc；也支持 CC 环境变量）")
     p.add_argument("--emit-c", metavar="PATH", help="额外保存可审阅的独立 C99 源码")
     p = sub.add_parser("generate", help="显式发送意图文档至 Responses API，检查并保存源码（不执行）")
     p.add_argument("document")
-    p.add_argument("-o", "--output", help="新建 .ru 输出文件，默认 *.generated.ru；不覆盖已有文件")
+    p.add_argument("-o", "--output", help="新建输出文件：ru 目标须为 .ru，js 目标须为 .js 或 .cjs；不覆盖已有文件")
+    p.add_argument("--target", choices=("ru", "js"), default="ru", help="保存检查后的 ru 源码（默认），或将其本地编译为 js；不执行")
     p.add_argument("--timeout", type=float, default=60.0, help="连接／读取超时秒数，默认 60，最大 300；不自动重试")
     return parser
 
@@ -156,13 +176,18 @@ def main(argv=None):
             stream.reconfigure(encoding="utf-8")
     parser = make_parser()
     args = parser.parse_args(argv)
+    if args.command == "build" and args.target == "js" and (args.cc is not None or args.emit_c is not None):
+        parser.error("--target js 不能使用 --cc 或 --emit-c")
     if args.command in (None, "repl"):
         return repl()
     source, name = "", getattr(args, "source", getattr(args, "document", "<输入>"))
     try:
         if args.command == "generate":
-            result = generate(args.document, args.output, args.timeout)
-            print(f"已生成并检查：{result}\n未执行；请先审阅源码，再使用 ru run 或 ru build。")
+            result = generate(args.document, args.output, args.timeout, target=args.target)
+            if args.target == "js":
+                print(f"已生成、检查并编译：{result}\n未执行；请先审阅 JavaScript，再使用 node 运行。")
+            else:
+                print(f"已生成并检查：{result}\n未执行；请先审阅源码，再使用 ru run 或 ru build。")
             return 0
         source = read_source(args.source)
         program = parse(source)
@@ -178,9 +203,13 @@ def main(argv=None):
             Compiler(program, modules.root, modules=modules).compile()
             print(f"检查通过：{name}")
         elif args.command == "build":
-            output = args.output or str(Path(args.source).with_suffix("")) + (".exe" if os.name == "nt" else "")
-            result, compiler = build(program, args.source, output, args.cc, args.emit_c, modules=modules)
-            print(f"已编译：{result}\nC 编译器：{compiler}")
+            output = args.output or (str(Path(args.source).with_suffix(".js")) if args.target == "js"
+                                     else str(Path(args.source).with_suffix("")) + (".exe" if os.name == "nt" else ""))
+            result, compiler = build(program, args.source, output, args.cc, args.emit_c, modules=modules, target=args.target)
+            if args.target == "js":
+                print(f"已编译：{result}\n运行目标：{compiler}；未执行")
+            else:
+                print(f"已编译：{result}\nC 编译器：{compiler}")
         return 0
     except RuError as error:
         report(error, name, source)

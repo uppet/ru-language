@@ -329,22 +329,28 @@ def clean_generated_source(text):
     return source + "\n"
 
 
-def _unused_destination(path, document):
+def _unused_destination(path, document, target="ru"):
     # lexists detects broken symlinks too; never replace even an existing output.
     if path == document or os.path.lexists(path):
-        raise GenerationError("输出路径已存在或与意图文档相同；请选择新的 .ru 路径，不能覆盖源文件或依赖")
-    if path.suffix.lower() != ".ru":
-        raise GenerationError("生成输出路径须使用 .ru 扩展名")
+        raise GenerationError(f"输出路径已存在或与意图文档相同；请选择新的 .{target} 路径，不能覆盖源文件或依赖")
+    extensions = (".js", ".cjs") if target == "js" else (".ru",)
+    if path.suffix.lower() not in extensions:
+        raise GenerationError("生成输出路径须使用 " + " 或 ".join(extensions) + " 扩展名")
     if not path.parent.is_dir():
         raise GenerationError("生成输出目录不存在；请先创建目录")
 
 
-def generate(document, output=None, timeout=DEFAULT_TIMEOUT, environ=None):
-    """Generate, statically check and atomically publish a new source file.
+def generate(document, output=None, timeout=DEFAULT_TIMEOUT, environ=None, target="ru"):
+    """Generate Ru, statically check, and publish a new Ru or JavaScript file.
 
     Existing files are never replaced. Validation resolves local imports without
     executing them; generated text and raw provider errors never reach diagnostics.
+    A JS target lowers the checked Ru locally, with no additional model request,
+    Node invocation or intermediate .ru file. Its imports are relative to the
+    output file's directory, just as they are for ordinary Ru generation.
     """
+    if target not in ("ru", "js"):
+        raise GenerationError("生成目标须为 ru 或 js", "生成配置错误")
     temporary = None
     try:
         document = Path(document).expanduser().resolve()
@@ -352,10 +358,10 @@ def generate(document, output=None, timeout=DEFAULT_TIMEOUT, environ=None):
         intent = generation_intent(text)
         if intent is None or not intent.strip():
             raise GenerationError("意图文档最后一个非空行必须单独写「如是我言」，且标记不在源码字符串中", "生成输入错误")
-        destination = Path(output).expanduser().absolute() if output else document.with_suffix(".generated.ru")
+        destination = Path(output).expanduser().absolute() if output else document.with_suffix(".generated." + target)
         # Do not resolve the destination itself: that would follow broken symlinks.
         destination = destination.parent.resolve() / destination.name
-        _unused_destination(destination, document)
+        _unused_destination(destination, document, target)
         config = load_config(environ)
         if config.api_key in str(destination):
             raise GenerationError("输出路径含有已配置密钥，已停止生成")
@@ -371,16 +377,23 @@ def generate(document, output=None, timeout=DEFAULT_TIMEOUT, environ=None):
             modules = load_module_graph(destination, program)
             # Same non-executing call and declaration checks as ru check.
             Compiler(program, str(destination), modules=modules).compile()
+            artifact = source
+            if target == "js":
+                from .js_compiler import JSCompiler
+                modules.sources[modules.root] = source
+                artifact = JSCompiler(program, str(destination), modules=modules).compile()
+                if config.api_key in artifact:
+                    raise GenerationError("编译输出含有已配置密钥，已拒绝保存")
         except GenerationError:
             raise
         except RuError as exc:
             raise GenerationError("生成源码或本地依赖未通过语法／结构检查；未保存或执行", line=exc.line, col=exc.col) from None
         except RecursionError:
             raise GenerationError("生成源码结构过深；未保存或执行") from None
-        _unused_destination(destination, document)
+        _unused_destination(destination, document, target)
         fd, temporary = tempfile.mkstemp(prefix=".ru-generate-", suffix=".tmp", dir=destination.parent)
         with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
-            stream.write(source)
+            stream.write(artifact)
             stream.flush()
             os.fsync(stream.fileno())
         # A hard link publishes an already complete file and fails if another

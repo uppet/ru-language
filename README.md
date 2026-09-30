@@ -1,6 +1,8 @@
-# 如（ru-language）· 0.5.0 元初实现
+# 如（ru-language）· 0.6.0 元初实现
 
-一个能实际运行的原型：中文关键词、保留状态的多行 REPL，以及将 `.ru` 源码编译为原生机器码的 C99 后端。
+一个能实际运行的原型：中文关键词、保留状态的多行 REPL，以及将 `.ru` 源码编译为原生机器码的 C99 后端和独立 Node.js 程序的 JavaScript 后端。
+
+0.6.0 新增真正的 AST → JavaScript 后端：`ru build --target js` 输出包含运行时和静态外言的独立 CommonJS 文件，通过 Node.js 18+ 运行。`ru generate --target js` 把意图先生成合规如源码，再本地编译为 JavaScript；仍逐次传输完整当前规范，不自动执行。语言语法及数值语义保持不变。
 
 0.5.0 新增 `如:竞赛` 标准外言：整份输入游标、词 / 数 / 行读取、拆词 / 拆行 / 码点、合句、64 KiB 缓冲输出、稳定排序与数值辅助。普通如函数可配合闭包比较器使用；四道原创题目、完整解法和提交 C 的步骤见 [竞赛指南](docs/contest-library.md)。本次不新增语法、int64 或数组填充构造。
 
@@ -12,9 +14,9 @@
 
 上一版 0.1.1 新增按声明顺序匹配的位置实参：`显 (平方 9.9).` 现在输出 `98.01`；原有 `平方 根: 9.9` 仍然可用。完整示例见 `examples/square.ru`，多实参示例见 `examples/positional.ru`。
 
-完整的实现语义以 [如语言规范 0.5.0](rulang/language-spec.md) 为准。它是学习者、工具作者与 LLM 共用的唯一规范文本；README 提供入门和操作摘要。
+完整的实现语义以 [如语言规范 0.6.0](rulang/language-spec.md) 为准。它是学习者、工具作者与 LLM 共用的唯一规范文本；README 提供入门和操作摘要。
 
-**本版不是自举编译器。** 编译器和 REPL 使用 Python；原生输出经过 C 编译器编译，执行时不需要 Python、`ru`、原始 `.ru` 文件或生成的 `.c` 文件。生成的程序内没有词法分析器、语法分析器或源码解释器。
+**本版不是自举编译器。** 编译器和 REPL 使用 Python；原生输出经过 C 编译器编译，执行时不需要 Python、`ru`、原始 `.ru` 文件或生成的 `.c` 文件。JavaScript 输出只需要 Node.js 内置标准库，不需要 Python、项目文件、原 `.ru` 文件或 npm 包。两种生成程序都没有如词法分析器、语法分析器或源码 / AST 解释器。
 
 ## 30 秒开始
 
@@ -56,12 +58,22 @@ python3 ru build examples/add.ru -o bin/my-add
 
 输出：`你好，世界`。加法示例会询问两个数并显示和。
 
+编译为 JavaScript 并用 Node.js 运行：
+
+```sh
+python3 ru build examples/hello.ru --target js -o dist/hello.js
+node dist/hello.js
+```
+
+构建 JavaScript 只需要 Python；执行产物才需要 Node.js。
+
 `ru` 本身也是可执行脚本；可使用 `./ru repl`，或始终使用 `python3 ru`。
 
 ## 环境与已验证范围
 
 - 编译器 / REPL：Python **3.10+**，只用标准库，无 pip 依赖
 - 原生编译：Clang、GCC 或兼容的 C99 编译器；依次自动查找 `clang`、`gcc`、`cc`
+- JavaScript 执行：Node.js **18+**，使用内置标准库，无 npm 依赖；不是浏览器 / DOM 目标
 - 可通过 `--cc gcc` 或 `CC=gcc` 指定编译器；参数通过 argv 传递，不经过 shell
 - 仓库初始化验证：Linux x86-64、Python 3.12.3、GCC 13.3.0；位置调用更新验证：Linux x86-64、Python 3.12.14、GCC 14.2.0。各次记录见 `VALIDATION.md`
 - 仓库只保存源码；`bin/`、`dist/` 由 `make examples` 或 `ru build` 在本机生成。原生程序依赖构建时的目标架构和系统库，应在目标系统重新构建
@@ -91,11 +103,18 @@ python3 ru check source.ru         # 检查语法、结构和显式函数调用
 python3 ru build source.ru -o app  # 原生编译
 python3 ru build source.ru -o app --emit-c app.c
 python3 ru build source.ru -o app --cc clang
+python3 ru build source.ru --target js -o app.js
+node app.js 参数一 参数二         # 传给元初；脚本路径不计入外参
 python3 ru generate intent.md      # 明确请求在线生成；先配置提供方和凭据
+python3 ru generate intent.md --target js -o draft.js
 python3 -m rulang --help           # 模块入口也可用
 ```
 
-`build` 不会自动运行程序。输出存在时，只有成功编译后才替换它；不能把输出设为源文件自身。默认输出为去掉扩展名的源文件路径。`--emit-c` 会保存一个可独立编译的 C 文件，运行它不需要这个项目的头文件：
+`build` 不会自动运行程序。默认 `--target c`，输出为去掉扩展名的源文件路径（Windows 加 `.exe`）；`--target js` 默认为同名 `.js`。两种目标都在完整编译成功后才原子替换既有输出，不能覆盖源文件或静态外言依赖。JavaScript 构建不调用 Node / C 编译器、不使用 `CC`，也不接受 `--cc` / `--emit-c`。
+
+JavaScript 产物采用 CommonJS。在 `package.json` 含 `"type":"module"` 的目录树中，使用 `-o app.cjs` 并执行 `node app.cjs`；不要把输出作为 `.mjs`、ES module 或浏览器脚本加载。文件 I/O 路径相对运行时工作目录；打包的静态外言不需要源文件。Node 的最大递归深度、垃圾回收及资源限制与 Python / C 不相同；栈溢出报告运行错误。Node 在 Windows / macOS 上尚未实测。
+
+C 目标的 `--emit-c` 会额外保存一个可独立编译的 C 文件；该路径也不得覆盖源文件、依赖或程序输出。运行它不需要这个项目的头文件：
 
 ```sh
 cc -std=c99 -O2 dist/my-hello.c -lm -o another-hello
@@ -564,17 +583,23 @@ python3 ru generate examples/wish.md -o examples/wish.generated.ru
 ```sh
 python3 ru generate intent.md                  # 默认 intent.generated.ru
 python3 ru generate intent.md -o draft.ru --timeout 120
+# 直接保存编译后的 JavaScript；不会另存中间 .ru：
+python3 ru generate intent.md --target js -o fresh.js
 python3 ru check draft.ru
 # 先阅读 draft.ru，确认其行为，再决定执行：
 python3 ru run draft.ru
 python3 ru build draft.ru -o bin/draft
+python3 ru build draft.ru --target js -o dist/draft.js
+node dist/draft.js
 ```
 
 - 单次非流式 Responses 请求，无自动重试。默认超时 60 秒，可用 `--timeout` 设为大于 0、至多 300 秒；超时或取消后服务端可能已计费
 - 不启用模型工具，忽略 reasoning 内容，只提取完成的 assistant 文本；工具调用、拒绝、错误、空输出、未完成 / 取消响应都不会执行或保存
 - 接受纯源码，或恰好一段完整的 Markdown / Org 如代码围栏；混合说明、多段或残缺围栏拒绝
 - 输出先通过 lexer / parser、结构及显式调用检查，包括已有本地外言依赖。不会执行源码或导入模块的顶层语句；这不是静态证明或安全审计
-- 输出须为新的 `.ru` 路径，默认在意图文件旁；已存在输出、原文、符号链接和依赖都不能覆盖。完整内容验证并同步后原子发布，不自动创建目录
+- 默认 `--target ru` 保存新的 `.ru`，默认 `原名.generated.ru`；`--target js` 保存新的 `.js` / `.cjs`，默认 `原名.generated.js`。父目录须已存在；输出、原文、符号链接和依赖都不能覆盖。完整内容验证并同步后原子发布，不自动创建目录
+- JavaScript 目标仍只向模型索取如源码，再由本地编译器降为 JavaScript；不增加第二次模型请求、不调用 Node、不执行，也不保存中间 `.ru`。需要审阅和保留如源码时使用上面的两步生成 / 编译流程
+- 外言相对最终输出路径所在目录解析；JavaScript 将已检查的静态依赖内联。编译失败不留下半份输出
 - 响应上限 2 MiB，意图 / 生成源码上限 1 MiB；配置和密钥文件也有读取上限
 - 不回显密钥、请求认证头、提供方原始错误正文或无效生成源码；发现意图、返回源码或输出路径含当前密钥也会拒绝处理
 - 生成源码可能调用文件写入 / 删除等真实操作，必须先审阅；生成成功不代表程序正确或安全
@@ -588,6 +613,8 @@ ru / ru.cmd               命令行入口
 rulang/frontend.py        Unicode 词法分析、AST、Pratt 表达式解析、结构检查
 rulang/interpreter.py     REPL / run 的参考解释器
 rulang/compiler.py        AST → C99 直接代码生成
+rulang/js_compiler.py     AST → JavaScript 直接代码生成，共用语义准备
+rulang/runtime.js        内联的 Node.js 动态值、闭包、对象、I/O 与竞赛运行时
 rulang/runtime.h          动态值、集合 / 对象 / 模块、内存管理、作用域、panic
 rulang/io_runtime.py       解释器的受检查文件、目录与标准流
 rulang/io_runtime.h        内联到独立 C 输出的受检查 I/O
@@ -608,6 +635,8 @@ tests/test_contest.py      竞赛导入、读写、排序、错误与独立 C �
 tests/test_io.py           临时文件与标准流双后端测试
 tests/test_panic.py        panic / rescue、控制流与回收测试
 tests/test_generation.py   本地模拟 Responses 与配置 / 输出保护
+tests/test_javascript.py   JavaScript 语义 / 运行时与独立产物回归
+tests/test_js_cli.py       JavaScript CLI、生成目标与安全输出回归
 .github/workflows/ci.yml   Linux 上多版本 Python 回归测试与示例构建
 bin/                      本机构建的样例程序（不纳入 Git）
 dist/hello.c               构建生成的独立 Hello World C 输出（不纳入 Git）
@@ -617,7 +646,9 @@ CHANGELOG.md               版本变化与调用语法兼容说明
 VALIDATION.md              各次实际验证记录
 ```
 
-原生后端把表达式和控制流直接翻译成 C 语句 / C 函数；每个值的类型仍在运行时表示和检查，这是动态值模型，不是静态类型推断。集合、对象和模块使用统一的运行时值表示，赋值 / 调用 / 返回保留引用语义。
+两个编译后端把表达式和控制流直接翻译成 C 或 JavaScript 语句 / 函数；每个值的类型仍在运行时表示和检查，这是动态值模型，不是静态类型推断。集合、对象和模块使用统一的运行时值表示，赋值 / 调用 / 返回保留引用语义。
+
+JavaScript 后端会保守扫描完整已解析的模块依赖图 AST：只有整图未引用相应内置名称 / 类型时，才省略受检查 I/O 或竞赛辅助运行时区段。经别名访问或外言依赖所需的区段仍保留，包括尚未执行的分支与函数。这是通用运行时裁剪，不做压缩混淆或针对某道题重写源码。
 
 目前没有匿名函数字面量、优化器、包管理或自举。`check` 不是完整静态类型分析：例如未绑定变量、数值转换、实际参数类型仍可能在运行时报错。编译过程检查整个程序，因此即使某个分支不执行，其中无效的显式函数调用也会阻止编译。
 
@@ -626,7 +657,10 @@ VALIDATION.md              各次实际验证记录
 ```sh
 python3 -m unittest discover -s tests -v
 make examples
+make examples-js  # 构建并由 Node 检查所有 JavaScript 示例语法
 ```
+
+0.6 增加 JavaScript 后端的语言语义、独立依赖打包、标准 I/O / 竞赛库和 CLI 输出保护回归，以及意图 → 如 → JavaScript 的完整规范注入 / 本地生成检查。没有新增词法或语法，Emacs 原 68 项回归继续适用。
 
 0.5 增加标准外言导入 / 冲突、UTF-8 / NUL 与 ASCII 空白、游标混读、空行 / EOF、拆分 / 合句、稳定浅排序 / 闭包回调、有限缓冲与错误路径回归；四道解法进行样例及随机输入的双后端比对。Emacs 保留原 64 项并增加 4 项竞赛库回归，共 68 项。具体实测范围以 `VALIDATION.md` 为准。
 
@@ -638,7 +672,7 @@ make examples
 
 原有测试继续覆盖 REPL 持久状态 / 多行块 / 错误恢复、算术、严格转换、字符串、两种包含写法、分支、两类循环与 `破`、位置与命名实参 / 递归 / 局部作用域、实参数量 / 类型错误、EOF、源位置错误，以及 **删除源码并清空 PATH 后运行原生二进制**。
 
-GitHub Actions 在每次推送和拉取请求时，用 Python 3.10、3.12、3.14 与 GCC 运行上述测试和示例构建。`VALIDATION.md` 区分本机实测与原型交付时的历史记录。
+GitHub Actions 在每次推送和拉取请求时，用 Python 3.10、3.12、3.14、GCC 和 Node.js 运行上述测试及 C / JavaScript 示例构建。`VALIDATION.md` 区分本机实测与原型交付时的历史记录。
 
 Git 忽略构建产物、Python 缓存、虚拟环境、编辑器备份和本地凭据。原交付包的 `SHA256SUMS.txt` 是打包产物，不纳入源码仓库；修改源码后应在制作新交付包时重新生成。
 
@@ -648,10 +682,10 @@ Git 忽略构建产物、Python 缓存、虚拟环境、编辑器备份和本地
 
 语法、类型、求值、标准库或错误行为有变化时，同一变更需要一起检查：
 
-1. 前端、参考解释器和独立 C99 后端的实现保持一致
+1. 前端、参考解释器、独立 C99 和 JavaScript 后端的实现保持一致
 2. 更新 `rulang/language-spec.md` 的当前实现契约、版本和例子；尚未实现的设计明确留在未来边界，不写成可用功能
 3. 同步 `ru-lang-mode` 的关键词 / 名称高亮、缩进、块与定义导航，以及 ERT 回归
-4. 补充 Python / 原生语义、错误路径、生成规范注入与必要的 GC / I/O 回归，更新教程、示例和变化记录
-5. 运行 `make test`、`make test-emacs`、`make examples`；检查生成请求确实携带当前完整规范，再核对本次提交的 CI
+4. 补充 Python / 原生 / JavaScript 语义、错误路径、生成规范注入与必要的 GC / I/O 回归，更新教程、示例和变化记录
+5. 运行 `make test`、`make test-emacs`、`make examples`、`make examples-js`；检查生成请求确实携带当前完整规范，再核对本次提交的 CI
 
-规范与生成器版本一致性、实际全文注入由测试检查；语义和编辑器同步仍需审阅，不能仅凭版本号或测试数量宣称规范正确。发布当前源码目录时应保留包内的 `language-spec.md`、`stdlib/竞赛.ru` 及运行时头文件；将来新增 wheel / 其他打包方式时，也必须把该资源纳入发行物并验证安装后的读取。
+规范与生成器版本一致性、实际全文注入由测试检查；语义和编辑器同步仍需审阅，不能仅凭版本号或测试数量宣称规范正确。发布当前源码目录时应保留包内的 `language-spec.md`、`stdlib/竞赛.ru`、`runtime.js` 及运行时头文件；将来新增 wheel / 其他打包方式时，也必须把该资源纳入发行物并验证安装后的读取。

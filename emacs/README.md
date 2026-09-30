@@ -1,6 +1,8 @@
 # ru-lang-mode：Emacs 基础语言支持
 
-`ru-lang-mode.el` 用于查看和编辑如语言 0.5.x 的 `.ru` 源码。只使用 Emacs 自带的库，不需要安装其他包、Python 进程、LSP 或 tree-sitter。
+`ru-lang-mode.el` 用于查看和编辑如语言 0.6.x 的 `.ru` 源码。只使用 Emacs 自带的库，不需要安装其他包、Python 进程、LSP 或 tree-sitter。
+
+0.6 的 JavaScript 后端与生成目标不改变 `.ru` 语法；现有高亮、缩进和导航继续适用。
 
 目标版本为 Emacs 28.1+；本次本地实测 GNU Emacs 30.1（Linux）。仓库 CI 另用 Ubuntu 24.04 提供的 `emacs-nox` 运行相同测试。macOS / Windows 的图形界面未实测。
 

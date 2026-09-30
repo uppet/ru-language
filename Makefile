@@ -1,4 +1,4 @@
-.PHONY: test test-emacs examples clean
+.PHONY: test test-emacs examples examples-js clean
 EMACS ?= emacs
 test:
 	python3 -m unittest discover -s tests -v
@@ -24,6 +24,15 @@ examples:
 	python3 ru build examples/contest_prefix_sum.ru -o bin/contest_prefix_sum --emit-c dist/contest_prefix_sum.c
 	python3 ru build examples/contest_line_words.ru -o bin/contest_line_words --emit-c dist/contest_line_words.c
 	python3 ru build examples/contest_stable_records.ru -o bin/contest_stable_records --emit-c dist/contest_stable_records.c
+# Standalone CommonJS outputs; Node is needed only to syntax-check/run them.
+examples-js:
+	@set -e; for source in examples/*.ru; do \
+		output="dist/$$(basename "$$source" .ru).js"; \
+		python3 ru build "$$source" --target js -o "$$output"; \
+		node --check "$$output"; \
+	done
+	python3 ru build examples/modules/main.ru --target js -o dist/modules.js
+	node --check dist/modules.js
 clean:
 	python3 -c "import pathlib,shutil; [shutil.rmtree(p) for p in pathlib.Path('.').rglob('__pycache__')]"
 

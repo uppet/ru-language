@@ -12,6 +12,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from rulang.compiler import Compiler
+from rulang.js_compiler import JSCompiler
 from rulang.frontend import parse, validate
 from rulang.modules import import_nodes
 
@@ -30,10 +31,11 @@ class SpecificationExamples(unittest.TestCase):
                 program = parse(source)
                 validate(program)
                 if not any(import_nodes(program)):
-                    # C generation is a structural check, not compilation or
+                    # Backend generation is a structural check, not native compilation or
                     # execution. Import examples require their documented files
                     # and are intentionally not read by this standalone test.
                     Compiler(program, f"<语言规范示例 {index}>").compile()
+                    JSCompiler(program, f"<语言规范示例 {index}>").compile()
 
 
 if __name__ == "__main__":
