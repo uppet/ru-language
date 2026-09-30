@@ -1,4 +1,5 @@
-.PHONY: test examples clean
+.PHONY: test test-emacs examples clean
+EMACS ?= emacs
 test:
 	python3 -m unittest discover -s tests -v
 examples:
@@ -18,3 +19,8 @@ examples:
 	python3 ru build examples/modules/main.ru -o bin/modules --emit-c dist/modules.c
 clean:
 	python3 -c "import pathlib,shutil; [shutil.rmtree(p) for p in pathlib.Path('.').rglob('__pycache__')]"
+
+# Optional editor checks; the language test target needs no Emacs installation.
+test-emacs:
+	$(EMACS) -Q --batch -L emacs --eval '(setq byte-compile-error-on-warn t)' -f batch-byte-compile emacs/ru-lang-mode.el emacs/ru-lang-mode-tests.el
+	$(EMACS) -Q --batch -L emacs -l emacs/ru-lang-mode-tests.el -f ert-run-tests-batch-and-exit

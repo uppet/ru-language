@@ -62,6 +62,17 @@ python3 ru build examples/add.ru -o bin/my-add
 
 如需研究静态输出，工具链支持时可使用 `--cc "gcc -static"`；静态库、目标平台兼容性及第三方库再分发义务由该工具链决定。默认构建使用动态链接。
 
+## Emacs 编辑支持
+
+仓库自带 [`ru-lang-mode`](emacs/README.md)，提供 `.ru` 自动识别、语法高亮、块 / 括号缩进、定义与代码块跳转、空行段落移动、注释和 Imenu 方法索引。
+
+```elisp
+(add-to-list 'load-path (expand-file-name "~/src/ru-language/emacs"))
+(require 'ru-lang-mode)
+```
+
+请把路径改成实际仓库目录。`TAB` 缩进当前行，`C-x h C-M-\` 缩进全文，`C-M-a` / `C-M-e` 跳转定义，`C-c C-p` / `C-c C-n` 跳转代码块，`M-{` / `M-}` 跳转空行段落。完整按键、版本与测试说明见 [emacs/README.md](emacs/README.md)。
+
 ## 命令
 
 ```sh

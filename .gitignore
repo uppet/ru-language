@@ -30,6 +30,7 @@ htmlcov/
 /examples/modules/main
 
 # Editor backups and local machine files
+*.elc
 *~
 *.swp
 *.swo
