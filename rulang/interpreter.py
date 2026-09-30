@@ -1,5 +1,11 @@
-"""Reference interpreter; the REPL retains this state between submissions."""
+"""Reference interpreter with shared mutable values and cached local modules.
+
+Python's tracing collector owns object graphs, including arrays and objects
+which refer to themselves. Rebinding a name never copies a mutable value.
+"""
+from dataclasses import dataclass
 import math
+from pathlib import Path
 import re
 import sys
 from .frontend import RuError, bind_arguments, validate
@@ -7,12 +13,129 @@ from .frontend import RuError, bind_arguments, validate
 DECIMAL = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?\Z")
 
 
-def display(value):
-    return format(value, ".15g") if isinstance(value, float) else value
+@dataclass(frozen=True, eq=False)
+class Pair:
+    left: object
+    right: object
+
+
+@dataclass(eq=False)
+class Function:
+    owner: object
+    node: object
+
+
+@dataclass(eq=False)
+class RuType:
+    owner: object
+    node: object
+    parent: object = None
+    fields: object = None
+    methods: object = None
+    state: int = 0
+
+    @property
+    def name(self):
+        return self.node.data["name"]
+
+
+@dataclass(eq=False)
+class Instance:
+    type: RuType
+    fields: dict
+
+
+@dataclass(eq=False)
+class Module:
+    interpreter: object
+
+    def exports(self):
+        owner = self.interpreter
+        values = dict(owner.global_scope.values)
+        values.update(owner.types)
+        values.update({name: Function(owner.function_owners.get(name, owner), fn)
+                       for name, fn in owner.functions.items()})
+        return values
+
+
+def display(value, active=None):
+    """Format arbitrarily long pair chains without Python recursion."""
+    active = set() if active is None else active
+    output, stack = [], [("value", value)]
+    while stack:
+        operation, current = stack.pop()
+        if operation == "text":
+            output.append(current)
+            continue
+        if operation == "leave":
+            active.remove(current)
+            continue
+        if current is None:
+            output.append("空")
+        elif isinstance(current, float):
+            output.append(format(current, ".15g"))
+        elif isinstance(current, str):
+            output.append(current)
+        elif isinstance(current, Instance):
+            output.append(f"<形 {current.type.name}>")
+        elif isinstance(current, RuType):
+            output.append(f"<形 {current.name}>")
+        elif isinstance(current, Module):
+            output.append("<外言>")
+        elif isinstance(current, Function):
+            output.append(f"<算 {current.node.data['name']}>")
+        elif isinstance(current, (Pair, list)):
+            identity = id(current)
+            if identity in active:
+                output.append("<循环>")
+                continue
+            active.add(identity)
+            stack.append(("leave", identity))
+            if isinstance(current, Pair):
+                output.append("(")
+                stack.extend([("text", ")"), ("value", current.right),
+                              ("text", " 对 "), ("value", current.left)])
+            else:
+                output.append("[")
+                stack.append(("text", "]"))
+                for i in range(len(current)-1, -1, -1):
+                    stack.append(("value", current[i]))
+                    if i:
+                        stack.append(("text", ", "))
+        else:
+            raise TypeError(f"unknown 如 value: {type(current).__name__}")
+    return "".join(output)
 
 
 def truth(value):
-    return value != 0 if isinstance(value, float) else len(value) != 0
+    if value is None:
+        return False
+    if isinstance(value, (str, list)):
+        return bool(len(value))
+    if isinstance(value, float):
+        return value != 0
+    return True
+
+
+def equal(left, right):
+    pending, compared = [(left, right)], set()
+    while pending:
+        left, right = pending.pop()
+        if type(left) is not type(right):
+            return False
+        if left is right:
+            continue
+        if isinstance(left, Pair):
+            identities = (id(left), id(right))
+            if identities in compared:
+                continue
+            compared.add(identities)
+            pending.extend(((left.right, right.right), (left.left, right.left)))
+        elif isinstance(left, (list, Instance, Module, RuType, Function)):
+            return False
+        elif left != right:
+            return False
+    return True
 
 
 class Scope:
@@ -40,33 +163,155 @@ class Interpreter:
     def __init__(self, stdin=None, stdout=None):
         self.stdin, self.stdout = stdin or sys.stdin, stdout or sys.stdout
         self.global_scope, self.functions, self.depth = Scope(), {}, 0
+        self.types, self.function_owners = {}, {}
+        self.source_path, self.modules, self.module_cache = None, {}, {}
+        self.loading = set()
+        self.call_state = [0]
+        self.last_member_procedure = False
         if sys.getrecursionlimit() < 10000:
             sys.setrecursionlimit(10000)
 
     def fail(self, node, message):
-        raise RuError(message, node.token.line, node.token.col, "运行错误")
+        error = RuError(message, node.token.line, node.token.col, "运行错误")
+        if self.source_path:
+            error.source_name = str(self.source_path)
+            error.source_text = getattr(self.modules, "sources", {}).get(str(self.source_path), "")
+        raise error
 
-    def execute(self, program, echo=False):
-        validate(program, self.functions)
+    def execute(self, program, echo=False, source_path=None, modules=None, module_cache=None):
+        validate(program, self.functions, self.types)
+        if source_path is not None:
+            self.source_path = str(Path(source_path).resolve())
+        if modules is not None:
+            self.modules = modules
+        if module_cache is not None:
+            self.module_cache = module_cache
         for n in program:
             if n.kind == "function":
+                if n.data["name"] in self.types or n.data["name"] in self.global_scope.values:
+                    self.fail(n, f"名称冲突：{n.data['name']}")
                 self.functions[n.data["name"]] = n
-        self.block(program, self.global_scope, echo)
+                self.function_owners[n.data["name"]] = self
+            elif n.kind == "type":
+                if n.data["name"] in self.functions or n.data["name"] in self.global_scope.values:
+                    self.fail(n, f"名称冲突：{n.data['name']}")
+                self.types[n.data["name"]] = RuType(self, n)
+        # Declarations are registered for forward references. Resolve parents
+        # lazily (or at their statement), after any preceding imports execute.
+        try:
+            self.block(program, self.global_scope, echo)
+        except RuError as error:
+            self.locate_error(error)
+            raise
+
+    def locate_error(self, error):
+        if self.source_path and not hasattr(error, "source_name"):
+            error.source_name = self.source_path
+            error.source_text = getattr(self.modules, "sources", {}).get(self.source_path, "")
+
+    def execute_entry(self, args):
+        fn = self.functions.get("元初")
+        if fn is None or self.function_owners.get("元初", self) is not self:
+            return 0
+        params = fn.data["params"]
+        if fn.data["procedure"] or len(params) != 1 or params[0][1] != "句 阵":
+            self.fail(fn, "入口须声明为「算 元初 外参 为 句 阵」")
+        result = self.call(fn, "元初", [(None, list(args))])
+        if not isinstance(result, float) or result != int(result) or not 0 <= result <= 255:
+            self.fail(fn, "元初须返回 0 至 255 的整数退出码")
+        return int(result)
+
+    def resolve_type(self, typ):
+        if typ.state == 2:
+            return typ
+        if typ.state == 1:
+            self.fail(typ.node, "形的继承形成循环")
+        typ.state = 1
+        try:
+            parent_name = typ.node.data["parent"]
+            if parent_name:
+                parent = typ.owner.types.get(parent_name)
+                if not isinstance(parent, RuType):
+                    typ.owner.fail(typ.node, f"未定义父形：{parent_name}")
+                parent.owner.resolve_type(parent)
+                typ.parent = parent
+                typ.fields, typ.methods = dict(parent.fields), dict(parent.methods)
+            else:
+                typ.fields, typ.methods = {}, {}
+            for name, field_type in typ.node.data["fields"]:
+                if name in typ.fields or name in typ.methods:
+                    typ.owner.fail(typ.node, f"继承字段／方法重名：{name}")
+                typ.fields[name] = (field_type, typ.owner)
+            for fn in typ.node.data["methods"]:
+                name = fn.data["name"]
+                if name in typ.fields:
+                    typ.owner.fail(fn, f"方法与字段重名：{name}")
+                if name in typ.methods:
+                    old = typ.methods[name].node.data
+                    if old["params"] != fn.data["params"] or old["procedure"] != fn.data["procedure"]:
+                        typ.owner.fail(fn, f"覆写方法「{name}」须保持参数名称、类型及算／作种类")
+                typ.methods[name] = Function(typ.owner, fn)
+            typ.state = 2
+            return typ
+        except Exception:
+            typ.state = 0
+            raise
+
+    def type_matches(self, value, typ):
+        if typ.endswith(" 阵"):
+            return isinstance(value, list) and all(self.type_matches(item, typ[:-2]) for item in value)
+        if typ == "数":
+            return isinstance(value, float)
+        if typ == "句":
+            return isinstance(value, str)
+        if typ == "空":
+            return value is None
+        if typ == "阵":
+            return isinstance(value, list)
+        if typ == "对":
+            return isinstance(value, Pair)
+        expected = self.types.get(typ) or self.global_scope.values.get(typ)
+        if not isinstance(expected, RuType) or not isinstance(value, Instance):
+            return False
+        current = value.type
+        while current is not None:
+            if current is expected:
+                return True
+            current = current.parent
+        return False
 
     def block(self, statements, scope, echo=False):
         for n in statements:
             d = n.data
             if n.kind == "function":
                 continue
-            if n.kind == "bind":
+            if n.kind == "type":
+                self.resolve_type(self.types[d["name"]])
+            elif n.kind == "bind":
+                if d["name"] in self.functions or d["name"] in self.types or d["name"] == "读":
+                    self.fail(n, "变量名不能与函数名、形名或「读」重名")
                 scope.values[d["name"]] = self.expr(d["expr"], scope)
+            elif n.kind == "assign":
+                self.assign(n, scope)
+            elif n.kind == "import_all":
+                module = self.expr(d["expr"], scope)
+                exports = module.exports()
+                conflicts = set(exports) & (set(scope.values) | set(self.functions) | set(self.types) | {"读"})
+                if conflicts:
+                    self.fail(n, "导入名称冲突：" + "、".join(sorted(conflicts)))
+                for name, value in exports.items():
+                    if name in module.interpreter.functions:
+                        self.functions[name] = value.node
+                        self.function_owners[name] = value.owner
+                    elif name in module.interpreter.types:
+                        self.types[name] = value
+                    else:
+                        scope.values[name] = value
             elif n.kind == "print":
                 print(display(self.expr(d["expr"], scope)), file=self.stdout, flush=True)
             elif n.kind == "expr":
                 value = self.expr(d["expr"], scope)
-                if echo and not (d["expr"].kind in ("name", "call") and
-                                 self.functions.get(d["expr"].data.get("name")) and
-                                 self.functions[d["expr"].data["name"]].data["procedure"]):
+                if echo and not self.is_procedure(d["expr"], scope):
                     print(display(value), file=self.stdout, flush=True)
             elif n.kind == "return":
                 raise Return(self.expr(d["expr"], scope))
@@ -89,23 +334,147 @@ class Interpreter:
                         break
                     i += 1
 
+    def is_procedure(self, expr, scope):
+        # Do not re-evaluate member receivers merely to decide REPL echo.
+        if expr.kind in ("name", "call"):
+            fn = self.functions.get(expr.data["name"])
+            return bool(fn and fn.data["procedure"])
+        return (expr.kind == "member" or (expr.kind == "binary" and expr.data["op"] == "含")) and self.last_member_procedure
+
+    def bounded_index(self, n, value, size, endpoint=False):
+        maximum = size if endpoint else size - 1
+        if not isinstance(value, float) or not math.isfinite(value) or value != int(value):
+            self.fail(n, "索引须为整数")
+        if value < 0 or value > maximum:
+            self.fail(n, f"索引越界：{display(value)}（长度 {size}）")
+        return int(value)
+
+    def get_index(self, n, receiver, index):
+        if not isinstance(receiver, (list, str)):
+            self.fail(n, "「位」／索引只适用于阵或句")
+        return receiver[self.bounded_index(n, index, len(receiver))]
+
+    def get_slice(self, n, receiver, start, end):
+        if not isinstance(receiver, (list, str)):
+            self.fail(n, "「段」／切片只适用于阵或句")
+        first = 0 if start is None else self.bounded_index(n, start, len(receiver), True)
+        last = len(receiver) if end is None else self.bounded_index(n, end, len(receiver), True)
+        if first > last:
+            self.fail(n, "切片起点不能大于终点")
+        return receiver[first:last]
+
+    def assign(self, n, scope):
+        target, d = n.data["target"], n.data["target"].data
+        receiver = self.expr(d["receiver"], scope)
+        if target.kind == "index":
+            index = self.expr(d["index"], scope)
+        elif d["name"] == "位" and isinstance(receiver, list):
+            args = [(key, self.expr(expr, scope)) for key, expr in d["args"]]
+            bound = bind_arguments("位", args, ["位"], lambda message: self.fail(n, message))
+            index = bound["位"]
+        else:
+            if not isinstance(receiver, Instance) or d["args"] or d["name"] not in receiver.type.fields:
+                self.fail(n, f"不可赋值的字段：{d['name']}")
+            value = self.expr(n.data["expr"], scope)
+            field_type, owner = receiver.type.fields[d["name"]]
+            if value is not None and not owner.type_matches(value, field_type):
+                self.fail(n, f"字段「{d['name']}」须为{field_type}")
+            receiver.fields[d["name"]] = value
+            return
+        if not isinstance(receiver, list):
+            self.fail(n, "只有阵元素可赋值；句不可变")
+        offset = self.bounded_index(n, index, len(receiver))
+        receiver[offset] = self.expr(n.data["expr"], scope)
+
+    def import_module(self, n):
+        path = n.data.get("resolved")
+        if path is None:
+            base = Path(self.source_path).parent if self.source_path else Path.cwd()
+            path = str((base / n.data["path"]).resolve())
+        if path in self.loading:
+            self.fail(n, "外言导入形成循环：" + path)
+        if path in self.module_cache:
+            return self.module_cache[path]
+        if path not in self.modules:
+            from .modules import load_module_graph
+            self.modules.update(load_module_graph(path))
+        child = Interpreter(self.stdin, self.stdout)
+        child.loading, child.call_state = self.loading, self.call_state
+        self.loading.add(path)
+        try:
+            child.execute(self.modules[path], source_path=path, modules=self.modules, module_cache=self.module_cache)
+        finally:
+            self.loading.remove(path)
+        module = Module(child)
+        self.module_cache[path] = module
+        return module
+
     def expr(self, n, scope):
         d = n.data
         if n.kind in ("number", "string"):
             return d["value"]
+        if n.kind == "null":
+            return None
+        if n.kind == "array":
+            return [self.expr(item, scope) for item in d["items"]]
+        if n.kind == "self":
+            return scope.get("其", n.token)
+        if n.kind == "import":
+            return self.import_module(n)
         if n.kind == "name":
             name = d["name"]
             if name == "读" or name in self.functions:
                 return self.call(n, name, [])
+            if name in self.types:
+                return self.types[name]
             return scope.get(name, n.token)
         if n.kind == "call":
             return self.call(n, d["name"], [(name, self.expr(expr, scope)) for name, expr in d["args"]])
+        if n.kind == "new":
+            typ = self.types.get(d["name"]) or scope.values.get(d["name"])
+            if typ is None:
+                try:
+                    typ = scope.get(d["name"], n.token)
+                except RuError:
+                    self.fail(n, f"未定义形：{d['name']}")
+            if not isinstance(typ, RuType):
+                self.fail(n, f"「{d['name']}」不是形")
+            typ.owner.resolve_type(typ)
+            fields = {name: None for name in typ.fields}
+            provided = set()
+            for key, expr in d["args"]:
+                if key in provided:
+                    self.fail(n, f"重复的字段实参：{key}")
+                if key not in fields:
+                    self.fail(n, f"未知字段：{key}")
+                value = self.expr(expr, scope)
+                field_type, owner = typ.fields[key]
+                if value is not None and not owner.type_matches(value, field_type):
+                    self.fail(n, f"字段「{key}」须为{field_type}")
+                fields[key] = value
+                provided.add(key)
+            return Instance(typ, fields)
+        if n.kind == "member":
+            receiver = self.expr(d["receiver"], scope)
+            args = [(key, self.expr(expr, scope)) for key, expr in d["args"]]
+            return self.member(n, receiver, d["name"], args)
+        if n.kind == "index":
+            return self.get_index(n, self.expr(d["receiver"], scope), self.expr(d["index"], scope))
+        if n.kind == "slice":
+            receiver = self.expr(d["receiver"], scope)
+            start = None if d["start"] is None else self.expr(d["start"], scope)
+            end = None if d["end"] is None else self.expr(d["end"], scope)
+            return self.get_slice(n, receiver, start, end)
         if n.kind == "convert":
             value = self.expr(d["expr"], scope)
+            if d["target"] == "阵":
+                return [value]
             if d["target"] == "句":
                 return display(value)
             if isinstance(value, float):
                 return value
+            if not isinstance(value, str):
+                self.fail(n, "只有数或句可转换为数")
             stripped = value.strip(" \t\r\n\v\f")
             if not DECIMAL.fullmatch(stripped):
                 self.fail(n, f"无法转换为数：{value}")
@@ -128,16 +497,21 @@ class Interpreter:
             if op == "或":
                 return float(truth(left) or truth(self.expr(d["right"], scope)))
             right = self.expr(d["right"], scope)
+            if op == "对":
+                return Pair(left, right)
             if op in ("==", "!="):
-                equal = type(left) is type(right) and left == right
-                return float(equal if op == "==" else not equal)
+                same = equal(left, right)
+                return float(same if op == "==" else not same)
             if op == "含":
+                if isinstance(left, (Instance, Module)):
+                    return self.member(n, left, "含", [(None, right)])
+                self.last_member_procedure = False
                 if not isinstance(left, str) or not isinstance(right, str):
                     self.fail(n, "「含」需要两个句")
                 return float(right in left)
             if op in ("<", "<=", ">", ">="):
-                if type(left) is not type(right):
-                    self.fail(n, "比较需要相同类型")
+                if type(left) is not type(right) or not isinstance(left, (str, float)):
+                    self.fail(n, "大小比较需要两个数或两个句")
                 return float({"<": lambda: left < right, "<=": lambda: left <= right,
                               ">": lambda: left > right, ">=": lambda: left >= right}[op]())
             if op == "+" and isinstance(left, str) and isinstance(right, str):
@@ -153,6 +527,51 @@ class Interpreter:
                 self.fail(n, "运算结果不是有限数")
             return result
         raise AssertionError(n.kind)
+
+    def member(self, n, receiver, name, args):
+        fail = lambda message: self.fail(n, message)
+        self.last_member_procedure = False
+        if isinstance(receiver, Instance):
+            if name in receiver.type.fields:
+                bind_arguments(name, args, [], fail)
+                return receiver.fields[name]
+            method = receiver.type.methods.get(name)
+            if method:
+                result = method.owner.invoke(n, method.node, args, receiver, caller=self)
+                self.last_member_procedure = method.node.data["procedure"]
+                return result
+        elif isinstance(receiver, Module):
+            value = receiver.exports().get(name, _MISSING)
+            if value is not _MISSING:
+                if isinstance(value, Function):
+                    result = value.owner.invoke(n, value.node, args, caller=self)
+                    self.last_member_procedure = value.node.data["procedure"]
+                    return result
+                bind_arguments(name, args, [], fail)
+                return value
+        elif isinstance(receiver, Pair) and name in ("囫", "囵"):
+            bind_arguments(name, args, [], fail)
+            return receiver.left if name == "囫" else receiver.right
+        elif isinstance(receiver, (str, list)):
+            if name == "量":
+                bind_arguments(name, args, [], fail)
+                return float(len(receiver))
+            if name == "位":
+                bound = bind_arguments(name, args, ["位"], fail)
+                return self.get_index(n, receiver, bound["位"])
+            if name == "段":
+                bound = bind_arguments(name, args, ["始", "终"], fail)
+                return self.get_slice(n, receiver, bound["始"], bound["终"])
+            if name == "含" and isinstance(receiver, str):
+                bound = bind_arguments(name, args, ["句"], fail)
+                if not isinstance(bound["句"], str):
+                    self.fail(n, "「含」需要两个句")
+                return float(bound["句"] in receiver)
+            if name == "增" and isinstance(receiver, list):
+                bound = bind_arguments(name, args, ["值"], fail)
+                receiver.append(bound["值"])
+                return receiver
+        self.fail(n, f"未知成员：{name}")
 
     def call(self, n, name, args):
         fail = lambda message: self.fail(n, message)
@@ -171,17 +590,24 @@ class Interpreter:
             return value.removesuffix("\n").removesuffix("\r")
         if name not in self.functions:
             self.fail(n, f"未定义函数：{name}")
-        function = self.functions[name]
-        params = function.data["params"]
-        kwargs = bind_arguments(name, args, [p[0] for p in params], fail)
+        owner = self.function_owners.get(name, self)
+        return owner.invoke(n, self.functions[name], args, caller=self)
+
+    def invoke(self, n, function, args, receiver=None, caller=None):
+        caller = self if caller is None else caller
+        name, params = function.data["name"], function.data["params"]
+        kwargs = bind_arguments(name, args, [p[0] for p in params], lambda message: caller.fail(n, message))
         local = Scope(self.global_scope)
+        if receiver is not None:
+            local.values["其"] = receiver
         for key, typ in params:
             value = kwargs[key]
-            if (typ == "数") != isinstance(value, float):
-                self.fail(n, f"实参「{key}」须为{typ}，请显式使用「为 {typ}」转换")
+            if not self.type_matches(value, typ):
+                caller.fail(n, f"实参「{key}」须为{typ}，请显式使用「为 {typ}」转换")
             local.values[key] = value
-        if self.depth >= 128:
-            self.fail(n, "函数调用层数超过 128")
+        if self.call_state[0] >= 128:
+            caller.fail(n, "函数调用层数超过 128")
+        self.call_state[0] += 1
         self.depth += 1
         try:
             try:
@@ -190,6 +616,13 @@ class Interpreter:
                 return result.value
             if function.data["procedure"]:
                 return ""
-            self.fail(n, f"函数「{name}」没有执行「得」")
+            caller.fail(n, f"函数「{name}」没有执行「得」")
+        except RuError as error:
+            self.locate_error(error)
+            raise
         finally:
+            self.call_state[0] -= 1
             self.depth -= 1
+
+
+_MISSING = object()

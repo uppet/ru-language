@@ -20,6 +20,14 @@ htmlcov/
 /examples/ceremony
 /examples/conversation
 /examples/factorial
+/examples/positional
+/examples/linked_pairs
+/examples/array_sort
+/examples/objects
+/examples/students
+/examples/unicode_slices
+/examples/entry
+/examples/modules/main
 
 # Editor backups and local machine files
 *~

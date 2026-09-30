@@ -33,13 +33,16 @@ def node(kind, token, **data):
     return Node(kind, token, data)
 
 
-KEYWORDS = set("显 取 为 得 破 若 则 另 然 循 次 环 算 作 法 其 且 或 非".split())
+MEMBER_PARAMS = {"含": ["句"], "位": ["位"], "段": ["始", "终"], "增": ["值"],
+                 "量": [], "囫": [], "囵": []}
+
+KEYWORDS = set("显 取 为 得 破 若 则 另 然 循 次 环 算 作 法 其 且 或 非 空 对 形 象 如 新 外言 尽".split())
 NUMBER = re.compile(r"(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
 
 
 def lex(source):
     tokens, i, line, col = [], 0, 1, 1
-    punct = {"。": ".", "：": ":", "（": "(", "）": ")", "，": ","}
+    punct = {"。": ".", "：": ":", "（": "(", "）": ")", "，": ",", "［": "[", "］": "]"}
     quotes = {"'": "'", '"': '"', "‘": "’", "“": "”"}
 
     def advance(text):
@@ -100,7 +103,7 @@ def lex(source):
             tokens.append(Token("OP", pair, line, col))
             advance(pair)
             continue
-        if ch in ".:(),@+-*/%<>=!" or ch in punct:
+        if ch in ".:(),[]@+-*/%<>=!" or ch in punct:
             tokens.append(Token("OP", punct.get(ch, ch), line, col))
             advance(ch)
             continue
@@ -118,7 +121,8 @@ def lex(source):
 
 
 class Parser:
-    PRECEDENCE = {"或": 10, "且": 20, "==": 30, "!=": 30, "<": 40, "<=": 40, ">": 40, ">=": 40,
+    PRECEDENCE = {"对": 7, "或": 10, "且": 20, "==": 30, "!=": 30,
+                  "<": 40, "<=": 40, ">": 40, ">=": 40,
                   "+": 50, "-": 50, "*": 60, "/": 60, "%": 60}
 
     def __init__(self, source):
@@ -161,6 +165,15 @@ class Parser:
             self.fail("此处需要名称", t)
         return self.pop()
 
+    def type_name(self):
+        t = self.current
+        if t.kind != "NAME" or (t.value in KEYWORDS and t.value not in ("空", "对")):
+            self.fail("此处需要类型名称", t)
+        value = self.pop().value
+        while self.accept("阵"):
+            value += " 阵"
+        return value
+
     def parse(self, stops=()):
         self.depth += 1
         try:
@@ -177,6 +190,41 @@ class Parser:
                 continue
             out.append(self.statement())
         return out
+
+    def function(self):
+        t = self.pop()
+        kind, name, params = t.value, self.name().value, []
+        while not self.isv(":"):
+            param = self.name()
+            self.expect("为")
+            params.append((param.value, self.type_name()))
+            self.accept(",")
+        self.expect(":")
+        end = "法" if kind == "算" else "为"
+        body = self.parse((end,))
+        self.expect(end)
+        self.accept(".")
+        return node("function", t, name=name, params=params, body=body, procedure=kind == "作")
+
+    def type_definition(self):
+        t = self.expect("形")
+        name = self.name().value
+        parent = self.name().value if self.accept("如") else None
+        self.accept(":")
+        fields, methods = [], []
+        while not self.isv("象"):
+            if self.accept("."):
+                continue
+            if self.isv("算") or self.isv("作"):
+                methods.append(self.function())
+            else:
+                field = self.name().value
+                self.expect("为")
+                fields.append((field, self.type_name()))
+                self.expect(".")
+        self.expect("象")
+        self.accept(".")
+        return node("type", t, name=name, parent=parent, fields=fields, methods=methods)
 
     def statement(self):
         t = self.current
@@ -200,8 +248,6 @@ class Parser:
             self.accept(".")
             return node("if", t, condition=condition, yes=yes, no=no)
         if self.accept("循"):
-            # A counted loop has an expression followed by 次. Otherwise its
-            # body begins immediately. Backtracking only decides this prefix.
             save, count = self.i, None
             try:
                 candidate = self.expression()
@@ -216,23 +262,16 @@ class Parser:
             self.accept(".")
             return node("loop", t, count=count, body=body)
         if self.isv("算") or self.isv("作"):
-            kind = self.pop().value
-            name = self.name().value
-            params = []
-            while not self.isv(":"):
-                param = self.name()
-                self.expect("为")
-                typ = self.name()
-                if typ.value not in ("数", "句"):
-                    self.fail("参数类型须为「数」或「句」", typ)
-                params.append((param.value, typ.value))
-                self.accept(",")
-            self.expect(":")
-            end = "法" if kind == "算" else "为"
-            body = self.parse((end,))
-            self.expect(end)
-            self.accept(".")
-            return node("function", t, name=name, params=params, body=body, procedure=kind == "作")
+            return self.function()
+        if self.isv("形"):
+            return self.type_definition()
+        if self.accept("尽"):
+            self.expect("取")
+            expr = self.expression()
+            if expr.kind != "import":
+                self.fail("「尽 取」需要「外言 '文件.ru'」", t)
+            self.expect(".")
+            return node("import_all", t, expr=expr)
         if t.kind == "NAME" and self.peek().kind == "NAME" and self.peek().value == "取":
             name = self.name().value
             self.expect("取")
@@ -240,6 +279,12 @@ class Parser:
             self.expect(".")
             return node("bind", t, name=name, expr=expr)
         expr = self.expression()
+        if self.accept("取"):
+            if expr.kind not in ("index", "member") or (expr.kind == "member" and expr.data["args"] and expr.data["name"] != "位"):
+                self.fail("「取」左侧须为名称、对象字段或阵元素", expr.token)
+            value = self.expression()
+            self.expect(".")
+            return node("assign", t, target=expr, expr=value)
         self.expect(".")
         return node("expr", t, expr=expr)
 
@@ -257,19 +302,17 @@ class Parser:
             self.call_allowed = previous
 
     def starts_argument(self):
-        """An adjacent primary starts an argument; + and - stay binary.
-
-        Each argument is a full expression. Calls inside arguments need
-        parentheses, so `f x y` cannot accidentally become `f (x y)`.
-        """
         t = self.current
         return (t.kind in ("NUMBER", "STRING") or self.isv("(") or
-                self.isv("非") or (t.kind == "NAME" and t.value not in KEYWORDS))
+                self.isv("[") or self.isv("非") or self.isv("空") or
+                self.isv("新") or self.isv("外言") or self.isv("其") or
+                (t.kind == "NAME" and t.value not in KEYWORDS))
 
-    def call_arguments(self):
+    def call_arguments(self, allow=None):
         args, style, separated = [], None, False
-        while self.call_allowed and (self.starts_argument() or
-                                    (separated and (self.isv("+") or self.isv("-")))):
+        enabled = self.call_allowed if allow is None else allow
+        while enabled and (self.starts_argument() or
+                           (separated and (self.isv("+") or self.isv("-")))):
             named = (self.current.kind == "NAME" and self.peek().kind == "OP" and
                      self.peek().value == ":")
             current_style = "named" if named else "positional"
@@ -280,10 +323,31 @@ class Parser:
             if named:
                 self.expect(":")
             args.append((key, self.expression(allow_call=False)))
-            # A comma makes a following + or - unambiguously unary. Without
-            # it, `f 1 - 2` means `f (1 - 2)`, just like a named argument.
             separated = self.accept(",") is not None
         return args
+
+    def member(self, receiver, token):
+        name_token = self.name()
+        name = name_token.value
+        if name in ("囫", "囵", "量"):
+            args = []
+        elif name in ("含", "位", "增", "段"):
+            # Fixed-arity operators bind as tightly as indexing. Named 段
+            # arguments retain the ordinary named-call expression rules.
+            named = self.current.kind == "NAME" and self.peek().value == ":"
+            if named:
+                args = self.call_arguments(allow=True)
+            else:
+                args = []
+                for _ in range(2 if name == "段" else 1):
+                    self.accept(",")
+                    args.append((None, self.expression(76, allow_call=None if name == "含" else False)))
+            if name == "含" and len(args) == 1 and args[0][0] is None:
+                return node("binary", token, op="含", left=receiver, right=args[0][1])
+        else:
+            adjacent = self.isv("[") and self.current.line == name_token.line and self.current.col == name_token.col + len(name)
+            args = [] if adjacent or self.isv("其") or self.isv("@") else self.call_arguments()
+        return node("member", token, receiver=receiver, name=name, args=args)
 
     def _expression(self, minimum=0):
         t = self.pop()
@@ -291,36 +355,69 @@ class Parser:
             left = node("number", t, value=float(t.value))
         elif t.kind == "STRING":
             left = node("string", t, value=t.value)
+        elif t.value == "空":
+            left = node("null", t)
+        elif t.value == "外言":
+            path = self.pop()
+            if path.kind != "STRING":
+                self.fail("「外言」后须为文件路径字符串字面量", path)
+            left = node("import", t, path=path.value)
+        elif t.value == "新":
+            name = self.name().value
+            args = self.call_arguments(allow=True)
+            if any(key is None for key, _ in args):
+                self.fail("「新」只接受命名字段实参", t)
+            left = node("new", t, name=name, args=args)
+        elif t.value == "其":
+            left = node("self", t)
+            if self.current.kind == "NAME" and self.current.value not in KEYWORDS:
+                left = self.member(left, t)
+        elif t.value == "[" and t.kind == "OP":
+            items = []
+            while not self.isv("]"):
+                items.append(self.expression(allow_call=True))
+                if not self.accept(","):
+                    break
+            self.expect("]")
+            left = node("array", t, items=items)
         elif t.value == "(" and t.kind == "OP":
-            # Parentheses explicitly delimit nested calls. Without this
-            # boundary, f a: variable b: value is ambiguous with variable(...).
             left = self.expression(allow_call=True)
             self.expect(")")
-        elif t.value in ("+", "-", "非") and t.kind != "STRING":
+        elif t.value in ("+", "-", "非"):
             left = node("unary", t, op=t.value, expr=self.expression(70))
         elif t.kind == "NAME" and t.value not in KEYWORDS:
-            args = self.call_arguments()
+            # Adjacency distinguishes name[index] from f [array literal].
+            adjacent = self.isv("[") and self.current.line == t.line and self.current.col == t.col + len(t.value)
+            args = [] if adjacent or self.isv("其") else self.call_arguments()
             left = node("call", t, name=t.value, args=args) if args else node("name", t, name=t.value)
         else:
             self.fail(f"此处需要表达式，却遇到「{t.value}」", t)
         while True:
-            if self.isv("为") and self.peek().kind == "NAME" and self.peek().value in ("数", "句") and 5 >= minimum:
+            if self.isv("[") and 80 >= minimum:
+                bracket = self.pop()
+                first = None if self.isv(":") else self.expression(allow_call=True)
+                if self.accept(":"):
+                    end = None if self.isv("]") else self.expression(allow_call=True)
+                    self.expect("]")
+                    left = node("slice", bracket, receiver=left, start=first, end=end)
+                else:
+                    self.expect("]")
+                    left = node("index", bracket, receiver=left, index=first)
+                continue
+            if self.isv("为") and self.peek().kind == "NAME" and self.peek().value in ("数", "句", "阵") and 5 >= minimum:
                 cast = self.pop()
                 typ = self.pop()
                 left = node("convert", cast, expr=left, target=typ.value)
                 continue
             if (self.isv("@") or self.isv("其")) and 75 >= minimum:
-                member = self.pop()
-                self.expect("含")
-                right = self.expression(76)
-                left = node("binary", member, op="含", left=left, right=right)
+                left = self.member(left, self.pop())
                 continue
             op = self.current.value
             prec = self.PRECEDENCE.get(op, -1) if self.current.kind != "STRING" else -1
             if prec < minimum:
                 break
             token = self.pop()
-            right = self.expression(prec+1)
+            right = self.expression(prec if op == "对" else prec+1)
             left = node("binary", token, op=op, left=left, right=right)
         return left
 
@@ -366,40 +463,134 @@ def bind_arguments(name, args, params, fail, optional=False):
     return values
 
 
-def validate(program, existing_functions=()):
+def validate(program, existing_functions=(), existing_types=()):
+    """Check declaration/control-flow structure without executing user code."""
     functions = set(existing_functions)
     declared = set()
+    type_nodes = {}
     for n in program:
-        if n.kind == "function":
+        if n.kind in ("function", "type"):
             name = n.data["name"]
             if name == "读" or name in declared:
-                raise RuError(f"重复或保留的函数名：{name}", n.token.line, n.token.col)
+                raise RuError(f"重复或保留的名称：{name}", n.token.line, n.token.col)
             declared.add(name)
-            functions.add(name)
-    def walk(stmts, depth=0, function=None, top=True):
+            if n.kind == "function":
+                functions.add(name)
+            else:
+                type_nodes[name] = n
+
+    def error(n, message):
+        raise RuError(message, n.token.line, n.token.col)
+
+    has_imports = any(n.kind == "import_all" for n in program)
+    known_types = set(type_nodes) | set(existing_types) | {"数", "句", "阵", "对", "空"}
+    known_bindings = {n.data["name"] for n in program if n.kind == "bind"}
+
+    def check_type(n, typ):
+        base = typ.split()[0]
+        if base not in known_types and base not in known_bindings and not has_imports:
+            error(n, f"未定义类型：{base}")
+
+    def expressions(value, method=False):
+        if isinstance(value, Node):
+            if value.kind == "self" and not method:
+                error(value, "「其」自身引用只能用于形的方法内")
+            if value.kind == "member" and value.data["receiver"].kind in ("string", "number", "null", "array"):
+                # Unknown spellings can be rejected early, while a known
+                # operation applied to the wrong value remains a runtime
+                # type error, matching the original numeric/string rules.
+                if value.data["name"] not in MEMBER_PARAMS:
+                    error(value, f"未知成员：{value.data['name']}")
+            for child in value.data.values():
+                expressions(child, method)
+        elif isinstance(value, dict):
+            for child in value.values():
+                expressions(child, method)
+        elif isinstance(value, (list, tuple)):
+            for child in value:
+                expressions(child, method)
+
+    def walk(stmts, depth=0, function=None, top=True, method=False):
         for n in stmts:
-            d, t = n.data, n.token
-            def error(message):
-                raise RuError(message, t.line, t.col)
+            d = n.data
             if n.kind == "function":
                 if not top:
-                    error("原型仅支持顶层函数／过程定义")
+                    error(n, "函数／过程只能定义在顶层或形内")
+                for _, typ in d["params"]:
+                    check_type(n, typ)
                 names = [p[0] for p in d["params"]]
+                if method and d["name"] in MEMBER_PARAMS and names != MEMBER_PARAMS[d["name"]]:
+                    error(n, f"标准成员「{d['name']}」须使用固定参数：" + "、".join(MEMBER_PARAMS[d["name"]]))
                 if len(names) != len(set(names)):
-                    error("参数名重复")
-                if any(p in functions or p == "读" for p in names):
-                    error("参数名不能与函数名或「读」重名")
-                walk(d["body"], 0, n, False)
+                    error(n, "参数名重复")
+                if any(p in functions or p == "读" or p in type_nodes for p in names):
+                    error(n, "参数名不能与函数名、形名或「读」重名")
+                walk(d["body"], 0, n, False, method)
+            elif n.kind == "type":
+                if not top:
+                    error(n, "形只能定义在顶层")
+                if d["name"] in ("数", "句", "阵"):
+                    error(n, "形名不能与内置类型重名")
+                for field, typ in d["fields"]:
+                    check_type(n, typ)
+                    if field in ("含", "位", "段", "增"):
+                        error(n, f"字段名「{field}」保留给带参数的标准成员")
+                members = [f[0] for f in d["fields"]] + [m.data["name"] for m in d["methods"]]
+                if len(members) != len(set(members)):
+                    error(n, "字段／方法名称重复")
+                walk(d["methods"], method=True)
+            elif n.kind == "import_all" and not top:
+                error(n, "「尽 取 外言」只能用于顶层")
             elif n.kind == "break" and depth == 0:
-                error("「破」只能出现在当前函数的循环内")
+                error(n, "「破」只能出现在当前函数的循环内")
             elif n.kind == "return" and (function is None or function.data["procedure"]):
-                error("「得」只能出现在「算」定义内")
-            elif n.kind == "bind" and (d["name"] in functions or d["name"] == "读"):
-                error("变量名不能与函数名或「读」重名")
+                error(n, "「得」只能出现在「算」定义内")
+            elif n.kind == "bind" and (d["name"] in functions or d["name"] == "读" or d["name"] in type_nodes):
+                error(n, "变量名不能与函数名、形名或「读」重名")
             elif n.kind == "if":
-                walk(d["yes"], depth, function, False)
-                walk(d["no"], depth, function, False)
+                expressions(d["condition"], method)
+                walk(d["yes"], depth, function, False, method)
+                walk(d["no"], depth, function, False, method)
             elif n.kind == "loop":
-                walk(d["body"], depth+1, function, False)
+                expressions(d["count"], method)
+                walk(d["body"], depth+1, function, False, method)
+            else:
+                expressions(d, method)
+
+    inherited = {}
+
+    def ancestry(name, seen):
+        if len(seen) >= 128:
+            error(type_nodes[name], "形的继承嵌套超过 128 层")
+        if name in seen:
+            error(type_nodes[name], "形的继承形成循环")
+        if name in inherited:
+            return inherited[name]
+        definition = type_nodes[name]
+        parent = definition.data["parent"]
+        fields, methods = {}, {}
+        if parent in type_nodes:
+            parent_fields, parent_methods = ancestry(parent, seen | {name})
+            fields, methods = dict(parent_fields), dict(parent_methods)
+        elif parent and parent not in existing_types and not has_imports:
+            error(definition, f"未定义父形：{parent}")
+        for field, typ in definition.data["fields"]:
+            if field in fields or field in methods:
+                error(definition, f"继承字段／方法重名：{field}")
+            fields[field] = typ
+        for method in definition.data["methods"]:
+            key, data = method.data["name"], method.data
+            if key in fields:
+                error(method, f"方法与字段重名：{key}")
+            if key in methods:
+                original = methods[key].data
+                if data["params"] != original["params"] or data["procedure"] != original["procedure"]:
+                    error(method, f"覆写方法「{key}」须保持参数名称、类型及算／作种类")
+            methods[key] = method
+        inherited[name] = fields, methods
+        return fields, methods
+
+    for name in type_nodes:
+        ancestry(name, set())
     walk(program)
     return functions

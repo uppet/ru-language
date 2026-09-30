@@ -11,34 +11,31 @@ from . import __version__
 from .compiler import Compiler
 from .frontend import Incomplete, RuError, parse, validate
 from .interpreter import Interpreter
-
-GENERATION_MARKER = "如是我言"
+from .modules import GENERATION_MARKER, load_module_graph, read_source
 
 
 def report(error, name, source=""):
+    name = getattr(error, "source_name", name)
+    source = getattr(error, "source_text", "") or source
     print(f"{name}:{error.line}:{error.col}: {error.category}：{error.message}", file=sys.stderr)
     lines = source.splitlines()
     if 0 < error.line <= len(lines):
         print("  " + lines[error.line-1], file=sys.stderr)
 
 
-def read_source(path):
-    source = Path(path).read_text(encoding="utf-8-sig")
-    if source.rstrip().endswith(GENERATION_MARKER):
-        raise RuError("检测到以「如是我言」结尾的意图文档。LLM 生成入口尚未连接提供方；未发送文档，也未生成或执行代码。请先手写 .ru 源码。", category="生成功能未配置")
-    return source
-
-
-def build(program, source_path, output, cc=None, emit_c=None):
-    generated = Compiler(program, str(source_path)).compile()
-    output = Path(output).resolve()
+def build(program, source_path, output, cc=None, emit_c=None, modules=None):
     source_path = Path(source_path).resolve()
-    if output == source_path:
-        raise RuError("输出路径不能覆盖源文件", category="编译错误")
+    modules = load_module_graph(source_path, program) if modules is None else modules
+    output = Path(output).resolve()
+    source_paths = {Path(path).resolve() for path in modules} | {source_path}
+    if output in source_paths:
+        raise RuError("输出路径不能覆盖源文件或外言依赖", category="编译错误")
     if emit_c:
         cpath = Path(emit_c).resolve()
-        if cpath in (source_path, output):
-            raise RuError("C 输出、程序输出、源文件必须使用不同路径", category="编译错误")
+        if cpath in source_paths or cpath == output:
+            raise RuError("C 输出、程序输出、源文件及外言依赖必须使用不同路径", category="编译错误")
+    generated = Compiler(program, str(source_path), modules=modules).compile()
+    if emit_c:
         cpath.parent.mkdir(parents=True, exist_ok=True)
         cpath.write_text(generated, encoding="utf-8")
     selected = cc or os.environ.get("CC")
@@ -119,13 +116,15 @@ def repl():
 
 
 def make_parser():
-    parser = argparse.ArgumentParser(prog="ru", description="如 0.1：中文关键词玩具语言，带 REPL 与 C99 原生编译后端")
+    parser = argparse.ArgumentParser(prog="ru", description=f"如 {__version__}：中文关键词语言，带 REPL 与 C99 原生编译后端")
     parser.add_argument("--version", action="version", version=f"如 {__version__}")
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("repl", help="启动保留状态的多行 REPL")
     for name, help_text in (("run", "解释执行 .ru 文件"), ("check", "检查语法与函数调用")):
         p = sub.add_parser(name, help=help_text)
         p.add_argument("source")
+        if name == "run":
+            p.add_argument("args", nargs=argparse.REMAINDER, help="传给元初的外参；可使用 -- 分隔")
     p = sub.add_parser("build", help="把源码编译成真正独立的原生程序")
     p.add_argument("source")
     p.add_argument("-o", "--output", help="输出路径；默认去掉源文件扩展名")
@@ -154,15 +153,20 @@ def main(argv=None):
             raise RuError("已识别意图文档，但尚未连接 LLM 提供方；没有发送文档、生成代码或执行代码。", category="生成功能未配置")
         source = read_source(args.source)
         program = parse(source)
-        validate(program)
+        modules = load_module_graph(args.source, program)
+        modules.sources[modules.root] = source
         if args.command == "run":
-            Interpreter().execute(program)
+            interpreter = Interpreter()
+            interpreter.execute(program, source_path=modules.root, modules=modules)
+            # argparse already consumes the optional separator. A second --
+            # is an actual program argument and must be preserved.
+            return interpreter.execute_entry(args.args)
         elif args.command == "check":
-            Compiler(program, name).compile()
+            Compiler(program, modules.root, modules=modules).compile()
             print(f"检查通过：{name}")
         elif args.command == "build":
             output = args.output or str(Path(args.source).with_suffix("")) + (".exe" if os.name == "nt" else "")
-            result, compiler = build(program, args.source, output, args.cc, args.emit_c)
+            result, compiler = build(program, args.source, output, args.cc, args.emit_c, modules=modules)
             print(f"已编译：{result}\nC 编译器：{compiler}")
         return 0
     except RuError as error:
