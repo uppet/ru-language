@@ -171,7 +171,7 @@ class Parser:
 
     def type_name(self):
         t = self.current
-        if t.kind != "NAME" or (t.value in KEYWORDS and t.value not in ("空", "对")):
+        if t.kind != "NAME" or (t.value in KEYWORDS and t.value not in ("空", "对", "算", "作")):
             self.fail("此处需要类型名称", t)
         value = self.pop().value
         while self.accept("阵"):
@@ -279,7 +279,7 @@ class Parser:
             self.expect("环")
             self.accept(".")
             return node("loop", t, count=count, body=body)
-        if self.isv("算") or self.isv("作"):
+        if (self.isv("算") or self.isv("作")) and self.definition_ahead():
             return self.function()
         if self.isv("形"):
             return self.type_definition()
@@ -324,7 +324,46 @@ class Parser:
         return (t.kind in ("NUMBER", "STRING") or self.isv("(") or
                 self.isv("[") or self.isv("非") or self.isv("空") or
                 self.isv("新") or self.isv("外言") or self.isv("其") or
+                self.isv("算") or self.isv("作") or
                 (t.kind == "NAME" and t.value not in KEYWORDS))
+
+    def definition_ahead(self):
+        """Distinguish a declaration header from a standalone callable ref."""
+        after_name = self.peek(2)
+        return (after_name.kind == "OP" and after_name.value == ":") or (
+            after_name.kind == "NAME" and self.peek(3).value == "为")
+
+    def empty_call_ahead(self):
+        return self.isv("(") and self.peek().kind == "OP" and self.peek().value == ")"
+
+    def reference(self, token):
+        """Select a name/member without invoking the selected callable."""
+        t = self.pop()
+        if t.kind == "NAME" and t.value not in KEYWORDS:
+            target = node("name", t, name=t.value)
+        elif t.value == "其" and t.kind == "NAME":
+            target = node("self", t)
+            if self.current.kind == "NAME" and self.current.value not in KEYWORDS:
+                member = self.name()
+                target = node("member", t, receiver=target, name=member.value, args=[])
+        elif t.value == "(" and t.kind == "OP":
+            target = self.expression(allow_call=True)
+            self.expect(")")
+        else:
+            self.fail("算／作引用需要名称、成员或括号表达式", t)
+        while True:
+            if self.isv("其") or self.isv("@"):
+                separator = self.pop()
+                member = self.name()
+                target = node("member", separator, receiver=target, name=member.value, args=[])
+            elif self.isv("["):
+                bracket = self.pop()
+                index = self.expression(allow_call=True)
+                self.expect("]")
+                target = node("index", bracket, receiver=target, index=index)
+            else:
+                break
+        return node("function_ref", token, expr=target, procedure=token.value == "作")
 
     def call_arguments(self, allow=None):
         args, style, separated = [], None, False
@@ -364,17 +403,20 @@ class Parser:
                 return node("binary", token, op="含", left=receiver, right=args[0][1])
         else:
             adjacent = self.isv("[") and self.current.line == name_token.line and self.current.col == name_token.col + len(name)
-            args = [] if adjacent or self.isv("其") or self.isv("@") else self.call_arguments()
+            args = [] if adjacent or self.isv("其") or self.isv("@") or self.empty_call_ahead() else self.call_arguments()
         return node("member", token, receiver=receiver, name=name, args=args)
 
     def _expression(self, minimum=0):
         t = self.pop()
+        grouped = False
         if t.kind == "NUMBER":
             left = node("number", t, value=float(t.value))
         elif t.kind == "STRING":
             left = node("string", t, value=t.value)
         elif t.value == "空":
             left = node("null", t)
+        elif t.value in ("算", "作") and t.kind == "NAME":
+            left = self.reference(t)
         elif t.value == "外言":
             path = self.pop()
             if path.kind != "STRING":
@@ -401,16 +443,23 @@ class Parser:
         elif t.value == "(" and t.kind == "OP":
             left = self.expression(allow_call=True)
             self.expect(")")
+            grouped = True
         elif t.value in ("+", "-", "非"):
             left = node("unary", t, op=t.value, expr=self.expression(70))
         elif t.kind == "NAME" and t.value not in KEYWORDS:
             # Adjacency distinguishes name[index] from f [array literal].
             adjacent = self.isv("[") and self.current.line == t.line and self.current.col == t.col + len(t.value)
-            args = [] if adjacent or self.isv("其") else self.call_arguments()
+            args = [] if adjacent or self.isv("其") or self.isv("@") or self.empty_call_ahead() else self.call_arguments()
             left = node("call", t, name=t.value, args=args) if args else node("name", t, name=t.value)
         else:
             self.fail(f"此处需要表达式，却遇到「{t.value}」", t)
         while True:
+            if self.empty_call_ahead() and 80 >= minimum:
+                opening = self.pop()
+                self.expect(")")
+                left = node("invoke", opening, callee=left, args=[])
+                grouped = False
+                continue
             if self.isv("[") and 80 >= minimum:
                 bracket = self.pop()
                 first = None if self.isv(":") else self.expression(allow_call=True)
@@ -430,6 +479,12 @@ class Parser:
             if (self.isv("@") or self.isv("其")) and 75 >= minimum:
                 left = self.member(left, self.pop())
                 continue
+            if (self.call_allowed and minimum <= 75 and self.starts_argument()
+                    and (grouped or left.kind in ("index", "function_ref", "invoke"))):
+                args = self.call_arguments()
+                left = node("invoke", left.token, callee=left, args=args)
+                grouped = False
+                continue
             op = self.current.value
             prec = self.PRECEDENCE.get(op, -1) if self.current.kind != "STRING" else -1
             if prec < minimum:
@@ -437,6 +492,7 @@ class Parser:
             token = self.pop()
             right = self.expression(prec if op == "对" else prec+1)
             left = node("binary", token, op=op, left=left, right=right)
+            grouped = False
         return left
 
 
@@ -501,7 +557,7 @@ def validate(program, existing_functions=(), existing_types=()):
         raise RuError(message, n.token.line, n.token.col)
 
     has_imports = any(n.kind == "import_all" for n in program)
-    known_types = set(type_nodes) | set(existing_types) | BUILTIN_TYPES | {"数", "句", "阵", "对", "空"}
+    known_types = set(type_nodes) | set(existing_types) | BUILTIN_TYPES | {"数", "句", "阵", "对", "空", "算", "作"}
     known_bindings = {n.data["name"] for n in program if n.kind == "bind"}
 
     def check_type(n, typ):
@@ -509,14 +565,43 @@ def validate(program, existing_functions=(), existing_types=()):
         if base not in known_types and base not in known_bindings and not has_imports:
             error(n, f"未定义类型：{base}")
 
+    def local_bindings(stmts):
+        result = set()
+        for n in stmts:
+            if n.kind == "bind":
+                result.add(n.data["name"])
+            elif n.kind == "if":
+                result.update(local_bindings(n.data["yes"]))
+                result.update(local_bindings(n.data["no"]))
+            elif n.kind in ("loop", "try"):
+                result.update(local_bindings(n.data["body"]))
+        return result
+
+    def declarations(stmts, inherited_names, params=()):
+        own = set()
+        for n in stmts:
+            if n.kind != "function":
+                continue
+            name = n.data["name"]
+            if name in own or name in BUILTIN_NAMES or name in type_nodes or name in params:
+                error(n, "重复或保留的函数名称：" + name)
+            own.add(name)
+        return inherited_names | own
+
     def expressions(value, method=False):
         if isinstance(value, Node):
             if value.kind == "self" and not method:
-                error(value, "「其」自身引用只能用于形的方法内")
+                error(value, "「其」自身引用只能用于形的方法内或其闭包")
+            if value.kind == "function_ref":
+                target = value.data["expr"]
+                if target.kind == "name" and target.data["name"] == "读":
+                    error(value, "当前仅支持用户定义算／作的引用；内置「读」不能取引用")
+                # A selected member is not invoked and need not have the
+                # built-in member call's fixed arity (e.g. 算 对象 其 含).
+                if target.kind == "member":
+                    expressions(target.data["receiver"], method)
+                    return
             if value.kind == "member" and value.data["receiver"].kind in ("string", "number", "null", "array"):
-                # Unknown spellings can be rejected early, while a known
-                # operation applied to the wrong value remains a runtime
-                # type error, matching the original numeric/string rules.
                 if value.data["name"] not in MEMBER_PARAMS:
                     error(value, f"未知成员：{value.data['name']}")
             for child in value.data.values():
@@ -528,22 +613,33 @@ def validate(program, existing_functions=(), existing_types=()):
             for child in value:
                 expressions(child, method)
 
-    def walk(stmts, depth=0, function=None, top=True, method=False):
+    def walk(stmts, depth=0, function=None, top=True, method=False,
+             declaration_scope=True, visible_functions=None, bindings=None,
+             method_definitions=False):
+        visible_functions = functions if visible_functions is None else visible_functions
+        bindings = known_bindings if bindings is None else bindings
+        if declaration_scope and not method_definitions:
+            visible_functions = declarations(stmts, visible_functions)
+            bindings = bindings | local_bindings(stmts)
         for n in stmts:
             d = n.data
             if n.kind == "function":
-                if not top:
-                    error(n, "函数／过程只能定义在顶层或形内")
+                if not declaration_scope:
+                    error(n, "函数／过程只能直接定义在模块、函数、方法或救的正文中")
                 for _, typ in d["params"]:
-                    check_type(n, typ)
+                    base = typ.split()[0]
+                    if base not in known_types and base not in known_bindings and not has_imports:
+                        error(n, f"未定义类型：{base}")
                 names = [p[0] for p in d["params"]]
-                if method and d["name"] in MEMBER_PARAMS and names != MEMBER_PARAMS[d["name"]]:
+                if method_definitions and d["name"] in MEMBER_PARAMS and names != MEMBER_PARAMS[d["name"]]:
                     error(n, f"标准成员「{d['name']}」须使用固定参数：" + "、".join(MEMBER_PARAMS[d["name"]]))
                 if len(names) != len(set(names)):
                     error(n, "参数名重复")
-                if any(p in functions or p in BUILTIN_NAMES or p in type_nodes for p in names):
+                protected = declarations(d["body"], visible_functions, names)
+                if any(p in protected or p in BUILTIN_NAMES or p in type_nodes for p in names):
                     error(n, "参数名不能与函数名、形名或内置名称重名")
-                walk(d["body"], 0, n, False, method)
+                walk(d["body"], 0, n, False, method, True, protected,
+                     bindings | set(names), False)
             elif n.kind == "type":
                 if not top:
                     error(n, "形只能定义在顶层")
@@ -556,27 +652,30 @@ def validate(program, existing_functions=(), existing_types=()):
                 members = [f[0] for f in d["fields"]] + [m.data["name"] for m in d["methods"]]
                 if len(members) != len(set(members)):
                     error(n, "字段／方法名称重复")
-                walk(d["methods"], method=True)
+                walk(d["methods"], method=True, visible_functions=visible_functions,
+                     bindings=bindings, method_definitions=True)
             elif n.kind == "import_all" and not top:
                 error(n, "「尽 取 外言」只能用于顶层")
             elif n.kind == "break" and depth == 0:
                 error(n, "「破」只能出现在当前函数的循环内")
             elif n.kind == "return" and (function is None or function.data["procedure"]):
                 error(n, "「得」只能出现在「算」定义内")
-            elif n.kind == "bind" and (d["name"] in functions or d["name"] in BUILTIN_NAMES or d["name"] in type_nodes):
+            elif n.kind == "bind" and (d["name"] in visible_functions or d["name"] in BUILTIN_NAMES or d["name"] in type_nodes):
                 error(n, "变量名不能与函数名、形名或内置名称重名")
             elif n.kind == "if":
                 expressions(d["condition"], method)
-                walk(d["yes"], depth, function, False, method)
-                walk(d["no"], depth, function, False, method)
+                walk(d["yes"], depth, function, False, method, False, visible_functions, bindings)
+                walk(d["no"], depth, function, False, method, False, visible_functions, bindings)
             elif n.kind == "try":
-                if d["reason"] in functions or d["reason"] in BUILTIN_NAMES or d["reason"] in type_nodes:
+                rescue_functions = declarations(d["rescue"], visible_functions, (d["reason"],))
+                if d["reason"] in visible_functions or d["reason"] in BUILTIN_NAMES or d["reason"] in type_nodes:
                     error(n, "救的原因名称不能与函数名、形名或内置名称重名")
-                walk(d["body"], depth, function, False, method)
-                walk(d["rescue"], depth, function, False, method)
+                walk(d["body"], depth, function, False, method, False, visible_functions, bindings)
+                walk(d["rescue"], depth, function, False, method, True, rescue_functions,
+                     bindings | {d["reason"]})
             elif n.kind == "loop":
                 expressions(d["count"], method)
-                walk(d["body"], depth+1, function, False, method)
+                walk(d["body"], depth+1, function, False, method, False, visible_functions, bindings)
             else:
                 expressions(d, method)
 

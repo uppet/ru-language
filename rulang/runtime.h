@@ -6,7 +6,10 @@
 #endif
 #endif
 /* Standalone C99 runtime. Every generated temporary and environment binding
- * owns one external root. Container edges never own roots. Mark/sweep follows
+ * owns one external root. Active lexical environments own one root; their
+ * bindings and captured/parent environment links are traced edges, so escaped
+ * closures survive returns and closure/environment cycles are reclaimed.
+ * Static module environments own roots for their bindings. Mark/sweep follows
  * edges from external roots, so shared references and cycles are reclaimed.
  * No conservative stack scanning, reference-count cycle leaks, AST, or VM. */
 #include <math.h>
@@ -16,7 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum { RU_NUM, RU_STR, RU_NULL, RU_PAIR, RU_ARRAY, RU_OBJECT, RU_FUNCTION, RU_CLASS, RU_MODULE };
+enum { RU_NUM, RU_STR, RU_NULL, RU_PAIR, RU_ARRAY, RU_OBJECT, RU_FUNCTION, RU_CLASS, RU_MODULE, RU_ENV };
 typedef struct RuHeap RuHeap;
 typedef struct RuString RuString;
 typedef struct RuClass RuClass;
@@ -28,11 +31,12 @@ typedef struct { RuHeap gc; Val first, second; } RuPair;
 typedef struct { RuHeap gc; size_t len, capacity; Val *items; } RuArray;
 typedef struct { RuHeap gc; RuClass *klass; size_t len; Val *fields; } RuObject;
 typedef Val (*RuCode)(Env *, Val, int, Val *);
-typedef struct { const char *name; size_t count; const char **names, **types; RuCode code; } RuFunction;
-typedef struct { RuHeap gc; RuFunction *function; Env *global; Val self; } RuCallable;
+typedef struct { const char *name; size_t count; const char **names, **types; RuCode code; int procedure; } RuFunction;
+typedef struct { RuHeap gc; RuFunction *function; Env *global, *closure; Val self; } RuCallable;
 struct RuClass { const char *name; RuClass *parent; Env *global; size_t count; const char **names, **types; size_t methods_count; RuFunction **methods; };
 typedef struct RuBinding { char *name; Val value; int reserved; struct RuBinding *next; } RuBinding;
-struct Env { Env *parent; RuBinding *bindings; Env *registry_next; };
+enum { RU_SCOPE_MODULE, RU_SCOPE_FUNCTION, RU_SCOPE_RESCUE };
+struct Env { RuHeap gc; Env *parent; RuBinding *bindings; Env *registry_next; int managed, scope; };
 
 static const char *ru_source = "<程序>";
 static unsigned ru_call_depth;
@@ -55,9 +59,10 @@ static Env *ru_envs;
 typedef struct RuScratch { void *data; struct RuScratch *next; } RuScratch;
 static RuScratch *ru_scratch;
 static size_t ru_live, ru_freed, ru_collections, ru_threshold = 256, ru_next_gc = 256;
-static int ru_initialized, ru_finished;
+static int ru_initialized, ru_finished, ru_failed;
 static void ru_shutdown(void);
 static void env_free(Env *env);
+static void ru_heap_dispose(RuHeap *heap);
 static void ru_io_defaults(Val value, int line);
 static int ru_io_member(Val receiver, const char *name, size_t argc, const char **keys,
                         Val *args, int line, Val *out);
@@ -66,7 +71,7 @@ static void ru_fail(int line, const char *format, ...)
     va_list args;
     fprintf(stderr, "%s:%d: 运行错误：", ru_source ? ru_source : "<程序>", line);
     va_start(args, format); vfprintf(stderr, format, args); va_end(args);
-    fputc('\n', stderr); ru_shutdown(); exit(1);
+    fputc('\n', stderr); ru_failed=1; ru_shutdown(); exit(1);
 }
 static void *ru_alloc(size_t size, int line)
 {
@@ -151,23 +156,30 @@ static void ru_gc(void)
         h->mark = h->roots != 0;
         if (h->mark) todo[used++] = h;
     }
-#define RU_MARK(v) do { RuHeap *child_ = (v).heap; if (child_ && !child_->mark) { child_->mark=1; todo[used++]=child_; } } while (0)
+#define RU_MARK_HEAP(ptr) do { RuHeap *child_ = (ptr); if (child_ && !child_->mark) { child_->mark=1; todo[used++]=child_; } } while (0)
+#define RU_MARK(v) RU_MARK_HEAP((v).heap)
+#define RU_MARK_ENV(e) RU_MARK_HEAP((e) && (e)->managed ? &(e)->gc : NULL)
     while (at < used) {
         h = todo[at++];
         if (h->kind == RU_PAIR) { RuPair *p=(RuPair *)h; RU_MARK(p->first); RU_MARK(p->second); }
         else if (h->kind == RU_ARRAY) { RuArray *a=(RuArray *)h; size_t i; for(i=0;i<a->len;++i) RU_MARK(a->items[i]); }
         else if (h->kind == RU_OBJECT) { RuObject *o=(RuObject *)h; size_t i; for(i=0;i<o->len;++i) RU_MARK(o->fields[i]); }
-        else if (h->kind == RU_FUNCTION) { RuCallable *f=(RuCallable *)h; RU_MARK(f->self); }
+        else if (h->kind == RU_FUNCTION) { RuCallable *f=(RuCallable *)h; RU_MARK(f->self); RU_MARK_ENV(f->closure); }
+        else if (h->kind == RU_ENV) {
+            Env *env=(Env *)h; RuBinding *binding;
+            RU_MARK_ENV(env->parent);
+            for(binding=env->bindings;binding;binding=binding->next) RU_MARK(binding->value);
+        }
     }
+#undef RU_MARK_ENV
 #undef RU_MARK
+#undef RU_MARK_HEAP
     free(todo);
     slot = &ru_heap;
     while ((h = *slot)) {
         if (h->mark) { slot = &h->next; continue; }
         *slot = h->next;
-        if (h->kind == RU_ARRAY) free(((RuArray *)h)->items);
-        if (h->kind == RU_OBJECT) free(((RuObject *)h)->fields);
-        free(h); --ru_live; ++ru_freed;
+        ru_heap_dispose(h); --ru_live; ++ru_freed;
     }
     ru_next_gc = ru_live > SIZE_MAX - ru_threshold ? SIZE_MAX : ru_live + ru_threshold;
 }
@@ -249,41 +261,86 @@ static int v_truth(Val v)
     if(v.kind==RU_ARRAY) return ((RuArray *)v.heap)->len!=0;
     return 1;
 }
+/* Static module environments have process lifetime and own binding roots.
+ * Function/rescue environments are traced heap nodes: bindings are edges,
+ * and env_free releases only the active frame root, not escaped captures. */
 static void env_init(Env *env, Env *parent)
-{ env->parent=parent; env->bindings=NULL; env->registry_next=ru_envs; ru_envs=env; }
+{
+    memset(env, 0, sizeof(*env)); env->parent=parent;
+    env->registry_next=ru_envs; ru_envs=env;
+}
+static Env *env_new(Env *parent, int scope, int line)
+{
+    Env *env=(Env *)ru_new_heap(sizeof(*env), RU_ENV, line);
+    env->parent=parent; env->managed=1; env->scope=scope;
+    return env;
+}
+static RuBinding *env_find_local(Env *env,const char *name)
+{
+    RuBinding *binding;
+    for(binding=env->bindings;binding;binding=binding->next)
+        if(!strcmp(binding->name,name)) return binding;
+    return NULL;
+}
 static RuBinding *env_find(Env *env,const char *name)
 {
-    for(;env;env=env->parent) { RuBinding *b; for(b=env->bindings;b;b=b->next) if(!strcmp(b->name,name)) return b; }
+    for(;env;env=env->parent) { RuBinding *binding=env_find_local(env,name); if(binding)return binding; }
     return NULL;
 }
 static Val env_get(Env *env,const char *name,int line)
 { RuBinding *b=env_find(env,name); if(!b) ru_fail(line,"未定义变量：%s",name); return v_copy(b->value); }
 static void env_set(Env *env,const char *name,Val value)
 {
-    RuBinding *b; Val owned=v_copy(value);
-    for(b=env->bindings;b;b=b->next) if(!strcmp(b->name,name)) { v_drop(b->value); b->value=owned; return; }
+    RuBinding *b; Val owned=env->managed ? value : v_copy(value);
+    for(b=env->bindings;b;b=b->next) if(!strcmp(b->name,name)) {
+        if(!env->managed) v_drop(b->value);
+        b->value=owned; return;
+    }
     b=(RuBinding *)ru_alloc(sizeof(*b),0); b->name=(char *)ru_alloc(strlen(name)+1,0); strcpy(b->name,name);
     b->value=owned; b->reserved=0; b->next=env->bindings; env->bindings=b;
 }
 static void env_declare(Env *env, const char *name, Val value)
 {
     env_set(env, name, value);
-    env_find(env, name)->reserved = 1;
+    env_find_local(env, name)->reserved = 1;
 }
 static void env_bind(Env *env, const char *name, Val value, int line)
 {
     RuBinding *existing = env_find(env, name);
+    Env *target=env, *outer;
     if (!strcmp(name, "读") || (existing && existing->reserved))
         ru_fail(line, "变量名不能与函数名、形名或内置名称重名");
-    env_set(env, name, value);
+    /* A rescue always shadows. A function first updates its own binding,
+     * then the nearest already-bound enclosing function/rescue; module globals
+     * remain shadowed, preserving the existing function-local rule. */
+    if(env->scope==RU_SCOPE_FUNCTION && !env_find_local(env,name)) {
+        for(outer=env->parent;outer && outer->managed;outer=outer->parent)
+            if(env_find_local(outer,name)) { target=outer; break; }
+    }
+    env_set(target, name, value);
 }
 static void env_free(Env *env)
 {
-    Env **slot=&ru_envs; RuBinding *b=env->bindings;
+    Env **slot; RuBinding *b;
+    if(env->managed) {
+        if(!env->gc.roots) ru_fail(0,"内部错误：环境根计数失衡");
+        --env->gc.roots; return;
+    }
+    slot=&ru_envs; b=env->bindings;
     while(*slot && *slot!=env) slot=&(*slot)->registry_next;
     if(*slot) *slot=env->registry_next;
     while(b) { RuBinding *next=b->next; v_drop(b->value); free(b->name); free(b); b=next; }
     env->bindings=NULL; env->parent=NULL;
+}
+static void ru_heap_dispose(RuHeap *heap)
+{
+    if(heap->kind==RU_ARRAY) free(((RuArray *)heap)->items);
+    else if(heap->kind==RU_OBJECT) free(((RuObject *)heap)->fields);
+    else if(heap->kind==RU_ENV) {
+        RuBinding *binding=((Env *)heap)->bindings;
+        while(binding) { RuBinding *next=binding->next; free(binding->name); free(binding); binding=next; }
+    }
+    free(heap);
 }
 static void ru_shutdown(void)
 {
@@ -298,11 +355,14 @@ static void ru_shutdown(void)
     }
     while(ru_envs) env_free(ru_envs);
     while(ru_scratch) ru_scratch_free(ru_scratch->data);
+    /* Fatal diagnostics end the process while native frames still exist.
+     * Their roots are no longer live; clear them before the final sweep. */
+    if(ru_failed) for(h=ru_heap;h;h=h->next) h->roots=0;
     ru_gc();
     if(getenv("RU_GC_STATS")) fprintf(stderr,"RU_GC live=%zu freed=%zu collections=%zu\n",ru_live,ru_freed,ru_collections);
     /* Error exits can have live generated temporaries. The process is ending,
      * so dispose of those too, without traversing already-cleared roots. */
-    while((h=ru_heap)) { ru_heap=h->next; if(h->kind==RU_ARRAY) free(((RuArray *)h)->items); if(h->kind==RU_OBJECT) free(((RuObject *)h)->fields); free(h); }
+    while((h=ru_heap)) { ru_heap=h->next; ru_heap_dispose(h); }
     ru_live=0;
 }
 static int ru_ascii_space(unsigned char c)
@@ -410,7 +470,7 @@ static void ru_format(RuText *out, Val value)
             ru_text_word(out, ">");
         } else if (v.kind == RU_MODULE) ru_text_word(out, "<外言>");
         else if (v.kind == RU_FUNCTION) {
-            ru_text_word(out, "<算 ");
+            ru_text_word(out, ((RuCallable *)v.heap)->function->procedure ? "<作 " : "<算 ");
             ru_text_word(out, ((RuCallable *)v.heap)->function->name);
             ru_text_word(out, ">");
         } else {
@@ -636,6 +696,7 @@ static int v_is_type(Val v,const char *type,Env *env)
     if (!type_len) return 1;
     const char *suffix = type_len >= 4 ? type + type_len - 4 : NULL;
     if(suffix && !strcmp(suffix," 阵")) {size_t i,len=(size_t)(suffix-type);char *item;RuArray *a;int good=1;if(v.kind!=RU_ARRAY)return 0;item=(char *)ru_alloc(len+1,0);memcpy(item,type,len);item[len]=0;a=(RuArray *)v.heap;for(i=0;i<a->len&&good;++i)good=v_is_type(a->items[i],item,env);free(item);return good;}
+    if(!strcmp(type,"算")||!strcmp(type,"作"))return v.kind==RU_FUNCTION && ((RuCallable *)v.heap)->function->procedure==!strcmp(type,"作");
     if(!strcmp(type,"数"))return v.kind==RU_NUM;
     if(!strcmp(type,"句"))return v.kind==RU_STR;
     if(!strcmp(type,"空"))return v.kind==RU_NULL;
@@ -666,7 +727,66 @@ static Val v_class(RuClass *klass) {Val v=v_null();v.kind=RU_CLASS;v.klass=klass
 static Val v_module(Env *env) {Val v=v_null();v.kind=RU_MODULE;v.module=env;return v;}
 static Val v_function(RuFunction *function,Env *global,Val self)
 {
-    Val v=v_null();RuCallable *f=(RuCallable *)ru_new_heap(sizeof(*f),RU_FUNCTION,0);v.kind=RU_FUNCTION;v.heap=&f->gc;f->function=function;f->global=global;f->self=self;return v;
+    Val v=v_null();RuCallable *f=(RuCallable *)ru_new_heap(sizeof(*f),RU_FUNCTION,0);
+    v.kind=RU_FUNCTION;v.heap=&f->gc;f->function=function;f->closure=global;f->self=self;
+    while(global && global->managed) global=global->parent;
+    f->global=global;return v;
+}
+static Val v_function_reference(Val value, int procedure, int line)
+{
+    if(value.kind!=RU_FUNCTION) ru_fail(line,"引用的值不是函数／过程");
+    if(((RuCallable *)value.heap)->function->procedure!=procedure)
+        ru_fail(line,"函数引用的算／作种类不匹配");
+    return v_copy(value);
+}
+static Val v_member_reference(Val receiver, const char *name, int line)
+{
+    if(receiver.kind==RU_MODULE) {
+        RuBinding *binding=env_find_local(receiver.module,name);
+        if(!binding) ru_fail(line,"未知成员：%s",name);
+        return v_copy(binding->value);
+    }
+    if(receiver.kind==RU_OBJECT) {
+        RuObject *object=(RuObject *)receiver.heap;
+        RuClass *klass; size_t index, i; const char *type; Env *owner;
+        if(ru_find_field(object->klass,name,&index,&type,&owner)) return v_copy(object->fields[index]);
+        for(klass=object->klass;klass;klass=klass->parent)
+            for(i=0;i<klass->methods_count;++i)
+                if(!strcmp(klass->methods[i]->name,name))
+                    return v_function(klass->methods[i],klass->global,receiver);
+    }
+    /* Pair projections are value properties, like object fields. Their
+     * contained callable is invokable without binding a builtin method. */
+    if(receiver.kind==RU_PAIR && (!strcmp(name,"囫") || !strcmp(name,"囵")))
+        return v_copy(!strcmp(name,"囫") ? ((RuPair *)receiver.heap)->first : ((RuPair *)receiver.heap)->second);
+    ru_fail(line,"成员暂不支持函数引用：%s",name); return v_null();
+}
+/* Freeze user callable/value members before argument evaluation. A mutable
+ * field may be overwritten by an argument, but that must not retarget a call.
+ * Builtin operations keep their existing dispatch and checked-I/O contracts. */
+static Val v_member_prepare(Val receiver, const char *name, size_t argc, int line, int *mode)
+{
+    *mode=0;
+    if(receiver.kind==RU_MODULE) {
+        RuBinding *binding=env_find_local(receiver.module,name);
+        if(!binding) ru_fail(line,"未知成员：%s",name);
+        *mode=argc || (binding->reserved && binding->value.kind==RU_FUNCTION) ? 2 : 1;
+        return v_copy(binding->value);
+    }
+    if(receiver.kind==RU_OBJECT) {
+        RuObject *object=(RuObject *)receiver.heap;
+        RuClass *klass; size_t index, i; const char *type; Env *owner;
+        if(ru_find_field(object->klass,name,&index,&type,&owner)) {
+            *mode=argc ? 2 : 1;
+            return v_copy(object->fields[index]);
+        }
+        for(klass=object->klass;klass;klass=klass->parent)
+            for(i=0;i<klass->methods_count;++i)
+                if(!strcmp(klass->methods[i]->name,name)) {
+                    *mode=2; return v_function(klass->methods[i],klass->global,receiver);
+                }
+    }
+    return v_null();
 }
 static Val v_new(Val class_value,size_t argc,const char **keys,Val *args,int line)
 {
@@ -697,7 +817,7 @@ static Val v_call(Val callable,size_t argc,const char **keys,Val *args,int line)
     f=(RuCallable *)callable.heap;fn=f->function;
     bound=(Val *)ru_scratch_alloc((fn->count?fn->count:1)*sizeof(Val),line);ru_bind(fn->name,fn->count,fn->names,argc,keys,args,bound,line);
     for(i=0;i<fn->count;++i)if(!v_is_type(bound[i],fn->types[i],f->global))ru_fail(line,"实参「%s」须为%s，请显式使用「为 %s」转换",fn->names[i],fn->types[i],fn->types[i]);
-    ru_enter(line);result=fn->code(f->global,f->self,line,bound);ru_leave();ru_scratch_free(bound);return result;
+    ru_enter(line);result=fn->code(f->closure,f->self,line,bound);ru_leave();ru_scratch_free(bound);return result;
 }
 static Val v_member(Val receiver,const char *name,size_t argc,const char **keys,Val *args,int line)
 {
@@ -711,12 +831,12 @@ static Val v_member(Val receiver,const char *name,size_t argc,const char **keys,
             if(!strcmp(binding->name,name))break;
         if(!binding)ru_fail(line,"未知成员：%s",name);
         value=v_copy(binding->value);
-        if(value.kind==RU_FUNCTION){result=v_call(value,argc,keys,args,line);v_drop(value);return result;}
+        if(value.kind==RU_FUNCTION && (argc || binding->reserved)){result=v_call(value,argc,keys,args,line);v_drop(value);return result;}
         if(argc)ru_fail(line,"成员不是函数：%s",name);
         return value;
     }
     if(receiver.kind==RU_OBJECT){RuObject *o=(RuObject *)receiver.heap;size_t index,i;const char *type;Env *owner;RuClass *klass;
-        if(ru_find_field(o->klass,name,&index,&type,&owner)){if(argc)ru_fail(line,"字段不是方法：%s",name);return v_copy(o->fields[index]);}
+        if(ru_find_field(o->klass,name,&index,&type,&owner)){Val value=v_copy(o->fields[index]);if(argc){Val result=v_call(value,argc,keys,args,line);v_drop(value);return result;}return value;}
         for(klass=o->klass;klass;klass=klass->parent)for(i=0;i<klass->methods_count;++i)if(!strcmp(klass->methods[i]->name,name)){Val method=v_function(klass->methods[i],klass->global,receiver),result=v_call(method,argc,keys,args,line);v_drop(method);return result;}
         ru_fail(line,"未知成员：%s",name);
     }
@@ -727,6 +847,13 @@ static Val v_member(Val receiver,const char *name,size_t argc,const char **keys,
     if(!strcmp(name,"增")){ru_bind(name,1,one,argc,keys,args,bound,line);return v_append(receiver,bound[0],line);}
     if(!strcmp(name,"含")){const char *text[]={"句"};ru_bind(name,1,text,argc,keys,args,bound,line);return v_binary("含",receiver,bound[0],line);}
     ru_fail(line,"未知成员：%s",name);return v_null();
+}
+static Val v_member_finish(Val receiver, const char *name, size_t argc, const char **keys,
+                           Val *args, int line, int mode, Val prepared)
+{
+    if(mode==2) return v_call(prepared,argc,keys,args,line);
+    if(mode==1) return v_copy(prepared);
+    return v_member(receiver,name,argc,keys,args,line);
 }
 static void env_import_all(Env *env,Val module,int line)
 {

@@ -19,6 +19,7 @@ examples:
 	python3 ru build examples/modules/main.ru -o bin/modules --emit-c dist/modules.c
 	python3 ru build examples/checked_io.ru -o bin/checked_io
 	python3 ru build examples/recovery.ru -o bin/recovery --emit-c dist/recovery.c
+	python3 ru build examples/closures.ru -o bin/closures --emit-c dist/closures.c
 clean:
 	python3 -c "import pathlib,shutil; [shutil.rmtree(p) for p in pathlib.Path('.').rglob('__pycache__')]"
 

@@ -106,7 +106,6 @@ class PanicTests(unittest.TestCase):
     def test_structure(self):
         for source in ('试 显 1. 终.', '救 原因 显 原因.', '试 救 终.',
                        '试 算 内: 得 1. 法 救 原因 终.',
-                       '试 救 原因 作 内: 显 1. 为 终.',
                        '试 破. 救 原因 终.', '试 救 原因 得 1. 终.'):
             with self.subTest(source=source), self.assertRaises(RuError):
                 validate(parse(source))

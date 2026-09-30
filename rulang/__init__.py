@@ -1,2 +1,2 @@
 """如：a small Chinese-keyword language."""
-__version__ = "0.3.0"
+__version__ = "0.4.0"

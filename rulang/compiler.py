@@ -37,18 +37,15 @@ class Compiler:
         self.module_ids = {path: f'ru_module_{i}' for i, path in enumerate(self.modules)}
         self.declarations = {}
         self.function_ids = {}
+        self.all_functions = []
+        self.function_scopes = {}
+        self.function_value_scopes = {}
         self.type_ids = {}
         self.exports = {}
         for path, body in self.modules.items():
             validate(body)
             self.declarations[path] = {n.data['name']: n for n in body if n.kind in ('function', 'type')}
-            for n in body:
-                if n.kind == 'function':
-                    self.function_ids[id(n)] = self.new('function')
-                elif n.kind == 'type':
-                    self.type_ids[id(n)] = self.new('class')
-                    for method in n.data['methods']:
-                        self.function_ids[id(method)] = self.new('method')
+            self.collect_functions(path, body, [])
         for path in self.modules:
             self._exports(path)
         self._validate_parameters()
@@ -80,22 +77,80 @@ class Compiler:
                 result.update(other)
         return result
 
-    def _functions(self, path):
-        return {name: n for name, n in self.exports[path].items() if n.kind == 'function'}
+    @staticmethod
+    def local_functions(statements):
+        return {n.data['name']: n for n in statements if n.kind == 'function'}
+
+    @staticmethod
+    def scope_bindings(statements):
+        names = set()
+        for n in statements:
+            d = n.data
+            if n.kind == 'bind':
+                names.add(d['name'])
+            elif n.kind == 'if':
+                names.update(Compiler.scope_bindings(d['yes']))
+                names.update(Compiler.scope_bindings(d['no']))
+            elif n.kind in ('loop', 'try'):
+                names.update(Compiler.scope_bindings(d['body']))
+        return names
+
+    def collect_functions(self, path, statements, scopes, owner=None, local=False,
+                          value_scopes=(), local_names=()):
+        if local:
+            scopes = scopes + [self.local_functions(statements)]
+            value_scopes = (*value_scopes, self.scope_bindings(statements) | set(local_names))
+        if owner is not None:
+            self.function_scopes[id(owner)] = scopes
+            self.function_value_scopes[id(owner)] = value_scopes
+        for n in statements:
+            d = n.data
+            if n.kind == 'function':
+                self.function_ids[id(n)] = self.new('function')
+                self.all_functions.append((path, n))
+                self.collect_functions(path, d['body'], scopes, owner=n, local=True,
+                    value_scopes=value_scopes, local_names=[key for key, _ in d['params']])
+            elif n.kind == 'type':
+                self.type_ids[id(n)] = self.new('class')
+                for method in d['methods']:
+                    self.function_ids[id(method)] = self.new('method')
+                    self.all_functions.append((path, method))
+                    self.collect_functions(path, method.data['body'], scopes, owner=method, local=True,
+                        value_scopes=value_scopes, local_names=[key for key, _ in method.data['params']])
+            elif n.kind == 'if':
+                self.collect_functions(path, d['yes'], scopes, value_scopes=value_scopes)
+                self.collect_functions(path, d['no'], scopes, value_scopes=value_scopes)
+            elif n.kind == 'loop':
+                self.collect_functions(path, d['body'], scopes, value_scopes=value_scopes)
+            elif n.kind == 'try':
+                self.collect_functions(path, d['body'], scopes, value_scopes=value_scopes)
+                self.collect_functions(path, d['rescue'], scopes, local=True,
+                    value_scopes=value_scopes, local_names=[d['reason']])
+
+    def _functions(self, path, function=None):
+        functions = {name: n for name, n in self.exports[path].items() if n.kind == 'function'}
+        if function is not None:
+            for scope in self.function_scopes[id(function)]:
+                functions.update(scope)
+        return functions
+
+    def _values(self, path, function=None):
+        values = self.scope_bindings(self.modules[path])
+        values.update(name for name, n in self.exports[path].items() if n.kind == 'bind')
+        if function is not None:
+            for scope in self.function_value_scopes[id(function)]:
+                values.update(scope)
+        return values
 
     def _validate_parameters(self):
-        # Imported declarations become protected names only after exports are
-        # resolved. Check the owner's scope, not the scope of its importers;
-        # ordinary bindings (including type aliases) remain shadowable.
-        for path, declarations in self.declarations.items():
+        # Imported module declarations and lexically visible declarations are
+        # protected names. Callable variables remain ordinary local bindings.
+        for path, function in self.all_functions:
             protected = {name for name, n in self.exports[path].items()
                          if n.kind in ('function', 'type')}
-            for declaration in declarations.values():
-                functions = ([declaration] if declaration.kind == 'function'
-                             else declaration.data['methods'])
-                for function in functions:
-                    if any(name in protected for name, _ in function.data['params']):
-                        self.error(function, '参数名不能与函数名、形名或内置名称重名')
+            protected.update(self._functions(path, function))
+            if any(name in protected for name, _ in function.data['params']):
+                self.error(function, '参数名不能与函数名、形名或内置名称重名')
 
     def _validate_classes(self):
         self.parents = {}
@@ -162,7 +217,7 @@ class Compiler:
 
     def clean_scopes(self, depth=0):
         for env_name in reversed(self.rescue_envs[depth:]):
-            self.line(f'env_free(&{env_name});')
+            self.line(f'env_free({env_name});')
 
     def panic_transfer(self):
         # Explicit propagation, rather than longjmp, leaves every runtime call
@@ -220,6 +275,19 @@ class Compiler:
             return self.temp(f"env_get(env, {cstr(d['name'])}, {ln})")
         if n.kind == 'call':
             return self.call(n, d['name'], d['args'])
+        if n.kind == 'function_ref':
+            value = self.reference(d['expr'])
+            out = self.temp(f'v_function_reference({value}, {int(d["procedure"])}, {ln})')
+            self.drop(value)
+            return out
+        if n.kind == 'invoke':
+            if d['callee'].kind == 'name' and d['callee'].data['name'] == '读':
+                return self.call(n, '读', d['args'])
+            callable_value = self.reference(d['callee'])
+            actuals, values = self.argument_values(d['args'])
+            out = self.temp(f'v_call({callable_value}, {actuals}, {ln})', can_panic=True)
+            self.drop(callable_value, *values)
+            return out
         if n.kind == 'array':
             values = [self.expr(item) for item in d['items']]
             args = self.new('items')
@@ -263,9 +331,12 @@ class Compiler:
             return out
         if n.kind == 'member':
             receiver = self.expr(d['receiver'])
+            mode = self.new('member_mode')
+            self.line(f'int {mode};')
+            prepared = self.temp(f"v_member_prepare({receiver}, {cstr(d['name'])}, {len(d['args'])}, {ln}, &{mode})")
             args, values = self.argument_values(d['args'])
-            out = self.temp(f"v_member({receiver}, {cstr(d['name'])}, {args}, {ln})", can_panic=True)
-            self.drop(receiver, *values)
+            out = self.temp(f"v_member_finish({receiver}, {cstr(d['name'])}, {args}, {ln}, {mode}, {prepared})", can_panic=True)
+            self.drop(receiver, prepared, *values)
             return out
         if n.kind in ('index', 'slice'):
             receiver = self.expr(d['receiver'])
@@ -289,11 +360,26 @@ class Compiler:
             return self.temp(f"{self.module_ids[d['resolved']]}_init()", can_panic=True)
         raise AssertionError(n.kind)
 
+    def reference(self, n):
+        """Load a callee without the legacy implicit call on declared names."""
+        d, ln = n.data, n.token.line
+        if n.kind == 'name':
+            if d['name'] == '读':
+                self.error(n, '内置「读」暂不支持函数引用')
+            return self.temp(f"env_get(env, {cstr(d['name'])}, {ln})")
+        if n.kind == 'member' and not d['args']:
+            receiver = self.expr(d['receiver'])
+            out = self.temp(f"v_member_reference({receiver}, {cstr(d['name'])}, {ln})")
+            self.drop(receiver)
+            return out
+        return self.expr(n)
+
     def call(self, n, name, args):
-        if name != '读' and name not in self.functions:
+        if name != '读' and name not in self.functions and name not in self.known_values:
             self.error(n, f'未定义函数：{name}')
-        params = ['提示'] if name == '读' else [p[0] for p in self.functions[name].data['params']]
-        bind_arguments(name, args, params, lambda message: self.error(n, message), optional=name == '读')
+        if name == '读' or name in self.functions:
+            params = ['提示'] if name == '读' else [p[0] for p in self.functions[name].data['params']]
+            bind_arguments(name, args, params, lambda message: self.error(n, message), optional=name == '读')
         if name == '读':
             values = [self.expr(expr) for _, expr in args]
             prompt = values[0] if values else self.temp('v_str("")')
@@ -305,6 +391,13 @@ class Compiler:
         out = self.temp(f'v_call({function}, {actuals}, {n.token.line})', can_panic=True)
         self.drop(function, *values)
         return out
+
+    def hoist(self, statements, function):
+        for n in statements:
+            if n.kind == 'function':
+                value = self.temp(f'v_function(&{self.function_ids[id(n)]}_descriptor, env, {"self" if function else "v_null()"})')
+                self.line(f'env_declare(env, {cstr(n.data["name"])}, {value});')
+                self.drop(value)
 
     def block(self, statements, function=False):
         for n in statements:
@@ -366,16 +459,21 @@ class Compiler:
                 self.line(f'goto {finished};')
                 self.line(f'{rescued}: {{')
                 self.indent += 1
-                self.line(f'Env {rescue_env}; env_init(&{rescue_env}, env);')
+                self.line(f'Env *{rescue_env} = env_new(env, RU_SCOPE_RESCUE, {ln});')
                 self.line('{')
                 self.indent += 1
-                self.line(f'Env *env = &{rescue_env};')
+                self.line(f'Env *env = {rescue_env};')
                 self.line(f'env_bind(env, {cstr(d["reason"])}, ru_panic_reason, {ln});')
                 self.line('ru_panic_clear();')
                 self.rescue_envs.append(rescue_env)
+                previous_functions, previous_values = self.functions, self.known_values
+                self.functions = {**self.functions, **self.local_functions(d['rescue'])}
+                self.known_values = self.known_values | self.scope_bindings(d['rescue']) | {d['reason']}
+                self.hoist(d['rescue'], function)
                 self.block(d['rescue'], function)
+                self.functions, self.known_values = previous_functions, previous_values
                 self.rescue_envs.pop()
-                self.line(f'env_free(&{rescue_env});')
+                self.line(f'env_free({rescue_env});')
                 self.indent -= 1
                 self.line('}')
                 self.indent -= 1
@@ -420,22 +518,24 @@ class Compiler:
 
     def emit_function(self, path, fn):
         ident = self.function_ids[id(fn)]
-        self.current_path, self.functions = path, self._functions(path)
+        self.current_path, self.functions = path, self._functions(path, fn)
+        self.known_values = self._values(path, fn)
         self.line(f'static Val {ident}(Env *global, Val self, int call_line, Val *args) {{')
         self.indent += 1
         self.line(f'const char *previous_source = ru_source; ru_source = {cstr(path)};')
         self.line('(void) self; (void) args; (void) call_line;')
-        self.line('Env local; env_init(&local, global); Env *env = &local;')
-        self.panic_context('&local')
+        self.line(f'Env *local = env_new(global, RU_SCOPE_FUNCTION, {fn.token.line}); Env *env = local;')
+        self.panic_context('local')
         for i, (key, _) in enumerate(fn.data['params']):
             self.line(f'env_set(env, {cstr(key)}, args[{i}]);')
+        self.hoist(fn.data['body'], True)
         self.block(fn.data['body'], True)
         self.line('env_free(env);')
         if not fn.data['procedure']:
             self.line(f"ru_fail(call_line, {cstr('函数「' + fn.data['name'] + '」没有执行「得」')});")
         self.line('ru_source = previous_source;')
         self.line('return v_str("");')
-        self.line(f'{self.panic_exit}: env_free(&local); ru_source = previous_source; return v_null();')
+        self.line(f'{self.panic_exit}: env_free(local); ru_source = previous_source; return v_null();')
         self.indent -= 1
         self.line('}')
 
@@ -453,17 +553,16 @@ class Compiler:
         for path, ident in self.module_ids.items():
             self.line(f'static Env {ident}_env; static int {ident}_state; static RuModuleFailure {ident}_failure;')
             self.line(f'static Val {ident}_init(void);')
+        for _, n in self.all_functions:
+            ident = self.function_ids[id(n)]
+            self.line(f'static Val {ident}(Env *, Val, int, Val *);')
+            keys = self.string_array(ident + '_names', [p[0] for p in n.data['params']])
+            types = self.string_array(ident + '_types', [p[1] for p in n.data['params']])
+            self.line(f'static RuFunction {ident}_descriptor = {{{cstr(n.data["name"])}, {len(n.data["params"])}, {keys}, {types}, {ident}, {int(n.data["procedure"])}}};')
         for names in self.declarations.values():
-            for fn in names.values():
-                nodes = [fn] if fn.kind == 'function' else fn.data['methods']
-                for n in nodes:
-                    ident = self.function_ids[id(n)]
-                    self.line(f'static Val {ident}(Env *, Val, int, Val *);')
-                    keys = self.string_array(ident + '_names', [p[0] for p in n.data['params']])
-                    types = self.string_array(ident + '_types', [p[1] for p in n.data['params']])
-                    self.line(f'static RuFunction {ident}_descriptor = {{{cstr(n.data["name"])}, {len(n.data["params"])}, {keys}, {types}, {ident}}};')
-                if fn.kind == 'type':
-                    self.line(f'static RuClass {self.type_ids[id(fn)]};')
+            for n in names.values():
+                if n.kind == 'type':
+                    self.line(f'static RuClass {self.type_ids[id(n)]};')
         for path, names in self.declarations.items():
             for n in names.values():
                 if n.kind != 'type':
@@ -478,13 +577,12 @@ class Compiler:
                 parent = self.parents[id(n)]
                 parent_ref = '&' + self.type_ids[id(parent)] if parent else 'NULL'
                 self.line(f'static RuClass {ident} = {{{cstr(n.data["name"])}, {parent_ref}, &{self.module_ids[path]}_env, {len(n.data["fields"])}, {keys}, {types}, {len(n.data["methods"])}, {methods}}};')
-        for path, names in self.declarations.items():
-            for n in names.values():
-                for fn in [n] if n.kind == 'function' else n.data['methods']:
-                    self.emit_function(path, fn)
+        for path, fn in self.all_functions:
+            self.emit_function(path, fn)
         for path, program in self.modules.items():
             ident = self.module_ids[path]
             self.current_path, self.functions = path, self._functions(path)
+            self.known_values = self._values(path)
             self.line(f'static Val {ident}_init(void) {{')
             self.indent += 1
             self.line(f'if ({ident}_state == 2) return v_module(&{ident}_env);')

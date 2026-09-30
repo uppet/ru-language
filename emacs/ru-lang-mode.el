@@ -1,13 +1,13 @@
 ;;; ru-lang-mode.el --- Editing support for the 如 language -*- lexical-binding: t; -*-
 
-;; Version: 0.3.0
+;; Version: 0.4.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: languages
 ;; URL: https://github.com/uppet/ru-language
 
 ;;; Commentary:
 
-;; A dependency-free major mode for ru-language 0.3.x source files.  The
+;; A dependency-free major mode for ru-language 0.4.x source files.  The
 ;; lightweight lexer mirrors rulang/frontend.py; it deliberately accepts
 ;; incomplete input.  It is an editing aid, not a compiler or language server.
 ;; See README.md in this directory for loading, indentation and navigation.
@@ -28,7 +28,7 @@
   '("显" "取" "为" "得" "破" "若" "则" "另" "然" "循" "次" "环"
     "算" "作" "法" "其" "且" "或" "非" "空" "对" "形" "象" "如" "新"
     "外言" "尽" "卒" "试" "救"))
-(defconst ru-lang--types '("数" "句" "阵" "对" "空" "件" "录" "件作成果"))
+(defconst ru-lang--types '("数" "句" "阵" "对" "空" "件" "录" "件作成果" "算" "作"))
 (defconst ru-lang--builtins
   '("读" "含" "位" "段" "增" "量" "囫" "囵" "读取" "显出" "错误"))
 (defconst ru-lang--member-builtins '("读" "写" "在" "除" "列")
@@ -128,10 +128,33 @@ The legacy global function 读 is also in `ru-lang--builtins'.")
   "Return non-nil when BLOCK is a function, procedure or type."
   (member (ru-lang--block-kind block) '("算" "作" "形")))
 
+(defun ru-lang--function-header-p (tokens index allow-incomplete)
+  "Whether 算/作 at INDEX starts a definition rather than a reference.
+A name followed by a colon, or by a parameter name and 为, is a header.
+ALLOW-INCOMPLETE accepts a partial header at a statement boundary.
+Skip intervening comments and recognize complete headers in imperfect source."
+  (let ((cursor (1+ index)) following)
+    (while (and (< cursor (length tokens)) (< (length following) 3))
+      (unless (eq (ru-lang--token-kind (aref tokens cursor)) 'comment)
+        (push (aref tokens cursor) following))
+      (setq cursor (1+ cursor)))
+    (setq following (nreverse following))
+    (let ((name (nth 0 following)) (after (nth 1 following))
+          (third (nth 2 following)))
+      (or (and allow-incomplete (null name))
+          (and name (eq (ru-lang--token-kind name) 'name)
+               (not (member (ru-lang--token-text name) ru-lang--keywords))
+               (or (and allow-incomplete (null after))
+                   (and after (equal (ru-lang--token-text after) ":"))
+                   (and after (eq (ru-lang--token-kind after) 'name)
+                        (not (member (ru-lang--token-text after) ru-lang--keywords))
+                        (or (and allow-incomplete (null third))
+                            (and third (equal (ru-lang--token-text third) "为"))))))))))
+
 (defun ru-lang--analyze ()
   "Compute block pairs and desired line depths from `ru-lang--tokens'."
   (let ((tokens ru-lang--tokens) (stack nil) (blocks nil) (structures nil) (indents nil)
-        (statement-start t) (line (point-min)) (index 0) previous rescue-binding
+        (statement-start t) (line (point-min)) (index 0) previous rescue-binding callable-name
         (next-tokens (make-vector (length ru-lang--tokens) nil)) next-code)
     (cl-loop for i downfrom (1- (length tokens)) to 0 do
              (aset next-tokens i next-code)
@@ -155,6 +178,11 @@ The legacy global function 读 is also in `ru-lang--builtins'.")
                    (kind (ru-lang--token-kind token))
                    (next (aref next-tokens index))
                    (binding (eq token rescue-binding))
+                   (callable-kind (member text '("算" "作")))
+                   (callable-type (and callable-kind (equal previous "为")))
+                   (definition-start (and callable-kind (not callable-type)
+                                          (ru-lang--function-header-p
+                                           tokens index statement-start)))
                    (top (car stack))
                    (close (and top (cdr (assoc (ru-lang--block-kind top)
                                               ru-lang--pairs))))
@@ -170,7 +198,7 @@ The legacy global function 读 is also in `ru-lang--builtins'.")
                                              (and first
                                                   (not (and next
                                                             (member (ru-lang--token-text next)
-                                                                    '("数" "句" "阵"))))))))))
+                                                                    '("数" "句" "阵" "算" "作"))))))))))
                    (branch (and (ru-lang--code-token-p token) top
                                 (not binding)
                                 (or (and (equal (ru-lang--block-kind top) "若")
@@ -204,7 +232,8 @@ The legacy global function 读 is also in `ru-lang--builtins'.")
                   ;; statements (which may still use a name such as 终).
                   (setq statement-start
                         (not (member (ru-lang--block-kind top) '("(" "[")))))
-                 ((assoc text ru-lang--pairs)
+                 ((and (assoc text ru-lang--pairs)
+                       (or (not callable-kind) definition-start))
                   (let* ((parent (cl-find-if #'ru-lang--definition-p stack))
                          (name (and (member text '("算" "作" "形")) next
                                     (eq (ru-lang--token-kind next) 'name)
@@ -238,7 +267,9 @@ The legacy global function 读 is also in `ru-lang--builtins'.")
                         (cond
                          (binding 'font-lock-variable-name-face)
                          ((and closer (equal text "终")) 'font-lock-keyword-face)
-                         ((member previous '("算" "作")) 'font-lock-function-name-face)
+                         ((eq token callable-name) 'font-lock-function-name-face)
+                         (callable-type 'font-lock-type-face)
+                         (callable-kind 'font-lock-keyword-face)
                          ((or (member previous '("形" "如" "新"))
                               (and (equal previous "为") (not statement-start))
                               (member text ru-lang--types)) 'font-lock-type-face)
@@ -246,6 +277,11 @@ The legacy global function 读 is also in `ru-lang--builtins'.")
                          ((and (member previous '("@" "其"))
                                (member text ru-lang--member-builtins)) 'font-lock-builtin-face)
                          ((member text ru-lang--builtins) 'font-lock-builtin-face))))
+                (when (eq token callable-name) (setq callable-name nil))
+                (when (and callable-kind (not callable-type) next
+                           (eq (ru-lang--token-kind next) 'name)
+                           (not (member (ru-lang--token-text next) ru-lang--keywords)))
+                  (setq callable-name next))
                 (setq previous (unless closer text))))
             (setq index (1+ index)))
           (push (cons line (unless string-line depth)) indents)
@@ -465,15 +501,17 @@ On failure, leave point unchanged."
        (point)))))
 
 (defun ru-lang-imenu-create-index ()
-  "Build an Imenu index of types, functions, procedures and qualified methods."
+  "Build an Imenu index of types, methods and lexically nested definitions."
   (let (result)
     (dolist (block (ru-lang--navigation-blocks t) (nreverse result))
       (when (ru-lang--block-name block)
-        (let ((parent (ru-lang--block-parent block)))
+        (let ((parent block) names)
+          (while parent
+            (when (ru-lang--block-name parent)
+              (push (ru-lang--block-name parent) names))
+            (setq parent (ru-lang--block-parent parent)))
           (push (cons (concat (ru-lang--block-kind block) " "
-                              (when (and parent (ru-lang--block-name parent))
-                                (concat (ru-lang--block-name parent) "@"))
-                              (ru-lang--block-name block))
+                              (mapconcat #'identity names "@"))
                       (ru-lang--block-start block)) result))))))
 
 (defvar ru-lang-mode-map

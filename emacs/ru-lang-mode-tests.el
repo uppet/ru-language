@@ -592,5 +592,81 @@
     (should (equal (buffer-substring-no-properties (point) (mark))
                    "算 一:\n得 1.\n法\n"))))
 
+(ert-deftest ru-lang-closure-nested-definitions-and-references-indent ()
+  (ru-lang-test--indent
+   "算 工厂 初值 为 数:\n数值 取 初值.\n算 增 步 为 数:\n数值 取 数值+步.\n得 数值.\n法\n回调 取 算 增.\n得 回调.\n法\n回调 取 工厂 1.\n显 (回调 2).\n"
+   "算 工厂 初值 为 数:\n    数值 取 初值.\n    算 增 步 为 数:\n        数值 取 数值+步.\n        得 数值.\n    法\n    回调 取 算 增.\n    得 回调.\n法\n回调 取 工厂 1.\n显 (回调 2).\n"))
+
+(ert-deftest ru-lang-closure-types-do-not-open-blocks ()
+  (ru-lang-test--indent
+   "形 操作集:\n生成 为 算.\n输出 为 作.\n作 执行 回调 为 作\n工厂 为 算:\n回调().\n显 工厂().\n为\n象\n算 应用 回调 为 算 值 为 数:\n得 回调 值.\n法\n"
+   "形 操作集:\n    生成 为 算.\n    输出 为 作.\n    作 执行 回调 为 作\n        工厂 为 算:\n        回调().\n        显 工厂().\n    为\n象\n算 应用 回调 为 算 值 为 数:\n    得 回调 值.\n法\n"))
+
+(ert-deftest ru-lang-closure-reference-statements-are-not-definitions ()
+  (ru-lang-test--buffer "算 平方.\n作 输出.\n算 模块 其 平方.\n作 对象@输出.\n算 (取得对象 1) 其 方法.\n算 列[0].\n显 [(算 平方),作 输出].\n"
+    (font-lock-ensure)
+    (should-not (ru-lang--navigation-blocks t))
+    (should-not (ru-lang-imenu-create-index))
+    (let ((original (buffer-string)))
+      (indent-region (point-min) (point-max))
+      (should (equal original (buffer-string))))))
+
+(ert-deftest ru-lang-closure-type-and-reference-faces ()
+  (ru-lang-test--buffer "算 应用 回调 为 算 次数 为 数:\n本地 取 算 应用.\n得 回调.\n法\n作 执行 回调 为 作:\n回调().\n为\n"
+    (font-lock-ensure)
+    (search-forward "算")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-keyword-face))
+    (search-forward "应用")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-function-name-face))
+    (search-forward "为 算")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-type-face))
+    (search-forward "次数")
+    (should-not (get-text-property (1- (point)) 'face))
+    (search-forward "取 算")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-keyword-face))
+    (search-forward "应用")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-function-name-face))
+    (search-forward "为 作")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-type-face))))
+
+(ert-deftest ru-lang-closure-imenu-complete-lexical-paths ()
+  (ru-lang-test--buffer "形 工厂:\n算 创建:\n算 中层:\n作 内层: 显 1. 为\n得 作 内层.\n法\n得 算 中层.\n法\n象\n引用 取 算 工厂.\n"
+    (should (equal (mapcar #'car (ru-lang-imenu-create-index))
+                   '("形 工厂" "算 工厂@创建" "算 工厂@创建@中层" "作 工厂@创建@中层@内层")))))
+
+(ert-deftest ru-lang-closure-navigation-skips-references-and-types ()
+  (ru-lang-test--buffer "算 外 回调 为 算:\n算 内:\n得 回调().\n法\n另值 取 算 内.\n得 另值.\n法\n"
+    (search-forward "得 回调")
+    (ru-lang-beginning-of-defun)
+    (should (looking-at "算 内"))
+    (ru-lang-forward-list)
+    (should (looking-at "\n另值"))
+    (ru-lang-backward-list)
+    (should (looking-at "算 内"))
+    (ru-lang-backward-up-list)
+    (should (looking-at "算 外"))
+    (ru-lang-forward-list)
+    (should (= (point) (1- (point-max))))
+    (ru-lang-backward-list)
+    (should (= (point) (point-min)))))
+
+(ert-deftest ru-lang-closure-rescue-definition-and-reference-comments ()
+  (ru-lang-test--indent
+   "试\n卒 '坏'.\n救 原因\n算 # 声明\n保存:\n得 原因.\n法\n副本 取 算 # 引用\n保存.\n显 副本().\n终.\n"
+   "试\n    卒 '坏'.\n救 原因\n    算 # 声明\n        保存:\n        得 原因.\n    法\n    副本 取 算 # 引用\n    保存.\n    显 副本().\n终.\n"))
+
+(ert-deftest ru-lang-closure-all-editing-prefixes ()
+  (let ((source "算 工厂 参数 为 算:\n算 内:\n得 参数().\n法\n副本 取 算 内.\n得 [副本,算 内].\n法\n算 工厂.\n"))
+    (dotimes (end (1+ (length source)))
+      (ru-lang-test--buffer (substring source 0 end)
+        (font-lock-ensure)
+        (indent-region (point-min) (point-max))
+        (let ((once (buffer-string)))
+          (indent-region (point-min) (point-max))
+          (should (equal once (buffer-string))))
+        (ru-lang-imenu-create-index)
+        (ru-lang-beginning-of-defun)
+        (ru-lang-end-of-defun)))))
+
 (provide 'ru-lang-mode-tests)
 ;;; ru-lang-mode-tests.el ends here

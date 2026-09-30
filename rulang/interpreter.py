@@ -24,6 +24,8 @@ class Pair:
 class Function:
     owner: object
     node: object
+    environment: object = None
+    receiver: object = None
 
 
 @dataclass(eq=False)
@@ -54,8 +56,7 @@ class Module:
         owner = self.interpreter
         values = dict(owner.global_scope.values)
         values.update(owner.types)
-        values.update({name: Function(owner.function_owners.get(name, owner), fn)
-                       for name, fn in owner.functions.items()})
+        values.update(owner.function_values)
         return values
 
 
@@ -84,7 +85,8 @@ def display(value, active=None):
         elif isinstance(current, Module):
             output.append("<外言>")
         elif isinstance(current, Function):
-            output.append(f"<算 {current.node.data['name']}>")
+            kind = "作" if current.node.data["procedure"] else "算"
+            output.append(f"<{kind} {current.node.data['name']}>")
         elif isinstance(current, (Pair, list)):
             identity = id(current)
             if identity in active:
@@ -140,15 +142,47 @@ def equal(left, right):
 
 
 class Scope:
-    def __init__(self, parent=None):
-        self.values, self.parent = {}, parent
+    def __init__(self, parent=None, kind="module"):
+        self.values, self.parent, self.kind = {}, parent, kind
+        self.declarations = {}
+
+    def find(self, name):
+        current = self
+        while current is not None:
+            if name in current.values:
+                return current.values[name], False
+            if name in current.declarations:
+                return current.declarations[name], True
+            current = current.parent
+        return _MISSING, False
 
     def get(self, name, token):
-        if name in self.values:
-            return self.values[name]
-        if self.parent is not None:
-            return self.parent.get(name, token)
+        value, _ = self.find(name)
+        if value is not _MISSING:
+            return value
         raise RuError(f"未定义名称：{name}", token.line, token.col, "运行错误")
+
+    def bind(self, name, value):
+        # Rescue assignments remain local. Function assignments may update a
+        # captured local cell, but never rebind a module or builtin global.
+        if name in self.values or self.kind != "function":
+            self.values[name] = value
+            return
+        current = self.parent
+        while current is not None and current.kind != "module":
+            if name in current.values:
+                current.values[name] = value
+                return
+            current = current.parent
+        self.values[name] = value
+
+    def protected(self, name):
+        current = self
+        while current is not None:
+            if name in current.declarations:
+                return True
+            current = current.parent
+        return False
 
 
 class Return(Exception):
@@ -190,11 +224,13 @@ class Interpreter:
         self.stdin, self.stdout = stdin or sys.stdin, stdout or sys.stdout
         self.stderr = sys.stderr if stderr is None else stderr
         self.global_scope, self.functions, self.depth = Scope(), {}, 0
+        self.function_values = self.global_scope.declarations
         self.types, self.function_owners = {}, {}
         self.source_path, self.modules, self.module_cache = None, {}, {}
         self.loading = set()
         self.call_state = [0]
         self.last_member_procedure = False
+        self.last_call_procedure = False
         install_io(self)
         if sys.getrecursionlimit() < 10000:
             sys.setrecursionlimit(10000)
@@ -220,6 +256,7 @@ class Interpreter:
                     self.fail(n, f"名称冲突：{n.data['name']}")
                 self.functions[n.data["name"]] = n
                 self.function_owners[n.data["name"]] = self
+                self.function_values[n.data["name"]] = Function(self, n, self.global_scope)
             elif n.kind == "type":
                 if n.data["name"] in self.functions or n.data["name"] in self.global_scope.values:
                     self.fail(n, f"名称冲突：{n.data['name']}")
@@ -278,7 +315,7 @@ class Interpreter:
                     old = typ.methods[name].node.data
                     if old["params"] != fn.data["params"] or old["procedure"] != fn.data["procedure"]:
                         typ.owner.fail(fn, f"覆写方法「{name}」须保持参数名称、类型及算／作种类")
-                typ.methods[name] = Function(typ.owner, fn)
+                typ.methods[name] = Function(typ.owner, fn, typ.owner.global_scope)
             typ.state = 2
             return typ
         except Exception:
@@ -300,6 +337,8 @@ class Interpreter:
             return isinstance(value, list)
         if typ == "对":
             return isinstance(value, Pair)
+        if typ in ("算", "作"):
+            return isinstance(value, Function) and value.node.data["procedure"] == (typ == "作")
         expected = self.types.get(typ) or self.global_scope.values.get(typ) or self.builtin_types.get(typ)
         if not isinstance(expected, RuType) or not isinstance(value, Instance):
             return False
@@ -318,9 +357,9 @@ class Interpreter:
             if n.kind == "type":
                 self.resolve_type(self.types[d["name"]])
             elif n.kind == "bind":
-                if d["name"] in self.functions or d["name"] in self.types or d["name"] in BUILTIN_NAMES:
+                if scope.protected(d["name"]) or d["name"] in self.types or d["name"] in BUILTIN_NAMES:
                     self.fail(n, "变量名不能与函数名、形名或内置名称重名")
-                scope.values[d["name"]] = self.expr(d["expr"], scope)
+                scope.bind(d["name"], self.expr(d["expr"], scope))
             elif n.kind == "assign":
                 self.assign(n, scope)
             elif n.kind == "import_all":
@@ -333,6 +372,7 @@ class Interpreter:
                     if name in module.interpreter.functions:
                         self.functions[name] = value.node
                         self.function_owners[name] = value.owner
+                        self.function_values[name] = value
                     elif name in module.interpreter.types:
                         self.types[name] = value
                     else:
@@ -361,10 +401,11 @@ class Interpreter:
                 try:
                     self.block(d["body"], scope)
                 except Panic as error:
-                    if d["reason"] in self.functions or d["reason"] in self.types or d["reason"] in BUILTIN_NAMES:
+                    if scope.protected(d["reason"]) or d["reason"] in self.types or d["reason"] in BUILTIN_NAMES:
                         self.fail(n, "救的原因名称不能与函数名、形名或内置名称重名")
-                    handler = Scope(scope)
+                    handler = Scope(scope, "rescue")
                     handler.values[d["reason"]] = error.reason
+                    self.hoist(d["rescue"], handler)
                     # Outside the protected suite: a new 卒 here propagates
                     # to an enclosing dynamically active 试.
                     self.block(d["rescue"], handler)
@@ -391,10 +432,64 @@ class Interpreter:
 
     def is_procedure(self, expr, scope):
         # Do not re-evaluate member receivers merely to decide REPL echo.
-        if expr.kind in ("name", "call"):
-            fn = self.functions.get(expr.data["name"])
-            return bool(fn and fn.data["procedure"])
+        if expr.kind == "name":
+            value, declared = scope.find(expr.data["name"])
+            return declared and isinstance(value, Function) and value.node.data["procedure"]
+        if expr.kind in ("call", "invoke"):
+            return self.last_call_procedure
         return (expr.kind == "member" or (expr.kind == "binary" and expr.data["op"] == "含")) and self.last_member_procedure
+
+    def hoist(self, statements, scope):
+        for statement in statements:
+            if statement.kind == "function":
+                name = statement.data["name"]
+                if name in scope.values or name in scope.declarations or name in self.types or name in BUILTIN_NAMES:
+                    self.fail(statement, "重复或保留的函数名称：" + name)
+                scope.declarations[name] = Function(self, statement, scope)
+
+    def resolve_name(self, n, scope):
+        value, declared = scope.find(n.data["name"])
+        if value is _MISSING and n.data["name"] in self.types:
+            return self.types[n.data["name"]], False
+        if value is _MISSING:
+            self.fail(n, ("未定义函数：" if n.kind == "call" else "未定义名称：") + n.data["name"])
+        return value, declared
+
+    def callable_target(self, n, scope):
+        """Evaluate a call/ref target once without auto-invoking its last selector."""
+        if n.kind == "name":
+            if n.data["name"] == "读":
+                self.fail(n, "当前仅支持用户定义算／作的引用；内置「读」不能取引用")
+            return self.resolve_name(n, scope)[0]
+        if n.kind == "member" and not n.data["args"]:
+            receiver = self.expr(n.data["receiver"], scope)
+            return self.member_reference(n, receiver, n.data["name"])
+        return self.expr(n, scope)
+
+    def invoke_value(self, n, value, args):
+        if not isinstance(value, Function):
+            self.fail(n, "值不是算／作")
+        result = value.owner.invoke(n, value.node, args, value.receiver,
+                                    caller=self, environment=value.environment)
+        self.last_call_procedure = value.node.data["procedure"]
+        return result
+
+    def member_reference(self, n, receiver, name):
+        if isinstance(receiver, Module):
+            value = receiver.exports().get(name, _MISSING)
+            if value is not _MISSING:
+                return value
+        elif isinstance(receiver, Instance):
+            if name in receiver.type.fields:
+                return receiver.fields[name]
+            method = receiver.type.methods.get(name)
+            if method:
+                return Function(method.owner, method.node, method.environment, receiver)
+        elif isinstance(receiver, Pair) and name in ("囫", "囵"):
+            return receiver.left if name == "囫" else receiver.right
+        elif isinstance(receiver, (list, str)) and name == "量":
+            return float(len(receiver))
+        self.fail(n, "无法取得用户定义算／作成员引用：" + name)
 
     def bounded_index(self, n, value, size, endpoint=False):
         maximum = size if endpoint else size - 1
@@ -485,13 +580,28 @@ class Interpreter:
             return self.import_module(n)
         if n.kind == "name":
             name = d["name"]
-            if name == "读" or name in self.functions:
+            if name == "读":
                 return self.call(n, name, [])
-            if name in self.types:
-                return self.types[name]
-            return scope.get(name, n.token)
+            value, declared = self.resolve_name(n, scope)
+            return self.invoke_value(n, value, []) if declared else value
         if n.kind == "call":
-            return self.call(n, d["name"], [(name, self.expr(expr, scope)) for name, expr in d["args"]])
+            if d["name"] == "读":
+                return self.call(n, "读", [(name, self.expr(expr, scope)) for name, expr in d["args"]])
+            # Resolve the callee before arguments can mutate a captured binding.
+            value = self.resolve_name(n, scope)[0]
+            args = [(name, self.expr(expr, scope)) for name, expr in d["args"]]
+            return self.invoke_value(n, value, args)
+        if n.kind == "function_ref":
+            value = self.callable_target(d["expr"], scope)
+            if not isinstance(value, Function) or value.node.data["procedure"] != d["procedure"]:
+                self.fail(n, "引用的算／作种类不匹配")
+            return value
+        if n.kind == "invoke":
+            if d["callee"].kind == "name" and d["callee"].data["name"] == "读":
+                return self.call(n, "读", [(name, self.expr(expr, scope)) for name, expr in d["args"]])
+            value = self.callable_target(d["callee"], scope)
+            args = [(name, self.expr(expr, scope)) for name, expr in d["args"]]
+            return self.invoke_value(n, value, args)
         if n.kind == "new":
             typ = self.types.get(d["name"]) or scope.values.get(d["name"])
             if typ is None:
@@ -520,6 +630,28 @@ class Interpreter:
             return Instance(typ, fields)
         if n.kind == "member":
             receiver = self.expr(d["receiver"], scope)
+            # A callable field/export may be rebound by an argument. Capture
+            # its value (or bound method) before evaluating those arguments.
+            if isinstance(receiver, Instance):
+                if d["name"] in receiver.type.fields and d["args"]:
+                    value = receiver.fields[d["name"]]
+                    args = [(key, self.expr(expr, scope)) for key, expr in d["args"]]
+                    result = self.invoke_value(n, value, args)
+                    self.last_member_procedure = value.node.data["procedure"]
+                    return result
+                if d["name"] in receiver.type.methods:
+                    value = self.member_reference(n, receiver, d["name"])
+                    args = [(key, self.expr(expr, scope)) for key, expr in d["args"]]
+                    result = self.invoke_value(n, value, args)
+                    self.last_member_procedure = value.node.data["procedure"]
+                    return result
+            elif isinstance(receiver, Module):
+                value = receiver.exports().get(d["name"], _MISSING)
+                if value is not _MISSING and (d["args"] or d["name"] in receiver.interpreter.functions):
+                    args = [(key, self.expr(expr, scope)) for key, expr in d["args"]]
+                    result = self.invoke_value(n, value, args)
+                    self.last_member_procedure = value.node.data["procedure"]
+                    return result
             args = [(key, self.expr(expr, scope)) for key, expr in d["args"]]
             return self.member(n, receiver, d["name"], args)
         if n.kind == "index":
@@ -610,8 +742,8 @@ class Interpreter:
         elif isinstance(receiver, Module):
             value = receiver.exports().get(name, _MISSING)
             if value is not _MISSING:
-                if isinstance(value, Function):
-                    result = value.owner.invoke(n, value.node, args, caller=self)
+                if isinstance(value, Function) and (args or name in receiver.interpreter.functions):
+                    result = self.invoke_value(n, value, args)
                     self.last_member_procedure = value.node.data["procedure"]
                     return result
                 bind_arguments(name, args, [], fail)
@@ -659,22 +791,23 @@ class Interpreter:
                 self.fail(n, "输入结束（EOF）")
             if "\x00" in value:
                 self.fail(n, "输入不能含 NUL")
+            self.last_call_procedure = False
             return value.removesuffix("\n").removesuffix("\r")
         if name not in self.functions:
             self.fail(n, f"未定义函数：{name}")
-        owner = self.function_owners.get(name, self)
-        return owner.invoke(n, self.functions[name], args, caller=self)
+        return self.invoke_value(n, self.function_values[name], args)
 
-    def invoke(self, n, function, args, receiver=None, caller=None):
+    def invoke(self, n, function, args, receiver=None, caller=None, environment=None):
         caller = self if caller is None else caller
         name, params = function.data["name"], function.data["params"]
         # Imports execute lazily. Validate against the function owner's names
         # at invocation, without rejecting calls before an import has run or
         # treating ordinary imported bindings/type aliases as declarations.
-        if any(key in self.functions or key in self.types for key, _ in params):
+        environment = self.global_scope if environment is None else environment
+        if any(environment.protected(key) or key in self.types for key, _ in params):
             self.fail(function, "参数名不能与函数名、形名或内置名称重名")
         kwargs = bind_arguments(name, args, [p[0] for p in params], lambda message: caller.fail(n, message))
-        local = Scope(self.global_scope)
+        local = Scope(environment, "function")
         if receiver is not None:
             local.values["其"] = receiver
         for key, typ in params:
@@ -682,6 +815,7 @@ class Interpreter:
             if not self.type_matches(value, typ):
                 caller.fail(n, f"实参「{key}」须为{typ}，请显式使用「为 {typ}」转换")
             local.values[key] = value
+        self.hoist(function.data["body"], local)
         if self.call_state[0] >= 128:
             caller.fail(n, "函数调用层数超过 128")
         self.call_state[0] += 1
