@@ -11,14 +11,16 @@ from . import __version__
 from .compiler import Compiler
 from .frontend import Incomplete, RuError, parse, validate
 from .interpreter import Interpreter
-from .modules import GENERATION_MARKER, load_module_graph, read_source
+from .io_runtime import read_stream_line
+from .modules import load_module_graph, read_source, reject_generation_document
+from .generation import generate
 
 
 def report(error, name, source=""):
     name = getattr(error, "source_name", name)
     source = getattr(error, "source_text", "") or source
     print(f"{name}:{error.line}:{error.col}: {error.category}：{error.message}", file=sys.stderr)
-    lines = source.splitlines()
+    lines = [] if getattr(error, "suppress_source", False) else source.splitlines()
     if 0 < error.line <= len(lines):
         print("  " + lines[error.line-1], file=sys.stderr)
 
@@ -65,7 +67,11 @@ def build(program, source_path, output, cc=None, emit_c=None, modules=None):
 
 
 def repl():
-    interactive = sys.stdin.isatty()
+    try:
+        interactive = sys.stdin.isatty()
+    except (OSError, ValueError):
+        report(RuError("输入失败：无法读取标准输入", category="运行错误"), "<repl>")
+        return 1
     if interactive:
         print(f"如 {__version__} · 语句以 . 结束 · :help 查看帮助 · :quit 退出")
     interpreter, pending = Interpreter(), ""
@@ -73,7 +79,7 @@ def repl():
         try:
             if interactive:
                 print("… " if pending else "如> ", end="", flush=True)
-            line = sys.stdin.readline()
+            line = read_stream_line(sys.stdin)
             if not line:
                 if pending.strip():
                     try:
@@ -96,8 +102,7 @@ def repl():
                     print("未知命令；输入 :help", file=sys.stderr)
                 continue
             pending += line
-            if pending.rstrip().endswith(GENERATION_MARKER):
-                raise RuError("LLM 生成入口尚未连接；文档没有发送到外部", category="生成功能未配置")
+            reject_generation_document(pending)
             try:
                 program = parse(pending)
             except Incomplete:
@@ -110,6 +115,13 @@ def repl():
         except RecursionError:
             report(RuError("表达式或语句结构过深，请拆分为较小的步骤"), "<repl>")
             pending = ""
+        except (OSError, UnicodeError, ValueError) as error:
+            report(RuError("输入失败：无法读取有效 UTF-8 输入", category="运行错误"), "<repl>")
+            pending = ""
+            # A rejected decoded line has been consumed; broken/closed streams
+            # have not progressed and must stop rather than spin forever.
+            if not getattr(error, "input_line_consumed", isinstance(error, UnicodeError)):
+                return 1
         except KeyboardInterrupt:
             print("\n已取消当前输入／执行", file=sys.stderr)
             pending = ""
@@ -130,8 +142,10 @@ def make_parser():
     p.add_argument("-o", "--output", help="输出路径；默认去掉源文件扩展名")
     p.add_argument("--cc", help="C 编译器（默认依次查找 clang、gcc、cc；也支持 CC 环境变量）")
     p.add_argument("--emit-c", metavar="PATH", help="额外保存可审阅的独立 C99 源码")
-    p = sub.add_parser("generate", help="检查意图文档入口（尚未连接 LLM）")
+    p = sub.add_parser("generate", help="显式发送意图文档至 Responses API，检查并保存源码（不执行）")
     p.add_argument("document")
+    p.add_argument("-o", "--output", help="新建 .ru 输出文件，默认 *.generated.ru；不覆盖已有文件")
+    p.add_argument("--timeout", type=float, default=60.0, help="连接／读取超时秒数，默认 60，最大 300；不自动重试")
     return parser
 
 
@@ -147,10 +161,9 @@ def main(argv=None):
     source, name = "", getattr(args, "source", getattr(args, "document", "<输入>"))
     try:
         if args.command == "generate":
-            source = Path(args.document).read_text(encoding="utf-8-sig")
-            if not source.rstrip().endswith(GENERATION_MARKER):
-                raise RuError("意图文档应以「如是我言」结尾", category="生成输入错误")
-            raise RuError("已识别意图文档，但尚未连接 LLM 提供方；没有发送文档、生成代码或执行代码。", category="生成功能未配置")
+            result = generate(args.document, args.output, args.timeout)
+            print(f"已生成并检查：{result}\n未执行；请先审阅源码，再使用 ru run 或 ru build。")
+            return 0
         source = read_source(args.source)
         program = parse(source)
         modules = load_module_graph(args.source, program)

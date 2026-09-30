@@ -12,10 +12,53 @@ from .frontend import Node, RuError, parse, validate
 GENERATION_MARKER = "如是我言"
 
 
+def generation_intent(source):
+    """Return the document before a final standalone, unquoted marker, or None.
+
+    Intent may be loose Markdown/Org rather than valid Ru. This scanner only
+    tracks Ru strings/comments; lexing the entire document would reject prose.
+    Quotes follow the source lexer, except apostrophes between ASCII letters
+    (English prose contractions). Quotes adjacent to Chinese names still open
+    source strings. This convention permits loose Markdown/Org English prose.
+    """
+    lines = source.splitlines(keepends=True)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    if not lines or lines[-1].strip() != GENERATION_MARKER:
+        return None
+    prefix = "".join(lines[:-1])
+    quotes, closing, i = {"'": "'", '"': '"', "‘": "’", "“": "”"}, None, 0
+    while i < len(prefix):
+        char = prefix[i]
+        if closing:
+            if char == "\\":
+                i += 2
+                continue
+            if char == closing:
+                closing = None
+        elif char == "#" or prefix.startswith("//", i):
+            newline = prefix.find("\n", i)
+            i = len(prefix) if newline < 0 else newline
+        elif char in quotes:
+            contraction = (char == "'" and i > 0 and i + 1 < len(prefix)
+                           and prefix[i - 1].isascii() and prefix[i - 1].isalpha()
+                           and prefix[i + 1].isascii() and prefix[i + 1].isalpha())
+            if not contraction:
+                closing = quotes[char]
+        i += 1
+    return prefix if closing is None else None
+
+
+def reject_generation_document(source):
+    if generation_intent(source) is not None:
+        error = RuError("检测到意图文档；请显式使用 ru generate 文档路径 生成独立源码，再审阅并运行。此命令未联网或执行文档。", category="生成入口错误")
+        error.suppress_source = True
+        raise error
+
+
 def read_source(path):
     source = Path(path).read_text(encoding="utf-8-sig")
-    if source.rstrip().endswith(GENERATION_MARKER):
-        raise RuError("检测到以「如是我言」结尾的意图文档。LLM 生成入口尚未连接提供方；未发送文档，也未生成或执行代码。请先手写 .ru 源码。", category="生成功能未配置")
+    reject_generation_document(source)
     return source
 
 

@@ -17,6 +17,8 @@ examples:
 	python3 ru build examples/unicode_slices.ru -o bin/unicode_slices
 	python3 ru build examples/entry.ru -o bin/entry
 	python3 ru build examples/modules/main.ru -o bin/modules --emit-c dist/modules.c
+	python3 ru build examples/checked_io.ru -o bin/checked_io
+	python3 ru build examples/recovery.ru -o bin/recovery --emit-c dist/recovery.c
 clean:
 	python3 -c "import pathlib,shutil; [shutil.rmtree(p) for p in pathlib.Path('.').rglob('__pycache__')]"
 

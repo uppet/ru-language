@@ -1,13 +1,13 @@
 ;;; ru-lang-mode.el --- Editing support for the 如 language -*- lexical-binding: t; -*-
 
-;; Version: 0.1.0
+;; Version: 0.2.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: languages
 ;; URL: https://github.com/uppet/ru-language
 
 ;;; Commentary:
 
-;; A dependency-free major mode for ru-language 0.2.x source files.  The
+;; A dependency-free major mode for ru-language 0.3.x source files.  The
 ;; lightweight lexer mirrors rulang/frontend.py; it deliberately accepts
 ;; incomplete input.  It is an editing aid, not a compiler or language server.
 ;; See README.md in this directory for loading, indentation and navigation.
@@ -27,11 +27,15 @@
 (defconst ru-lang--keywords
   '("显" "取" "为" "得" "破" "若" "则" "另" "然" "循" "次" "环"
     "算" "作" "法" "其" "且" "或" "非" "空" "对" "形" "象" "如" "新"
-    "外言" "尽"))
-(defconst ru-lang--types '("数" "句" "阵" "对" "空"))
-(defconst ru-lang--builtins '("读" "含" "位" "段" "增" "量" "囫" "囵"))
+    "外言" "尽" "卒" "试" "救"))
+(defconst ru-lang--types '("数" "句" "阵" "对" "空" "件" "录" "件作成果"))
+(defconst ru-lang--builtins
+  '("读" "含" "位" "段" "增" "量" "囫" "囵" "读取" "显出" "错误"))
+(defconst ru-lang--member-builtins '("读" "写" "在" "除" "列")
+  "I/O method names highlighted only after a member operator.
+The legacy global function 读 is also in `ru-lang--builtins'.")
 (defconst ru-lang--pairs '(("算" . "法") ("作" . "为") ("形" . "象")
-                            ("若" . "然") ("循" . "环")
+                            ("若" . "然") ("循" . "环") ("试" . "终")
                             ("(" . ")") ("[" . "]")))
 (defconst ru-lang--punctuation
   '((?。 . ".") (?： . ":") (?（ . "(") (?） . ")")
@@ -126,7 +130,7 @@
 (defun ru-lang--analyze ()
   "Compute block pairs and desired line depths from `ru-lang--tokens'."
   (let ((tokens ru-lang--tokens) (stack nil) (blocks nil) (indents nil)
-        (statement-start t) (line (point-min)) (index 0) previous
+        (statement-start t) (line (point-min)) (index 0) previous rescue-binding
         (next-tokens (make-vector (length ru-lang--tokens) nil)) next-code)
     (cl-loop for i downfrom (1- (length tokens)) to 0 do
              (aset next-tokens i next-code)
@@ -149,11 +153,16 @@
                    (text (ru-lang--token-text token))
                    (kind (ru-lang--token-kind token))
                    (next (aref next-tokens index))
+                   (binding (eq token rescue-binding))
                    (top (car stack))
                    (close (and top (cdr (assoc (ru-lang--block-kind top)
                                               ru-lang--pairs))))
                    (closer (and (ru-lang--code-token-p token)
+                                (not binding)
                                 (equal text close)
+                                ;; 终 is contextual: it is still a legal name
+                                ;; and the existing 段 named argument 终:.
+                                (or (not (equal text "终")) statement-start)
                                 (or (not (equal text "为"))
                                     (and (not (ru-lang--block-header top))
                                          (or statement-start
@@ -162,14 +171,25 @@
                                                             (member (ru-lang--token-text next)
                                                                     '("数" "句" "阵"))))))))))
                    (branch (and (ru-lang--code-token-p token) top
-                                (equal (ru-lang--block-kind top) "若")
-                                (member text '("则" "另")))))
+                                (not binding)
+                                (or (and (equal (ru-lang--block-kind top) "若")
+                                         (member text '("则" "另")))
+                                    (and (equal (ru-lang--block-kind top) "试")
+                                         (equal text "救") statement-start)))))
               (unless (eq kind 'comment)
+                ;; A try or rescue header permits an optional colon, but a
+                ;; named argument inside its body must not start a statement.
+                (when (and top (equal (ru-lang--block-kind top) "试")
+                           (ru-lang--block-header top)
+                           (not binding) (not branch) (not (equal text ":")))
+                  (setf (ru-lang--block-header top) nil))
                 (when first
                   (setq depth (max 0 (- (length stack)
                                         (if (or closer branch) 1 0))))
                   (setq first nil))
                 (cond
+                 (binding
+                  (setq rescue-binding nil statement-start t))
                  ((eq kind 'string) (setq statement-start nil))
                  (closer
                   (setf (ru-lang--block-end top)
@@ -177,7 +197,10 @@
                             (ru-lang--token-end next)
                           (ru-lang--token-end token)))
                   (pop stack)
-                  (setq statement-start t))
+                  ;; Parentheses and indexing finish expressions, not
+                  ;; statements (which may still use a name such as 终).
+                  (setq statement-start
+                        (not (member (ru-lang--block-kind top) '("(" "[")))))
                  ((assoc text ru-lang--pairs)
                   (let* ((parent (cl-find-if #'ru-lang--definition-p stack))
                          (name (and (member text '("算" "作" "形")) next
@@ -187,13 +210,20 @@
                          (block (ru-lang--make-block
                                  :kind text :start (ru-lang--token-start token)
                                  :end (point-max) :name name :parent parent
-                                 :header (member text '("算" "作" "若")))))
+                                 :header (member text '("算" "作" "若" "试")))))
                     (push block stack)
                     (unless (member text '("(" "[")) (push block blocks)))
-                  (setq statement-start (equal text "循")))
+                  (setq statement-start (member text '("循" "试"))))
                  ((or branch (and top (equal text ":")
-                                  (member (ru-lang--block-kind top) '("算" "作" "形"))))
+                                  (or (member (ru-lang--block-kind top) '("算" "作" "形"))
+                                      (and (equal (ru-lang--block-kind top) "试")
+                                           (ru-lang--block-header top)))))
                   (setf (ru-lang--block-header top) nil)
+                  (when (and branch (equal text "救") next
+                             (eq (ru-lang--token-kind next) 'name)
+                             (not (member (ru-lang--token-text next) ru-lang--keywords)))
+                    (setq rescue-binding next)
+                    (setf (ru-lang--block-header top) t))
                   (setq statement-start t))
                  ((or (equal text ".") (equal text "次"))
                   (setq statement-start t))
@@ -202,11 +232,15 @@
                 (when (eq kind 'name)
                   (setf (ru-lang--token-face token)
                         (cond
+                         (binding 'font-lock-variable-name-face)
+                         ((and closer (equal text "终")) 'font-lock-keyword-face)
                          ((member previous '("算" "作")) 'font-lock-function-name-face)
                          ((or (member previous '("形" "如" "新"))
                               (and (equal previous "为") (not statement-start))
                               (member text ru-lang--types)) 'font-lock-type-face)
                          ((member text ru-lang--keywords) 'font-lock-keyword-face)
+                         ((and (member previous '("@" "其"))
+                               (member text ru-lang--member-builtins)) 'font-lock-builtin-face)
                          ((member text ru-lang--builtins) 'font-lock-builtin-face))))
                 (setq previous (unless closer text))))
             (setq index (1+ index)))

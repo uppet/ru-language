@@ -33,10 +33,14 @@ def node(kind, token, **data):
     return Node(kind, token, data)
 
 
+BUILTIN_TYPES = {"件", "录", "件作成果"}
+BUILTIN_NAMES = BUILTIN_TYPES | {"读", "读取", "显出", "错误"}
+
+
 MEMBER_PARAMS = {"含": ["句"], "位": ["位"], "段": ["始", "终"], "增": ["值"],
                  "量": [], "囫": [], "囵": []}
 
-KEYWORDS = set("显 取 为 得 破 若 则 另 然 循 次 环 算 作 法 其 且 或 非 空 对 形 象 如 新 外言 尽".split())
+KEYWORDS = set("显 取 为 得 破 若 则 另 然 循 次 环 算 作 法 其 且 或 非 空 对 形 象 如 新 外言 尽 试 救 卒".split())
 NUMBER = re.compile(r"(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
 
 
@@ -228,6 +232,20 @@ class Parser:
 
     def statement(self):
         t = self.current
+        if self.accept("试"):
+            self.accept(":")
+            body = self.parse(("救", "终"))
+            self.expect("救")
+            reason = self.name().value
+            self.accept(":")
+            rescue = self.parse(("终",))
+            self.expect("终")
+            self.accept(".")
+            return node("try", t, body=body, reason=reason, rescue=rescue)
+        if self.accept("卒"):
+            expr = self.expression()
+            self.expect(".")
+            return node("panic", t, expr=expr)
         if self.accept("显"):
             expr = self.expression()
             self.expect(".")
@@ -471,7 +489,7 @@ def validate(program, existing_functions=(), existing_types=()):
     for n in program:
         if n.kind in ("function", "type"):
             name = n.data["name"]
-            if name == "读" or name in declared:
+            if name in BUILTIN_NAMES or name in declared:
                 raise RuError(f"重复或保留的名称：{name}", n.token.line, n.token.col)
             declared.add(name)
             if n.kind == "function":
@@ -483,7 +501,7 @@ def validate(program, existing_functions=(), existing_types=()):
         raise RuError(message, n.token.line, n.token.col)
 
     has_imports = any(n.kind == "import_all" for n in program)
-    known_types = set(type_nodes) | set(existing_types) | {"数", "句", "阵", "对", "空"}
+    known_types = set(type_nodes) | set(existing_types) | BUILTIN_TYPES | {"数", "句", "阵", "对", "空"}
     known_bindings = {n.data["name"] for n in program if n.kind == "bind"}
 
     def check_type(n, typ):
@@ -523,8 +541,8 @@ def validate(program, existing_functions=(), existing_types=()):
                     error(n, f"标准成员「{d['name']}」须使用固定参数：" + "、".join(MEMBER_PARAMS[d["name"]]))
                 if len(names) != len(set(names)):
                     error(n, "参数名重复")
-                if any(p in functions or p == "读" or p in type_nodes for p in names):
-                    error(n, "参数名不能与函数名、形名或「读」重名")
+                if any(p in functions or p in BUILTIN_NAMES or p in type_nodes for p in names):
+                    error(n, "参数名不能与函数名、形名或内置名称重名")
                 walk(d["body"], 0, n, False, method)
             elif n.kind == "type":
                 if not top:
@@ -545,12 +563,17 @@ def validate(program, existing_functions=(), existing_types=()):
                 error(n, "「破」只能出现在当前函数的循环内")
             elif n.kind == "return" and (function is None or function.data["procedure"]):
                 error(n, "「得」只能出现在「算」定义内")
-            elif n.kind == "bind" and (d["name"] in functions or d["name"] == "读" or d["name"] in type_nodes):
-                error(n, "变量名不能与函数名、形名或「读」重名")
+            elif n.kind == "bind" and (d["name"] in functions or d["name"] in BUILTIN_NAMES or d["name"] in type_nodes):
+                error(n, "变量名不能与函数名、形名或内置名称重名")
             elif n.kind == "if":
                 expressions(d["condition"], method)
                 walk(d["yes"], depth, function, False, method)
                 walk(d["no"], depth, function, False, method)
+            elif n.kind == "try":
+                if d["reason"] in functions or d["reason"] in BUILTIN_NAMES or d["reason"] in type_nodes:
+                    error(n, "救的原因名称不能与函数名、形名或内置名称重名")
+                walk(d["body"], depth, function, False, method)
+                walk(d["rescue"], depth, function, False, method)
             elif n.kind == "loop":
                 expressions(d["count"], method)
                 walk(d["body"], depth+1, function, False, method)

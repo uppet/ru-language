@@ -45,6 +45,41 @@
    "循 3 次\n若 1 则\n显 1.\n另\n循\n破.\n环\n然\n环\n"
    "循 3 次\n    若 1 则\n        显 1.\n    另\n        循\n            破.\n        环\n    然\n环\n"))
 
+(ert-deftest ru-lang-indent-panic-and-rescue ()
+  (ru-lang-test--indent
+   "试\n卒 ‘失败’.\n救 原因\n显 原因.\n终.\n显 ‘继续’.\n"
+   "试\n    卒 ‘失败’.\n救 原因\n    显 原因.\n终.\n显 ‘继续’.\n"))
+
+(ert-deftest ru-lang-indent-nested-try-functions-and-branches ()
+  (ru-lang-test--indent
+   "作 主:\n试\n算 内:\n试\n卒 '内部'.\n救 内因\n得 内因.\n终.\n法\n循 2 次\n若 1 则\n卒 内.\n另\n破.\n然\n环\n救 原因\n试\n显 原因.\n救 另因\n卒 另因.\n终.\n为乐 取 1.\n终.\n为\n"
+   "作 主:\n    试\n        算 内:\n            试\n                卒 '内部'.\n            救 内因\n                得 内因.\n            终.\n        法\n        循 2 次\n            若 1 则\n                卒 内.\n            另\n                破.\n            然\n        环\n    救 原因\n        试\n            显 原因.\n        救 另因\n            卒 另因.\n        终.\n        为乐 取 1.\n    终.\n为\n"))
+
+(ert-deftest ru-lang-indent-compact-try-and-optional-colons ()
+  (ru-lang-test--indent
+   "试 卒 '失败'. 救 原因 显 原因. 终.\n试：\n卒 '失败'。\n救 原因：\n试: 救 内因: 终。\n终。\n显 1.\n"
+   "试 卒 '失败'. 救 原因 显 原因. 终.\n试：\n    卒 '失败'。\n救 原因：\n    试: 救 内因: 终。\n终。\n显 1.\n"))
+
+(ert-deftest ru-lang-indent-rescue-comments-and-quoted-words ()
+  (ru-lang-test--indent
+   "试 # 救 假 终\n卒 “救 原因 终 \\” 试”.\n// 救 假 终\n救 # 试 终\n原因 // 卒 ‘终’\n显 '试 救 终 卒'.\n终.\n"
+   "试 # 救 假 终\n    卒 “救 原因 终 \\” 试”.\n    // 救 假 终\n救 # 试 终\n    原因 // 卒 ‘终’\n    显 '试 救 终 卒'.\n终.\n"))
+
+(ert-deftest ru-lang-indent-rescue-multiline-strings ()
+  (ru-lang-test--indent
+   "试\n卒 ‘失败\n 救 伪名\n终’.\n救 原因\n显 原因.\n终.\n"
+   "试\n    卒 ‘失败\n 救 伪名\n终’.\n救 原因\n    显 原因.\n终.\n"))
+
+(ert-deftest ru-lang-indent-contextual-end-name-and-slice-argument ()
+  (ru-lang-test--indent
+   "算 段 始 为 数 终 为 数:\n试\n显 文 其 段 始:始\n终:终.\n显 函 名:终.\n显 文@段 (0) 终.\n显\n终.\n救 终\n显 终.\n终.\n得 终.\n法\n"
+   "算 段 始 为 数 终 为 数:\n    试\n        显 文 其 段 始:始\n        终:终.\n        显 函 名:终.\n        显 文@段 (0) 终.\n        显\n        终.\n    救 终\n        显 终.\n    终.\n    得 终.\n法\n"))
+
+(ert-deftest ru-lang-indent-io-types-and-identifiers ()
+  (ru-lang-test--indent
+   "作 试验 文件 为 件\n目录 为 录 结果 为 件作成果:\n救援 取 1.\n终点 取 2.\n卒业 取 3.\n显 显出 其 写 ‘试’.\n为\n"
+   "作 试验 文件 为 件\n    目录 为 录 结果 为 件作成果:\n    救援 取 1.\n    终点 取 2.\n    卒业 取 3.\n    显 显出 其 写 ‘试’.\n为\n"))
+
 (ert-deftest ru-lang-indent-multiline-condition ()
   (ru-lang-test--indent
    "若\n甲 == 乙\n则\n显 1.\n然\n"
@@ -121,6 +156,70 @@
       (goto-char (point-min)) (search-forward text)
       (should (eq (get-text-property (1- (point)) 'face) 'font-lock-comment-face)))))
 
+(ert-deftest ru-lang-font-lock-recovery-and-handler-binding ()
+  (ru-lang-test--buffer "试\n卒 '失败'.\n救 # binding follows a comment\n原因\n显 原因.\n终.\n试 救 句 终.\n"
+    (font-lock-ensure)
+    (dolist (word '("试" "卒" "救" "终"))
+      (goto-char (point-min)) (search-forward word)
+      (should (eq (get-text-property (1- (point)) 'face) 'font-lock-keyword-face)))
+    (goto-char (point-min)) (search-forward "原因")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-variable-name-face))
+    (search-forward "原因")
+    (should-not (get-text-property (1- (point)) 'face))
+    (search-forward "句")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-variable-name-face))))
+
+(ert-deftest ru-lang-font-lock-contextual-end-name ()
+  (ru-lang-test--buffer "算 终 终 为 数: 得 终. 法\n试\n显 文@段 始:0 终:2.\n救 终\n显 终.\n终.\n"
+    (font-lock-ensure)
+    (search-forward "终")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-function-name-face))
+    (dotimes (_ 3)
+      (search-forward "终")
+      (should-not (get-text-property (1- (point)) 'face)))
+    (search-forward "终")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-variable-name-face))
+    (search-forward "终")
+    (should-not (get-text-property (1- (point)) 'face))
+    (search-forward "终")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-keyword-face))
+    (should (equal (mapcar #'car (ru-lang-imenu-create-index)) '("算 终")))))
+
+(ert-deftest ru-lang-font-lock-io-types-objects-and-member-names ()
+  (ru-lang-test--buffer "作 主 文件 为 件 目录 为 录 结果 为 件作成果:\n读取@读.\n显出 其 写 '好'.\n错误@写 '错'.\n文件@在.\n文件@除.\n目录 其 # method follows a comment\n列.\n为\n"
+    (font-lock-ensure)
+    (dolist (word '("件" "录" "件作成果"))
+      (goto-char (point-min)) (search-forward (concat "为 " word))
+      (should (eq (get-text-property (- (point) (length word)) 'face) 'font-lock-type-face)))
+    (dolist (word '("读取" "显出" "错误" "读." "写 '好'" "写 '错'" "在" "除" "列"))
+      (goto-char (point-min)) (search-forward word)
+      (should (eq (get-text-property (- (point) (length word)) 'face) 'font-lock-builtin-face)))))
+
+(ert-deftest ru-lang-font-lock-io-methods-are-contextual-whole-names ()
+  (ru-lang-test--buffer "写 取 1. 在 取 2. 除 取 3. 列 取 4.\n写信 取 5. 读取器 取 6. 显出值 取 7. 错误码 取 8. 件作成果值 取 9.\n试验 取 1. 救援 取 2. 终点 取 3. 卒业 取 4. 试² 取 5.\n算 写: 得 1. 法\n其 写信.\n"
+    (font-lock-ensure)
+    (dolist (word '("写" "在" "除" "列" "写信" "读取器" "显出值" "错误码" "件作成果值"
+                    "试验" "救援" "终点" "卒业" "试²"))
+      (goto-char (point-min)) (search-forward word)
+      (should-not (get-text-property (- (point) (length word)) 'face)))
+    (search-forward "算 写")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-function-name-face))
+    (search-forward "写信")
+    (should-not (get-text-property (1- (point)) 'face))))
+
+(ert-deftest ru-lang-font-lock-recovery-strings-and-comments ()
+  (ru-lang-test--buffer "显 “试 救 终 卒 件 录 读取”. # 试 救 终\n显 ‘卒 \\’ 救’. // 卒\n"
+    (font-lock-ensure)
+    (dolist (word '("试" "救" "终" "卒" "件" "录" "读取"))
+      (goto-char (point-min)) (search-forward word)
+      (should (eq (get-text-property (1- (point)) 'face) 'font-lock-string-face)))
+    (search-forward "# ")
+    (dolist (word '("试" "救" "终"))
+      (search-forward word)
+      (should (eq (get-text-property (1- (point)) 'face) 'font-lock-comment-face)))
+    (search-forward "// 卒")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-comment-face))))
+
 (ert-deftest ru-lang-syntax-ascii-curly-and-escaped-quotes ()
   (dolist (source '("\"a'形\\\"b\"" "'a\"形\\'b'" "“a‘形\\”b”" "‘a“形\\’b’"))
     (ru-lang-test--buffer source
@@ -187,8 +286,40 @@
     (ru-lang-backward-block 2)
     (should (looking-at "循"))))
 
+(ert-deftest ru-lang-try-block-navigation ()
+  (ru-lang-test--buffer "作 主:\n试\n试\n卒 '内部'.\n救 内因\n显 内因.\n终.\n救 原因\n显 原因.\n终.\n为\n"
+    (search-forward "卒 '内部'")
+    (ru-lang-up-block)
+    (should (looking-at "试\n卒"))
+    (ru-lang-forward-block)
+    (should (looking-at "\n救 原因"))
+    (ru-lang-forward-block)
+    (should (looking-at "\n为"))
+    (ru-lang-forward-block)
+    (should (eq (char-before) ?为))
+    (ru-lang-backward-block)
+    (should (looking-at "试\n卒"))
+    (ru-lang-up-block)
+    (should (looking-at "试\n试"))
+    (ru-lang-up-block)
+    (should (looking-at "作 主"))))
+
+(ert-deftest ru-lang-try-definition-navigation-and-imenu ()
+  (ru-lang-test--buffer "算 主:\n试\n算 内:\n试 卒 '坏'. 救 因 得 1. 终.\n法\n救 因\n得 0.\n终.\n法\n算 后: 得 2. 法\n"
+    (should (equal (mapcar #'car (ru-lang-imenu-create-index))
+                   '("算 主" "算 主@内" "算 后")))
+    (search-forward "卒 '坏'")
+    (ru-lang-beginning-of-defun)
+    (should (looking-at "算 内"))
+    (ru-lang-end-of-defun)
+    (should (looking-at "\n救 因"))
+    (ru-lang-end-of-defun)
+    (should (looking-at "\n算 后"))))
+
 (ert-deftest ru-lang-navigation-empty-and-incomplete ()
-  (dolist (source '("" "算" "作 主:\n显 ‘未闭合\n然" "若 (\n［" "法 然 环 为 象" "形 人: 作 说:"))
+  (dolist (source '("" "算" "作 主:\n显 ‘未闭合\n然" "若 (\n［" "法 然 环 为 象" "形 人: 作 说:"
+                    "试" "试 卒" "试 卒 '未闭合" "试 救" "试 救 # 名称未写"
+                    "试 救 原因" "试 试 救 内因" "试 算 未完:" "救 原因 终."))
     (ru-lang-test--buffer source
       (font-lock-ensure)
       (indent-region (point-min) (point-max))
@@ -266,6 +397,22 @@
         (ru-lang-forward-block 3)
         (ru-lang-backward-block 3)
         (ru-lang-up-block)
+        (ru-lang-imenu-create-index)))))
+
+(ert-deftest ru-lang-recovery-all-editing-prefixes ()
+  (let ((source "作 主 文件 为 件:\n试\n算 内 终 为 数:\n试：\n卒 ‘救 \\’ 终’.\n救 # 试 终\n原因：\n显 终.\n终.\n法\n救 原因\n试 显 文件@读. 救 内因 显 内因. 终.\n错误 其 写 原因.\n终.\n为\n"))
+    (dotimes (end (1+ (length source)))
+      (ru-lang-test--buffer (substring source 0 end)
+        (font-lock-ensure)
+        (indent-region (point-min) (point-max))
+        (let ((once (buffer-string)))
+          (indent-region (point-min) (point-max))
+          (should (equal once (buffer-string))))
+        (ru-lang-forward-block 5)
+        (ru-lang-backward-block 5)
+        (ru-lang-up-block)
+        (ru-lang-beginning-of-defun)
+        (ru-lang-end-of-defun)
         (ru-lang-imenu-create-index)))))
 
 (ert-deftest ru-lang-repository-examples-preserve-tokens ()

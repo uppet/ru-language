@@ -290,10 +290,19 @@ class LanguageTests(unittest.TestCase):
         self.assertIn("期待「然」", result.stderr)
 
     def test_generation_guard(self):
-        for command in ("run", "check", "build", "generate"):
-            result = subprocess.run([sys.executable, str(ROOT/"ru"), command, str(ROOT/"examples/wish.md")], capture_output=True, text=True, timeout=5)
-            self.assertEqual(result.returncode, 1)
-            self.assertIn("生成功能未配置", result.stderr)
+        # Tests never inherit a developer's LLM credentials or user config.
+        with tempfile.TemporaryDirectory() as temp:
+            config = Path(temp) / "empty.json"
+            config.write_text("{}", encoding="utf-8")
+            env = {key: value for key, value in os.environ.items()
+                   if not key.startswith("RU_LLM_")}
+            env["RU_LANG_CONFIG"] = str(config)
+            for command in ("run", "check", "build", "generate"):
+                result = subprocess.run(
+                    [sys.executable, str(ROOT/"ru"), command, str(ROOT/"examples/wish.md")],
+                    capture_output=True, text=True, timeout=5, env=env)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn("生成功能未配置" if command == "generate" else "ru generate", result.stderr)
 
     @unittest.skipUnless(any(shutil.which(c) for c in ("clang", "gcc", "cc")), "C compiler unavailable")
     def test_native_without_source_or_python(self):

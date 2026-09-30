@@ -8,7 +8,8 @@ import math
 from pathlib import Path
 import re
 import sys
-from .frontend import RuError, bind_arguments, validate
+from .frontend import BUILTIN_NAMES, RuError, bind_arguments, validate
+from .io_runtime import install_io, io_member, io_new_defaults, read_stream_line, _write_stream
 
 DECIMAL = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?\Z")
 
@@ -159,15 +160,42 @@ class Break(Exception):
     pass
 
 
+class Panic(RuError):
+    """Only explicit 卒 is recoverable; ordinary RuError remains fatal."""
+    def __init__(self, reason, token):
+        self.reason = reason
+        super().__init__(reason, token.line, token.col, "未救之卒")
+
+
+@dataclass(eq=False)
+class FailedModule:
+    """Keep escaped values' owner alive, without retaining exception tracebacks."""
+    interpreter: object
+    reason: str
+    line: int
+    col: int
+    source_name: object = None
+    source_text: str = ""
+
+    def rethrow(self):
+        error = Panic(self.reason, self)
+        if self.source_name is not None:
+            error.source_name = self.source_name
+            error.source_text = self.source_text
+        raise error
+
+
 class Interpreter:
-    def __init__(self, stdin=None, stdout=None):
+    def __init__(self, stdin=None, stdout=None, stderr=None):
         self.stdin, self.stdout = stdin or sys.stdin, stdout or sys.stdout
+        self.stderr = sys.stderr if stderr is None else stderr
         self.global_scope, self.functions, self.depth = Scope(), {}, 0
         self.types, self.function_owners = {}, {}
         self.source_path, self.modules, self.module_cache = None, {}, {}
         self.loading = set()
         self.call_state = [0]
         self.last_member_procedure = False
+        install_io(self)
         if sys.getrecursionlimit() < 10000:
             sys.setrecursionlimit(10000)
 
@@ -258,6 +286,8 @@ class Interpreter:
             raise
 
     def type_matches(self, value, typ):
+        if typ == "":
+            return True
         if typ.endswith(" 阵"):
             return isinstance(value, list) and all(self.type_matches(item, typ[:-2]) for item in value)
         if typ == "数":
@@ -270,7 +300,7 @@ class Interpreter:
             return isinstance(value, list)
         if typ == "对":
             return isinstance(value, Pair)
-        expected = self.types.get(typ) or self.global_scope.values.get(typ)
+        expected = self.types.get(typ) or self.global_scope.values.get(typ) or self.builtin_types.get(typ)
         if not isinstance(expected, RuType) or not isinstance(value, Instance):
             return False
         current = value.type
@@ -288,15 +318,15 @@ class Interpreter:
             if n.kind == "type":
                 self.resolve_type(self.types[d["name"]])
             elif n.kind == "bind":
-                if d["name"] in self.functions or d["name"] in self.types or d["name"] == "读":
-                    self.fail(n, "变量名不能与函数名、形名或「读」重名")
+                if d["name"] in self.functions or d["name"] in self.types or d["name"] in BUILTIN_NAMES:
+                    self.fail(n, "变量名不能与函数名、形名或内置名称重名")
                 scope.values[d["name"]] = self.expr(d["expr"], scope)
             elif n.kind == "assign":
                 self.assign(n, scope)
             elif n.kind == "import_all":
                 module = self.expr(d["expr"], scope)
                 exports = module.exports()
-                conflicts = set(exports) & (set(scope.values) | set(self.functions) | set(self.types) | {"读"})
+                conflicts = set(exports) & (set(scope.values) | set(self.functions) | set(self.types) | BUILTIN_NAMES)
                 if conflicts:
                     self.fail(n, "导入名称冲突：" + "、".join(sorted(conflicts)))
                 for name, value in exports.items():
@@ -308,11 +338,36 @@ class Interpreter:
                     else:
                         scope.values[name] = value
             elif n.kind == "print":
-                print(display(self.expr(d["expr"], scope)), file=self.stdout, flush=True)
+                value = self.expr(d["expr"], scope)
+                try:
+                    _write_stream(self.stdout, display(value) + "\n")
+                except (OSError, ValueError) as error:
+                    self.fail(n, "输出失败：" + str(error))
             elif n.kind == "expr":
                 value = self.expr(d["expr"], scope)
                 if echo and not self.is_procedure(d["expr"], scope):
-                    print(display(value), file=self.stdout, flush=True)
+                    try:
+                        _write_stream(self.stdout, display(value) + "\n")
+                    except (OSError, ValueError) as error:
+                        self.fail(n, "输出失败：" + str(error))
+            elif n.kind == "panic":
+                reason = self.expr(d["expr"], scope)
+                if not isinstance(reason, str):
+                    self.fail(n, "「卒」的原因须为句")
+                error = Panic(reason, n.token)
+                self.locate_error(error)
+                raise error
+            elif n.kind == "try":
+                try:
+                    self.block(d["body"], scope)
+                except Panic as error:
+                    if d["reason"] in self.functions or d["reason"] in self.types or d["reason"] in BUILTIN_NAMES:
+                        self.fail(n, "救的原因名称不能与函数名、形名或内置名称重名")
+                    handler = Scope(scope)
+                    handler.values[d["reason"]] = error.reason
+                    # Outside the protected suite: a new 卒 here propagates
+                    # to an enclosing dynamically active 试.
+                    self.block(d["rescue"], handler)
             elif n.kind == "return":
                 raise Return(self.expr(d["expr"], scope))
             elif n.kind == "break":
@@ -394,15 +449,22 @@ class Interpreter:
         if path in self.loading:
             self.fail(n, "外言导入形成循环：" + path)
         if path in self.module_cache:
-            return self.module_cache[path]
+            cached = self.module_cache[path]
+            if isinstance(cached, FailedModule):
+                cached.rethrow()
+            return cached
         if path not in self.modules:
             from .modules import load_module_graph
             self.modules.update(load_module_graph(path))
-        child = Interpreter(self.stdin, self.stdout)
+        child = Interpreter(self.stdin, self.stdout, self.stderr)
         child.loading, child.call_state = self.loading, self.call_state
         self.loading.add(path)
         try:
             child.execute(self.modules[path], source_path=path, modules=self.modules, module_cache=self.module_cache)
+        except Panic as error:
+            self.module_cache[path] = FailedModule(child, error.reason, error.line, error.col,
+                getattr(error, "source_name", None), getattr(error, "source_text", ""))
+            raise
         finally:
             self.loading.remove(path)
         module = Module(child)
@@ -440,7 +502,9 @@ class Interpreter:
             if not isinstance(typ, RuType):
                 self.fail(n, f"「{d['name']}」不是形")
             typ.owner.resolve_type(typ)
-            fields = {name: None for name in typ.fields}
+            fields = io_new_defaults(typ)
+            if fields is None:
+                fields = {name: None for name in typ.fields}
             provided = set()
             for key, expr in d["args"]:
                 if key in provided:
@@ -531,6 +595,9 @@ class Interpreter:
     def member(self, n, receiver, name, args):
         fail = lambda message: self.fail(n, message)
         self.last_member_procedure = False
+        handled, result = io_member(self, n, receiver, name, args)
+        if handled:
+            return result
         if isinstance(receiver, Instance):
             if name in receiver.type.fields:
                 bind_arguments(name, args, [], fail)
@@ -580,9 +647,14 @@ class Interpreter:
             prompt = kwargs.get("提示", "")
             if not isinstance(prompt, str):
                 self.fail(n, "输入提示须为句")
-            self.stdout.write(prompt)
-            self.stdout.flush()
-            value = self.stdin.readline()
+            try:
+                _write_stream(self.stdout, prompt)
+            except (OSError, ValueError) as error:
+                self.fail(n, "输出失败：" + str(error))
+            try:
+                value = read_stream_line(self.stdin)
+            except (OSError, UnicodeError, ValueError) as error:
+                self.fail(n, "读取输入失败：" + str(error))
             if value == "":
                 self.fail(n, "输入结束（EOF）")
             if "\x00" in value:

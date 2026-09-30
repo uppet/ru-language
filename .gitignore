@@ -28,6 +28,8 @@ htmlcov/
 /examples/unicode_slices
 /examples/entry
 /examples/modules/main
+/examples/checked_io
+/examples/recovery
 
 # Editor backups and local machine files
 *.elc
@@ -45,3 +47,7 @@ Thumbs.db
 /.aws/
 /.codex/
 /.agents/
+.ru-lang.json
+.ru-lang.*.json
+*.api-key
+*.api-key.txt

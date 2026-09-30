@@ -1,5 +1,10 @@
 #ifndef RU_RUNTIME_H
 #define RU_RUNTIME_H
+#ifndef _WIN32
+#ifndef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L
+#endif
+#endif
 /* Standalone C99 runtime. Every generated temporary and environment binding
  * owns one external root. Container edges never own roots. Mark/sweep follows
  * edges from external roots, so shared references and cycles are reclaimed.
@@ -31,6 +36,20 @@ struct Env { Env *parent; RuBinding *bindings; Env *registry_next; };
 
 static const char *ru_source = "<程序>";
 static unsigned ru_call_depth;
+/* Explicit panic state crosses native calls without nonlocal jumps. Each
+ * generated caller checks this flag and drops its live owned temporaries.
+ * The rooted reason survives environment teardown and collection. */
+static int ru_panicking;
+static Val ru_panic_reason;
+static const char *ru_panic_source;
+static int ru_panic_line, ru_panic_col;
+typedef struct RuModuleFailure {
+    Val reason;
+    const char *source;
+    int line, col;
+    struct RuModuleFailure *next;
+} RuModuleFailure;
+static RuModuleFailure *ru_module_failures;
 static RuHeap *ru_heap;
 static Env *ru_envs;
 typedef struct RuScratch { void *data; struct RuScratch *next; } RuScratch;
@@ -39,6 +58,9 @@ static size_t ru_live, ru_freed, ru_collections, ru_threshold = 256, ru_next_gc 
 static int ru_initialized, ru_finished;
 static void ru_shutdown(void);
 static void env_free(Env *env);
+static void ru_io_defaults(Val value, int line);
+static int ru_io_member(Val receiver, const char *name, size_t argc, const char **keys,
+                        Val *args, int line, Val *out);
 static void ru_fail(int line, const char *format, ...)
 {
     va_list args;
@@ -82,6 +104,40 @@ static Val v_copy(Val v)
 static void v_drop(Val v)
 {
     if (v.heap) { if (!v.heap->roots) ru_fail(0, "内部错误：值的根计数失衡"); --v.heap->roots; }
+}
+static void ru_panic_raise(Val reason, int line, int col)
+{
+    if (reason.kind != RU_STR) ru_fail(line, "「卒」的原因须为句");
+    ru_panic_reason = v_copy(reason);
+    ru_panic_source = ru_source;
+    ru_panic_line = line; ru_panic_col = col; ru_panicking = 1;
+}
+/* Failed initializations retain their globals: already escaped objects and
+ * functions still refer to that environment. Imports rethrow the original
+ * cached failure instead of replaying side effects or retargeting classes. */
+static void ru_module_failure_save(RuModuleFailure *failure)
+{
+    failure->reason = v_copy(ru_panic_reason);
+    failure->source = ru_panic_source;
+    failure->line = ru_panic_line; failure->col = ru_panic_col;
+    failure->next = ru_module_failures; ru_module_failures = failure;
+}
+static Val ru_module_failure_raise(RuModuleFailure *failure)
+{
+    ru_panic_raise(failure->reason, failure->line, failure->col);
+    ru_panic_source = failure->source;
+    return v_null();
+}
+static void ru_panic_clear(void)
+{
+    if (ru_panicking) v_drop(ru_panic_reason);
+    ru_panic_reason = v_null(); ru_panicking = 0;
+}
+static int ru_panic_uncaught(void)
+{
+    fprintf(stderr, "%s:%d:%d: 未救之卒：%s\n", ru_panic_source ? ru_panic_source : "<程序>",
+            ru_panic_line, ru_panic_col, ru_panic_reason.s->data);
+    ru_panic_clear(); ru_shutdown(); return 1;
 }
 /* Mark iteratively: deeply nested pairs and cyclic graphs cannot overflow the
  * C stack. Each node enters the worklist once per collection. */
@@ -218,7 +274,7 @@ static void env_bind(Env *env, const char *name, Val value, int line)
 {
     RuBinding *existing = env_find(env, name);
     if (!strcmp(name, "读") || (existing && existing->reserved))
-        ru_fail(line, "变量名不能与函数名、形名或「读」重名");
+        ru_fail(line, "变量名不能与函数名、形名或内置名称重名");
     env_set(env, name, value);
 }
 static void env_free(Env *env)
@@ -234,6 +290,12 @@ static void ru_shutdown(void)
     RuHeap *h;
     if(ru_finished) return;
     ru_finished=1;
+    ru_panic_clear();
+    while(ru_module_failures) {
+        RuModuleFailure *failure = ru_module_failures;
+        ru_module_failures = failure->next;
+        v_drop(failure->reason); failure->reason = v_null();
+    }
     while(ru_envs) env_free(ru_envs);
     while(ru_scratch) ru_scratch_free(ru_scratch->data);
     ru_gc();
@@ -491,7 +553,13 @@ static Val v_binary(const char *op,Val a,Val b,int line)
     }
     ru_fail(line,"未知二元运算符：%s",op);return v_null();
 }
-static void v_print(Val v) { Val text=v_to_string(v);fputs(text.s->data,stdout);fputc('\n',stdout);v_drop(text); }
+static void v_print(Val v, int line)
+{
+    Val text = v_to_string(v);
+    int failed = fputs(text.s->data, stdout) == EOF || fputc('\n', stdout) == EOF || fflush(stdout) == EOF;
+    v_drop(text);
+    if (failed) ru_fail(line, "输出失败");
+}
 static uint64_t v_count(Val v,int line)
 {
     if(v.kind!=RU_NUM||!isfinite(v.n)||v.n<0||v.n>9007199254740991.0||floor(v.n)!=v.n)ru_fail(line,"重复次数须为 0 至 9007199254740991 的整数");
@@ -565,6 +633,7 @@ static void ru_class_ready(RuClass *klass, int line)
 static int v_is_type(Val v,const char *type,Env *env)
 {
     size_t type_len = strlen(type);
+    if (!type_len) return 1;
     const char *suffix = type_len >= 4 ? type + type_len - 4 : NULL;
     if(suffix && !strcmp(suffix," 阵")) {size_t i,len=(size_t)(suffix-type);char *item;RuArray *a;int good=1;if(v.kind!=RU_ARRAY)return 0;item=(char *)ru_alloc(len+1,0);memcpy(item,type,len);item[len]=0;a=(RuArray *)v.heap;for(i=0;i<a->len&&good;++i)good=v_is_type(a->items[i],item,env);free(item);return good;}
     if(!strcmp(type,"数"))return v.kind==RU_NUM;
@@ -606,6 +675,7 @@ static Val v_new(Val class_value,size_t argc,const char **keys,Val *args,int lin
     klass=class_value.klass; ru_class_ready(klass,line);
     o=(RuObject *)ru_new_heap(sizeof(*o),RU_OBJECT,line);v.kind=RU_OBJECT;v.heap=&o->gc;o->klass=klass;o->len=ru_field_count(klass);
     o->fields=(Val *)ru_alloc(o->len*sizeof(Val),line);for(i=0;i<o->len;++i)o->fields[i]=v_null();
+    ru_io_defaults(v, line);
     for(i=0;i<argc;++i){if(!keys[i])ru_fail(line,"新 的字段必须使用命名实参");for(j=0;j<i;++j)if(!strcmp(keys[i],keys[j]))ru_fail(line,"重复的实参：%s",keys[i]);v_set_member(v,keys[i],args[i],line);}
     return v;
 }
@@ -631,7 +701,8 @@ static Val v_call(Val callable,size_t argc,const char **keys,Val *args,int line)
 }
 static Val v_member(Val receiver,const char *name,size_t argc,const char **keys,Val *args,int line)
 {
-    const char *one[]={"值"},*position[]={"位"},*range[]={"始","终"};Val bound[2];
+    const char *one[]={"值"},*position[]={"位"},*range[]={"始","终"};Val bound[2], io_result;
+    if (ru_io_member(receiver, name, argc, keys, args, line, &io_result)) return io_result;
     if(receiver.kind==RU_MODULE){Val value=env_get(receiver.module,name,line),result;if(value.kind==RU_FUNCTION){result=v_call(value,argc,keys,args,line);v_drop(value);return result;}if(argc)ru_fail(line,"成员不是函数：%s",name);return value;}
     if(receiver.kind==RU_OBJECT){RuObject *o=(RuObject *)receiver.heap;size_t index,i;const char *type;Env *owner;RuClass *klass;
         if(ru_find_field(o->klass,name,&index,&type,&owner)){if(argc)ru_fail(line,"字段不是方法：%s",name);return v_copy(o->fields[index]);}
