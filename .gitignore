@@ -1,0 +1,38 @@
+# Python caches and local environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Generated native programs, C output and distribution checksums
+/bin/
+/dist/
+/SHA256SUMS.txt
+.ru-build-*/
+*.o
+*.exe
+/examples/hello
+/examples/add
+/examples/square
+/examples/ceremony
+/examples/conversation
+/examples/factorial
+
+# Editor backups and local machine files
+*~
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+.idea/
+
+# Local credentials and agent configuration
+.env
+.env.*
+!.env.example
+/.aws/
+/.codex/
+/.agents/
