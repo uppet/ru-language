@@ -1,6 +1,6 @@
 ;;; ru-lang-mode.el --- Editing support for the 如 language -*- lexical-binding: t; -*-
 
-;; Version: 0.2.0
+;; Version: 0.3.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: languages
 ;; URL: https://github.com/uppet/ru-language
@@ -44,12 +44,13 @@ The legacy global function 读 is also in `ru-lang--builtins'.")
 (cl-defstruct (ru-lang--token (:constructor ru-lang--make-token))
   text start end kind face)
 (cl-defstruct (ru-lang--block (:constructor ru-lang--make-block))
-  kind start end name parent header)
+  kind start end name parent header closed)
 
 (defvar-local ru-lang--font-lock-face nil)
 (defvar-local ru-lang--cache-tick nil)
 (defvar-local ru-lang--tokens nil)
 (defvar-local ru-lang--blocks nil)
+(defvar-local ru-lang--structures nil)
 (defvar-local ru-lang--indents nil)
 (defvar-local ru-lang--cache-bounds nil)
 
@@ -129,7 +130,7 @@ The legacy global function 读 is also in `ru-lang--builtins'.")
 
 (defun ru-lang--analyze ()
   "Compute block pairs and desired line depths from `ru-lang--tokens'."
-  (let ((tokens ru-lang--tokens) (stack nil) (blocks nil) (indents nil)
+  (let ((tokens ru-lang--tokens) (stack nil) (blocks nil) (structures nil) (indents nil)
         (statement-start t) (line (point-min)) (index 0) previous rescue-binding
         (next-tokens (make-vector (length ru-lang--tokens) nil)) next-code)
     (cl-loop for i downfrom (1- (length tokens)) to 0 do
@@ -193,9 +194,11 @@ The legacy global function 读 is also in `ru-lang--builtins'.")
                  ((eq kind 'string) (setq statement-start nil))
                  (closer
                   (setf (ru-lang--block-end top)
-                        (if (and next (equal (ru-lang--token-text next) "."))
+                        (if (and (not (member (ru-lang--block-kind top) '("(" "[")))
+                                 next (equal (ru-lang--token-text next) "."))
                             (ru-lang--token-end next)
-                          (ru-lang--token-end token)))
+                          (ru-lang--token-end token))
+                        (ru-lang--block-closed top) t)
                   (pop stack)
                   ;; Parentheses and indexing finish expressions, not
                   ;; statements (which may still use a name such as 终).
@@ -212,6 +215,7 @@ The legacy global function 读 is also in `ru-lang--builtins'.")
                                  :end (point-max) :name name :parent parent
                                  :header (member text '("算" "作" "若" "试")))))
                     (push block stack)
+                    (push block structures)
                     (unless (member text '("(" "[")) (push block blocks)))
                   (setq statement-start (member text '("循" "试"))))
                  ((or branch (and top (equal text ":")
@@ -247,6 +251,7 @@ The legacy global function 读 is also in `ru-lang--builtins'.")
           (push (cons line (unless string-line depth)) indents)
           (setq line (1+ end)))))
     (setq ru-lang--blocks (nreverse blocks)
+          ru-lang--structures (nreverse structures)
           ru-lang--indents (nreverse indents))))
 
 (defun ru-lang--ensure-cache ()
@@ -386,6 +391,79 @@ The legacy global function 读 is also in `ru-lang--builtins'.")
                           (ru-lang--navigation-blocks nil))))))
     (when block (goto-char (ru-lang--block-start block)))))
 
+(defun ru-lang--containing-structure ()
+  "Return the innermost structure containing point, excluding its opening.
+A completed structure excludes its end; an incomplete one includes EOF."
+  (car (last (cl-remove-if-not
+              (lambda (block)
+                (and (< (ru-lang--block-start block) (point))
+                     (or (< (point) (ru-lang--block-end block))
+                         (and (not (ru-lang--block-closed block))
+                              (= (point) (ru-lang--block-end block))))))
+              ru-lang--structures))))
+
+(defun ru-lang--move-structure (backward)
+  "Move across one balanced structure at this level, BACKWARD if non-nil.
+Do not cross the enclosing structure's boundary."
+  (let* ((parent (ru-lang--containing-structure))
+         (start (if parent (ru-lang--block-start parent) (1- (point-min))))
+         (end (if parent (ru-lang--block-end parent) (1+ (point-max))))
+         target)
+    (dolist (block ru-lang--structures)
+      (when (and (> (ru-lang--block-start block) start)
+                 (< (ru-lang--block-start block) end)
+                 (if backward
+                     (and (ru-lang--block-closed block)
+                          (<= (ru-lang--block-end block) (point)))
+                   (>= (ru-lang--block-start block) (point))))
+        (when (or (not target)
+                  (if backward
+                      (> (ru-lang--block-end block) (ru-lang--block-end target))
+                    (< (ru-lang--block-start block) (ru-lang--block-start target))))
+          ;; Ties retain the first (outermost) opening, so backward motion
+          ;; always inverts a forward jump over a whole nested structure.
+          (setq target block))))
+    (unless target
+      (user-error "No %s structure at this level" (if backward "previous" "next")))
+    (unless (ru-lang--block-closed target)
+      (user-error "Unclosed structure"))
+    (goto-char (if backward (ru-lang--block-start target) (ru-lang--block-end target)))))
+
+(defun ru-lang-forward-list (&optional arg)
+  "Move across ARG balanced keyword blocks or bracket pairs at this level.
+Negative ARG moves backward.  At a boundary or an incomplete target, report
+an error without moving point; use `ru-lang-backward-up-list' to go outward."
+  (interactive "p")
+  (ru-lang--ensure-cache)
+  (let ((count (or arg 1)))
+    (goto-char
+     (save-excursion
+       (dotimes (_ (abs count)) (ru-lang--move-structure (< count 0)))
+       (point)))))
+
+(defun ru-lang-backward-list (&optional arg)
+  "Move backward across ARG balanced structures; negative ARG moves forward."
+  (interactive "p")
+  (ru-lang-forward-list (- (or arg 1))))
+
+(defun ru-lang-backward-up-list (&optional arg)
+  "Move to ARG enclosing openings; negative ARG moves to enclosing ends.
+This includes keyword blocks and bracket pairs, even unfinished openings.
+On failure, leave point unchanged."
+  (interactive "p")
+  (ru-lang--ensure-cache)
+  (let ((count (or arg 1)))
+    (goto-char
+     (save-excursion
+       (dotimes (_ (abs count))
+         (let ((parent (ru-lang--containing-structure)))
+           (unless parent (user-error "No enclosing structure"))
+           (when (and (< count 0) (not (ru-lang--block-closed parent)))
+             (user-error "Unclosed structure"))
+           (goto-char (if (< count 0) (ru-lang--block-end parent)
+                        (ru-lang--block-start parent)))))
+       (point)))))
+
 (defun ru-lang-imenu-create-index ()
   "Build an Imenu index of types, functions, procedures and qualified methods."
   (let (result)
@@ -403,6 +481,9 @@ The legacy global function 读 is also in `ru-lang--builtins'.")
     (define-key map (kbd "C-c C-p") #'ru-lang-backward-block)
     (define-key map (kbd "C-c C-n") #'ru-lang-forward-block)
     (define-key map (kbd "C-c C-u") #'ru-lang-up-block)
+    (define-key map (kbd "C-M-n") #'ru-lang-forward-list)
+    (define-key map (kbd "C-M-p") #'ru-lang-backward-list)
+    (define-key map (kbd "C-M-u") #'ru-lang-backward-up-list)
     map)
   "Keymap for `ru-lang-mode'.")
 
@@ -410,7 +491,8 @@ The legacy global function 读 is also in `ru-lang--builtins'.")
 (define-derived-mode ru-lang-mode prog-mode "如"
   "Major mode for 如 (.ru) source files.
 Use TAB and C-M-\\ for indentation; C-M-a/C-M-e for definitions;
-C-c C-p/C-c C-n/C-c C-u for language blocks; M-{/M-} for paragraphs."
+C-M-n/C-M-p/C-M-u for balanced structures; C-c C-p/C-c C-n/C-c C-u
+for legacy language-block movement; M-{/M-} for paragraphs."
   :syntax-table ru-lang-mode-syntax-table
   (setq-local indent-tabs-mode nil)
   (setq-local indent-line-function #'ru-lang-indent-line)

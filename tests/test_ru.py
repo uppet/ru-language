@@ -262,6 +262,42 @@ class LanguageTests(unittest.TestCase):
                 patch("sys.stdin", stdin), patch("sys.stdout", stdout):
             self.assertEqual(repl(), 0)
         self.assertTrue(stdout.getvalue().startswith(f"如 {__version__} ·"))
+        self.assertIn("元初实现", stdout.getvalue())
+        self.assertIn(":退 / :quit 退出", stdout.getvalue())
+
+    def test_repl_exit_aliases(self):
+        for command in (":退", ":quit", ":q", ":exit"):
+            for interactive in (False, True):
+                with self.subTest(command=command, interactive=interactive):
+                    stdin = io.StringIO(f"显 '之前'.\n  {command}  \n显 '之后'.\n")
+                    stdout, stderr = io.StringIO(), io.StringIO()
+                    with patch.object(stdin, "isatty", return_value=interactive), \
+                            patch("sys.stdin", stdin), patch("sys.stdout", stdout), \
+                            patch("sys.stderr", stderr):
+                        self.assertEqual(repl(), 0)
+                    self.assertIn("之前\n", stdout.getvalue())
+                    self.assertNotIn("之后", stdout.getvalue())
+                    self.assertEqual(stderr.getvalue(), "")
+                    if not interactive:
+                        self.assertEqual(stdout.getvalue(), "之前\n")
+
+    def test_repl_chinese_exit_help_and_command_boundary(self):
+        commands = ":help\n:退.\n显 ':退'.\n显 '继续'.\n:退\n显 '之后'.\n"
+        result = subprocess.run([sys.executable, str(ROOT/"ru"), "repl"],
+                                input=commands, capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 0)
+        self.assertIn(":退 / :quit / :q / :exit 退出", result.stdout)
+        self.assertTrue(result.stdout.endswith(":退\n继续\n"))
+        self.assertIn("未知命令", result.stderr)
+        self.assertNotIn("之后", result.stdout)
+
+    def test_repl_exit_text_inside_multiline_input(self):
+        commands = "显 ‘第一行\n:退\n最后一行’.\n:退\n显 '之后'.\n"
+        result = subprocess.run([sys.executable, str(ROOT/"ru"), "repl"],
+                                input=commands, capture_output=True, text=True, timeout=5)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, "第一行\n:退\n最后一行\n")
+        self.assertEqual(result.stderr, "")
 
     def test_repl_persistence_and_multiline(self):
         commands = "值 取 3.\n值+4.\n算 平方 根 为 数:\n得 根*根.\n法\n平方 根:值.\n循 2 次\n值 取 值+1.\n环\n值.\n:quit\n"

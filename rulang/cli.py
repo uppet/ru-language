@@ -73,7 +73,7 @@ def repl():
         report(RuError("输入失败：无法读取标准输入", category="运行错误"), "<repl>")
         return 1
     if interactive:
-        print(f"如 {__version__} · 语句以 . 结束 · :help 查看帮助 · :quit 退出")
+        print(f"如 {__version__} · 元初实现 · 语句以 . 结束 · :help 查看帮助 · :退 / :quit 退出")
     interpreter, pending = Interpreter(), ""
     while True:
         try:
@@ -90,14 +90,14 @@ def repl():
                 return 0
             if not pending and line.strip().startswith(":"):
                 command = line.strip()
-                if command in (":quit", ":q", ":exit"):
+                if command in (":退", ":quit", ":q", ":exit"):
                     return 0
                 if command == ":reset":
                     interpreter = Interpreter()
                     if interactive:
                         print("已清空变量与函数")
                 elif command == ":help":
-                    print("显 ‘你好’. | 数值 取 3. | 数值 + 4.\n支持多行块；:reset 清空状态；:quit 退出；Ctrl-C 取消当前输入／执行")
+                    print("显 ‘你好’. | 数值 取 3. | 数值 + 4.\n支持多行块；:reset 清空状态；:退 / :quit / :q / :exit 退出（命令不加句点）；Ctrl-C 取消当前输入／执行")
                 else:
                     print("未知命令；输入 :help", file=sys.stderr)
                 continue
