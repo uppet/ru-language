@@ -70,7 +70,7 @@ def build(program, source_path, output, cc=None, emit_c=None):
 def repl():
     interactive = sys.stdin.isatty()
     if interactive:
-        print("如 0.1.0 · 语句以 . 结束 · :help 查看帮助 · :quit 退出")
+        print(f"如 {__version__} · 语句以 . 结束 · :help 查看帮助 · :quit 退出")
     interpreter, pending = Interpreter(), ""
     while True:
         try:

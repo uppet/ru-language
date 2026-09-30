@@ -124,7 +124,7 @@ class Parser:
     def __init__(self, source):
         self.tokens, self.i = lex(source), 0
         self.depth = 0
-        self.named_call_allowed = True
+        self.call_allowed = True
 
     @property
     def current(self):
@@ -233,7 +233,7 @@ class Parser:
             self.expect(end)
             self.accept(".")
             return node("function", t, name=name, params=params, body=body, procedure=kind == "作")
-        if t.kind == "NAME" and self.peek().value == "取":
+        if t.kind == "NAME" and self.peek().kind == "NAME" and self.peek().value == "取":
             name = self.name().value
             self.expect("取")
             expr = self.expression()
@@ -243,18 +243,47 @@ class Parser:
         self.expect(".")
         return node("expr", t, expr=expr)
 
-    def expression(self, minimum=0, allow_named=None):
+    def expression(self, minimum=0, allow_call=None):
         self.depth += 1
-        previous = self.named_call_allowed
-        if allow_named is not None:
-            self.named_call_allowed = allow_named
+        previous = self.call_allowed
+        if allow_call is not None:
+            self.call_allowed = allow_call
         try:
             if self.depth > 128:
                 self.fail("源码嵌套过深（原型上限 128 层）")
             return self._expression(minimum)
         finally:
             self.depth -= 1
-            self.named_call_allowed = previous
+            self.call_allowed = previous
+
+    def starts_argument(self):
+        """An adjacent primary starts an argument; + and - stay binary.
+
+        Each argument is a full expression. Calls inside arguments need
+        parentheses, so `f x y` cannot accidentally become `f (x y)`.
+        """
+        t = self.current
+        return (t.kind in ("NUMBER", "STRING") or self.isv("(") or
+                self.isv("非") or (t.kind == "NAME" and t.value not in KEYWORDS))
+
+    def call_arguments(self):
+        args, style, separated = [], None, False
+        while self.call_allowed and (self.starts_argument() or
+                                    (separated and (self.isv("+") or self.isv("-")))):
+            named = (self.current.kind == "NAME" and self.peek().kind == "OP" and
+                     self.peek().value == ":")
+            current_style = "named" if named else "positional"
+            if style is not None and style != current_style:
+                self.fail("同一次调用不能混用位置实参与命名实参；嵌套调用请加括号")
+            style = current_style
+            key = self.pop().value if named else None
+            if named:
+                self.expect(":")
+            args.append((key, self.expression(allow_call=False)))
+            # A comma makes a following + or - unambiguously unary. Without
+            # it, `f 1 - 2` means `f (1 - 2)`, just like a named argument.
+            separated = self.accept(",") is not None
+        return args
 
     def _expression(self, minimum=0):
         t = self.pop()
@@ -263,24 +292,19 @@ class Parser:
         elif t.kind == "STRING":
             left = node("string", t, value=t.value)
         elif t.value == "(" and t.kind == "OP":
-            # Parentheses explicitly delimit nested named calls. Without this
+            # Parentheses explicitly delimit nested calls. Without this
             # boundary, f a: variable b: value is ambiguous with variable(...).
-            left = self.expression(allow_named=True)
+            left = self.expression(allow_call=True)
             self.expect(")")
         elif t.value in ("+", "-", "非") and t.kind != "STRING":
             left = node("unary", t, op=t.value, expr=self.expression(70))
         elif t.kind == "NAME" and t.value not in KEYWORDS:
-            args = []
-            while self.named_call_allowed and self.current.kind == "NAME" and self.peek().value == ":":
-                arg = self.pop()
-                self.expect(":")
-                args.append((arg.value, self.expression(allow_named=False)))
-                self.accept(",")
+            args = self.call_arguments()
             left = node("call", t, name=t.value, args=args) if args else node("name", t, name=t.value)
         else:
             self.fail(f"此处需要表达式，却遇到「{t.value}」", t)
         while True:
-            if self.isv("为") and self.peek().value in ("数", "句") and 5 >= minimum:
+            if self.isv("为") and self.peek().kind == "NAME" and self.peek().value in ("数", "句") and 5 >= minimum:
                 cast = self.pop()
                 typ = self.pop()
                 left = node("convert", cast, expr=left, target=typ.value)
@@ -307,6 +331,39 @@ def parse(source):
     if parser.current.kind != "EOF":
         parser.fail("出现多余内容")
     return result
+
+
+def bind_arguments(name, args, params, fail, optional=False):
+    """Match both call styles without changing source evaluation order.
+
+    Values can be AST expressions (compiler) or evaluated values (interpreter).
+    `optional` is only used for the built-in input prompt.
+    """
+    positional = any(key is None for key, _ in args)
+    if positional:
+        if any(key is not None for key, _ in args):
+            fail("同一次调用不能混用位置实参与命名实参")
+        if len(args) != len(params):
+            fail(f"函数「{name}」需要 {len(params)} 个位置实参（" +
+                 "、".join(params) + f"），收到 {len(args)} 个")
+        return {key: value for key, (_, value) in zip(params, args)}
+    values = {}
+    for key, value in args:
+        if key in values:
+            fail(f"重复的实参：{key}")
+        values[key] = value
+    if optional and not values:
+        return values
+    missing = [key for key in params if key not in values]
+    unknown = [key for key in values if key not in params]
+    if missing or unknown:
+        detail = []
+        if missing:
+            detail.append("缺少「" + "、".join(missing) + "」")
+        if unknown:
+            detail.append("未知「" + "、".join(unknown) + "」")
+        fail(f"函数「{name}」实参不匹配：" + "；".join(detail))
+    return values
 
 
 def validate(program, existing_functions=()):

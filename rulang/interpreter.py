@@ -2,7 +2,7 @@
 import math
 import re
 import sys
-from .frontend import RuError, validate
+from .frontend import RuError, bind_arguments, validate
 
 DECIMAL = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?\Z")
 
@@ -155,14 +155,9 @@ class Interpreter:
         raise AssertionError(n.kind)
 
     def call(self, n, name, args):
-        kwargs = {}
-        for key, value in args:
-            if key in kwargs:
-                self.fail(n, f"重复的实参：{key}")
-            kwargs[key] = value
+        fail = lambda message: self.fail(n, message)
         if name == "读":
-            if set(kwargs) - {"提示"}:
-                self.fail(n, "「读」只接受「提示」实参")
+            kwargs = bind_arguments(name, args, ["提示"], fail, optional=True)
             prompt = kwargs.get("提示", "")
             if not isinstance(prompt, str):
                 self.fail(n, "输入提示须为句")
@@ -178,8 +173,7 @@ class Interpreter:
             self.fail(n, f"未定义函数：{name}")
         function = self.functions[name]
         params = function.data["params"]
-        if set(kwargs) != {p[0] for p in params}:
-            self.fail(n, f"函数「{name}」需要实参：" + "、".join(p[0] for p in params))
+        kwargs = bind_arguments(name, args, [p[0] for p in params], fail)
         local = Scope(self.global_scope)
         for key, typ in params:
             value = kwargs[key]
