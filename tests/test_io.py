@@ -251,6 +251,55 @@ class CheckedIOTests(unittest.TestCase):
                 result = subprocess.run(command, capture_output=True, text=True, timeout=10)
                 self.assertEqual((result.returncode, result.stdout, result.stderr), (0, '跨模块\n', ''))
 
+    def test_qualified_module_members_do_not_include_builtin_parent(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root/'lib.ru').write_text('值 取 1.', encoding='utf-8')
+            for name in io_runtime.IO_BUILTIN_NAMES:
+                source = f"模 取 外言 'lib.ru'. 显 模 其 {name}."
+                path = root/'test.ru'
+                path.write_text(source, encoding='utf-8')
+                commands = [[sys.executable, str(ROOT/'ru'), 'run', str(path)]]
+                if CC:
+                    binary, _ = build(parse(source), path, root/'program')
+                    commands.append([str(binary)])
+                for command in commands:
+                    with self.subTest(name=name, command=command):
+                        result = subprocess.run(command, capture_output=True, text=True, timeout=10)
+                        self.assertEqual((result.returncode, result.stdout), (1, ''))
+                        self.assertIn(f'未知成员：{name}', result.stderr)
+
+    def test_qualified_module_members_preserve_explicit_exports(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root/'lib.ru').write_text("""
+文件类 取 件. 目录类 取 录. 成果类 取 件作成果.
+输入口 取 读取. 输出口 取 显出. 错误口 取 错误.
+值 取 7. 文字 取 '跨模块'. 算 加值 项 为 数: 得 值 + 项. 法
+""", encoding='utf-8')
+            source = f"""
+模 取 外言 'lib.ru'.
+文件形 取 模 其 文件类. 文档 取 新 文件形 路径:{quote(root/'missing')}.
+显 (文档 其 在) 其 值.
+目录形 取 模 其 目录类. 显 (新 目录形) 其 路径.
+成果形 取 模 其 成果类. 显 (新 成果形) 其 结果.
+显 ((模 其 输入口) 其 读) 其 值.
+(模 其 输出口) 其 写 内容:'输出'. (模 其 错误口) 其 写 内容:'诊断'.
+显 模 其 文字. 显 模 其 值. 显 模 其 加值 5. 显 模 其 加值 项:6.
+"""
+            path = root/'test.ru'
+            path.write_text(source, encoding='utf-8')
+            commands = [[sys.executable, str(ROOT/'ru'), 'run', str(path)]]
+            if CC:
+                binary, _ = build(parse(source), path, root/'program')
+                commands.append([str(binary)])
+            for command in commands:
+                with self.subTest(command=command):
+                    result = subprocess.run(command, input='输入\n', capture_output=True, text=True,
+                                            timeout=10, env=dict(os.environ, RU_GC_THRESHOLD='1'))
+                    self.assertEqual((result.returncode, result.stdout, result.stderr),
+                                     (0, '0\n.\n成功\n输入\n输出跨模块\n7\n12\n13\n', '诊断'))
+
     def test_builtin_registry_does_not_retain_interpreters(self):
         owner = Interpreter(io.StringIO(), io.StringIO())
         reference = weakref.ref(owner)

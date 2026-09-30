@@ -668,6 +668,11 @@ class Interpreter:
     def invoke(self, n, function, args, receiver=None, caller=None):
         caller = self if caller is None else caller
         name, params = function.data["name"], function.data["params"]
+        # Imports execute lazily. Validate against the function owner's names
+        # at invocation, without rejecting calls before an import has run or
+        # treating ordinary imported bindings/type aliases as declarations.
+        if any(key in self.functions or key in self.types for key, _ in params):
+            self.fail(function, "参数名不能与函数名、形名或内置名称重名")
         kwargs = bind_arguments(name, args, [p[0] for p in params], lambda message: caller.fail(n, message))
         local = Scope(self.global_scope)
         if receiver is not None:

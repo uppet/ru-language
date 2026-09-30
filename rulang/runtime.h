@@ -703,7 +703,18 @@ static Val v_member(Val receiver,const char *name,size_t argc,const char **keys,
 {
     const char *one[]={"值"},*position[]={"位"},*range[]={"始","终"};Val bound[2], io_result;
     if (ru_io_member(receiver, name, argc, keys, args, line, &io_result)) return io_result;
-    if(receiver.kind==RU_MODULE){Val value=env_get(receiver.module,name,line),result;if(value.kind==RU_FUNCTION){result=v_call(value,argc,keys,args,line);v_drop(value);return result;}if(argc)ru_fail(line,"成员不是函数：%s",name);return value;}
+    if(receiver.kind==RU_MODULE){
+        RuBinding *binding;Val value,result;
+        /* Qualified access exposes only the module's own exports, not builtins
+         * inherited through its parent environment. */
+        for(binding=receiver.module->bindings;binding;binding=binding->next)
+            if(!strcmp(binding->name,name))break;
+        if(!binding)ru_fail(line,"未知成员：%s",name);
+        value=v_copy(binding->value);
+        if(value.kind==RU_FUNCTION){result=v_call(value,argc,keys,args,line);v_drop(value);return result;}
+        if(argc)ru_fail(line,"成员不是函数：%s",name);
+        return value;
+    }
     if(receiver.kind==RU_OBJECT){RuObject *o=(RuObject *)receiver.heap;size_t index,i;const char *type;Env *owner;RuClass *klass;
         if(ru_find_field(o->klass,name,&index,&type,&owner)){if(argc)ru_fail(line,"字段不是方法：%s",name);return v_copy(o->fields[index]);}
         for(klass=o->klass;klass;klass=klass->parent)for(i=0;i<klass->methods_count;++i)if(!strcmp(klass->methods[i]->name,name)){Val method=v_function(klass->methods[i],klass->global,receiver),result=v_call(method,argc,keys,args,line);v_drop(method);return result;}

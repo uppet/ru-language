@@ -51,6 +51,7 @@ class Compiler:
                         self.function_ids[id(method)] = self.new('method')
         for path in self.modules:
             self._exports(path)
+        self._validate_parameters()
         self._validate_classes()
         entry = self.declarations[self.root].get('元初')
         if entry:
@@ -81,6 +82,20 @@ class Compiler:
 
     def _functions(self, path):
         return {name: n for name, n in self.exports[path].items() if n.kind == 'function'}
+
+    def _validate_parameters(self):
+        # Imported declarations become protected names only after exports are
+        # resolved. Check the owner's scope, not the scope of its importers;
+        # ordinary bindings (including type aliases) remain shadowable.
+        for path, declarations in self.declarations.items():
+            protected = {name for name, n in self.exports[path].items()
+                         if n.kind in ('function', 'type')}
+            for declaration in declarations.values():
+                functions = ([declaration] if declaration.kind == 'function'
+                             else declaration.data['methods'])
+                for function in functions:
+                    if any(name in protected for name, _ in function.data['params']):
+                        self.error(function, '参数名不能与函数名、形名或内置名称重名')
 
     def _validate_classes(self):
         self.parents = {}

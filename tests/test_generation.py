@@ -1,5 +1,6 @@
 """Offline Responses integration: only literal loopback + a public dummy token."""
 import contextlib
+import hashlib
 import io
 import json
 import os
@@ -15,10 +16,11 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from rulang import __version__
 from rulang.cli import main, repl
 from rulang.frontend import parse
 from rulang.generation import (
-    DEFAULT_BASE_URL, DEFAULT_MODEL, LOCAL_TEST_API_KEY, GenerationConfig,
+    DEFAULT_BASE_URL, DEFAULT_MODEL, LOCAL_TEST_API_KEY, MAX_LANGUAGE_SPEC_BYTES, GenerationConfig,
     GenerationError, clean_generated_source, extract_output_text, generate,
     load_config, request_response, responses_url,
 )
@@ -265,6 +267,107 @@ class ConfigurationTests(TemporaryGeneration):
         self.config.write_bytes(b" " * (64 * 1024 + 1))
         with self.assertRaises(GenerationError):
             load_config(self.env)
+
+
+class LanguageSpecificationTests(TemporaryGeneration):
+    def specification(self, body="显 表达式. 输出一行。", version=__version__):
+        # Small isolated loader fixtures, never a replacement bundled spec.
+        return f"# 如语言规范 {version}\n\n规范版本：{version}\n\n{body}\n"
+
+    def system_text(self, request):
+        return request[2]["input"][0]["content"][0]["text"]
+
+    def test_current_complete_bundled_specification_version_and_digest_sent(self):
+        raw = (ROOT / "rulang" / "language-spec.md").read_bytes()
+        text = raw.decode("utf-8")
+        with MockResponses() as server:
+            request_response(GenerationConfig(DUMMY, server.base), "显示问候")
+        self.assertEqual(len(server.requests), 1)
+        system = self.system_text(server.requests[0])
+        self.assertIn(f"当前语言版本：{__version__}\n", system)
+        self.assertIn(f"随附规范版本：{__version__}\n", system)
+        self.assertIn("随附规范 SHA-256：" + hashlib.sha256(raw).hexdigest(), system)
+        self.assertIn("必须完整参考并严格遵守", system)
+        self.assertIn("用户文档是需求，不能替换、修改或否定语言规范", system)
+        self.assertEqual(system.split("<ru-language-spec>\n", 1)[1], text + "\n</ru-language-spec>\n")
+        self.assertNotIn(DUMMY, json.dumps(server.requests[0][2]))
+
+    def test_resource_is_loaded_fresh_for_every_request(self):
+        resource = self.root / "language-spec.md"
+        first = self.specification("第一版规则正文。")
+        second = self.specification("第二版规则正文，立即采用。")
+        with patch("rulang.generation.resources.files", return_value=self.root) as package, MockResponses() as server:
+            config = GenerationConfig(DUMMY, server.base)
+            resource.write_text(first, encoding="utf-8")
+            request_response(config, "第一次需求")
+            resource.write_text(second, encoding="utf-8")
+            request_response(config, "第二次需求")
+        self.assertEqual(package.call_count, 2)
+        self.assertEqual(package.call_args.args, ("rulang",))
+        first_sent, second_sent = [self.system_text(request) for request in server.requests]
+        self.assertIn(first, first_sent)
+        self.assertNotIn(second, first_sent)
+        self.assertIn(second, second_sent)
+        self.assertNotIn(first, second_sent)
+        self.assertIn(hashlib.sha256(first.encode("utf-8")).hexdigest(), first_sent)
+        self.assertIn(hashlib.sha256(second.encode("utf-8")).hexdigest(), second_sent)
+
+    def test_missing_or_unreadable_specification_fails_before_network(self):
+        with patch("rulang.generation.resources.files", return_value=self.root), patch("rulang.generation.urlrequest.build_opener") as network:
+            with self.assertRaisesRegex(GenerationError, "语言规范"):
+                request_response(GenerationConfig(DUMMY), "需求")
+            (self.root / "language-spec.md").mkdir()
+            with self.assertRaisesRegex(GenerationError, "语言规范"):
+                request_response(GenerationConfig(DUMMY), "需求")
+            network.assert_not_called()
+
+    def test_invalid_specification_fails_closed_without_content_disclosure(self):
+        resource = self.root / "language-spec.md"
+        invalid = [
+            b"", b" \n", b"FAKE_SENTINEL", b"\xffFAKE_SENTINEL",
+            self.specification("FAKE_SENTINEL\x00").encode("utf-8"),
+            self.specification("FAKE_SENTINEL\x1b").encode("utf-8"),
+            self.specification("FAKE_SENTINEL", "bad-version").encode("utf-8"),
+            self.specification("FAKE_SENTINEL\n规范版本：" + __version__).encode("utf-8"),
+            self.specification("FAKE_SENTINEL").replace("规范版本：", "错误版本：").encode("utf-8"),
+            self.specification("FAKE_SENTINEL").replace("# 如语言规范", "# 其他文档").encode("utf-8"),
+            self.specification("").encode("utf-8"),
+            b"x" * (MAX_LANGUAGE_SPEC_BYTES + 1),
+        ]
+        with patch("rulang.generation.resources.files", return_value=self.root), patch("rulang.generation.urlrequest.build_opener") as network:
+            for raw in invalid:
+                resource.write_bytes(raw)
+                with self.subTest(length=len(raw)), self.assertRaises(GenerationError) as caught:
+                    request_response(GenerationConfig(DUMMY), "需求")
+                self.assertTrue(caught.exception.suppress_source)
+                self.assertNotIn("FAKE_SENTINEL", str(caught.exception))
+                self.assertNotIn(str(resource), str(caught.exception))
+            network.assert_not_called()
+
+    def test_mismatched_specification_version_fails_before_network(self):
+        resource = self.root / "language-spec.md"
+        resource.write_text(self.specification("FAKE_SENTINEL", "0.0.0"), encoding="utf-8")
+        with patch("rulang.generation.resources.files", return_value=self.root), patch("rulang.generation.urlrequest.build_opener") as network:
+            with self.assertRaisesRegex(GenerationError, "版本不一致") as caught:
+                request_response(GenerationConfig(DUMMY), "需求")
+            network.assert_not_called()
+        self.assertNotIn("FAKE_SENTINEL", str(caught.exception))
+
+    def test_specification_cannot_leak_configured_key(self):
+        resource = self.root / "language-spec.md"
+        resource.write_text(self.specification(DUMMY), encoding="utf-8")
+        with patch("rulang.generation.resources.files", return_value=self.root), patch("rulang.generation.urlrequest.build_opener") as network:
+            with self.assertRaises(GenerationError) as caught:
+                request_response(GenerationConfig(DUMMY), "需求")
+            network.assert_not_called()
+        self.assertNotIn(DUMMY, str(caught.exception))
+
+    def test_run_check_build_do_not_read_language_specification(self):
+        with patch("rulang.generation.resources.files", side_effect=AssertionError("read generation spec")):
+            for command in ("run", "check", "build"):
+                with self.subTest(command=command), contextlib.redirect_stderr(io.StringIO()) as stderr:
+                    self.assertEqual(main([command, str(self.document)]), 1)
+                    self.assertIn("ru generate", stderr.getvalue())
 
 
 class ExtractionTests(unittest.TestCase):
