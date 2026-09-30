@@ -1,6 +1,8 @@
-# 如（ru-language）· 0.4.0 元初实现
+# 如（ru-language）· 0.5.0 元初实现
 
 一个能实际运行的原型：中文关键词、保留状态的多行 REPL，以及将 `.ru` 源码编译为原生机器码的 C99 后端。
+
+0.5.0 新增 `如:竞赛` 标准外言：整份输入游标、词 / 数 / 行读取、拆词 / 拆行 / 码点、合句、64 KiB 缓冲输出、稳定排序与数值辅助。普通如函数可配合闭包比较器使用；四道原创题目、完整解法和提交 C 的步骤见 [竞赛指南](docs/contest-library.md)。本次不新增语法、int64 或数组填充构造。
 
 0.4.0 新增一等词法闭包：嵌套函数、显式算 / 作引用、捕获共享绑定、函数值传参 / 返回 / 保存和显式零参调用。解释器与独立 C99 后端同步支持，示例见 `examples/closures.ru`。
 
@@ -10,7 +12,7 @@
 
 上一版 0.1.1 新增按声明顺序匹配的位置实参：`显 (平方 9.9).` 现在输出 `98.01`；原有 `平方 根: 9.9` 仍然可用。完整示例见 `examples/square.ru`，多实参示例见 `examples/positional.ru`。
 
-完整的实现语义以 [如语言规范 0.4.0](rulang/language-spec.md) 为准。它是学习者、工具作者与 LLM 共用的唯一规范文本；README 提供入门和操作摘要。
+完整的实现语义以 [如语言规范 0.5.0](rulang/language-spec.md) 为准。它是学习者、工具作者与 LLM 共用的唯一规范文本；README 提供入门和操作摘要。
 
 **本版不是自举编译器。** 编译器和 REPL 使用 Python；原生输出经过 C 编译器编译，执行时不需要 Python、`ru`、原始 `.ru` 文件或生成的 `.c` 文件。生成的程序内没有词法分析器、语法分析器或源码解释器。
 
@@ -100,6 +102,40 @@ cc -std=c99 -O2 dist/my-hello.c -lm -o another-hello
 ```
 
 常规错误退出码为 `1`，命令行参数错误为 `2`，取消文件执行为 `130`。错误通常包含文件名、行号；前端和解释器还提供列号。原生运行错误只提供行号。
+
+## 用如写题，复制 C 提交
+
+先从没有提示语、一直读到 EOF 的 [成对求和](examples/contest_sum_eof.ru) 开始：
+
+```ru
+尽 取 外言 '如:竞赛'.
+入 取 读入.
+出 取 蓄出.
+循
+    左 取 入 其 数.
+    若 左 == 空 则 破. 然
+    右 取 入 其 数.
+    出 其 行 (左+右).
+环
+出 其 清.
+```
+
+输入保证是完整的整数对；`0` 不是 EOF。读流成员用裸写法 `入 其 数`，出流最后必须显式 `清`。准备、验证并生成单文件：
+
+```sh
+printf '1 2\n-5 8\n0 0\n' > /tmp/ru-contest-input.txt
+python3 ru check examples/contest_sum_eof.ru
+python3 ru run examples/contest_sum_eof.ru < /tmp/ru-contest-input.txt
+python3 ru build examples/contest_sum_eof.ru -o bin/contest_sum_eof --emit-c dist/contest_sum_eof.c
+cc -std=c11 -O2 dist/contest_sum_eof.c -o bin/contest_sum_eof_c11
+./bin/contest_sum_eof_c11 < /tmp/ru-contest-input.txt
+```
+
+两个运行结果都应是三行 `3`、`3`、`0`。把 `dist/contest_sum_eof.c` **全部内容**复制到评测提交框，选择站点提供的 **C11 / GNU C11、O2**。标准库及运行时已经内联，提交时不需要 Python、`.ru` 或项目头文件。
+
+生成 C 仍受目标编译器、源码长度与时间 / 内存限制约束，未声称在外部评测站通过。普通样例可用上述无 `-lm` 命令复编；**使用 `%` 浮点余数的程序仍可能需要 `-lm`**。`ru build` 自身在适用平台会链接它。Windows 原生构建未实测。
+
+[竞赛指南](docs/contest-library.md) 包含四道原创练习：EOF 求和、前缀区间和、逐行数词、闭包比较器稳定排序，也解释如何把题目交给「如是我言」生成。输入一次读完并验证 UTF-8 / NUL，词只按 ASCII 空白分隔；空行与 EOF 不同。数仍为 binary64，显示至多 15 位有效数字，不承诺精确 64 位整数解题。
 
 ## 语言约定
 
@@ -257,7 +293,7 @@ cc -std=c99 -O2 dist/my-hello.c -lm -o another-hello
 
 ### 阵：共享引用、索引与浅切片
 
-`[甲, 乙]` 及嵌套数组字面量是当前 0.4 原型支持的构造约定，构造语法尚未冻结；下列示例记录当前实现行为。
+`[甲, 乙]` 及嵌套数组字面量是当前 0.5 原型支持的构造约定，构造语法尚未冻结；下列示例记录当前实现行为。
 
 ```text
 数列 取 [3,1,2].
@@ -334,7 +370,7 @@ cc -std=c99 -O2 dist/my-hello.c -lm -o another-hello
 
 完整别名、继承、动态分派示例：`examples/objects.ru`。学生 / 上进学生、`名` / `龄` / `族`、`报道` 与班级数组示例：`examples/students.ru`。`助人`、`为乐` 不属于内置命令；`为乐` 可以作为普通函数或变量名，但需要自行定义。
 
-### 外言：相对路径模块
+### 外言：相对路径模块与标准库
 
 ```text
 数学 取 外言 'modules/math.ru'.
@@ -345,7 +381,7 @@ cc -std=c99 -O2 dist/my-hello.c -lm -o another-hello
 显 (平方 4).
 ```
 
-`外言` 后必须是本地文件路径字面量，路径相对**写下该导入的文件**。相同规范化路径只初始化一次，返回同一模块实例。模块导出顶层作用域中的定义 / 绑定，函数保留所属模块的全局作用域；模块中的 `元初` 不会因为导入而自动执行。
+`外言` 后必须是字符串字面量。普通本地路径相对**写下该导入的文件**；`如:竞赛` 则解析到随工具链发布的标准库。以 `如:` 开头的名称保留给标准库，未知名称报错，不会退回当前目录寻找同名文件。相同规范化路径只初始化一次，返回同一模块实例。模块导出顶层作用域中的定义 / 绑定，函数保留所属模块的全局作用域；模块中的 `元初` 不会因为导入而自动执行。
 
 标准成员名的语法约束也适用于限定访问：例如导出一个带参数的函数 `量` 后，`模块 其 量 参数` 不能作普通方法调用；可改用 `尽 取 外言` 后按原函数名调用，或为模块导出选择其他业务名称。
 
@@ -555,15 +591,20 @@ rulang/compiler.py        AST → C99 直接代码生成
 rulang/runtime.h          动态值、集合 / 对象 / 模块、内存管理、作用域、panic
 rulang/io_runtime.py       解释器的受检查文件、目录与标准流
 rulang/io_runtime.h        内联到独立 C 输出的受检查 I/O
+rulang/stdlib/竞赛.ru      普通如函数组成的竞赛标准外言
+rulang/contest_runtime.py  解释器的读写游标、拆分及稳定排序桥接
+rulang/contest_runtime.h   内联到独立 C 输出的竞赛原语
 rulang/generation.py       Responses 协议、配置与安全生成输出
 rulang/language-spec.md    唯一权威语言规范；每次生成读取并发送实际全文
 rulang/cli.py              CLI、REPL、编译器调用、意图入口
 rulang/modules.py          本地相对路径加载、规范化缓存与循环检测
 examples/                 基础、算法、对象、入口、模块示例和意图文档
+docs/contest-library.md    四道原创题目、输入输出样例、解法及复制 C 提交指南
 tests/test_ru.py           0.1 兼容性与 CLI 回归测试
 tests/test_extensions.py   0.2 双后端数据结构、对象、模块、入口回归
 tests/test_modules_cli.py  模块加载、错误来源与 CLI 安全检查
 tests/test_closures.py     词法闭包、函数值、捕获状态与双后端回归
+tests/test_contest.py      竞赛导入、读写、排序、错误与独立 C 回归
 tests/test_io.py           临时文件与标准流双后端测试
 tests/test_panic.py        panic / rescue、控制流与回收测试
 tests/test_generation.py   本地模拟 Responses 与配置 / 输出保护
@@ -586,6 +627,8 @@ VALIDATION.md              各次实际验证记录
 python3 -m unittest discover -s tests -v
 make examples
 ```
+
+0.5 增加标准外言导入 / 冲突、UTF-8 / NUL 与 ASCII 空白、游标混读、空行 / EOF、拆分 / 合句、稳定浅排序 / 闭包回调、有限缓冲与错误路径回归；四道解法进行样例及随机输入的双后端比对。Emacs 保留原 64 项并增加 4 项竞赛库回归，共 68 项。具体实测范围以 `VALIDATION.md` 为准。
 
 0.4 增加嵌套声明和引用、逃逸闭包、共享与独立状态、递归 / 相互递归、方法自身 / 模块环境捕获、算 / 作参数类型、普通调用及卒后的回收回归，并同步规范及 Emacs 的引用 / 类型 / 嵌套定义识别。
 
@@ -611,4 +654,4 @@ Git 忽略构建产物、Python 缓存、虚拟环境、编辑器备份和本地
 4. 补充 Python / 原生语义、错误路径、生成规范注入与必要的 GC / I/O 回归，更新教程、示例和变化记录
 5. 运行 `make test`、`make test-emacs`、`make examples`；检查生成请求确实携带当前完整规范，再核对本次提交的 CI
 
-规范与生成器版本一致性、实际全文注入由测试检查；语义和编辑器同步仍需审阅，不能仅凭版本号或测试数量宣称规范正确。发布当前源码目录时应保留包内的 `language-spec.md`；将来新增 wheel / 其他打包方式时，也必须把该资源纳入发行物并验证安装后的读取。
+规范与生成器版本一致性、实际全文注入由测试检查；语义和编辑器同步仍需审阅，不能仅凭版本号或测试数量宣称规范正确。发布当前源码目录时应保留包内的 `language-spec.md`、`stdlib/竞赛.ru` 及运行时头文件；将来新增 wheel / 其他打包方式时，也必须把该资源纳入发行物并验证安装后的读取。

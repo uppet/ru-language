@@ -1,13 +1,13 @@
 ;;; ru-lang-mode.el --- Editing support for the 如 language -*- lexical-binding: t; -*-
 
-;; Version: 0.4.0
+;; Version: 0.5.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: languages
 ;; URL: https://github.com/uppet/ru-language
 
 ;;; Commentary:
 
-;; A dependency-free major mode for ru-language 0.4.x source files.  The
+;; A dependency-free major mode for ru-language 0.5.x source files.  The
 ;; lightweight lexer mirrors rulang/frontend.py; it deliberately accepts
 ;; incomplete input.  It is an editing aid, not a compiler or language server.
 ;; See README.md in this directory for loading, indentation and navigation.
@@ -30,9 +30,9 @@
     "外言" "尽" "卒" "试" "救"))
 (defconst ru-lang--types '("数" "句" "阵" "对" "空" "件" "录" "件作成果" "算" "作"))
 (defconst ru-lang--builtins
-  '("读" "含" "位" "段" "增" "量" "囫" "囵" "读取" "显出" "错误"))
-(defconst ru-lang--member-builtins '("读" "写" "在" "除" "列")
-  "I/O method names highlighted only after a member operator.
+  '("读" "含" "位" "段" "增" "量" "囫" "囵" "读取" "显出" "错误" "__竞赛"))
+(defconst ru-lang--member-builtins '("读" "写" "在" "除" "列" "词" "数" "行" "清")
+  "I/O and contest stream members highlighted only after a member operator.
 The legacy global function 读 is also in `ru-lang--builtins'.")
 (defconst ru-lang--pairs '(("算" . "法") ("作" . "为") ("形" . "象")
                             ("若" . "然") ("循" . "环") ("试" . "终")
@@ -270,12 +270,12 @@ Skip intervening comments and recognize complete headers in imperfect source."
                          ((eq token callable-name) 'font-lock-function-name-face)
                          (callable-type 'font-lock-type-face)
                          (callable-kind 'font-lock-keyword-face)
+                         ((and (member previous '("@" "其"))
+                               (member text ru-lang--member-builtins)) 'font-lock-builtin-face)
                          ((or (member previous '("形" "如" "新"))
                               (and (equal previous "为") (not statement-start))
                               (member text ru-lang--types)) 'font-lock-type-face)
                          ((member text ru-lang--keywords) 'font-lock-keyword-face)
-                         ((and (member previous '("@" "其"))
-                               (member text ru-lang--member-builtins)) 'font-lock-builtin-face)
                          ((member text ru-lang--builtins) 'font-lock-builtin-face))))
                 (when (eq token callable-name) (setq callable-name nil))
                 (when (and callable-kind (not callable-type) next

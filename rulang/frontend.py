@@ -34,7 +34,7 @@ def node(kind, token, **data):
 
 
 BUILTIN_TYPES = {"件", "录", "件作成果"}
-BUILTIN_NAMES = BUILTIN_TYPES | {"读", "读取", "显出", "错误"}
+BUILTIN_NAMES = BUILTIN_TYPES | {"读", "读取", "显出", "错误", "__竞赛"}
 
 
 MEMBER_PARAMS = {"含": ["句"], "位": ["位"], "段": ["始", "终"], "增": ["值"],

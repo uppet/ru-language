@@ -10,6 +10,19 @@ from .frontend import Node, RuError, parse, validate
 
 
 GENERATION_MARKER = "如是我言"
+STANDARD_MODULES = {"如:竞赛": "竞赛.ru"}
+
+
+def resolve_import(requested, importer_path):
+    """Reserve 如: names for bundled libraries, never a cwd-dependent fallback."""
+    if requested.startswith("如:"):
+        filename = STANDARD_MODULES.get(requested)
+        if filename is None:
+            raise RuError("未知的标准外言：" + requested, category="模块错误")
+        return str((Path(__file__).parent / "stdlib" / filename).resolve())
+    if not requested or "://" in requested:
+        raise RuError("外言只接受本地文件路径或已知的如:标准库名称", category="模块错误")
+    return str((Path(importer_path).parent / requested).resolve())
 
 
 def generation_intent(source):
@@ -127,10 +140,11 @@ def load_module_graph(source_path, program=None):
             graph[path] = supplied
             for imported in import_nodes(supplied):
                 requested = imported.data["path"]
-                if not requested or "://" in requested:
-                    raise RuError("外言只接受非空的本地文件路径", imported.token.line,
-                                  imported.token.col, "模块错误")
-                resolved = str((Path(path).parent / requested).resolve())
+                try:
+                    resolved = resolve_import(requested, path)
+                except RuError as error:
+                    error.line, error.col = imported.token.line, imported.token.col
+                    raise
                 imported.data["resolved"] = resolved
                 visit(resolved, origin=imported, origin_path=path)
         except RuError as error:

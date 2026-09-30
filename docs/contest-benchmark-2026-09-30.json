@@ -1,0 +1,66 @@
+{
+  "timestamp_utc": "2026-09-30T14:43:44.347200+00:00",
+  "platform": "linux",
+  "python": "3.12.14",
+  "compiler": "gcc (Debian 14.2.0-19) 14.2.0",
+  "native_flags": [
+    "-std=c11",
+    "-O2"
+  ],
+  "measurements": {
+    "tokens": {
+      "items": 500000,
+      "input_bytes": 2195998,
+      "interpreter": {
+        "elapsed_seconds": 6.8906,
+        "peak_rss_kib": 20472,
+        "stdout_bytes": 15,
+        "correct": true,
+        "native_gc": null
+      },
+      "native": {
+        "elapsed_seconds": 0.2344,
+        "peak_rss_kib": 4916,
+        "stdout_bytes": 15,
+        "correct": true,
+        "native_gc": "RU_GC live=0 freed=22 collections=1"
+      }
+    },
+    "lines": {
+      "items": 100000,
+      "input_bytes": 883327,
+      "interpreter": {
+        "elapsed_seconds": 2.255,
+        "peak_rss_kib": 19200,
+        "stdout_bytes": 200007,
+        "correct": true,
+        "native_gc": null
+      },
+      "native": {
+        "elapsed_seconds": 0.0974,
+        "peak_rss_kib": 2360,
+        "stdout_bytes": 200007,
+        "correct": true,
+        "native_gc": "RU_GC live=0 freed=200024 collections=782"
+      }
+    },
+    "sort": {
+      "items": 40000,
+      "input_bytes": 228889,
+      "interpreter": {
+        "elapsed_seconds": 6.9182,
+        "peak_rss_kib": 21480,
+        "stdout_bytes": 228890,
+        "correct": true,
+        "native_gc": null
+      },
+      "native": {
+        "elapsed_seconds": 0.3315,
+        "peak_rss_kib": 8576,
+        "stdout_bytes": 228890,
+        "correct": true,
+        "native_gc": "RU_GC live=0 freed=614792 collections=86"
+      }
+    }
+  }
+}

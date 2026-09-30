@@ -59,13 +59,15 @@ static Env *ru_envs;
 typedef struct RuScratch { void *data; struct RuScratch *next; } RuScratch;
 static RuScratch *ru_scratch;
 static size_t ru_live, ru_freed, ru_collections, ru_threshold = 256, ru_next_gc = 256;
-static int ru_initialized, ru_finished, ru_failed;
+static int ru_initialized, ru_finished, ru_failed, ru_gc_explicit;
 static void ru_shutdown(void);
 static void env_free(Env *env);
 static void ru_heap_dispose(RuHeap *heap);
 static void ru_io_defaults(Val value, int line);
 static int ru_io_member(Val receiver, const char *name, size_t argc, const char **keys,
                         Val *args, int line, Val *out);
+static int ru_contest_member(Val receiver, const char *name, size_t argc, const char **keys,
+                            Val *args, int line, Val *out);
 static void ru_fail(int line, const char *format, ...)
 {
     va_list args;
@@ -149,7 +151,7 @@ static int ru_panic_uncaught(void)
 static void ru_gc(void)
 {
     RuHeap *h, **slot, **todo;
-    size_t used = 0, at = 0;
+    size_t used = 0, at = 0, work = 0, budget;
     ++ru_collections;
     todo = (RuHeap **)ru_alloc((ru_live ? ru_live : 1) * sizeof(*todo), 0);
     for (h = ru_heap; h; h = h->next) {
@@ -159,18 +161,21 @@ static void ru_gc(void)
 #define RU_MARK_HEAP(ptr) do { RuHeap *child_ = (ptr); if (child_ && !child_->mark) { child_->mark=1; todo[used++]=child_; } } while (0)
 #define RU_MARK(v) RU_MARK_HEAP((v).heap)
 #define RU_MARK_ENV(e) RU_MARK_HEAP((e) && (e)->managed ? &(e)->gc : NULL)
+#define RU_GC_WORK(n) do { size_t amount_ = (n); work = amount_ > SIZE_MAX - work ? SIZE_MAX : work + amount_; } while (0)
     while (at < used) {
         h = todo[at++];
-        if (h->kind == RU_PAIR) { RuPair *p=(RuPair *)h; RU_MARK(p->first); RU_MARK(p->second); }
-        else if (h->kind == RU_ARRAY) { RuArray *a=(RuArray *)h; size_t i; for(i=0;i<a->len;++i) RU_MARK(a->items[i]); }
-        else if (h->kind == RU_OBJECT) { RuObject *o=(RuObject *)h; size_t i; for(i=0;i<o->len;++i) RU_MARK(o->fields[i]); }
-        else if (h->kind == RU_FUNCTION) { RuCallable *f=(RuCallable *)h; RU_MARK(f->self); RU_MARK_ENV(f->closure); }
+        RU_GC_WORK(1);
+        if (h->kind == RU_PAIR) { RuPair *p=(RuPair *)h; RU_GC_WORK(2); RU_MARK(p->first); RU_MARK(p->second); }
+        else if (h->kind == RU_ARRAY) { RuArray *a=(RuArray *)h; size_t i; RU_GC_WORK(a->len); for(i=0;i<a->len;++i) RU_MARK(a->items[i]); }
+        else if (h->kind == RU_OBJECT) { RuObject *o=(RuObject *)h; size_t i; RU_GC_WORK(o->len); for(i=0;i<o->len;++i) RU_MARK(o->fields[i]); }
+        else if (h->kind == RU_FUNCTION) { RuCallable *f=(RuCallable *)h; RU_GC_WORK(2); RU_MARK(f->self); RU_MARK_ENV(f->closure); }
         else if (h->kind == RU_ENV) {
             Env *env=(Env *)h; RuBinding *binding;
-            RU_MARK_ENV(env->parent);
-            for(binding=env->bindings;binding;binding=binding->next) RU_MARK(binding->value);
+            RU_GC_WORK(1); RU_MARK_ENV(env->parent);
+            for(binding=env->bindings;binding;binding=binding->next) { RU_GC_WORK(1); RU_MARK(binding->value); }
         }
     }
+#undef RU_GC_WORK
 #undef RU_MARK_ENV
 #undef RU_MARK
 #undef RU_MARK_HEAP
@@ -181,7 +186,13 @@ static void ru_gc(void)
         *slot = h->next;
         ru_heap_dispose(h); --ru_live; ++ru_freed;
     }
-    ru_next_gc = ru_live > SIZE_MAX - ru_threshold ? SIZE_MAX : ru_live + ru_threshold;
+    /* A comparator allocates short-lived call frames. A fixed tiny budget
+     * repeatedly scans large live arrays, causing quadratic tracing work.
+     * Scale the default with reachable slots as well as heap nodes, while
+     * retaining bounded deferred garbage and exact explicit stress budgets. */
+    budget = ru_threshold;
+    if (!ru_gc_explicit && work / 16 > budget) budget = work / 16;
+    ru_next_gc = ru_live > SIZE_MAX - budget ? SIZE_MAX : ru_live + budget;
 }
 static void ru_init(void)
 {
@@ -189,7 +200,7 @@ static void ru_init(void)
     if (ru_initialized) return;
     ru_initialized=1;
     text=getenv("RU_GC_THRESHOLD");
-    if (text && *text) { char *end; unsigned long n=strtoul(text,&end,10); if (!*end && n>0 && n<=100000000) ru_threshold=(size_t)n; }
+    if (text && *text) { char *end; unsigned long n=strtoul(text,&end,10); if (!*end && n>0 && n<=100000000) { ru_threshold=(size_t)n; ru_gc_explicit=1; } }
     ru_next_gc=ru_threshold;
 }
 static RuHeap *ru_new_heap(size_t size, int kind, int line)
@@ -376,10 +387,12 @@ static int ru_ascii_digit(unsigned char c)
     return c >= '0' && c <= '9';
 }
 
-static double ru_parse_number(const char *text, int line)
+/* The span ends at NUL or an ASCII separator. This lets the contest scanner
+ * parse a token without allocating it or scanning the remaining input. */
+static double ru_parse_number_span(const char *text, size_t length, int line)
 {
     const char *start = text;
-    const char *end = text + strlen(text);
+    const char *end = text + length;
     const char *p;
     char *parsed_end;
     int digits = 0;
@@ -418,6 +431,10 @@ static double ru_parse_number(const char *text, int line)
     if (parsed_end != end || !isfinite(result))
         ru_fail(line, "无法转为有限数字");
     return result;
+}
+static double ru_parse_number(const char *text, int line)
+{
+    return ru_parse_number_span(text, strlen(text), line);
 }
 
 /* Formatting uses an explicit worklist; arbitrary-depth cyclic graphs are safe. */
@@ -609,7 +626,11 @@ static Val v_binary(const char *op,Val a,Val b,int line)
     if(!strcmp(op,"+")||!strcmp(op,"-")||!strcmp(op,"*")||!strcmp(op,"/")||!strcmp(op,"%")) {
         if(a.kind!=RU_NUM||b.kind!=RU_NUM)ru_fail(line,"运算符 %s 需要两个数字",op);
         if((op[0]=='/'||op[0]=='%')&&b.n==0)ru_fail(line,"除数不能为零");
-        switch(op[0]) {case '+':return ru_finite(a.n+b.n,line);case '-':return ru_finite(a.n-b.n,line);case '*':return ru_finite(a.n*b.n,line);case '/':return ru_finite(a.n/b.n,line);case '%':return ru_finite(fmod(a.n,b.n),line);}
+        switch(op[0]) {case '+':return ru_finite(a.n+b.n,line);case '-':return ru_finite(a.n-b.n,line);case '*':return ru_finite(a.n*b.n,line);case '/':return ru_finite(a.n/b.n,line);
+#ifdef RU_ENABLE_MODULO
+        case '%':return ru_finite(fmod(a.n,b.n),line);
+#endif
+        }
     }
     ru_fail(line,"未知二元运算符：%s",op);return v_null();
 }
@@ -622,12 +643,12 @@ static void v_print(Val v, int line)
 }
 static uint64_t v_count(Val v,int line)
 {
-    if(v.kind!=RU_NUM||!isfinite(v.n)||v.n<0||v.n>9007199254740991.0||floor(v.n)!=v.n)ru_fail(line,"重复次数须为 0 至 9007199254740991 的整数");
+    if(v.kind!=RU_NUM||!isfinite(v.n)||v.n<0||v.n>9007199254740991.0||(double)(uint64_t)v.n!=v.n)ru_fail(line,"重复次数须为 0 至 9007199254740991 的整数");
     return (uint64_t)v.n;
 }
 static size_t ru_index(Val v,size_t max,int endpoint,int line)
 {
-    if(v.kind!=RU_NUM||!isfinite(v.n)||v.n<0||v.n>9007199254740991.0||floor(v.n)!=v.n)ru_fail(line,"索引须为非负整数");
+    if(v.kind!=RU_NUM||!isfinite(v.n)||v.n<0||v.n>9007199254740991.0||(double)(uint64_t)v.n!=v.n)ru_fail(line,"索引须为非负整数");
     if(v.n>(double)max||(!endpoint&&v.n==(double)max))ru_fail(line,"索引越界");
     return (size_t)v.n;
 }
@@ -822,6 +843,7 @@ static Val v_call(Val callable,size_t argc,const char **keys,Val *args,int line)
 static Val v_member(Val receiver,const char *name,size_t argc,const char **keys,Val *args,int line)
 {
     const char *one[]={"值"},*position[]={"位"},*range[]={"始","终"};Val bound[2], io_result;
+    if (ru_contest_member(receiver, name, argc, keys, args, line, &io_result)) return io_result;
     if (ru_io_member(receiver, name, argc, keys, args, line, &io_result)) return io_result;
     if(receiver.kind==RU_MODULE){
         RuBinding *binding;Val value,result;

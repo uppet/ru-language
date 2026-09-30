@@ -20,6 +20,10 @@ examples:
 	python3 ru build examples/checked_io.ru -o bin/checked_io
 	python3 ru build examples/recovery.ru -o bin/recovery --emit-c dist/recovery.c
 	python3 ru build examples/closures.ru -o bin/closures --emit-c dist/closures.c
+	python3 ru build examples/contest_sum_eof.ru -o bin/contest_sum_eof --emit-c dist/contest_sum_eof.c
+	python3 ru build examples/contest_prefix_sum.ru -o bin/contest_prefix_sum --emit-c dist/contest_prefix_sum.c
+	python3 ru build examples/contest_line_words.ru -o bin/contest_line_words --emit-c dist/contest_line_words.c
+	python3 ru build examples/contest_stable_records.ru -o bin/contest_stable_records --emit-c dist/contest_stable_records.c
 clean:
 	python3 -c "import pathlib,shutil; [shutil.rmtree(p) for p in pathlib.Path('.').rglob('__pycache__')]"
 

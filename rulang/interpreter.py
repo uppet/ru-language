@@ -10,6 +10,7 @@ import re
 import sys
 from .frontend import BUILTIN_NAMES, RuError, bind_arguments, validate
 from .io_runtime import install_io, io_member, io_new_defaults, read_stream_line, _write_stream
+from .contest_runtime import install_contest, contest_member
 
 DECIMAL = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?\Z")
 
@@ -232,6 +233,7 @@ class Interpreter:
         self.last_member_procedure = False
         self.last_call_procedure = False
         install_io(self)
+        install_contest(self)
         if sys.getrecursionlimit() < 10000:
             sys.setrecursionlimit(10000)
 
@@ -539,8 +541,12 @@ class Interpreter:
     def import_module(self, n):
         path = n.data.get("resolved")
         if path is None:
-            base = Path(self.source_path).parent if self.source_path else Path.cwd()
-            path = str((base / n.data["path"]).resolve())
+            from .modules import resolve_import
+            try:
+                path = resolve_import(n.data["path"], self.source_path or str(Path.cwd() / "<REPL>"))
+            except RuError as error:
+                error.line, error.col = n.token.line, n.token.col
+                raise
         if path in self.loading:
             self.fail(n, "外言导入形成循环：" + path)
         if path in self.module_cache:
@@ -667,17 +673,7 @@ class Interpreter:
                 return [value]
             if d["target"] == "句":
                 return display(value)
-            if isinstance(value, float):
-                return value
-            if not isinstance(value, str):
-                self.fail(n, "只有数或句可转换为数")
-            stripped = value.strip(" \t\r\n\v\f")
-            if not DECIMAL.fullmatch(stripped):
-                self.fail(n, f"无法转换为数：{value}")
-            result = float(stripped)
-            if not math.isfinite(result):
-                self.fail(n, "转换结果不是有限数")
-            return result
+            return self.number_value(n, value)
         if n.kind == "unary":
             value = self.expr(d["expr"], scope)
             if d["op"] == "非":
@@ -724,9 +720,26 @@ class Interpreter:
             return result
         raise AssertionError(n.kind)
 
+    def number_value(self, n, value):
+        """One strict numeric conversion shared by 为 数 and contest input."""
+        if isinstance(value, float):
+            return value
+        if not isinstance(value, str):
+            self.fail(n, "只有数或句可转换为数")
+        stripped = value.strip(" \t\r\n\v\f")
+        if not DECIMAL.fullmatch(stripped):
+            self.fail(n, f"无法转换为数：{value}")
+        result = float(stripped)
+        if not math.isfinite(result):
+            self.fail(n, "转换结果不是有限数")
+        return result
+
     def member(self, n, receiver, name, args):
         fail = lambda message: self.fail(n, message)
         self.last_member_procedure = False
+        handled, result = contest_member(self, n, receiver, name, args)
+        if handled:
+            return result
         handled, result = io_member(self, n, receiver, name, args)
         if handled:
             return result

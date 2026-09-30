@@ -668,5 +668,51 @@
         (ru-lang-beginning-of-defun)
         (ru-lang-end-of-defun)))))
 
+(ert-deftest ru-lang-contest-stream-members-and-bridge-faces ()
+  (ru-lang-test--buffer "尽 取 外言 '如:竞赛'.\n入 取 读入.\n出 取 蓄出.\n显 入 其 词.\n显 入@数.\n显 入 其 # 成员之前的注释\n行.\n出 其 写 内容:'甲'.\n出@行 值:42.\n出 其 清.\n显 __竞赛.\n"
+    (font-lock-ensure)
+    (dolist (text '("词." "数." "行." "写 内容" "行 值" "清." "__竞赛"))
+      (goto-char (point-min)) (search-forward text)
+      (should (eq (get-text-property (- (point) (length text)) 'face)
+                  'font-lock-builtin-face)))
+    (should-not (ru-lang-imenu-create-index))))
+
+(ert-deftest ru-lang-contest-library-names-remain-ordinary ()
+  (let ((names '("读入" "扫句" "拆词" "拆行" "字列" "合句" "排序"
+                 "取整" "小" "大" "绝对" "整除" "蓄出" "词" "行" "清"
+                 "读入器" "排序表" "__竞赛者")))
+    (ru-lang-test--buffer (mapconcat (lambda (name) (concat name " 取 1.")) names "\n")
+      (font-lock-ensure)
+      (dolist (name names)
+        (goto-char (point-min)) (search-forward name)
+        (should-not (get-text-property (- (point) (length name)) 'face))))
+    (ru-lang-test--buffer "算 排序 列 为 阵 比较 为 算:\n得 列.\n法\n算 读入: 得 1. 法\n引用 取 算 读入.\n"
+      (font-lock-ensure)
+      (should (equal (mapcar #'car (ru-lang-imenu-create-index))
+                     '("算 排序" "算 读入")))
+      (search-forward "排序")
+      (should (eq (get-text-property (1- (point)) 'face) 'font-lock-function-name-face))
+      (search-forward "为 算")
+      (should (eq (get-text-property (1- (point)) 'face) 'font-lock-type-face)))))
+
+(ert-deftest ru-lang-contest-qualified-references-and-indent ()
+  (ru-lang-test--indent
+   "竞 取 外言 '如:竞赛'.\n算 造比较 方向 为 数:\n算 比较 左 为 数 右 为 数:\n得 (左-右)*方向.\n法\n得 算 比较.\n法\n排 取 算 竞 其 排序.\n入 取 竞 其 读入.\n出 取 竞 其 蓄出.\n循\n值 取 入 其 数.\n若 值 == 空 则 破. 然\n出 其 行 值.\n环\n出 其 清.\n"
+   "竞 取 外言 '如:竞赛'.\n算 造比较 方向 为 数:\n    算 比较 左 为 数 右 为 数:\n        得 (左-右)*方向.\n    法\n    得 算 比较.\n法\n排 取 算 竞 其 排序.\n入 取 竞 其 读入.\n出 取 竞 其 蓄出.\n循\n    值 取 入 其 数.\n    若 值 == 空 则 破. 然\n    出 其 行 值.\n环\n出 其 清.\n"))
+
+(ert-deftest ru-lang-contest-all-editing-prefixes ()
+  (let ((source "尽 取 外言 '如:竞赛'.\n算 工厂 方向 为 数:\n算 比较 左 为 数 右 为 数: 得 (左-右)*方向. 法\n得 算 比较.\n法\n入 取 读入.\n出 取 蓄出.\n循\n词值 取 入 其 词.\n若 词值 == 空 则 破. 然\n出 其 行 词值.\n环\n出 其 清.\n"))
+    (dotimes (end (1+ (length source)))
+      (ru-lang-test--buffer (substring source 0 end)
+        (font-lock-ensure)
+        (indent-region (point-min) (point-max))
+        (let ((once (buffer-string)))
+          (indent-region (point-min) (point-max))
+          (should (equal once (buffer-string))))
+        (ru-lang-imenu-create-index)
+        (ru-lang-forward-block 3)
+        (ru-lang-backward-block 3)
+        (ru-lang-up-block)))))
+
 (provide 'ru-lang-mode-tests)
 ;;; ru-lang-mode-tests.el ends here
