@@ -4,6 +4,8 @@
 
 0.6.0 新增真正的 AST → JavaScript 后端：`ru build --target js` 输出包含运行时和静态外言的独立 CommonJS 文件，通过 Node.js 18+ 运行。`ru generate --target js` 把意图先生成合规如源码，再本地编译为 JavaScript；仍逐次传输完整当前规范，不自动执行。语言语法及数值语义保持不变。
 
+默认生成的 C 会按实际依赖裁剪运行时，并保守地移除未引用的随附标准库声明；JavaScript 同样裁剪随附标准库声明和未引用的可选运行时区段。输出仍可读、独立，不做压缩或针对题目的改写。可用 `ru build --full-runtime` 保留完整运行时与已导入标准库，供诊断对比，详见下方命令说明。
+
 0.5.0 新增 `如:竞赛` 标准外言：整份输入游标、词 / 数 / 行读取、拆词 / 拆行 / 码点、合句、64 KiB 缓冲输出、稳定排序与数值辅助。普通如函数可配合闭包比较器使用；四道原创题目、完整解法和提交 C 的步骤见 [竞赛指南](docs/contest-library.md)。本次不新增语法、int64 或数组填充构造。
 
 0.4.0 新增一等词法闭包：嵌套函数、显式算 / 作引用、捕获共享绑定、函数值传参 / 返回 / 保存和显式零参调用。解释器与独立 C99 后端同步支持，示例见 `examples/closures.ru`。
@@ -102,8 +104,10 @@ python3 ru run source.ru           # 解释执行
 python3 ru check source.ru         # 检查语法、结构和显式函数调用
 python3 ru build source.ru -o app  # 原生编译
 python3 ru build source.ru -o app --emit-c app.c
+python3 ru build source.ru -o app-full --emit-c app-full.c --full-runtime
 python3 ru build source.ru -o app --cc clang
 python3 ru build source.ru --target js -o app.js
+python3 ru build source.ru --target js -o app-full.js --full-runtime
 node app.js 参数一 参数二         # 传给元初；脚本路径不计入外参
 python3 ru generate intent.md      # 明确请求在线生成；先配置提供方和凭据
 python3 ru generate intent.md --target js -o draft.js
@@ -119,6 +123,10 @@ C 目标的 `--emit-c` 会额外保存一个可独立编译的 C 文件；该路
 ```sh
 cc -std=c99 -O2 dist/my-hello.c -lm -o another-hello
 ```
+
+默认 C 输出保留生成代码所需的运行时函数及其传递依赖，也按整个模块图中出现的成员名称保留动态分派分支。 若依赖闭包中没有对／阵构造器，会省去不可达的容器遍历；没有用户形或受检查 I/O 时省去用户字段／方法查找；全模块图没有「卒」或「试」时省去异常传播状态。随附的 `如:竞赛` 只在能安全证明时移除未引用声明；别名、函数引用、闭包和转导出都参与分析，模块值逃逸或无法确定时保守保留。用户源码和用户模块的函数、初始化副作用不会因此删除；裁剪前仍检查完整依赖图。
+
+`build --full-runtime` 对 C / JavaScript 都有效：关闭随附标准库声明裁剪，C 保留完整动态运行时，JavaScript 保留完整 I/O / 竞赛运行时区段。它不会额外导入未使用的标准库，也不改变语言语义、错误检查或执行方式。两种输出都可用于排查差异，正常构建无需此选项。源码长度取决于程序所用功能；请按目标平台限制检查最终文件的字节数，而非假定所有程序都能通过同一源码长度上限。
 
 常规错误退出码为 `1`，命令行参数错误为 `2`，取消文件执行为 `130`。错误通常包含文件名、行号；前端和解释器还提供列号。原生运行错误只提供行号。
 

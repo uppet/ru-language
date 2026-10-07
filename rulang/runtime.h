@@ -39,11 +39,21 @@ enum { RU_SCOPE_MODULE, RU_SCOPE_FUNCTION, RU_SCOPE_RESCUE };
 struct Env { RuHeap gc; Env *parent; RuBinding *bindings; Env *registry_next; int managed, scope; };
 
 static const char *ru_source = "<程序>";
+/* RU_FEATURE: callable */
 static unsigned ru_call_depth;
+/* RU_ELSE_FEATURE */
+/* RU_END_FEATURE */
+/* RU_FEATURE: panic */
 /* Explicit panic state crosses native calls without nonlocal jumps. Each
  * generated caller checks this flag and drops its live owned temporaries.
  * The rooted reason survives environment teardown and collection. */
+/* RU_ELSE_FEATURE */
+/* RU_END_FEATURE */
+/* RU_FEATURE: panic_state */
 static int ru_panicking;
+/* RU_ELSE_FEATURE */
+/* RU_END_FEATURE */
+/* RU_FEATURE: panic */
 static Val ru_panic_reason;
 static const char *ru_panic_source;
 static int ru_panic_line, ru_panic_col;
@@ -54,6 +64,8 @@ typedef struct RuModuleFailure {
     struct RuModuleFailure *next;
 } RuModuleFailure;
 static RuModuleFailure *ru_module_failures;
+/* RU_ELSE_FEATURE */
+/* RU_END_FEATURE */
 static RuHeap *ru_heap;
 static Env *ru_envs;
 typedef struct RuScratch { void *data; struct RuScratch *next; } RuScratch;
@@ -165,8 +177,15 @@ static void ru_gc(void)
     while (at < used) {
         h = todo[at++];
         RU_GC_WORK(1);
-        if (h->kind == RU_PAIR) { RuPair *p=(RuPair *)h; RU_GC_WORK(2); RU_MARK(p->first); RU_MARK(p->second); }
+        if (0) {}
+/* RU_FEATURE: pair */
+        else if (h->kind == RU_PAIR) { RuPair *p=(RuPair *)h; RU_GC_WORK(2); RU_MARK(p->first); RU_MARK(p->second); }
+/* RU_ELSE_FEATURE */
+/* RU_END_FEATURE */
+/* RU_FEATURE: array */
         else if (h->kind == RU_ARRAY) { RuArray *a=(RuArray *)h; size_t i; RU_GC_WORK(a->len); for(i=0;i<a->len;++i) RU_MARK(a->items[i]); }
+/* RU_ELSE_FEATURE */
+/* RU_END_FEATURE */
         else if (h->kind == RU_OBJECT) { RuObject *o=(RuObject *)h; size_t i; RU_GC_WORK(o->len); for(i=0;i<o->len;++i) RU_MARK(o->fields[i]); }
         else if (h->kind == RU_FUNCTION) { RuCallable *f=(RuCallable *)h; RU_GC_WORK(2); RU_MARK(f->self); RU_MARK_ENV(f->closure); }
         else if (h->kind == RU_ENV) {
@@ -358,12 +377,15 @@ static void ru_shutdown(void)
     RuHeap *h;
     if(ru_finished) return;
     ru_finished=1;
+/* RU_FEATURE: panic */
     ru_panic_clear();
     while(ru_module_failures) {
         RuModuleFailure *failure = ru_module_failures;
         ru_module_failures = failure->next;
         v_drop(failure->reason); failure->reason = v_null();
     }
+/* RU_ELSE_FEATURE */
+/* RU_END_FEATURE */
     while(ru_envs) env_free(ru_envs);
     while(ru_scratch) ru_scratch_free(ru_scratch->data);
     /* Fatal diagnostics end the process while native frames still exist.
@@ -448,7 +470,10 @@ static void ru_text_add(RuText *s,const char *text,size_t n)
     memcpy(s->data+s->len,text,n);s->len+=n;s->data[s->len]=0;
 }
 static void ru_text_word(RuText *s,const char *text) { ru_text_add(s,text,strlen(text)); }
+/* RU_FEATURE: container */
 typedef struct { int action; Val value; const char *text; unsigned old_mark; } RuFormatStep;
+/* RU_ELSE_FEATURE */
+/* RU_END_FEATURE */
 static void ru_format_push(RuFormatStep **steps, size_t *used, size_t *capacity,
                            int action, Val value, const char *text, unsigned old_mark)
 {
@@ -466,6 +491,7 @@ static void ru_format_push(RuFormatStep **steps, size_t *used, size_t *capacity,
     (*steps)[*used].old_mark = old_mark;
     ++*used;
 }
+/* RU_FEATURE: container */
 static void ru_format(RuText *out, Val value)
 {
     RuFormatStep *steps = NULL;
@@ -517,6 +543,26 @@ static void ru_format(RuText *out, Val value)
 #undef RU_PUSH
     free(steps);
 }
+/* RU_ELSE_FEATURE */
+/* No array/pair constructor is reachable; there is no recursive value to walk. */
+static void ru_format(RuText *out, Val v)
+{
+    char buffer[64];
+    if (v.kind == RU_NUM) { snprintf(buffer, sizeof(buffer), "%.15g", v.n); ru_text_word(out, buffer); }
+    else if (v.kind == RU_STR) ru_text_add(out, v.s->data, v.s->len);
+    else if (v.kind == RU_NULL) ru_text_word(out, "空");
+    else if (v.kind == RU_OBJECT || v.kind == RU_CLASS) {
+        ru_text_word(out, "<形 ");
+        ru_text_word(out, v.kind == RU_CLASS ? v.klass->name : ((RuObject *)v.heap)->klass->name);
+        ru_text_word(out, ">");
+    } else if (v.kind == RU_MODULE) ru_text_word(out, "<外言>");
+    else if (v.kind == RU_FUNCTION) {
+        ru_text_word(out, ((RuCallable *)v.heap)->function->procedure ? "<作 " : "<算 ");
+        ru_text_word(out, ((RuCallable *)v.heap)->function->name);
+        ru_text_word(out, ">");
+    }
+}
+/* RU_END_FEATURE */
 static Val v_to_string(Val value)
 {
     RuText out = {0};
@@ -542,7 +588,10 @@ static Val v_unary(const char *op,Val v,int line)
     if(!strcmp(op,"+")||!strcmp(op,"-")) { if(v.kind!=RU_NUM)ru_fail(line,"运算符 %s 需要数字",op);return ru_finite(op[0]=='-'?-v.n:v.n,line); }
     ru_fail(line,"未知一元运算符：%s",op);return v_null();
 }
+/* RU_FEATURE: pair */
 typedef struct { RuHeap *a, *b; } RuCompared;
+/* RU_ELSE_FEATURE */
+/* RU_END_FEATURE */
 static size_t ru_compare_hash(RuHeap *a, RuHeap *b)
 {
     uintptr_t x = (uintptr_t)a >> 3, y = (uintptr_t)b >> 3;
@@ -575,6 +624,7 @@ static int ru_compare_seen(RuCompared **table, size_t *capacity, size_t *count,
     (*table)[at].a = a; (*table)[at].b = b; ++*count;
     return 0;
 }
+/* RU_FEATURE: pair */
 static int v_equal(Val a, Val b)
 {
     typedef struct { Val a, b; } Compare;
@@ -607,13 +657,33 @@ static int v_equal(Val a, Val b)
     }
     free(stack); free(seen); return equal;
 }
+/* RU_ELSE_FEATURE */
+/* No pair constructor is reachable: equality is shallow for every live kind. */
+static int v_equal(Val a, Val b)
+{
+    if (a.kind != b.kind) return 0;
+    if (a.kind == RU_NUM) return a.n == b.n;
+    if (a.kind == RU_STR) return !strcmp(a.s->data, b.s->data);
+    if (a.kind == RU_CLASS) return a.klass == b.klass;
+    if (a.kind == RU_MODULE) return a.module == b.module;
+    return a.kind == RU_NULL || a.heap == b.heap;
+}
+/* RU_END_FEATURE */
 static Val v_binary(const char *op,Val a,Val b,int line)
 {
+/* RU_OPERATORS: 对 */
     if(!strcmp(op,"对"))return v_pair(a,b,line);
+/* RU_END_MEMBERS */
+/* RU_OPERATORS: 且 */
     if(!strcmp(op,"且"))return v_num(v_truth(a)&&v_truth(b));
+/* RU_END_MEMBERS */
+/* RU_OPERATORS: 或 */
     if(!strcmp(op,"或"))return v_num(v_truth(a)||v_truth(b));
+/* RU_END_MEMBERS */
     if(!strcmp(op,"==")||!strcmp(op,"!=")) {int equal=v_equal(a,b);return v_num(!strcmp(op,"==")?equal:!equal);}
+/* RU_OPERATORS: 含 */
     if(!strcmp(op,"含")) { if(a.kind!=RU_STR||b.kind!=RU_STR)ru_fail(line,"含 需要两个字符串");return v_num(strstr(a.s->data,b.s->data)!=NULL); }
+/* RU_END_MEMBERS */
     if(!strcmp(op,"<")||!strcmp(op,"<=")||!strcmp(op,">")||!strcmp(op,">=")) {
         int cmp;if(a.kind!=b.kind || (a.kind!=RU_NUM&&a.kind!=RU_STR))ru_fail(line,"比较需要相同的数字或字符串类型");
         cmp=a.kind==RU_NUM?(a.n>b.n)-(a.n<b.n):strcmp(a.s->data,b.s->data);
@@ -716,7 +786,11 @@ static int v_is_type(Val v,const char *type,Env *env)
     size_t type_len = strlen(type);
     if (!type_len) return 1;
     const char *suffix = type_len >= 4 ? type + type_len - 4 : NULL;
+/* RU_FEATURE: array */
     if(suffix && !strcmp(suffix," 阵")) {size_t i,len=(size_t)(suffix-type);char *item;RuArray *a;int good=1;if(v.kind!=RU_ARRAY)return 0;item=(char *)ru_alloc(len+1,0);memcpy(item,type,len);item[len]=0;a=(RuArray *)v.heap;for(i=0;i<a->len&&good;++i)good=v_is_type(a->items[i],item,env);free(item);return good;}
+/* RU_ELSE_FEATURE */
+    if(suffix && !strcmp(suffix," 阵")) return 0;
+/* RU_END_FEATURE */
     if(!strcmp(type,"算")||!strcmp(type,"作"))return v.kind==RU_FUNCTION && ((RuCallable *)v.heap)->function->procedure==!strcmp(type,"作");
     if(!strcmp(type,"数"))return v.kind==RU_NUM;
     if(!strcmp(type,"句"))return v.kind==RU_STR;
@@ -767,6 +841,7 @@ static Val v_member_reference(Val receiver, const char *name, int line)
         if(!binding) ru_fail(line,"未知成员：%s",name);
         return v_copy(binding->value);
     }
+/* RU_FEATURE: user_class */
     if(receiver.kind==RU_OBJECT) {
         RuObject *object=(RuObject *)receiver.heap;
         RuClass *klass; size_t index, i; const char *type; Env *owner;
@@ -776,6 +851,9 @@ static Val v_member_reference(Val receiver, const char *name, int line)
                 if(!strcmp(klass->methods[i]->name,name))
                     return v_function(klass->methods[i],klass->global,receiver);
     }
+/* RU_ELSE_FEATURE */
+/* RU_END_FEATURE */
+
     /* Pair projections are value properties, like object fields. Their
      * contained callable is invokable without binding a builtin method. */
     if(receiver.kind==RU_PAIR && (!strcmp(name,"囫") || !strcmp(name,"囵")))
@@ -794,6 +872,7 @@ static Val v_member_prepare(Val receiver, const char *name, size_t argc, int lin
         *mode=argc || (binding->reserved && binding->value.kind==RU_FUNCTION) ? 2 : 1;
         return v_copy(binding->value);
     }
+/* RU_FEATURE: user_class */
     if(receiver.kind==RU_OBJECT) {
         RuObject *object=(RuObject *)receiver.heap;
         RuClass *klass; size_t index, i; const char *type; Env *owner;
@@ -807,15 +886,28 @@ static Val v_member_prepare(Val receiver, const char *name, size_t argc, int lin
                     *mode=2; return v_function(klass->methods[i],klass->global,receiver);
                 }
     }
+/* RU_ELSE_FEATURE */
+/* RU_END_FEATURE */
+
     return v_null();
+}
+/* Allocate an object independently of source-level constructor validation.
+ * Protected runtime classes have already-known descriptors and no arguments. */
+static Val ru_object_new(RuClass *klass, int line)
+{
+    RuObject *o; Val v = v_null(); size_t i;
+    o = (RuObject *)ru_new_heap(sizeof(*o), RU_OBJECT, line);
+    v.kind = RU_OBJECT; v.heap = &o->gc; o->klass = klass; o->len = ru_field_count(klass);
+    o->fields = (Val *)ru_alloc(o->len * sizeof(Val), line);
+    for (i = 0; i < o->len; ++i) o->fields[i] = v_null();
+    return v;
 }
 static Val v_new(Val class_value,size_t argc,const char **keys,Val *args,int line)
 {
-    RuClass *klass;RuObject *o;Val v=v_null();size_t i,j;
+    RuClass *klass; Val v; size_t i,j;
     if(class_value.kind!=RU_CLASS)ru_fail(line,"新 需要形名称");
     klass=class_value.klass; ru_class_ready(klass,line);
-    o=(RuObject *)ru_new_heap(sizeof(*o),RU_OBJECT,line);v.kind=RU_OBJECT;v.heap=&o->gc;o->klass=klass;o->len=ru_field_count(klass);
-    o->fields=(Val *)ru_alloc(o->len*sizeof(Val),line);for(i=0;i<o->len;++i)o->fields[i]=v_null();
+    v=ru_object_new(klass,line);
     ru_io_defaults(v, line);
     for(i=0;i<argc;++i){if(!keys[i])ru_fail(line,"新 的字段必须使用命名实参");for(j=0;j<i;++j)if(!strcmp(keys[i],keys[j]))ru_fail(line,"重复的实参：%s",keys[i]);v_set_member(v,keys[i],args[i],line);}
     return v;
@@ -843,8 +935,13 @@ static Val v_call(Val callable,size_t argc,const char **keys,Val *args,int line)
 static Val v_member(Val receiver,const char *name,size_t argc,const char **keys,Val *args,int line)
 {
     const char *one[]={"值"},*position[]={"位"},*range[]={"始","终"};Val bound[2], io_result;
+    (void)one; (void)position; (void)range; (void)bound; (void)io_result;
+/* RU_MEMBERS: 读入,扫句,拆词,拆行,字列,合句,排序,取整,蓄出,词,数,行,写,清 */
     if (ru_contest_member(receiver, name, argc, keys, args, line, &io_result)) return io_result;
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 读,写,在,除,列 */
     if (ru_io_member(receiver, name, argc, keys, args, line, &io_result)) return io_result;
+/* RU_END_MEMBERS */
     if(receiver.kind==RU_MODULE){
         RuBinding *binding;Val value,result;
         /* Qualified access exposes only the module's own exports, not builtins
@@ -857,17 +954,34 @@ static Val v_member(Val receiver,const char *name,size_t argc,const char **keys,
         if(argc)ru_fail(line,"成员不是函数：%s",name);
         return value;
     }
+/* RU_FEATURE: user_class */
     if(receiver.kind==RU_OBJECT){RuObject *o=(RuObject *)receiver.heap;size_t index,i;const char *type;Env *owner;RuClass *klass;
         if(ru_find_field(o->klass,name,&index,&type,&owner)){Val value=v_copy(o->fields[index]);if(argc){Val result=v_call(value,argc,keys,args,line);v_drop(value);return result;}return value;}
         for(klass=o->klass;klass;klass=klass->parent)for(i=0;i<klass->methods_count;++i)if(!strcmp(klass->methods[i]->name,name)){Val method=v_function(klass->methods[i],klass->global,receiver),result=v_call(method,argc,keys,args,line);v_drop(method);return result;}
         ru_fail(line,"未知成员：%s",name);
     }
+/* RU_ELSE_FEATURE */
+    if(receiver.kind==RU_OBJECT) ru_fail(line,"未知成员：%s",name);
+/* RU_END_FEATURE */
+
+/* RU_MEMBERS: 囫,囵 */
     if(receiver.kind==RU_PAIR&&(!strcmp(name,"囫")||!strcmp(name,"囵"))){if(argc)ru_fail(line,"对的成员不接收实参");return v_copy(!strcmp(name,"囫")?((RuPair *)receiver.heap)->first:((RuPair *)receiver.heap)->second);}
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 量 */
     if(!strcmp(name,"量")){if(argc)ru_fail(line,"量不接收实参");return v_num((double)v_length(receiver,line));}
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 位 */
     if(!strcmp(name,"位")){ru_bind(name,1,position,argc,keys,args,bound,line);return v_index(receiver,bound[0],line);}
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 段 */
     if(!strcmp(name,"段")){ru_bind(name,2,range,argc,keys,args,bound,line);return v_slice(receiver,bound[0],bound[1],line);}
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 增 */
     if(!strcmp(name,"增")){ru_bind(name,1,one,argc,keys,args,bound,line);return v_append(receiver,bound[0],line);}
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 含 */
     if(!strcmp(name,"含")){const char *text[]={"句"};ru_bind(name,1,text,argc,keys,args,bound,line);return v_binary("含",receiver,bound[0],line);}
+/* RU_END_MEMBERS */
     ru_fail(line,"未知成员：%s",name);return v_null();
 }
 static Val v_member_finish(Val receiver, const char *name, size_t argc, const char **keys,

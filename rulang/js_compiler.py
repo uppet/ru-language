@@ -196,6 +196,9 @@ class JSCompiler(Compiler):
         Keeping an unnecessary section is harmless; missing markers fall back
         to the full runtime rather than guessing at JavaScript syntax.
         """
+        runtime = Path(__file__).with_name('runtime.js').read_text(encoding='utf-8')
+        if self.full_runtime:
+            return runtime
         words = set()
         pending = list(self.modules.values())
         while pending:
@@ -208,7 +211,6 @@ class JSCompiler(Compiler):
                 pending.extend(value)
             elif isinstance(value, str):
                 words.update(value.split())
-        runtime = Path(__file__).with_name('runtime.js').read_text(encoding='utf-8')
         for feature, needed, handler in (
             ('IO', bool(words & {'件', '录', '件作成果', '读取', '显出', '错误'}), 'ioMember'),
             ('CONTEST', '__竞赛' in words, 'contestMember'),

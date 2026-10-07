@@ -18,6 +18,8 @@ JavaScript 后端同样把 AST 直接降为 JavaScript 函数、表达式和控�
 
 三种执行路径使用本规范的相同语言接口；垃圾回收、平台文件权限、最大调用栈与可用资源由各宿主实现决定。Node 的栈溢出会作为运行错误退出，不保证与 Python / C 相同的最大递归深度。JavaScript 目标不添加 DOM、异步、JavaScript FFI 或任意库调用。
 
+编译输出默认做保守的依赖裁剪，不改变源码语法或上述语义。C 保留生成代码可达的运行时函数及传递依赖，并按完整模块图的成员名称保留分派分支；根据可达构造器可省略不可能存在的对／阵路径，根据全模块图可省略未使用的用户形查找与「卒／试」传播状态；C / JavaScript 都可移除能证明未被引用的随附标准库声明。分析考虑别名、闭包、函数引用及转导出；模块值逃逸或无法确定时保留所需的保守集合。用户声明、用户模块及初始化副作用不会作为标准库裁剪对象，完整原始依赖图仍先接受检查。C 输出保持可读、独立，不做代码压缩或题目专用替换。JavaScript 另外只在未引用时省略可选 I/O / 竞赛运行时区段。第 12 节的 `--full-runtime` 可关闭这些裁剪以供诊断。
+
 `check`、`build` 和生成结果检查会解析整个依赖图，检查结构及可静态识别的函数调用；它们**不是完整静态类型检查器，也不是安全审计或执行沙箱**。未定义的普通变量、实际参数类型、类型别名、字段值、索引、除零、路径权限等仍可能在运行时报错。检查通过不等于所有路径可运行、程序终止或程序安全。
 
 ### 1.2 可观察行为与错误
@@ -817,6 +819,7 @@ python3 ru repl
 python3 ru check source.ru
 python3 ru run source.ru -- 参数一 参数二
 python3 ru build source.ru -o app --emit-c app.c
+python3 ru build source.ru -o app-full --emit-c app-full.c --full-runtime
 python3 ru build source.ru --target js -o app.js
 node app.js 参数一 参数二
 python3 -m rulang --help
@@ -827,6 +830,8 @@ python3 -m rulang --help
 C 默认输出为源文件去扩展名路径（Windows 添加 `.exe`）；`build --target js` 默认输出为同名 `.js`，也可用 `-o` 指定 `.cjs`。构建 JavaScript 不需要或调用 Node / C 编译器，不读取 `CC`，不接受 `--cc` 或 `--emit-c`。通过 `node app.js` 执行产物；`元初` 的外参为脚本路径之后的参数，退出码规则不变。
 
 JavaScript 产物是 CommonJS：放在 `package.json` 含 `"type":"module"` 的目录树中时，应使用 `.cjs` 扩展名（例如 `-o app.cjs`）；不支持把该产物当 `.mjs` / ES module 或浏览器脚本直接加载。文件路径 I/O 仍相对运行进程的当前工作目录，而不是输出脚本的目录。
+
+`build --full-runtime` 同时适用于 `--target c` 和 `--target js`。它保留完整目标运行时及所有已导入随附标准库声明，用于和默认裁剪输出作诊断对比，不自动导入额外标准库，不改变检查、程序语义或执行方式。默认输出及完整输出均为独立产物；裁剪不保证所有程序都符合特定平台的源码长度、编译时间或内存限制。
 
 两种构建都在完整生成成功后才原子替换既有程序输出，输出不得覆盖源码/外言依赖。程序输出与 `--emit-c` 输出彼此也须不同；输出 C 内联运行时，可独立用 `cc -std=c99 -O2 app.c -lm -o app` 构建。`--emit-c` 文件可能在之后 C 编译失败前就已经写出。JavaScript 运行仍受 Node、操作系统、调用栈和时间 / 内存限制约束；Windows 与 macOS 的 Node 路径尚未在本次环境实测。
 
@@ -1005,7 +1010,7 @@ python3 ru check draft.ru
 
 ## 15. 尚未实现的功能与生成检查清单
 
-以下均不是本版能力：自举、FFI/调用任意 C/Python/JavaScript 库、系统命令或 subprocess、网络/HTTP 语言库、在线包管理、动态计算模块路径、循环模块、匿名函数字面量、泛型系统、接口/多继承、运算符重载、反射、完整静态类型推断、优化器、任意精度整数、十进制定点、位运算、字典、异步/线程、二进制 I/O、持久文件句柄、目录创建/递归删除、事务和自动资源管理。CLI 的 Responses 客户端不是可由如源码调用的网络内置。
+以下均不是本版能力：自举、FFI/调用任意 C/Python/JavaScript 库、系统命令或 subprocess、网络/HTTP 语言库、在线包管理、动态计算模块路径、循环模块、匿名函数字面量、泛型系统、接口/多继承、运算符重载、反射、完整静态类型推断、通用用户代码优化器、任意精度整数、十进制定点、位运算、字典、异步/线程、二进制 I/O、持久文件句柄、目录创建/递归删除、事务和自动资源管理。上述保守运行时 / 随附标准库裁剪不是通用用户代码优化。CLI 的 Responses 客户端不是可由如源码调用的网络内置。
 
 不要把 `助人`、`为乐` 等自然语言词语当内置命令；它们可以是用户定义名称，但必须确实声明。不要凭其他语言习惯发明 `print`、`return`、`if`、`try/catch`、`throw`、`len`、`append`、点成员或圆括号实参列表。
 
@@ -1026,6 +1031,6 @@ python3 ru check draft.ru
 
 ## 16. 对照实现和测试的位置
 
-规范对应的实现位于本目录的 `frontend.py`（词法、语法、结构校验）、`interpreter.py`（参考求值）、`compiler.py` 与 `runtime.h`（原生降级和动态运行时）、`modules.py`（导入图及意图标记）、`io_runtime.py` / `io_runtime.h`（受检查 I/O）、`stdlib/竞赛.ru` 与 `contest_runtime.py` / `contest_runtime.h`（竞赛库、读写游标与排序）、`generation.py`（规范随请求传输、Responses 及安全保存）、`cli.py`（命令与 REPL）。
+规范对应的实现位于本目录的 `frontend.py`（词法、语法、结构校验）、`interpreter.py`（参考求值）、`compiler.py` 与 `runtime.h`（原生降级和动态运行时）、`c_runtime.py`（C 运行时依赖裁剪）、`stdlib_pruning.py`（随附标准库声明的保守裁剪）、`modules.py`（导入图及意图标记）、`io_runtime.py` / `io_runtime.h`（受检查 I/O）、`stdlib/竞赛.ru` 与 `contest_runtime.py` / `contest_runtime.h`（竞赛库、读写游标与排序）、`generation.py`（规范随请求传输、Responses 及安全保存）、`cli.py`（命令与 REPL）。
 
-回归覆盖位于 `../tests/test_ru.py`、`test_extensions.py`、`test_modules_cli.py`、`test_io.py`、`test_panic.py`、`test_closures.py`、`test_contest.py`、`test_generation.py`。实际平台验证记录见 `../VALIDATION.md`；运行和项目说明见 `../README.md`。变更实现时必须同时更新相应规范段落和测试，尤其不得让生成请求携带的规则落后于当前源码。
+回归覆盖位于 `../tests/test_ru.py`、`test_extensions.py`、`test_modules_cli.py`、`test_io.py`、`test_panic.py`、`test_closures.py`、`test_contest.py`、`test_generation.py`、`test_javascript.py`、`test_js_cli.py`、`test_stdlib_pruning.py`、`test_runtime_cli.py`。实际平台验证记录见 `../VALIDATION.md`；运行和项目说明见 `../README.md`。变更实现时必须同时更新相应规范段落和测试，尤其不得让生成请求携带的规则落后于当前源码。

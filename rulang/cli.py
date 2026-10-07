@@ -25,7 +25,7 @@ def report(error, name, source=""):
         print("  " + lines[error.line-1], file=sys.stderr)
 
 
-def build(program, source_path, output, cc=None, emit_c=None, modules=None, target="c"):
+def build(program, source_path, output, cc=None, emit_c=None, modules=None, target="c", full_runtime=False):
     if target not in ("c", "js"):
         raise RuError("编译目标须为 c 或 js", category="编译错误")
     if target == "js" and (cc is not None or emit_c is not None):
@@ -42,7 +42,7 @@ def build(program, source_path, output, cc=None, emit_c=None, modules=None, targ
             raise RuError("C 输出、程序输出、源文件及外言依赖必须使用不同路径", category="编译错误")
     if target == "js":
         from .js_compiler import JSCompiler
-        generated = JSCompiler(program, str(source_path), modules=modules).compile()
+        generated = JSCompiler(program, str(source_path), modules=modules, full_runtime=full_runtime).compile()
         output.parent.mkdir(parents=True, exist_ok=True)
         # Generation does not invoke Node or run user code. Publish only the
         # complete artifact, preserving any previous output on compile failure.
@@ -54,7 +54,7 @@ def build(program, source_path, output, cc=None, emit_c=None, modules=None, targ
                 os.fsync(stream.fileno())
             os.replace(script, output)
         return output, "JavaScript (Node.js)"
-    generated = Compiler(program, str(source_path), modules=modules).compile()
+    generated = Compiler(program, str(source_path), modules=modules, full_runtime=full_runtime).compile()
     if emit_c:
         cpath.parent.mkdir(parents=True, exist_ok=True)
         cpath.write_text(generated, encoding="utf-8")
@@ -161,6 +161,7 @@ def make_parser():
     p.add_argument("--target", choices=("c", "js"), default="c", help="编译目标：c（默认）或 js（Node.js）")
     p.add_argument("--cc", help="C 编译器（默认依次查找 clang、gcc、cc；也支持 CC 环境变量）")
     p.add_argument("--emit-c", metavar="PATH", help="额外保存可审阅的独立 C99 源码")
+    p.add_argument("--full-runtime", action="store_true", help="保留完整运行时及已导入标准库声明，供诊断对比")
     p = sub.add_parser("generate", help="显式发送意图文档至 Responses API，检查并保存源码（不执行）")
     p.add_argument("document")
     p.add_argument("-o", "--output", help="新建输出文件：ru 目标须为 .ru，js 目标须为 .js 或 .cjs；不覆盖已有文件")
@@ -205,7 +206,8 @@ def main(argv=None):
         elif args.command == "build":
             output = args.output or (str(Path(args.source).with_suffix(".js")) if args.target == "js"
                                      else str(Path(args.source).with_suffix("")) + (".exe" if os.name == "nt" else ""))
-            result, compiler = build(program, args.source, output, args.cc, args.emit_c, modules=modules, target=args.target)
+            result, compiler = build(program, args.source, output, args.cc, args.emit_c,
+                                     modules=modules, target=args.target, full_runtime=args.full_runtime)
             if args.target == "js":
                 print(f"已编译：{result}\n运行目标：{compiler}；未执行")
             else:

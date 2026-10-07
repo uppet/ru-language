@@ -23,7 +23,7 @@ static Env *ru_contest_builtins(void)
     env_init(&env, ru_io_builtins());
     ru_contest_service_class.global = ru_contest_scanner_class.global =
         ru_contest_writer_class.global = &env;
-    service = v_new(v_class(&ru_contest_service_class), 0, NULL, NULL, 0);
+    service = ru_object_new(&ru_contest_service_class, 0);
     env_declare(&env, "__竞赛", service); v_drop(service);
     return &env;
 }
@@ -48,7 +48,7 @@ static Val ru_contest_scanner(Val text, int line)
     ru_contest_text(text, line);
     /* Positions use the language's exact integer range. */
     if ((uint64_t)text.s->len > UINT64_C(9007199254740991)) ru_fail(line, "输入过长");
-    out = v_new(v_class(&ru_contest_scanner_class), 0, NULL, NULL, line);
+    out = ru_object_new(&ru_contest_scanner_class, line);
     ((RuObject *)out.heap)->fields[0] = text;
     ((RuObject *)out.heap)->fields[1] = v_num(0);
     return out;
@@ -213,7 +213,7 @@ static Val ru_contest_sort(Val values, Val comparator, int line)
 }
 static Val ru_contest_writer(int line)
 {
-    Val out = v_new(v_class(&ru_contest_writer_class), 0, NULL, NULL, line);
+    Val out = ru_object_new(&ru_contest_writer_class, line);
     Val buffer = ru_string_alloc(RU_CONTEST_BUFFER_SIZE, line);
     /* This internal string is never exposed; its length is buffer capacity. */
     ((RuObject *)out.heap)->fields[0] = buffer; v_drop(buffer);
@@ -251,24 +251,55 @@ static int ru_contest_member(Val receiver, const char *name, size_t argc, const 
     const char *text_names[] = {"文"}, *join_names[] = {"列", "隔"};
     const char *sort_names[] = {"列", "比较"}, *value_names[] = {"值"}, *content_names[] = {"内容"};
     Val bound[2];
+    (void)text_names; (void)join_names; (void)sort_names; (void)value_names; (void)content_names;
+    (void)bound; (void)argc; (void)keys; (void)args; (void)line; (void)out;
     if (receiver.kind != RU_OBJECT) return 0;
     klass = ((RuObject *)receiver.heap)->klass;
     if (klass == &ru_contest_service_class) {
-        if (!strcmp(name, "读入") || !strcmp(name, "蓄出")) {
+/* RU_MEMBERS: 读入 */
+        if (!strcmp(name, "读入")) {
             ru_bind(name, 0, NULL, argc, keys, args, bound, line);
-            *out = !strcmp(name, "读入") ? ru_contest_input(line) : ru_contest_writer(line);
-        } else if (!strcmp(name, "扫句") || !strcmp(name, "拆词") || !strcmp(name, "拆行") || !strcmp(name, "字列")) {
+            *out = ru_contest_input(line); return 1;
+        }
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 蓄出 */
+        if (!strcmp(name, "蓄出")) {
+            ru_bind(name, 0, NULL, argc, keys, args, bound, line);
+            *out = ru_contest_writer(line); return 1;
+        }
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 扫句 */
+        if (!strcmp(name, "扫句")) {
             ru_bind(name, 1, text_names, argc, keys, args, bound, line);
-            if (!strcmp(name, "扫句")) *out = ru_contest_scanner(bound[0], line);
-            else if (!strcmp(name, "字列")) *out = ru_contest_characters(bound[0], line);
-            else *out = ru_contest_split(bound[0], !strcmp(name, "拆行"), line);
-        } else if (!strcmp(name, "合句")) {
+            *out = ru_contest_scanner(bound[0], line); return 1;
+        }
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 字列 */
+        if (!strcmp(name, "字列")) {
+            ru_bind(name, 1, text_names, argc, keys, args, bound, line);
+            *out = ru_contest_characters(bound[0], line); return 1;
+        }
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 拆词,拆行 */
+        if (!strcmp(name, "拆词") || !strcmp(name, "拆行")) {
+            ru_bind(name, 1, text_names, argc, keys, args, bound, line);
+            *out = ru_contest_split(bound[0], !strcmp(name, "拆行"), line); return 1;
+        }
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 合句 */
+        if (!strcmp(name, "合句")) {
             ru_bind(name, 2, join_names, argc, keys, args, bound, line);
-            *out = ru_contest_join(bound[0], bound[1], line);
-        } else if (!strcmp(name, "排序")) {
+            *out = ru_contest_join(bound[0], bound[1], line); return 1;
+        }
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 排序 */
+        if (!strcmp(name, "排序")) {
             ru_bind(name, 2, sort_names, argc, keys, args, bound, line);
-            *out = ru_contest_sort(bound[0], bound[1], line);
-        } else if (!strcmp(name, "取整")) {
+            *out = ru_contest_sort(bound[0], bound[1], line); return 1;
+        }
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 取整 */
+        if (!strcmp(name, "取整")) {
             double value;
             int negative;
             ru_bind(name, 1, value_names, argc, keys, args, bound, line);
@@ -278,19 +309,27 @@ static int ru_contest_member(Val receiver, const char *name, size_t argc, const 
             /* Every binary64 value outside this range is already integral. */
             if (value > -9007199254740992.0 && value < 9007199254740992.0) value = (double)(int64_t)value;
             if (value == 0 && negative) value = -0.0;
-            *out = v_num(value);
-        } else return 0;
-        return 1;
+            *out = v_num(value); return 1;
+        }
+/* RU_END_MEMBERS */
+        return 0;
     }
+/* RU_MEMBERS: 词,数,行 */
     if (klass == &ru_contest_scanner_class && (!strcmp(name, "词") || !strcmp(name, "数") || !strcmp(name, "行"))) {
         ru_bind(name, 0, NULL, argc, keys, args, bound, line);
         *out = ru_contest_next(receiver, name, line); return 1;
     }
+/* RU_END_MEMBERS */
     if (klass == &ru_contest_writer_class) {
+/* RU_MEMBERS: 清 */
         if (!strcmp(name, "清")) {
             ru_bind(name, 0, NULL, argc, keys, args, bound, line);
             ru_contest_flush(receiver, line);
-        } else if (!strcmp(name, "写") || !strcmp(name, "行")) {
+            *out = v_null(); return 1;
+        }
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 写,行 */
+        if (!strcmp(name, "写") || !strcmp(name, "行")) {
             int lines = !strcmp(name, "行");
             Val content;
             ru_bind(name, 1, lines ? value_names : content_names, argc, keys, args, bound, line);
@@ -300,8 +339,9 @@ static int ru_contest_member(Val receiver, const char *name, size_t argc, const 
             ru_contest_write(receiver, content.s->data, content.s->len, line);
             if (lines) ru_contest_write(receiver, "\n", 1, line);
             v_drop(content);
-        } else return 0;
-        *out = v_null(); return 1;
+            *out = v_null(); return 1;
+        }
+/* RU_END_MEMBERS */
     }
     return 0;
 }
