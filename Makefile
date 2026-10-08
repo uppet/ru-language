@@ -41,3 +41,11 @@ clean:
 test-emacs:
 	$(EMACS) -Q --batch -L emacs --eval '(setq byte-compile-error-on-warn t)' -f batch-byte-compile emacs/ru-lang-mode.el emacs/ru-lang-mode-tests.el
 	$(EMACS) -Q --batch -L emacs -l emacs/ru-lang-mode-tests.el -f ert-run-tests-batch-and-exit
+
+# 如书: local, offline notebook UI and editor tests.
+.PHONY: notebook test-notebook
+notebook:
+	python3 -m rushu
+test-notebook:
+	python3 -m unittest discover -s tests -p "test_rushu*.py" -v
+	node --test rushu/tests/*.mjs

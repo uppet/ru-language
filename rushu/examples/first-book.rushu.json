@@ -1,0 +1,56 @@
+{
+  "format": "rushu-notebook",
+  "version": 1,
+  "title": "如书 · 第一本",
+  "cells": [
+    {
+      "id": "welcome",
+      "type": "markdown",
+      "source": "# 如书 · 第一本\n\n文字记录想法，代码验证想法。下面的代码格共享这一本书的运行会话。按顺序运行，或使用“全部运行”。\n\n只运行你信任的代码：如的文件操作会使用当前用户的权限。",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "id": "seed",
+      "type": "code",
+      "source": "起点 取 10.\n显 起点.",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "id": "closure",
+      "type": "code",
+      "source": "加起点 取 算 数值 为 数:\n    得 起点 + 数值.\n法.\n显 (加起点 5).",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "id": "shared",
+      "type": "code",
+      "source": "起点 取 20.\n显 (加起点 5).",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "id": "input-note",
+      "type": "markdown",
+      "source": "## 在格内输入\n\n下一格与 examples/add.ru 相同。每次提示出现时，在格内输入一个数并送出。全部运行也会在这里等待你的输入。",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "id": "add",
+      "type": "code",
+      "source": "左 取 (读 提示: '输入第一数：') 为 数.\n右 取 (读 提示: '输入第二数：') 为 数.\n中 取 左 + 右.\n显 中.\n",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "id": "notes",
+      "type": "markdown",
+      "source": "## 保存与重来\n\n保存文件包含文字、源码和显示的输出，不包含变量或闭包。重新打开时输出标记为历史，代码不会自动运行。\n\n停止会终止并清空整本书的运行会话；重启后请从第一格重新运行。运行错误前发生的修改不会回滚。",
+      "execution_count": null,
+      "outputs": []
+    }
+  ]
+}

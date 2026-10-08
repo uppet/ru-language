@@ -22,6 +22,17 @@
 
 **本版不是自举编译器。** 编译器和 REPL 使用 Python；原生输出经过 C 编译器编译，执行时不需要 Python、`ru`、原始 `.ru` 文件或生成的 `.c` 文件。JavaScript 输出只需要 Node.js 内置标准库，不需要 Python、项目文件、原 `.ru` 文件或 npm 包。两种生成程序都没有如词法分析器、语法分析器或源码 / AST 解释器。
 
+## 如书：本地网页笔记本（第一版）
+
+在同一仓库的独立 `rushu/` 目录开发；不改变如语言语法。Python 3.10+ 即可运行，不需要安装 npm 包或联网下载编辑器：
+
+```sh
+python3 -m rushu
+# Windows：py -3 -m rushu
+```
+
+打开终端显示的本机地址，即可混写 Markdown 与如代码、逐格执行、在格内输入、停止 / 重启会话以及保存 / 重新打开书本。详细说明与安全边界见 [如书使用说明](rushu/README.md)，[示例书本](rushu/examples/first-book.rushu.json) 可在界面中打开。
+
 ## 30 秒开始
 
 Linux / WSL，克隆私有仓库（需要有访问权限）并进入项目目录：

@@ -32,6 +32,8 @@ jobs:
           node -e 'if (Number(process.versions.node.split(".")[0]) < 18) process.exit(1)'
       - name: Run regression tests
         run: make test
+      - name: Test offline notebook editor
+        run: node --test rushu/tests/*.mjs
       - name: Build all examples
         run: make examples
       - name: Build and syntax-check JavaScript examples
@@ -65,3 +67,5 @@ jobs:
         run: python -m unittest discover -s tests -p test_windows_console.py -v
       - name: Test standard-stream dispatch and checked failures
         run: python -m unittest discover -s tests -p test_stdio_dispatch.py -v
+      - name: Test notebook spawned workers and local API
+        run: python -m unittest discover -s tests -p "test_rushu*.py" -v

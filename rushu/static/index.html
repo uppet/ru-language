@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>如书 · 本地计算笔记</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='15' fill='%23264e43'/%3E%3Ctext x='32' y='45' text-anchor='middle' fill='%23fff' font-size='43'%3E如%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="#" aria-label="如书主页"><span class="brand-mark" aria-hidden="true">如</span><span>如书<small>把想法写成代码</small></span></a>
+    <nav aria-label="书本操作" class="file-actions">
+      <button id="new-book" title="新建独立运行会话"><span aria-hidden="true">＋</span> 新建</button>
+      <button id="open-book"><span aria-hidden="true">↗</span> 打开</button>
+      <button id="save-book" class="save-button"><span aria-hidden="true">↓</span> 保存</button>
+    </nav>
+  </header>
+  <main>
+    <div class="page-overline"><span>本地计算笔记</span><span class="offline-pill"><i></i> 离线 · 本机运行</span></div>
+    <div class="title-row"><input id="book-title" aria-label="书名" maxlength="200" value="第一本如书"><span class="edition">WIP / 01</span></div>
+    <p class="book-meta"><span id="document-status">尚未保存</span><span class="meta-dot">·</span><span id="cell-count"></span><span class="meta-dot">·</span><span>如语言 0.6</span></p>
+    <section class="runtime-toolbar" aria-label="运行控制">
+      <div class="run-actions">
+        <button id="run-all" class="primary"><span aria-hidden="true">▶</span> 运行全部</button>
+        <button id="stop" disabled><span aria-hidden="true">■</span> 停止</button>
+        <button id="restart"><span aria-hidden="true">↻</span> 重启会话</button>
+      </div>
+      <div id="runtime-status" class="runtime-status" role="status"><i></i><span>连接中</span></div>
+    </section>
+    <details class="trust-note">
+      <summary>只运行可信代码：代码可读写本机文件<span aria-hidden="true">⌄</span></summary>
+      <p>代码在启动服务的账户权限下运行，件／录等接口可以读写本机文件，这不是安全沙箱。打开文件只显示内容，不会自动执行。</p>
+      <p>同一本书的代码格共享变量。停止、重启、新建或打开会清空运行状态；已有输出会保留并标为历史。运行错误不会撤销此前的变量修改或文件操作。</p>
+    </details>
+    <div id="notice" class="notice" role="status" hidden></div>
+    <div id="cells" class="cells" aria-label="笔记格子"></div>
+    <div class="add-row" aria-label="添加格子">
+      <span class="add-rule"></span><button id="add-code">＋ 代码</button><button id="add-markdown">＋ 文字</button><span class="add-rule"></span>
+    </div>
+    <footer><span>如书 <span class="footer-dot">/</span> 思考，在此发生。</span><button id="help-button">快捷键与说明 <span aria-hidden="true">?</span></button></footer>
+  </main>
+  <input id="file-picker" type="file" accept=".json,.rushu.json,application/json" hidden>
+  <dialog id="help-dialog" aria-labelledby="help-title">
+    <button class="dialog-close" id="close-help" aria-label="关闭说明">×</button>
+    <p class="dialog-kicker">一本本地的小书</p><h2 id="help-title">写一点，运行一点。</h2>
+    <dl><div><dt>Shift + Enter</dt><dd>运行当前格，移到下一格</dd></div><div><dt>Ctrl / ⌘ + Enter</dt><dd>运行当前格，保留焦点</dd></div><div><dt>Tab / Shift + Tab</dt><dd>缩进 / 减少缩进</dd></div><div><dt>Escape，再按 Tab</dt><dd>从编辑器移到下一个控件</dd></div><div><dt>Ctrl / ⌘ + S</dt><dd>下载保存为 .rushu.json</dd></div></dl>
+    <p>代码格支持如语言高亮、自动缩进与结构引导线。高亮是编辑辅助，不代表语法检查通过。文字格支持标题、列表、粗体、斜体、链接与代码块；原始 HTML 只显示为文字。</p>
+    <p>保存的是文字、代码、运行次数和输出快照，不包含变量、函数或文件句柄。重新打开后，输出标为历史，需要从头执行来恢复计算过程。浏览器刷新后不会自动恢复或运行代码，请先保存。</p>
+    <p class="help-warning">本机服务不是安全沙箱。请审阅后再运行陌生代码。运行中的会话最多保留 262,144 字符的单格输出；大量输出会截断并显示提示。</p>
+  </dialog>
+</body>
+</html>
