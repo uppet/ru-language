@@ -18,7 +18,8 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 PROMPT = "输入第一数："
 MOJIBAKE = "杈撳叆绗\ue0ff竴鏁帮細"
-UNICODE_TEXT = "中文 / café / Ελληνικά / 😀𐐷𠀀"
+BMP_TEXT = "中文 / café / Ελληνικά"
+UNICODE_TEXT = BMP_TEXT + " / 😀𐐷𠀀"
 
 
 if os.name == "nt":
@@ -113,23 +114,27 @@ if os.name == "nt":
             sys.stderr.flush()
             info = CONSOLE_SCREEN_BUFFER_INFO()
             self.check(self.api.GetConsoleScreenBufferInfo(self.output, ctypes.byref(info)))
-            if info.dwSize.X < 60 or info.dwSize.Y < 2:
+            if info.dwSize.X < 60 or info.dwSize.Y < 4:
                 raise AssertionError("Probe console screen buffer is unexpectedly small")
             self.width = info.dwSize.X
             written = wintypes.DWORD()
             self.check(self.api.FillConsoleOutputCharacterW(
-                self.output, " ", self.width * 2, COORD(0, 0), ctypes.byref(written)))
+                self.output, " ", self.width * 4, COORD(0, 0), ctypes.byref(written)))
             self.check(self.api.SetConsoleCursorPosition(self.output, COORD(0, 0)))
 
-        def read(self):
+        def read(self, rows=1):
             # Read the wide-character screen contents, not a redirected byte pipe.
-            buffer = ctypes.create_unicode_buffer(self.width + 1)
-            count = wintypes.DWORD()
-            self.check(self.api.ReadConsoleOutputCharacterW(
-                self.output, buffer, self.width, COORD(0, 0), ctypes.byref(count)))
-            text = buffer[:count.value]
-            # ctypes can expose a Windows UTF-16 surrogate pair as two characters.
-            return text.encode("utf-16-le", "surrogatepass").decode("utf-16-le").rstrip(" ")
+            lines = []
+            for row in range(rows):
+                buffer = ctypes.create_unicode_buffer(self.width + 1)
+                count = wintypes.DWORD()
+                self.check(self.api.ReadConsoleOutputCharacterW(
+                    self.output, buffer, self.width, COORD(0, row), ctypes.byref(count)))
+                text = buffer[:count.value]
+                # ctypes can expose a UTF-16 surrogate pair as two characters.
+                lines.append(text.encode("utf-16-le", "surrogatepass")
+                             .decode("utf-16-le").rstrip(" "))
+            return "\n".join(lines)
 
         def queue_input(self, text):
             assert ctypes.sizeof(KEY_EVENT_RECORD) == 16
@@ -161,7 +166,7 @@ def _console_probe(kind, unbuffered):
     from rulang.io_runtime import _write_stream, read_stream_line
 
     console = _Console()
-    result = {"streams": {}, "observations": {}}
+    result = {"streams": {}, "observations": {}, "python_controls": {}}
     try:
         console.configure()
         for name in ("stdin", "stdout", "stderr"):
@@ -173,7 +178,7 @@ def _console_probe(kind, unbuffered):
         if kind in ("output", "legacy"):
             for name in ("stdout", "stderr"):
                 stream = getattr(sys, name)
-                for content in ((PROMPT, UNICODE_TEXT) if kind == "output" else (PROMPT,)):
+                for content in ((PROMPT, BMP_TEXT, UNICODE_TEXT) if kind == "output" else (PROMPT,)):
                     console.clear()
                     if kind == "legacy":
                         # This is the pre-fix operation, deliberately bypassing
@@ -184,6 +189,16 @@ def _console_probe(kind, unbuffered):
                         stream.write("prefix:")
                         _write_stream(stream, content)
                     result["observations"][name + ":" + content] = console.read()
+                    if kind == "output":
+                        # Some console hosts' screen-reading APIs cannot return
+                        # astral characters faithfully. Compare with a separate
+                        # standard Python Unicode write on the same console;
+                        # BMP text and the reported prompt still require literal
+                        # equality, independently of this control.
+                        console.clear()
+                        stream.write("prefix:" + content)
+                        stream.flush()
+                        result["python_controls"][name + ":" + content] = console.read()
         elif kind == "cli":
             console.clear()
             console.queue_input("2\r3\r")
@@ -192,7 +207,8 @@ def _console_probe(kind, unbuffered):
                 command + ["-m", "rulang", "run", str(ROOT / "examples" / "add.ru")],
                 cwd=ROOT, timeout=20)
             result["returncode"] = completed.returncode
-            result["observations"]["add.ru"] = console.read()
+            # Cooked console Enter advances the cursor even with echo disabled.
+            result["observations"]["add.ru"] = console.read(rows=3)
         elif kind == "input":
             console.queue_input(UNICODE_TEXT + "\r")
             result["observations"]["stdin"] = read_stream_line(sys.stdin)
@@ -233,14 +249,17 @@ class WindowsConsoleTests(unittest.TestCase):
                                  "_WindowsConsoleIO" if unbuffered else "BufferedWriter")
             return result
 
-    def test_stdout_and_stderr_preserve_unicode_in_real_console(self):
+    def test_stdout_and_stderr_match_python_unicode_console_output(self):
         for unbuffered in (False, True):
             with self.subTest(unbuffered=unbuffered):
                 result = self.probe("output", unbuffered)
                 for name in ("stdout", "stderr"):
-                    for content in (PROMPT, UNICODE_TEXT):
+                    for content in (PROMPT, BMP_TEXT):
                         self.assertEqual(result["observations"][name + ":" + content],
                                          "prefix:" + content)
+                    for content in (PROMPT, BMP_TEXT, UNICODE_TEXT):
+                        self.assertEqual(result["observations"][name + ":" + content],
+                                         result["python_controls"][name + ":" + content])
 
     def test_old_raw_descriptor_write_reproduces_reported_mojibake(self):
         self.assertEqual(PROMPT.encode("utf-8").decode("gb18030"), MOJIBAKE)
@@ -255,7 +274,7 @@ class WindowsConsoleTests(unittest.TestCase):
             with self.subTest(unbuffered=unbuffered):
                 result = self.probe("cli", unbuffered)
                 self.assertEqual(result["returncode"], 0)
-                self.assertEqual(result["observations"]["add.ru"], "输入第一数：输入第二数：5")
+                self.assertEqual(result["observations"]["add.ru"], "输入第一数：\n输入第二数：\n5")
 
     def test_console_input_preserves_unicode_and_astral_characters(self):
         for unbuffered in (False, True):
