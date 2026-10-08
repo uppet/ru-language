@@ -113,7 +113,7 @@ class JSCompiler(Compiler):
             if kind == 'function':
                 continue
             if kind == 'type':
-                self.line(f'R.resolve(R.get(m,s,{js(d["name"])},{loc},true));')
+                self.line(f'R.resolve(m.types[{js(d["name"])}]);')
             elif kind == 'bind':
                 self.line(f'R.bind(m,s,{js(d["name"])},{self.expr(d["expr"])},{loc});')
             elif kind == 'print':

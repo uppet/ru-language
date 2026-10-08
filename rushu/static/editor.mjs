@@ -9,13 +9,19 @@ const PAIRS = new Map(Object.entries({'算':'法','作':'为','若':'然','循':
 const PUNCT = {'。':'.','：':':','（':'(','）':')','，':',','［':'[','］':']'};
 const nameStart = c => !!c && /[_\p{L}]/u.test(c);
 const namePart = c => !!c && /[_\p{L}\p{N}]/u.test(c);
+// Match complete markers without splitting a Unicode name (including astral letters).
+const marker = (source, p, name) => source[p] === name && /[.。]/u.test(source[p+1] || '') &&
+  (p === 0 || !namePart(Array.from(source.slice(Math.max(0,p-2),p)).at(-1)));
 export function lex(source) {
   const tokens = []; let p = 0;
   while (p < source.length) {
     const start = p, char = String.fromCodePoint(source.codePointAt(p)); let kind, text;
     if (/\s/u.test(char) || char === '\uFEFF') { p += char.length; continue; }
-    if (char === '#' || source.startsWith('//', p)) {
+    if (char === '#' || source.startsWith('//', p) || marker(source,p,'批')) {
       p = source.indexOf('\n', p); if (p < 0) p = source.length; kind = 'comment';
+    } else if (marker(source,p,'解')) {
+      const close = /释[.。]/u.exec(source.slice(p+2));
+      p = close ? p+2+close.index+close[0].length : source.length; kind = 'comment';
     } else if (`'"‘“`.includes(char)) {
       const close = {'‘':'’','“':'”'}[char] || char; p += char.length;
       while (p < source.length && source[p] !== close) { p += source[p] === '\\' ? Math.min(2, source.length - p) : 1; }
@@ -64,7 +70,7 @@ export function analyze(source) {
   let offset=0;
   for (const line of sourceLines) {
     const end=offset+line.length; let depth=stack.length, first=true;
-    const stringLine=index>0 && tokens[index-1].kind==='string' && tokens[index-1].end>offset;
+    const stringLine=index>0 && ['string','comment'].includes(tokens[index-1].kind) && tokens[index-1].end>offset;
     while (tokens[index] && tokens[index].start<=end) {
       const token=tokens[index], {text,kind}=token, next=nexts[index], binding=token===rescueBinding;
       const callable=['算','作'].includes(text), callableType=callable&&previous==='为';
@@ -105,10 +111,12 @@ export function analyze(source) {
   }
   return {tokens,blocks,lines,depth:stack.length};
 }
+export const ASSIGNMENT_HELP = '取（词法规则）：函数内先更新当前局部，否则更新最近已有的非模块捕获绑定；未找到则新建当前局部，不隐式改写模块变量。直接救正文中的取写救局部；闭包共享捕获绑定。参数属于本次调用局部。此提示不判断具体名称的运行时绑定。';
+export function tokenHelp(token) { return token.kind === 'name' && token.text === '取' ? ASSIGNMENT_HELP : null; }
 export const escapeHTML = text => text.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
 export function highlight(source) {
   const {tokens}=analyze(source); let html='',at=0;
-  for(const t of tokens) { html+=escapeHTML(source.slice(at,t.start)); const face=t.face||(['string','comment','number'].includes(t.kind)?t.kind:null); const text=escapeHTML(source.slice(t.start,t.end)); html+=face?`<span class="tok-${face}">${text}</span>`:text; at=t.end; }
+  for(const t of tokens) { html+=escapeHTML(source.slice(at,t.start)); const face=t.face||(['string','comment','number'].includes(t.kind)?t.kind:null); const text=escapeHTML(source.slice(t.start,t.end)); html+=face?`<span class="tok-${face}"${tokenHelp(t)?` data-help="${escapeHTML(tokenHelp(t))}"`:""}>${text}</span>`:text; at=t.end; }
   return html+escapeHTML(source.slice(at));
 }
 export function indentText(source, size=4) {
@@ -118,7 +126,9 @@ export function enterEdit(source, start, end=start, size=4) {
   const before=source.slice(0,start), after=source.slice(end);
   const analysis=analyze(before+'\n'); const line=analysis.lines.at(-1);
   // Never inject whitespace into a multiline string's value.
-  const indent=line.depth===null?'':' '.repeat(line.depth*size);
+  const last=analysis.tokens.at(-1);
+  const openComment=last?.kind==='comment' && /^解[.。]/u.test(last.text) && !/释[.。]$/u.test(last.text.trimEnd());
+  const indent=line.depth===null||openComment?'':' '.repeat(line.depth*size);
   return {start,end,text:'\n'+indent,selection:start+1+indent.length};
 }
 export function indentSelection(source,start,end,backward=false,size=4) {

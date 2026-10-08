@@ -75,3 +75,29 @@ test('large repeated blocks remain bounded and structurally balanced',()=>{
   const source='作 名:\n显 1.\n为\n'.repeat(4000),result=analyze(source);
   assert.equal(result.depth,0);assert.equal(result.blocks.length,4000);
 });
+
+test('Chinese comments are adjacent whole markers, opaque and nonnested',()=>{
+  const source='批. 算 假:\r\n批评 取 1. 解释 取 2. 总批 取 3.\n解。 "\n解. 若 1 则 foo释.\n显 "批. 解。 释.". 批。 inline\n';
+  const result=analyze(source);
+  assert.equal(result.depth,0);assert.equal(result.blocks.length,0);
+  assert.equal(result.tokens.filter(t=>t.kind==='comment').length,3);
+  for(const word of ['批评','解释','总批'])assert.equal(result.tokens.find(t=>t.text===word).kind,'name');
+  assert.deepEqual(lex('批 . 解 。 1批. 𐐀批.').map(t=>t.kind),['name','punct','name','punct','number','name','punct','name','punct']);
+  assert.ok(highlight(source).includes('tok-comment'));
+  assert.equal(lex('解. no close')[0].kind,'comment');
+  assert.equal(lex('解. "释.显')[1].text,'显');
+});
+test('block comment interiors preserve whitespace and do not change indentation',()=>{
+  const source='作 名:\n解. 若\n  原样\n释.\n显 1. 批. 为\n为';
+  assert.equal(indentText(source),'作 名:\n    解. 若\n  原样\n释.\n    显 1. 批. 为\n为');
+  assert.equal(analyze(source).blocks.length,1);
+  const unfinished='作 名:\n解. 为';
+  assert.equal(enterEdit(unfinished,unfinished.length).text,'\n');
+});
+test('assignment hover is conservative and never annotates literals or name substrings',()=>{
+  const html=highlight('甲 取 1. 获取 取 "取". 批. 取\n解. 取 释.');
+  assert.equal((html.match(/data-help=/g)||[]).length,2);
+  assert.ok(html.includes('不隐式改写模块变量'));
+  assert.ok(html.includes('直接救正文'));
+  assert.ok(html.includes('不判断具体名称'));
+});

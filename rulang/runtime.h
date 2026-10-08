@@ -38,6 +38,23 @@ typedef struct RuBinding { char *name; Val value; int reserved; struct RuBinding
 enum { RU_SCOPE_MODULE, RU_SCOPE_FUNCTION, RU_SCOPE_RESCUE };
 struct Env { RuHeap gc; Env *parent; RuBinding *bindings; Env *registry_next; int managed, scope; };
 
+/* Diagnostics describe runtime values, never a hypothetical conversion. */
+static const char *v_type_name(Val value)
+{
+    switch (value.kind) {
+    case RU_NUM: return "数";
+    case RU_STR: return "句";
+    case RU_NULL: return "空";
+    case RU_PAIR: return "对";
+    case RU_ARRAY: return "阵";
+    case RU_OBJECT: return ((RuObject *)value.heap)->klass->name;
+    case RU_FUNCTION: return ((RuCallable *)value.heap)->function->procedure ? "作" : "算";
+    case RU_CLASS: return "形声明";
+    case RU_MODULE: return "外言";
+    default: return "未知";
+    }
+}
+
 static const char *ru_source = "<程序>";
 /* RU_FEATURE: callable */
 static unsigned ru_call_depth;
@@ -319,6 +336,16 @@ static RuBinding *env_find(Env *env,const char *name)
 }
 static Val env_get(Env *env,const char *name,int line)
 { RuBinding *b=env_find(env,name); if(!b) ru_fail(line,"未定义变量：%s",name); return v_copy(b->value); }
+static Val ru_ordinary_value(Val value, int line)
+{
+/* RU_FEATURE: user_class */
+    if(value.kind==RU_CLASS)
+        ru_fail(line,"形名「%s」不能作为普通值；创建实例请用「新 %s」，类型注解请直接使用形名",value.klass->name,value.klass->name);
+/* RU_ELSE_FEATURE */
+    (void)line;
+/* RU_END_FEATURE */
+    return value;
+}
 static void env_set(Env *env,const char *name,Val value)
 {
     RuBinding *b; Val owned=env->managed ? value : v_copy(value);
@@ -773,12 +800,28 @@ static int ru_find_field(RuClass *klass, const char *name, size_t *index,
     }
     return 0;
 }
+static void ru_annotation_ready(const char *type,Env *env,int line)
+{
+    size_t length=strlen(type); RuBinding *binding;
+    while(length>=4 && !strncmp(type+length-4," 阵",4)) length-=4;
+    if ((length==0) || (length==3 && (!strncmp(type,"数",3)||!strncmp(type,"句",3)||!strncmp(type,"空",3)||!strncmp(type,"对",3)||!strncmp(type,"阵",3)||!strncmp(type,"算",3)||!strncmp(type,"作",3)))) return;
+    for(;env;env=env->parent) for(binding=env->bindings;binding;binding=binding->next)
+        if(strlen(binding->name)==length && !strncmp(binding->name,type,length) && binding->value.kind==RU_CLASS) return;
+    ru_fail(line,"未定义类型：%s；类型注解须使用已声明或已尽取导入的形名",type);
+}
 static void ru_class_ready(RuClass *klass, int line)
 {
-    for (; klass && klass->parent; klass = klass->parent) {
-        RuBinding *parent = env_find(klass->global, klass->parent->name);
-        if (!parent || parent->value.kind != RU_CLASS || parent->value.klass != klass->parent)
-            ru_fail(line, "未定义父形：%s", klass->parent->name);
+    for (; klass; klass = klass->parent) {
+        size_t i,j;
+        if(klass->parent) {
+            RuBinding *parent = env_find(klass->global, klass->parent->name);
+            if (!parent || parent->value.kind != RU_CLASS || parent->value.klass != klass->parent)
+                ru_fail(line, "未定义父形：%s", klass->parent->name);
+        }
+        for(i=0;i<klass->count;++i) ru_annotation_ready(klass->types[i],klass->global,line);
+        for(i=0;i<klass->methods_count;++i)
+            for(j=0;j<klass->methods[i]->count;++j)
+                ru_annotation_ready(klass->methods[i]->types[j],klass->global,line);
     }
 }
 static int v_is_type(Val v,const char *type,Env *env)
@@ -815,7 +858,7 @@ static void v_set_member(Val receiver,const char *name,Val value,int line)
     if(receiver.kind!=RU_OBJECT)ru_fail(line,"只能修改对象字段");
     o=(RuObject *)receiver.heap;
     if(!ru_find_field(o->klass,name,&index,&type,&owner))ru_fail(line,"未知字段：%s",name);
-    if(value.kind!=RU_NULL&&!v_is_type(value,type,owner))ru_fail(line,"字段「%s」须为%s",name,type);
+    if(value.kind!=RU_NULL&&!v_is_type(value,type,owner))ru_fail(line,"字段「%s」须为%s，实际收到%s",name,type,v_type_name(value));
     o->fields[index]=value;
 }
 static Val v_class(RuClass *klass) {Val v=v_null();v.kind=RU_CLASS;v.klass=klass;return v;}
@@ -839,7 +882,7 @@ static Val v_member_reference(Val receiver, const char *name, int line)
     if(receiver.kind==RU_MODULE) {
         RuBinding *binding=env_find_local(receiver.module,name);
         if(!binding) ru_fail(line,"未知成员：%s",name);
-        return v_copy(binding->value);
+        return ru_ordinary_value(v_copy(binding->value),line);
     }
 /* RU_FEATURE: user_class */
     if(receiver.kind==RU_OBJECT) {
@@ -870,7 +913,7 @@ static Val v_member_prepare(Val receiver, const char *name, size_t argc, int lin
         RuBinding *binding=env_find_local(receiver.module,name);
         if(!binding) ru_fail(line,"未知成员：%s",name);
         *mode=argc || (binding->reserved && binding->value.kind==RU_FUNCTION) ? 2 : 1;
-        return v_copy(binding->value);
+        return ru_ordinary_value(v_copy(binding->value),line);
     }
 /* RU_FEATURE: user_class */
     if(receiver.kind==RU_OBJECT) {
@@ -929,7 +972,13 @@ static Val v_call(Val callable,size_t argc,const char **keys,Val *args,int line)
     if(callable.kind!=RU_FUNCTION)ru_fail(line,"值不是函数");
     f=(RuCallable *)callable.heap;fn=f->function;
     bound=(Val *)ru_scratch_alloc((fn->count?fn->count:1)*sizeof(Val),line);ru_bind(fn->name,fn->count,fn->names,argc,keys,args,bound,line);
-    for(i=0;i<fn->count;++i)if(!v_is_type(bound[i],fn->types[i],f->global))ru_fail(line,"实参「%s」须为%s，请显式使用「为 %s」转换",fn->names[i],fn->types[i],fn->types[i]);
+    for(i=0;i<fn->count;++i) {
+/* RU_FEATURE: user_class */
+        ru_annotation_ready(fn->types[i],f->global,line);
+/* RU_ELSE_FEATURE */
+/* RU_END_FEATURE */
+        if(!v_is_type(bound[i],fn->types[i],f->global))ru_fail(line,"函数「%s」的实参「%s」须为%s，实际收到%s",fn->name,fn->names[i],fn->types[i],v_type_name(bound[i]));
+    }
     ru_enter(line);result=fn->code(f->closure,f->self,line,bound);ru_leave();ru_scratch_free(bound);return result;
 }
 static Val v_member(Val receiver,const char *name,size_t argc,const char **keys,Val *args,int line)
@@ -949,7 +998,7 @@ static Val v_member(Val receiver,const char *name,size_t argc,const char **keys,
         for(binding=receiver.module->bindings;binding;binding=binding->next)
             if(!strcmp(binding->name,name))break;
         if(!binding)ru_fail(line,"未知成员：%s",name);
-        value=v_copy(binding->value);
+        value=ru_ordinary_value(v_copy(binding->value),line);
         if(value.kind==RU_FUNCTION && (argc || binding->reserved)){result=v_call(value,argc,keys,args,line);v_drop(value);return result;}
         if(argc)ru_fail(line,"成员不是函数：%s",name);
         return value;

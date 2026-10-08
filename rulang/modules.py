@@ -6,7 +6,7 @@ resolved modules into standalone outputs that need no source files at runtime.
 """
 from pathlib import Path
 
-from .frontend import Node, RuError, parse, validate
+from .frontend import Node, RuError, parse, validate, comment_marker, block_comment_end
 
 
 GENERATION_MARKER = "如是我言"
@@ -49,9 +49,15 @@ def generation_intent(source):
                 continue
             if char == closing:
                 closing = None
-        elif char == "#" or prefix.startswith("//", i):
+        elif char == "#" or prefix.startswith("//", i) or comment_marker(prefix, i, "批"):
             newline = prefix.find("\n", i)
             i = len(prefix) if newline < 0 else newline
+        elif comment_marker(prefix, i, "解"):
+            end = block_comment_end(prefix, i)
+            if end is None:
+                return None
+            i = end
+            continue
         elif char in quotes:
             contraction = (char == "'" and i > 0 and i + 1 < len(prefix)
                            and prefix[i - 1].isascii() and prefix[i - 1].isalpha()

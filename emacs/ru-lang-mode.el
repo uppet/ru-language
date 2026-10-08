@@ -1,6 +1,6 @@
 ;;; ru-lang-mode.el --- Editing support for the 如 language -*- lexical-binding: t; -*-
 
-;; Version: 0.6.0
+;; Version: 0.7.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: languages
 ;; URL: https://github.com/uppet/ru-language
@@ -154,6 +154,11 @@ The legacy global function 读 is also in `ru-lang--builtins'.")
                 (memq (get-char-code-property char 'general-category)
                       '(Nd Nl No)))))
 
+(defun ru-lang--comment-marker-p (name)
+  "Whether point starts adjacent NAME and punctuation outside a whole name."
+  (and (not (ru-lang--name-part-p (char-before)))
+       (looking-at (concat name "[.。]"))))
+
 (defun ru-lang--lex ()
   "Return a vector of tokens in the accessible buffer, including trivia."
   (save-excursion
@@ -164,8 +169,12 @@ The legacy global function 读 is also in `ru-lang--builtins'.")
           (cond
            ((or (looking-at "[[:space:]]+") (= char #xfeff))
             (if (= char #xfeff) (forward-char) (goto-char (match-end 0))))
-           ((or (= char ?#) (looking-at "//"))
+           ((or (= char ?#) (looking-at "//") (ru-lang--comment-marker-p "批"))
             (end-of-line)
+            (setq kind 'comment))
+           ((ru-lang--comment-marker-p "解")
+            (forward-char 2)
+            (unless (re-search-forward "释[.。]" nil t) (goto-char (point-max)))
             (setq kind 'comment))
            ((memq char '(?\' ?\" ?‘ ?“))
             (let ((close (or (cdr (assq char '((?‘ . ?’) (?“ . ?”)))) char)))
@@ -279,10 +288,10 @@ Intervening comments are ignored."
         (goto-char line)
         (let* ((end (line-end-position)) (depth (length stack))
                (first t) (string-line nil))
-          ;; A string that began earlier owns this line, including its closing
-          ;; delimiter.  Indenting it would alter the program's string value.
+          ;; Preserve interior lines of multiline strings and comments,
+          ;; including the line containing their closing delimiter.
           (when (and (> index 0)
-                     (eq (ru-lang--token-kind (aref tokens (1- index))) 'string)
+                     (memq (ru-lang--token-kind (aref tokens (1- index))) '(string comment))
                      (> (ru-lang--token-end (aref tokens (1- index))) line))
             (setq string-line t))
           (while (and (< index (length tokens))
@@ -418,17 +427,26 @@ Intervening comments are ignored."
     (setq ru-lang--cache-tick (buffer-chars-modified-tick)
           ru-lang--cache-bounds (cons (point-min) (point-max)))))
 
+(defconst ru-lang--assignment-help
+  "取（词法规则）：函数内先更新当前局部，否则更新最近已有的非模块捕获绑定；未找到则新建当前局部，不隐式改写模块变量。直接救正文中的取写救局部；闭包共享捕获绑定。参数属于本次调用局部。此提示不判断具体名称的运行时绑定。")
+
 (defun ru-lang--syntax-propertize (_start _end)
   "Apply string and comment syntax properties across the accessible buffer."
   (ru-lang--ensure-cache)
-  (remove-text-properties (point-min) (point-max) '(syntax-table nil))
+  (remove-text-properties (point-min) (point-max) '(syntax-table nil help-echo nil))
   (seq-doseq (token ru-lang--tokens)
     (let ((start (ru-lang--token-start token)) (end (ru-lang--token-end token)))
+      (when (and (eq (ru-lang--token-kind token) 'name)
+                 (equal (ru-lang--token-text token) "取"))
+        (put-text-property start end 'help-echo ru-lang--assignment-help))
       (pcase (ru-lang--token-kind token)
         ('comment
          (put-text-property start (1+ start) 'syntax-table (string-to-syntax "<"))
-         (when (< end (point-max))
-           (put-text-property end (1+ end) 'syntax-table (string-to-syntax ">"))))
+         (if (string-match-p "\\`解[.。]" (ru-lang--token-text token))
+             (when (string-match-p "释[.。]\\'" (ru-lang--token-text token))
+               (put-text-property (1- end) end 'syntax-table (string-to-syntax ">")))
+           (when (< end (point-max))
+             (put-text-property end (1+ end) 'syntax-table (string-to-syntax ">")))))
         ('string
          (put-text-property start (1+ start) 'syntax-table (string-to-syntax "|"))
          ;; An incomplete string has no closing fence.  Escaped final quotes
@@ -667,7 +685,7 @@ C-c C-r runs the current file with `ru-lang-run-file'."
   (setq-local imenu-create-index-function #'ru-lang-imenu-create-index)
   (setq-local comment-start "# ")
   (setq-local comment-end "")
-  (setq-local comment-start-skip "\\(?:#\\|//\\)[ \t]*")
+  (setq-local comment-start-skip "\\(?:#\\|//\\|批[.。]\\)[ \t]*")
   (setq-local paragraph-start "[ \t]*$")
   (setq-local paragraph-separate "[ \t]*$")
   (setq-local parse-sexp-ignore-comments t))

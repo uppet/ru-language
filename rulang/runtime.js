@@ -73,6 +73,18 @@ const R = (() => {
     }
     exports() { return Object.assign(dict(), this.scope.values, this.types, this.scope.declarations); }
   }
+  function valueTypeName(value) {
+    if (value === null) return '空';
+    if (typeof value === 'number') return '数';
+    if (typeof value === 'string') return '句';
+    if (Array.isArray(value)) return '阵';
+    if (value instanceof Pair) return '对';
+    if (value instanceof Instance) return value.type.name;
+    if (value instanceof Fn) return value.procedure ? '作' : '算';
+    if (value instanceof Module) return '外言';
+    if (value instanceof Type) return '形声明';
+    throw new Error('unknown 如 value');
+  }
   const builtinTypes = dict(), builtins = new Scope();
   function builtin(name, fields, kind, property) {
     const t = new Type(null, name, null, fields, [], [0,0]); t.state = 2;
@@ -202,14 +214,28 @@ const R = (() => {
     }
     return result;
   }
+  function ordinary(m,value,loc) {
+    if (value instanceof Type) fail(m,'形名「'+value.name+'」不能作为普通值；创建实例请用「新 '+value.name+'」，类型注解请直接使用形名',loc);
+    return value;
+  }
+  function typeIdentity(m,annotation,loc) {
+    if (annotation.endsWith(' 阵')) return ['array',typeIdentity(m,annotation.slice(0,-2),loc)];
+    if (['','数','句','空','阵','对','算','作'].includes(annotation)) return annotation;
+    const t = m.types[annotation] || builtinTypes[annotation];
+    if (!(t instanceof Type)) fail(m,'未定义类型：'+annotation+'；类型注解须使用已声明或已尽取导入的形名',loc);
+    return t;
+  }
+  function sameType(a,b) {
+    return a === b || (Array.isArray(a) && Array.isArray(b) && a[0] === b[0] && sameType(a[1],b[1]));
+  }
   function get(m,s,name,loc,raw = false) {
     if (name === '读') {
       if (raw) fail(m, '当前仅支持用户定义算／作的引用；内置「读」不能取引用', loc);
       return read(m,[],loc);
     }
     const [value,declared] = s.find(name);
-    if (value !== MISSING) return !raw && declared ? call(m,value,[],loc) : value;
-    if (own(m.types,name)) return m.types[name];
+    if (value !== MISSING) return ordinary(m,!raw && declared ? call(m,value,[],loc) : value,loc);
+    if (own(m.types,name)) return ordinary(m,m.types[name],loc);
     fail(m, '未定义名称：'+name, loc);
   }
   function bind(m,s,name,value,loc) {
@@ -241,14 +267,16 @@ const R = (() => {
       } else { t.fields = dict(); t.methods = dict(); }
       for (const [name,typ] of t.ownFields) {
         if (own(t.fields,name) || own(t.methods,name)) fail(t.owner, '继承字段／方法重名：'+name,t.loc);
+        typeIdentity(t.owner,typ,t.loc);
         t.fields[name] = [typ,t.owner];
       }
       for (const method of t.ownMethods) {
         const f = method instanceof Fn ? method : fn(t.owner,t.owner.scope,...method);
         if (own(t.fields,f.name)) fail(t.owner,'方法与字段重名：'+f.name,f.loc);
+        f.parameterTypes = f.params.map(([key,typ]) => typeIdentity(f.owner,typ,f.loc));
         if (own(t.methods,f.name)) {
           const old = t.methods[f.name];
-          if (old.procedure !== f.procedure || JSON.stringify(old.params) !== JSON.stringify(f.params))
+          if (old.procedure !== f.procedure || old.params.length !== f.params.length || old.params.some(([key,typ],i) => key !== f.params[i][0] || !sameType(old.parameterTypes ? old.parameterTypes[i] : typeIdentity(old.owner,typ,f.loc),f.parameterTypes[i])))
             fail(t.owner,'覆写方法「'+f.name+'」须保持参数名称、类型及算／作种类',f.loc);
         }
         t.methods[f.name] = f;
@@ -257,6 +285,12 @@ const R = (() => {
     } catch (e) { t.state = 0; throw e; }
   }
   function matches(m,value,typ) {
+    if (Array.isArray(typ)) return Array.isArray(value) && value.every(x => matches(m,x,typ[1]));
+    if (typ instanceof Type) {
+      if (!(value instanceof Instance)) return false;
+      for (let t = value.type; t; t = t.parent) if (t === typ) return true;
+      return false;
+    }
     if (typ === '') return true;
     if (typ.endsWith(' 阵')) return Array.isArray(value) && value.every(x => matches(m,x,typ.slice(0,-2)));
     if (typ === '数') return typeof value === 'number';
@@ -265,7 +299,7 @@ const R = (() => {
     if (typ === '阵') return Array.isArray(value);
     if (typ === '对') return value instanceof Pair;
     if (typ === '算' || typ === '作') return value instanceof Fn && value.procedure === (typ === '作');
-    const expected = m && (m.types[typ] || m.scope.values[typ]) || builtinTypes[typ];
+    const expected = m && m.types[typ] || builtinTypes[typ];
     if (!(expected instanceof Type) || !(value instanceof Instance)) return false;
     for (let t = value.type; t; t = t.parent) if (t === expected) return true;
     return false;
@@ -279,8 +313,8 @@ const R = (() => {
     const bound = argsBind(m,value.name,args,value.params.map(x => x[0]),loc);
     const s = new Scope(value.env,'function');
     if (value.receiver !== null) s.values.其 = value.receiver;
-    for (const [name,typ] of value.params) {
-      if (!matches(owner,bound[name],typ)) fail(m,'实参「'+name+'」须为'+typ+'，请显式使用「为 '+typ+'」转换',loc);
+    for (const [i,[name,typ]] of value.params.entries()) {
+      if (!matches(owner,bound[name],value.parameterTypes ? value.parameterTypes[i] : typeIdentity(owner,typ,value.loc))) fail(m,'函数「'+value.name+'」的实参「'+name+'」须为'+typ+'，实际收到'+valueTypeName(bound[name]),loc);
       s.values[name] = bound[name];
     }
     if (depth >= 128) fail(m,'函数调用层数超过 128',loc);
@@ -295,7 +329,8 @@ const R = (() => {
     } finally { depth--; }
   }
   function boundMethod(value,receiver) {
-    return new Fn(value.owner,value.env,value.name,value.params,value.procedure,value.body,value.loc,receiver);
+    const bound = new Fn(value.owner,value.env,value.name,value.params,value.procedure,value.body,value.loc,receiver);
+    bound.parameterTypes = value.parameterTypes; return bound;
   }
   function functionRef(m,value,procedure,loc) {
     if (!(value instanceof Fn) || value.procedure !== procedure) fail(m,'引用的算／作种类不匹配',loc);
@@ -303,7 +338,7 @@ const R = (() => {
   }
   function ref(m,receiver,name,loc) {
     if (receiver instanceof Module) {
-      const values = receiver.exports(); if (own(values,name)) return values[name];
+      const values = receiver.exports(); if (own(values,name)) return ordinary(m,values[name],loc);
     } else if (receiver instanceof Instance) {
       if (own(receiver.type.fields,name)) return receiver.fields[name];
       if (own(receiver.type.methods,name)) return boundMethod(receiver.type.methods[name],receiver);
@@ -336,12 +371,12 @@ const R = (() => {
   function setField(m,receiver,name,rhs,loc) {
     if (!(receiver instanceof Instance) || !own(receiver.type.fields,name)) fail(m,'不可赋值的字段：'+name,loc);
     const value = rhs(), [typ,owner] = receiver.type.fields[name];
-    if (value !== null && !matches(owner,value,typ)) fail(m,'字段「'+name+'」须为'+typ,loc);
+    if (value !== null && !matches(owner,value,typ)) fail(m,'字段「'+name+'」须为'+typ+'，实际收到'+valueTypeName(value),loc);
     receiver.fields[name] = value; return value;
   }
   function construct(m,s,name,argsThunk,loc) {
-    let t = m.types[name] || s.values[name];
-    if (!t) { const found = s.find(name)[0]; if (found === MISSING) fail(m,'未定义形：'+name,loc); t = found; }
+    const t = m.types[name] || builtinTypes[name];
+    if (!t) fail(m,'未定义形：'+name+'；新 后须使用已声明或已尽取导入的形名',loc);
     if (!(t instanceof Type)) fail(m,'「'+name+'」不是形',loc);
     resolve(t); const fields = dict();
     for (const key of Object.keys(t.fields)) fields[key] = null;
@@ -354,7 +389,7 @@ const R = (() => {
       if (!own(fields,key)) fail(m,'未知字段：'+key,loc);
       const value = typeof expression === 'function' ? expression() : expression;
       const [typ,owner] = t.fields[key];
-      if (value !== null && !matches(owner,value,typ)) fail(m,'字段「'+key+'」须为'+typ,loc);
+      if (value !== null && !matches(owner,value,typ)) fail(m,'字段「'+key+'」须为'+typ+'，实际收到'+valueTypeName(value),loc);
       fields[key] = value; provided.add(key);
     }
     return new Instance(t,fields);
@@ -410,7 +445,7 @@ const R = (() => {
     } else if (receiver instanceof Module) {
       const exports = receiver.exports();
       if (own(exports,name)) {
-        const value = exports[name], args = argsThunk();
+        const value = ordinary(m,exports[name],loc), args = argsThunk();
         if (args.length || own(receiver.scope.declarations,name)) {
           const result = call(m,value,args,loc); m.lastMemberProcedure = value.procedure; return result;
         }

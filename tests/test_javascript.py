@@ -368,11 +368,11 @@ class JavaScriptParityTests(unittest.TestCase):
             'common.ru': "显 '一次'. 值 取 1. 列 取 [1].",
         }, '一次\n1\n1\n[1, 3]\n2\n')
 
-    def test_imported_io_aliases_keep_runtime_for_the_whole_graph(self):
+    def test_imported_io_factories_keep_runtime_for_the_whole_graph(self):
         main = self.write_modules({
-            'main.ru': "模 取 外言 'lib.ru'. 文件形 取 模 其 文件类. 文件 取 新 文件形. "
+            'main.ru': "模 取 外言 'lib.ru'. 文件 取 模 其 文件. "
                        "显 (文件 其 在) 其 结果. (模 其 输出口) 其 写 内容:'好'.",
-            'lib.ru': '文件类 取 件. 输出口 取 显出.',
+            'lib.ru': '算 文件: 得 新 件. 法 输出口 取 显出.',
         })
         path, graph = compiled(main.read_text(encoding='utf-8'), self.folder, source_path=main)
         code = path.read_text(encoding='utf-8')
@@ -404,9 +404,9 @@ class JavaScriptParityTests(unittest.TestCase):
         self.assert_modules({
             'main.ru': "模 取 外言 'lib.ru'. 显 (模 其 输入口) == 读取. "
                        "显 (模 其 输出口) == 显出. 显 (模 其 错误口) == 错误. "
-                       "显 (模 其 竞具) == __竞赛. 显 (模 其 文件类) == 件.",
+                       "显 (模 其 竞具) == __竞赛. 算 查 文档 为 件: 得 1. 法 显 查 (模 其 文件).",
             'lib.ru': "算 输入口: 得 读取. 法 算 输出口: 得 显出. 法 "
-                      "算 错误口: 得 错误. 法 算 竞具: 得 __竞赛. 法 文件类 取 件.",
+                      "算 错误口: 得 错误. 法 算 竞具: 得 __竞赛. 法 算 文件: 得 新 件. 法",
         }, '0\n0\n0\n0\n1\n')
 
     def test_compact_recursive_contest_program(self):

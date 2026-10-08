@@ -140,16 +140,16 @@ class ImportedParameterTests(unittest.TestCase):
                                 self.assertNotIn("Traceback", result.stderr)
                                 self.assertFalse(binary.exists())
 
-    def test_imported_bindings_and_type_aliases_remain_shadowable(self):
+    def test_imported_value_bindings_remain_shadowable(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             main = root / "main.ru"
             (root / "lib.ru").write_text(
-                "普通值 取 1. 形 导入形: 象 类型别名 取 导入形.", encoding="utf-8")
+                "普通值 取 1. 形 导入形: 象 实例别名 取 新 导入形.", encoding="utf-8")
             main.write_text(
                 "尽 取 外言 'lib.ru'.\n"
-                "算 检查 普通值 为 数 类型别名 为 数: 得 普通值+类型别名. 法\n"
-                "形 工具: 算 检查 普通值 为 数 类型别名 为 数: 得 普通值+类型别名. 法 象\n"
+                "算 检查 普通值 为 数 实例别名 为 数: 得 普通值+实例别名. 法\n"
+                "形 工具: 算 检查 普通值 为 数 实例别名 为 数: 得 普通值+实例别名. 法 象\n"
                 "显 检查 2 3. 显 (新 工具) 其 检查 4 5.", encoding="utf-8")
             self.assert_success(main, "5\n9\n")
 

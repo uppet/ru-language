@@ -6,7 +6,7 @@ not reference-counted. Module source is resolved and compiled at build time.
 """
 from pathlib import Path
 from . import __version__
-from .frontend import Node, RuError, bind_arguments, validate
+from .frontend import BUILTIN_TYPES, Node, RuError, bind_arguments, validate
 
 
 def cstr(value):
@@ -52,6 +52,7 @@ class Compiler:
         for path in self.modules:
             self._exports(path)
         self._validate_parameters()
+        self._validate_type_uses()
         self._validate_classes()
         entry = self.declarations[self.root].get('元初')
         if entry:
@@ -190,6 +191,34 @@ class Compiler:
             if any(name in protected for name, _ in function.data['params']):
                 self.error(function, '参数名不能与函数名、形名或内置名称重名')
 
+    def type_identity(self, path, annotation, n):
+        if annotation.endswith(' 阵'):
+            return ('array', self.type_identity(path, annotation[:-2], n))
+        if annotation in ('', '数', '句', '空', '阵', '对', '算', '作') or annotation in BUILTIN_TYPES:
+            return annotation
+        declaration = self.exports[path].get(annotation)
+        if declaration is None or declaration.kind != 'type':
+            self.error(n, '未定义类型：' + annotation + '；类型注解须使用已声明或已尽取导入的形名')
+        return ('shape', id(declaration))
+
+    def _validate_type_uses(self):
+        from .c_runtime import walk_nodes
+        for path, body in self.modules.items():
+            shapes = {name for name, n in self.exports[path].items() if n.kind == 'type'} | BUILTIN_TYPES
+            for n in walk_nodes({path: body}):
+                if n.kind in ('name', 'call') and n.data['name'] in shapes:
+                    name = n.data['name']
+                    self.error(n, f'形名「{name}」不能作为普通值；创建实例请用「新 {name}」，类型注解请直接使用形名')
+                if n.kind in ('function', 'function_literal'):
+                    for _, annotation in n.data['params']:
+                        self.type_identity(path, annotation, n)
+                elif n.kind == 'type':
+                    for _, annotation in n.data['fields']:
+                        self.type_identity(path, annotation, n)
+                elif n.kind == 'new':
+                    if n.data['name'] not in shapes:
+                        self.error(n, '未定义形：' + n.data['name'] + '；新 后须使用已声明或已尽取导入的形名')
+
     def _validate_classes(self):
         self.parents = {}
         owners = {id(n): path for path, names in self.declarations.items() for n in names.values() if n.kind == 'type'}
@@ -208,14 +237,15 @@ class Compiler:
                 ancestor = parent
                 while ancestor:
                     ancestors.update({key: ('field', typ) for key, typ in ancestor.data['fields']})
-                    ancestors.update({m.data['name']: ('method', m) for m in ancestor.data['methods']})
+                    ancestors.update({m.data['name']: ('method', m, owners[id(ancestor)]) for m in ancestor.data['methods'] if m.data['name'] not in ancestors})
                     ancestor = self.parents[id(ancestor)]
                 for key, _ in n.data['fields']:
                     if key in ancestors:
                         self.error(n, '继承的字段／方法名称冲突：' + key)
                 for method in n.data['methods']:
                     prior = ancestors.get(method.data['name'])
-                    if prior and (prior[0] != 'method' or prior[1].data['params'] != method.data['params'] or prior[1].data['procedure'] != method.data['procedure']):
+                    signature = lambda owner, params: [(key, self.type_identity(owner, annotation, method)) for key, annotation in params]
+                    if prior and (prior[0] != 'method' or signature(prior[2], prior[1].data['params']) != signature(path, method.data['params']) or prior[1].data['procedure'] != method.data['procedure']):
                         self.error(method, '覆盖方法必须保持参数名称、类型和算／作种类')
             self.parents[id(n)] = parent
         for names in self.declarations.values():

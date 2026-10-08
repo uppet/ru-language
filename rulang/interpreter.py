@@ -27,6 +27,7 @@ class Function:
     node: object
     environment: object = None
     receiver: object = None
+    parameter_types: object = None
 
 
 @dataclass(eq=False)
@@ -59,6 +60,30 @@ class Module:
         values.update(owner.types)
         values.update(owner.function_values)
         return values
+
+
+
+def value_type_name(value):
+    """Describe the received value without suggesting unsupported conversions."""
+    if value is None:
+        return "空"
+    if isinstance(value, float):
+        return "数"
+    if isinstance(value, str):
+        return "句"
+    if isinstance(value, list):
+        return "阵"
+    if isinstance(value, Pair):
+        return "对"
+    if isinstance(value, Instance):
+        return value.type.name
+    if isinstance(value, Function):
+        return "作" if value.node.data["procedure"] else "算"
+    if isinstance(value, Module):
+        return "外言"
+    if isinstance(value, RuType):
+        return "形声明"
+    raise TypeError(f"unknown 如 value: {type(value).__name__}")
 
 
 def display(value, active=None):
@@ -308,23 +333,53 @@ class Interpreter:
             for name, field_type in typ.node.data["fields"]:
                 if name in typ.fields or name in typ.methods:
                     typ.owner.fail(typ.node, f"继承字段／方法重名：{name}")
+                typ.owner.type_identity(field_type, typ.node)
                 typ.fields[name] = (field_type, typ.owner)
             for fn in typ.node.data["methods"]:
                 name = fn.data["name"]
                 if name in typ.fields:
                     typ.owner.fail(fn, f"方法与字段重名：{name}")
+                signature = [(key, typ.owner.type_identity(annotation, fn)) for key, annotation in fn.data["params"]]
                 if name in typ.methods:
-                    old = typ.methods[name].node.data
-                    if old["params"] != fn.data["params"] or old["procedure"] != fn.data["procedure"]:
+                    previous = typ.methods[name]
+                    old = previous.node.data
+                    old_signature = list(previous.parameter_types.items()) if previous.parameter_types is not None else [(key, previous.owner.type_identity(annotation, fn)) for key, annotation in old["params"]]
+                    if (old_signature != signature
+                            or old["procedure"] != fn.data["procedure"]):
                         typ.owner.fail(fn, f"覆写方法「{name}」须保持参数名称、类型及算／作种类")
-                typ.methods[name] = Function(typ.owner, fn, typ.owner.global_scope)
+                typ.methods[name] = Function(typ.owner, fn, typ.owner.global_scope, parameter_types=dict(signature))
             typ.state = 2
             return typ
         except Exception:
             typ.state = 0
             raise
 
+    def type_identity(self, annotation, n):
+        """Resolve in the declaration's module; variable bindings are not types."""
+        if annotation.endswith(" 阵"):
+            return ("array", self.type_identity(annotation[:-2], n))
+        if annotation in ("", "数", "句", "空", "阵", "对", "算", "作"):
+            return annotation
+        typ = self.types.get(annotation) or self.builtin_types.get(annotation)
+        if not isinstance(typ, RuType):
+            self.fail(n, f"未定义类型：{annotation}；类型注解须使用已声明或已尽取导入的形名")
+        return typ
+
+    def ordinary_value(self, n, value):
+        if isinstance(value, RuType):
+            self.fail(n, f"形名「{value.name}」不能作为普通值；创建实例请用「新 {value.name}」，类型注解请直接使用形名")
+        return value
+
     def type_matches(self, value, typ):
+        if isinstance(typ, tuple):
+            return isinstance(value, list) and all(self.type_matches(item, typ[1]) for item in value)
+        if isinstance(typ, RuType):
+            current = value.type if isinstance(value, Instance) else None
+            while current is not None:
+                if current is typ:
+                    return True
+                current = current.parent
+            return False
         if typ == "":
             return True
         if typ.endswith(" 阵"):
@@ -341,7 +396,7 @@ class Interpreter:
             return isinstance(value, Pair)
         if typ in ("算", "作"):
             return isinstance(value, Function) and value.node.data["procedure"] == (typ == "作")
-        expected = self.types.get(typ) or self.global_scope.values.get(typ) or self.builtin_types.get(typ)
+        expected = self.types.get(typ) or self.builtin_types.get(typ)
         if not isinstance(expected, RuType) or not isinstance(value, Instance):
             return False
         current = value.type
@@ -452,10 +507,10 @@ class Interpreter:
     def resolve_name(self, n, scope):
         value, declared = scope.find(n.data["name"])
         if value is _MISSING and n.data["name"] in self.types:
-            return self.types[n.data["name"]], False
+            return self.ordinary_value(n, self.types[n.data["name"]]), False
         if value is _MISSING:
             self.fail(n, ("未定义函数：" if n.kind == "call" else "未定义名称：") + n.data["name"])
-        return value, declared
+        return self.ordinary_value(n, value), declared
 
     def callable_target(self, n, scope):
         """Evaluate a call/ref target once without auto-invoking its last selector."""
@@ -472,21 +527,21 @@ class Interpreter:
         if not isinstance(value, Function):
             self.fail(n, "值不是算／作")
         result = value.owner.invoke(n, value.node, args, value.receiver,
-                                    caller=self, environment=value.environment)
+                                    caller=self, environment=value.environment, parameter_types=value.parameter_types)
         self.last_call_procedure = value.node.data["procedure"]
         return result
 
     def member_reference(self, n, receiver, name):
         if isinstance(receiver, Module):
-            value = receiver.exports().get(name, _MISSING)
+            value = self.ordinary_value(n, receiver.exports().get(name, _MISSING))
             if value is not _MISSING:
-                return value
+                return self.ordinary_value(n, value)
         elif isinstance(receiver, Instance):
             if name in receiver.type.fields:
                 return receiver.fields[name]
             method = receiver.type.methods.get(name)
             if method:
-                return Function(method.owner, method.node, method.environment, receiver)
+                return Function(method.owner, method.node, method.environment, receiver, method.parameter_types)
         elif isinstance(receiver, Pair) and name in ("囫", "囵"):
             return receiver.left if name == "囫" else receiver.right
         elif isinstance(receiver, (list, str)) and name == "量":
@@ -530,7 +585,7 @@ class Interpreter:
             value = self.expr(n.data["expr"], scope)
             field_type, owner = receiver.type.fields[d["name"]]
             if value is not None and not owner.type_matches(value, field_type):
-                self.fail(n, f"字段「{d['name']}」须为{field_type}")
+                self.fail(n, f"字段「{d['name']}」须为{field_type}，实际收到{value_type_name(value)}")
             receiver.fields[d["name"]] = value
             return
         if not isinstance(receiver, list):
@@ -611,12 +666,9 @@ class Interpreter:
             args = [(name, self.expr(expr, scope)) for name, expr in d["args"]]
             return self.invoke_value(n, value, args)
         if n.kind == "new":
-            typ = self.types.get(d["name"]) or scope.values.get(d["name"])
+            typ = self.types.get(d["name"]) or self.builtin_types.get(d["name"])
             if typ is None:
-                try:
-                    typ = scope.get(d["name"], n.token)
-                except RuError:
-                    self.fail(n, f"未定义形：{d['name']}")
+                self.fail(n, f"未定义形：{d['name']}；新 后须使用已声明或已尽取导入的形名")
             if not isinstance(typ, RuType):
                 self.fail(n, f"「{d['name']}」不是形")
             typ.owner.resolve_type(typ)
@@ -632,7 +684,7 @@ class Interpreter:
                 value = self.expr(expr, scope)
                 field_type, owner = typ.fields[key]
                 if value is not None and not owner.type_matches(value, field_type):
-                    self.fail(n, f"字段「{key}」须为{field_type}")
+                    self.fail(n, f"字段「{key}」须为{field_type}，实际收到{value_type_name(value)}")
                 fields[key] = value
                 provided.add(key)
             return Instance(typ, fields)
@@ -654,7 +706,7 @@ class Interpreter:
                     self.last_member_procedure = value.node.data["procedure"]
                     return result
             elif isinstance(receiver, Module):
-                value = receiver.exports().get(d["name"], _MISSING)
+                value = self.ordinary_value(n, receiver.exports().get(d["name"], _MISSING))
                 if value is not _MISSING and (d["args"] or d["name"] in receiver.interpreter.functions):
                     args = [(key, self.expr(expr, scope)) for key, expr in d["args"]]
                     result = self.invoke_value(n, value, args)
@@ -751,11 +803,11 @@ class Interpreter:
                 return receiver.fields[name]
             method = receiver.type.methods.get(name)
             if method:
-                result = method.owner.invoke(n, method.node, args, receiver, caller=self)
+                result = method.owner.invoke(n, method.node, args, receiver, caller=self, parameter_types=method.parameter_types)
                 self.last_member_procedure = method.node.data["procedure"]
                 return result
         elif isinstance(receiver, Module):
-            value = receiver.exports().get(name, _MISSING)
+            value = self.ordinary_value(n, receiver.exports().get(name, _MISSING))
             if value is not _MISSING:
                 if isinstance(value, Function) and (args or name in receiver.interpreter.functions):
                     result = self.invoke_value(n, value, args)
@@ -812,7 +864,7 @@ class Interpreter:
             self.fail(n, f"未定义函数：{name}")
         return self.invoke_value(n, self.function_values[name], args)
 
-    def invoke(self, n, function, args, receiver=None, caller=None, environment=None):
+    def invoke(self, n, function, args, receiver=None, caller=None, environment=None, parameter_types=None):
         caller = self if caller is None else caller
         name, params = function.data["name"], function.data["params"]
         # Imports execute lazily. Validate against the function owner's names
@@ -827,8 +879,8 @@ class Interpreter:
             local.values["其"] = receiver
         for key, typ in params:
             value = kwargs[key]
-            if not self.type_matches(value, typ):
-                caller.fail(n, f"实参「{key}」须为{typ}，请显式使用「为 {typ}」转换")
+            if not self.type_matches(value, parameter_types[key] if parameter_types is not None else self.type_identity(typ, function)):
+                caller.fail(n, f"函数「{name}」的实参「{key}」须为{typ}，实际收到{value_type_name(value)}")
             local.values[key] = value
         self.hoist(function.data["body"], local)
         if self.call_state[0] >= 128:

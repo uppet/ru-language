@@ -99,6 +99,16 @@ function buildEditor(cell,view) {
     }
     if(cell.source!==input.value&&(cell.execution_count||cell.outputs.length))cell.stale=true;cell.source=input.value;markDirty();render();if(cell.stale)renderOutput(cell);
   }
+  // The textarea overlays the highlighted mirror; use the mirror's real glyph
+  // rectangles so CJK, proportional fallback fonts and horizontal scroll agree.
+  input.addEventListener('mousemove',event=>{
+    let help='';
+    for(const token of pre.querySelectorAll('[data-help]')){
+      if(Array.from(token.getClientRects()).some(r=>event.clientX>=r.left&&event.clientX<r.right&&event.clientY>=r.top&&event.clientY<r.bottom)){help=token.dataset.help;break;}
+    }
+    input.title=help;
+  });
+  input.addEventListener('mouseleave',()=>input.removeAttribute('title'));
   input.addEventListener('scroll',sync);input.addEventListener('input',()=>update(true));input.addEventListener('compositionstart',()=>composing=true);input.addEventListener('compositionend',()=>{composing=false;update(true);});
   input.addEventListener('keydown',event=>{
     if(event.isComposing||composing)return;

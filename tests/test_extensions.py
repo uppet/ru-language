@@ -70,7 +70,7 @@ SUCCESS_CASES = [
     ("typed_arrays", "算 首 列 为 句 阵: 得 列[0]. 法 算 量 列 为 阵: 得 列 其 量. 法 显 (首 ['甲','乙']). 显 (量 [1,'二',空]).", "甲\n3\n"),
     ("typed_array_mutation_alias", "作 加 列 为 数 阵: 列 其 增 7. 为 列 取 [1]. 加 列. 显 列[1].", "7\n"),
     ("standard_contains_method_dispatch", "形 A: 算 含 句 为 句: 得 句. 法 象 甲 取 新 A. 显 甲 其 含 '好'. 显 甲 其 含 句:'好'.", "好\n好\n"),
-    ("class_alias_rebinding", "形 A: 象 别 取 A. 别 取 1. 显 别.", "1\n"),
+    ("instance_alias_rebinding", "形 A: 象 别 取 新 A. 别 取 1. 显 别.", "1\n"),
     ("object_field_and_methods", OBJECT + "甲 取 新 计数 值:2. 甲 其 加 3. 显 甲 其 读值. 显 (甲 其 自身) == 甲.", "5\n1\n"),
     ("object_aliasing", OBJECT + "甲 取 新 计数 值:1. 乙 取 甲. 乙 其 值 取 4. 显 甲 其 值. 显 甲 == 乙. 显 甲 == (新 计数 值:4).", "4\n1\n0\n"),
     ("object_singleton", OBJECT + "甲 取 新 计数 值:1. 列 取 甲 为 阵. 列[0] 其 值 取 6. 显 甲 其 值. 显 列[0] == 甲.", "6\n1\n"),

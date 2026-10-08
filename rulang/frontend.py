@@ -44,6 +44,22 @@ KEYWORDS = set("显 取 为 得 破 若 则 另 然 循 次 环 算 作 法 其 
 NUMBER = re.compile(r"(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
 
 
+def comment_marker(source, index, name):
+    """Adjacent punctuation only; an opener must not split a whole name."""
+    return (source.startswith(name, index) and index + 1 < len(source)
+            and source[index + 1] in ".。"
+            and (index == 0 or not (source[index - 1] == "_" or source[index - 1].isalnum())))
+
+
+BLOCK_COMMENT_CLOSE = re.compile(r"释[.。]")
+
+
+def block_comment_end(source, index):
+    """First exact closer wins, including inside quoted-looking comment text."""
+    match = BLOCK_COMMENT_CLOSE.search(source, index + 2)
+    return None if match is None else match.end()
+
+
 def lex(source):
     tokens, i, line, col = [], 0, 1, 1
     punct = {"。": ".", "：": ":", "（": "(", "）": ")", "，": ",", "［": "[", "］": "]"}
@@ -63,9 +79,15 @@ def lex(source):
         if ch.isspace() or (i == 0 and ch == "\ufeff"):
             advance(ch)
             continue
-        if ch == "#" or source.startswith("//", i):
+        if ch == "#" or source.startswith("//", i) or comment_marker(source, i, "批"):
             end = source.find("\n", i)
             advance(source[i:len(source) if end < 0 else end])
+            continue
+        if comment_marker(source, i, "解"):
+            end = block_comment_end(source, i)
+            if end is None:
+                raise Incomplete("块注释尚未结束（需要 释.）", startline, startcol)
+            advance(source[i:end])
             continue
         if ch in quotes:
             endquote = quotes[ch]
@@ -625,7 +647,7 @@ def validate(program, existing_functions=(), existing_types=()):
 
     def check_type(n, typ):
         base = typ.split()[0]
-        if base not in known_types and base not in known_bindings and not has_imports:
+        if base not in known_types and not has_imports:
             error(n, f"未定义类型：{base}")
 
     def local_bindings(stmts):
@@ -656,6 +678,9 @@ def validate(program, existing_functions=(), existing_types=()):
             if value.kind == "function_literal":
                 check_function(value, method, visible_functions, bindings)
                 return
+            if value.kind in ("name", "call") and value.data["name"] in (set(type_nodes) | set(existing_types) | BUILTIN_TYPES):
+                name = value.data["name"]
+                error(value, f"形名「{name}」不能作为普通值；创建实例请用「新 {name}」，类型注解请直接使用形名")
             if value.kind == "self" and not method:
                 error(value, "「其」自身引用只能用于形的方法内或其闭包")
             if value.kind == "function_ref":
@@ -685,7 +710,7 @@ def validate(program, existing_functions=(), existing_types=()):
         bindings = known_bindings if bindings is None else bindings
         for _, typ in d["params"]:
             base = typ.split()[0]
-            if base not in known_types and base not in known_bindings and not has_imports:
+            if base not in known_types and not has_imports:
                 error(n, f"未定义类型：{base}")
         names = [p[0] for p in d["params"]]
         if method_definitions and d["name"] in MEMBER_PARAMS and names != MEMBER_PARAMS[d["name"]]:

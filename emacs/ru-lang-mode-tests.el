@@ -985,3 +985,26 @@
 
 (provide 'ru-lang-mode-tests)
 ;;; ru-lang-mode-tests.el ends here
+
+(ert-deftest ru-lang-chinese-comments ()
+  (ru-lang-test--buffer "批. 算 假:\n批评 取 1. 解释 取 2.\n解。 \"\n解. 若 1 则 foo释.\n显 1. 批。 为\n"
+    (ru-lang--ensure-cache)
+    (should (= (length ru-lang--blocks) 0))
+    (should (= (length (seq-filter (lambda (token) (eq (ru-lang--token-kind token) 'comment)) ru-lang--tokens)) 3))
+    (syntax-propertize (point-max))
+    (goto-char (point-min)) (search-forward "假")
+    (should (nth 4 (syntax-ppss)))
+    (search-forward "foo") (should (nth 4 (syntax-ppss)))
+    (search-forward "显") (should-not (nth 4 (syntax-ppss)))
+    (goto-char (point-min)) (search-forward "取")
+    (should (string-match-p "不隐式改写模块变量" (get-text-property (1- (point)) 'help-echo)))))
+
+(ert-deftest ru-lang-chinese-comment-indent-and-incomplete ()
+  (ru-lang-test--indent
+   "作 名:\n解. 若\n  原样\n释.\n显 1. 批. 为\n为"
+   "作 名:\n    解. 若\n  原样\n释.\n    显 1. 批. 为\n为")
+  (ru-lang-test--buffer "解. \" 未闭合\n若 1 则"
+    (syntax-propertize (point-max))
+    (goto-char (point-max))
+    (should (nth 4 (syntax-ppss)))
+    (should-not (ru-lang--navigation-blocks nil))))

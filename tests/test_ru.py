@@ -210,7 +210,8 @@ class LanguageTests(unittest.TestCase):
             interpret(source)
         self.assertEqual((context.exception.line, context.exception.col), (2, 4))
         self.assertIn("实参「根」须为数", context.exception.message)
-        self.assertIn("为 数", context.exception.message)
+        self.assertIn("实际收到句", context.exception.message)
+        self.assertNotIn("请显式使用", context.exception.message)
 
     @unittest.skipUnless(any(shutil.which(c) for c in ("clang", "gcc", "cc")), "C compiler unavailable")
     def test_positional_request_cli(self):
