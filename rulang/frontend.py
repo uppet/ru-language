@@ -210,6 +210,28 @@ class Parser:
         self.accept(".")
         return node("function", t, name=name, params=params, body=body, procedure=kind == "作")
 
+    def literal(self, token):
+        """A literal owns its body delimiter, never its enclosing statement dot."""
+        params = []
+        while not self.isv(":"):
+            if self.current.kind != "NAME" or self.current.value in KEYWORDS:
+                self.fail("匿名算／作的参数后必须有「:」")
+            param = self.name()
+            self.expect("为")
+            params.append((param.value, self.type_name()))
+            self.accept(",")
+        self.expect(":")
+        end = "法" if token.value == "算" else "为"
+        previous = self.call_allowed
+        self.call_allowed = True
+        try:
+            body = self.parse((end,))
+            self.expect(end)
+        finally:
+            self.call_allowed = previous
+        return node("function_literal", token, name="<匿名>", params=params,
+                    body=body, procedure=token.value == "作")
+
     def type_definition(self):
         t = self.expect("形")
         name = self.name().value
@@ -329,9 +351,47 @@ class Parser:
 
     def definition_ahead(self):
         """Distinguish a declaration header from a standalone callable ref."""
-        after_name = self.peek(2)
+        name, after_name = self.peek(), self.peek(2)
+        if name.kind != "NAME" or name.value in KEYWORDS:
+            return False
         return (after_name.kind == "OP" and after_name.value == ":") or (
-            after_name.kind == "NAME" and self.peek(3).value == "为")
+            after_name.kind == "NAME" and after_name.value not in KEYWORDS and
+            self.peek(3).kind == "NAME" and self.peek(3).value == "为")
+
+    def literal_ahead(self):
+        """Recognize typed headers without stealing reference conversions.
+
+        Viable EOF prefixes belong to the literal parser so the REPL can request
+        continuation, including when the colon starts the next input line.
+        """
+        if self.isv(":"):
+            return True
+        offset = 0
+        while True:
+            param, marker, typ = self.peek(offset), self.peek(offset + 1), self.peek(offset + 2)
+            if param.kind == "EOF":
+                return True
+            if param.kind != "NAME" or param.value in KEYWORDS:
+                return False
+            if marker.kind == "EOF":
+                return True
+            if marker.kind != "NAME" or marker.value != "为":
+                return False
+            if typ.kind == "EOF":
+                return True
+            if (typ.kind != "NAME" or
+                    (typ.value in KEYWORDS and typ.value not in ("空", "对", "算", "作"))):
+                return False
+            offset += 3
+            while self.peek(offset).kind == "NAME" and self.peek(offset).value == "阵":
+                offset += 1
+            token = self.peek(offset)
+            if token.kind == "EOF" or (token.kind == "OP" and token.value == ":"):
+                return True
+            if token.kind == "OP" and token.value == ",":
+                offset += 1
+                if self.peek(offset).kind == "OP" and self.peek(offset).value == ":":
+                    return True
 
     def empty_call_ahead(self):
         return self.isv("(") and self.peek().kind == "OP" and self.peek().value == ")"
@@ -370,7 +430,8 @@ class Parser:
         enabled = self.call_allowed if allow is None else allow
         while enabled and (self.starts_argument() or
                            (separated and (self.isv("+") or self.isv("-")))):
-            named = (self.current.kind == "NAME" and self.peek().kind == "OP" and
+            named = (self.current.kind == "NAME" and self.current.value not in KEYWORDS and
+                     self.peek().kind == "OP" and
                      self.peek().value == ":")
             current_style = "named" if named else "positional"
             if style is not None and style != current_style:
@@ -416,7 +477,9 @@ class Parser:
         elif t.value == "空":
             left = node("null", t)
         elif t.value in ("算", "作") and t.kind == "NAME":
-            left = self.reference(t)
+            # The mandatory colon distinguishes a typed literal header from
+            # existing references followed by conversions (算 名 为 句).
+            left = self.literal(t) if self.literal_ahead() else self.reference(t)
         elif t.value == "外言":
             path = self.pop()
             if path.kind != "STRING":
@@ -588,8 +651,11 @@ def validate(program, existing_functions=(), existing_types=()):
             own.add(name)
         return inherited_names | own
 
-    def expressions(value, method=False):
+    def expressions(value, method=False, visible_functions=None, bindings=None):
         if isinstance(value, Node):
+            if value.kind == "function_literal":
+                check_function(value, method, visible_functions, bindings)
+                return
             if value.kind == "self" and not method:
                 error(value, "「其」自身引用只能用于形的方法内或其闭包")
             if value.kind == "function_ref":
@@ -599,19 +665,38 @@ def validate(program, existing_functions=(), existing_types=()):
                 # A selected member is not invoked and need not have the
                 # built-in member call's fixed arity (e.g. 算 对象 其 含).
                 if target.kind == "member":
-                    expressions(target.data["receiver"], method)
+                    expressions(target.data["receiver"], method, visible_functions, bindings)
                     return
             if value.kind == "member" and value.data["receiver"].kind in ("string", "number", "null", "array"):
                 if value.data["name"] not in MEMBER_PARAMS:
                     error(value, f"未知成员：{value.data['name']}")
             for child in value.data.values():
-                expressions(child, method)
+                expressions(child, method, visible_functions, bindings)
         elif isinstance(value, dict):
             for child in value.values():
-                expressions(child, method)
+                expressions(child, method, visible_functions, bindings)
         elif isinstance(value, (list, tuple)):
             for child in value:
-                expressions(child, method)
+                expressions(child, method, visible_functions, bindings)
+
+    def check_function(n, method, visible_functions, bindings, method_definitions=False):
+        d = n.data
+        visible_functions = functions if visible_functions is None else visible_functions
+        bindings = known_bindings if bindings is None else bindings
+        for _, typ in d["params"]:
+            base = typ.split()[0]
+            if base not in known_types and base not in known_bindings and not has_imports:
+                error(n, f"未定义类型：{base}")
+        names = [p[0] for p in d["params"]]
+        if method_definitions and d["name"] in MEMBER_PARAMS and names != MEMBER_PARAMS[d["name"]]:
+            error(n, f"标准成员「{d['name']}」须使用固定参数：" + "、".join(MEMBER_PARAMS[d["name"]]))
+        if len(names) != len(set(names)):
+            error(n, "参数名重复")
+        protected = declarations(d["body"], visible_functions, names)
+        if any(p in protected or p in BUILTIN_NAMES or p in type_nodes for p in names):
+            error(n, "参数名不能与函数名、形名或内置名称重名")
+        walk(d["body"], 0, n, False, method, True, protected,
+             bindings | set(names), False)
 
     def walk(stmts, depth=0, function=None, top=True, method=False,
              declaration_scope=True, visible_functions=None, bindings=None,
@@ -626,20 +711,7 @@ def validate(program, existing_functions=(), existing_types=()):
             if n.kind == "function":
                 if not declaration_scope:
                     error(n, "函数／过程只能直接定义在模块、函数、方法或救的正文中")
-                for _, typ in d["params"]:
-                    base = typ.split()[0]
-                    if base not in known_types and base not in known_bindings and not has_imports:
-                        error(n, f"未定义类型：{base}")
-                names = [p[0] for p in d["params"]]
-                if method_definitions and d["name"] in MEMBER_PARAMS and names != MEMBER_PARAMS[d["name"]]:
-                    error(n, f"标准成员「{d['name']}」须使用固定参数：" + "、".join(MEMBER_PARAMS[d["name"]]))
-                if len(names) != len(set(names)):
-                    error(n, "参数名重复")
-                protected = declarations(d["body"], visible_functions, names)
-                if any(p in protected or p in BUILTIN_NAMES or p in type_nodes for p in names):
-                    error(n, "参数名不能与函数名、形名或内置名称重名")
-                walk(d["body"], 0, n, False, method, True, protected,
-                     bindings | set(names), False)
+                check_function(n, method, visible_functions, bindings, method_definitions)
             elif n.kind == "type":
                 if not top:
                     error(n, "形只能定义在顶层")
@@ -663,7 +735,7 @@ def validate(program, existing_functions=(), existing_types=()):
             elif n.kind == "bind" and (d["name"] in visible_functions or d["name"] in BUILTIN_NAMES or d["name"] in type_nodes):
                 error(n, "变量名不能与函数名、形名或内置名称重名")
             elif n.kind == "if":
-                expressions(d["condition"], method)
+                expressions(d["condition"], method, visible_functions, bindings)
                 walk(d["yes"], depth, function, False, method, False, visible_functions, bindings)
                 walk(d["no"], depth, function, False, method, False, visible_functions, bindings)
             elif n.kind == "try":
@@ -674,10 +746,10 @@ def validate(program, existing_functions=(), existing_types=()):
                 walk(d["rescue"], depth, function, False, method, True, rescue_functions,
                      bindings | {d["reason"]})
             elif n.kind == "loop":
-                expressions(d["count"], method)
+                expressions(d["count"], method, visible_functions, bindings)
                 walk(d["body"], depth+1, function, False, method, False, visible_functions, bindings)
             else:
-                expressions(d, method)
+                expressions(d, method, visible_functions, bindings)
 
     inherited = {}
 

@@ -597,6 +597,8 @@ class Interpreter:
             value = self.resolve_name(n, scope)[0]
             args = [(name, self.expr(expr, scope)) for name, expr in d["args"]]
             return self.invoke_value(n, value, args)
+        if n.kind == "function_literal":
+            return Function(self, n, scope)
         if n.kind == "function_ref":
             value = self.callable_target(d["expr"], scope)
             if not isinstance(value, Function) or value.node.data["procedure"] != d["procedure"]:

@@ -3,6 +3,7 @@ EMACS ?= emacs
 test:
 	python3 -m unittest discover -s tests -v
 examples:
+	python3 ru build examples/anonymous.ru -o bin/anonymous --emit-c dist/anonymous.c
 	python3 ru build examples/hello.ru -o bin/hello --emit-c dist/hello.c
 	python3 ru build examples/add.ru -o bin/add
 	python3 ru build examples/square.ru -o bin/square --emit-c dist/square.c

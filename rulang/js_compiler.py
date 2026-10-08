@@ -58,6 +58,8 @@ class JSCompiler(Compiler):
             return f'R.get(m,s,{js(d["name"])},{loc})'
         if kind == 'call':
             return self.call(n, d['name'], d['args'])
+        if kind == 'function_literal':
+            return self.function(n)
         if kind == 'function_ref':
             return f'R.functionRef(m,{self.reference(d["expr"])},{js(d["procedure"])},{loc})'
         if kind == 'invoke':

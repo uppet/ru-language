@@ -714,5 +714,132 @@
         (ru-lang-backward-block 3)
         (ru-lang-up-block)))))
 
+(ert-deftest ru-lang-anonymous-typed-and-zero-parameter-indent ()
+  (ru-lang-test--indent
+   "平方 取 算 值 为 数:\n得 值 * 值.\n法.\n问候 取 作 名 为 句:\n显 ('你好，' + 名).\n为.\n报到 取 作:\n显 '到了'.\n为.\n报到().\n"
+   "平方 取 算 值 为 数:\n    得 值 * 值.\n法.\n问候 取 作 名 为 句:\n    显 ('你好，' + 名).\n为.\n报到 取 作:\n    显 '到了'.\n为.\n报到().\n"))
+
+(ert-deftest ru-lang-anonymous-return-nested-and-control-flow-indent ()
+  (ru-lang-test--indent
+   "算 工厂 初值 为 数:\n当前 取 初值.\n得 算 步 为 数:\n若 步 则\n当前 取 当前 + 步.\n然\n得 算:\n得 当前.\n法.\n法.\n法\n若 1 则\n回调 取 作:\n循 2 次\n显 '到了'.\n环\n为.\n然\n"
+   "算 工厂 初值 为 数:\n    当前 取 初值.\n    得 算 步 为 数:\n        若 步 则\n            当前 取 当前 + 步.\n        然\n        得 算:\n            得 当前.\n        法.\n    法.\n法\n若 1 则\n    回调 取 作:\n        循 2 次\n            显 '到了'.\n        环\n    为.\n然\n"))
+
+(ert-deftest ru-lang-anonymous-containers-and-arguments-indent ()
+  (ru-lang-test--indent
+   "操作们 取 [\n算 值 为 数:\n得 值 + 1.\n法,\n作:\n显 '完成'.\n为\n].\n显 (应用 (算 值 为 数:\n得 值 * 值.\n法) 5).\n"
+   "操作们 取 [\n    算 值 为 数:\n        得 值 + 1.\n    法,\n    作:\n        显 '完成'.\n    为\n].\n显 (应用 (算 值 为 数:\n            得 值 * 值.\n        法) 5).\n"))
+
+(ert-deftest ru-lang-anonymous-faces-do-not-name-first-parameter ()
+  (ru-lang-test--buffer "回调 取 算 值 为 数 操作 为 作:\n得 值.\n法.\n输出 取 作 名 为 句: 显 名. 为.\n引用 取 算 已有.\n"
+    (font-lock-ensure)
+    (search-forward "取 算")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-keyword-face))
+    (search-forward "值")
+    (should-not (get-text-property (1- (point)) 'face))
+    (search-forward "为 数")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-type-face))
+    (search-forward "为 作")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-type-face))
+    (search-forward "取 作")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-keyword-face))
+    (search-forward "名")
+    (should-not (get-text-property (1- (point)) 'face))
+    (search-forward "已有")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-function-name-face))))
+
+(ert-deftest ru-lang-anonymous-imenu-keeps-only-named-definitions ()
+  (ru-lang-test--buffer "算 工厂:\n得 算 值 为 数:\n作 输出: 显 值. 为\n得 作 输出.\n法.\n法\n报到 取 作: 显 '到了'. 为.\n"
+    (should (equal (mapcar #'car (ru-lang-imenu-create-index))
+                   '("算 工厂" "作 工厂@输出")))
+    (let ((blocks (ru-lang--navigation-blocks t)))
+      (should (= (length blocks) 4))
+      (should (ru-lang--block-literal (nth 1 blocks)))
+      (should-not (ru-lang--block-name (nth 1 blocks)))
+      (should (ru-lang--block-literal (nth 3 blocks))))))
+
+(ert-deftest ru-lang-anonymous-navigation-does-not-consume-outer-dot ()
+  (ru-lang-test--buffer "回调 取 算 值 为 数: 得 值. 法.\n报到 取 作: 显 '到了'. 为。\n"
+    (search-forward "取 ")
+    (let ((start (point)))
+      (ru-lang-forward-list)
+      (should (looking-at "\\.\n报到"))
+      (ru-lang-backward-list)
+      (should (= (point) start))
+      (search-forward "得 值")
+      (ru-lang-beginning-of-defun)
+      (should (= (point) start))
+      (ru-lang-end-of-defun)
+      (should (looking-at "\\.\n报到")))
+    (search-forward "取 ")
+    (let ((start (point)))
+      (ru-lang-forward-list)
+      (should (looking-at "。\n"))
+      (ru-lang-backward-list)
+      (should (= (point) start)))))
+
+(ert-deftest ru-lang-anonymous-navigation-interleaves-parentheses ()
+  (ru-lang-test--buffer "显 ((算 值 为 数:\n得 值.\n法) 4).\n"
+    (search-forward "得 值")
+    (ru-lang-backward-up-list)
+    (should (looking-at "算 值"))
+    (ru-lang-forward-list)
+    (should (looking-at ") 4)"))
+    (ru-lang-backward-up-list)
+    (should (looking-at "(算"))
+    (ru-lang-forward-list)
+    (should (looking-at " 4)"))
+    (ru-lang-backward-up-list)
+    (should (looking-at "((算"))))
+
+(ert-deftest ru-lang-anonymous-comments-fullwidth-and-reference-compatibility ()
+  (ru-lang-test--indent
+   "回调 取 算 # 参数\n值 为 数：\n得 值。\n法。\n报到 取 作 // 零参\n：\n显 ‘算 值 为 数: 法’。\n为。\n副本 取 算 （回调）。\n算 模块 其 平方。\n作 对象@输出。\n"
+   "回调 取 算 # 参数\n    值 为 数：\n    得 值。\n法。\n报到 取 作 // 零参\n    ：\n    显 ‘算 值 为 数: 法’。\n为。\n副本 取 算 （回调）。\n算 模块 其 平方。\n作 对象@输出。\n"))
+
+(ert-deftest ru-lang-anonymous-compact-procedure-and-conversion-boundaries ()
+  (ru-lang-test--indent
+   "作 主:\n输出 取 作 值 为 数: 显 值 为 句. 为.\n输出 3.\n显 (算: 得 1. 法)() 为 句.\n为\n显 '完成'.\n"
+   "作 主:\n    输出 取 作 值 为 数: 显 值 为 句. 为.\n    输出 3.\n    显 (算: 得 1. 法)() 为 句.\n为\n显 '完成'.\n"))
+
+(ert-deftest ru-lang-anonymous-header-token-kinds-and-standalone-body ()
+  (ru-lang-test--buffer "显 算 回声 '为'.\n显 作 回声 ':'.\n显 算 回声 形参 '为'.\n作: x 为 数. 为.\n"
+    (font-lock-ensure)
+    (let ((blocks (ru-lang--navigation-blocks t)))
+      (should (= (length blocks) 1))
+      (should (ru-lang--block-literal (car blocks)))
+      (should (ru-lang--block-closed (car blocks))))
+    (should-not (ru-lang-imenu-create-index))
+    (let ((original (buffer-string)))
+      (indent-region (point-min) (point-max))
+      (should (equal original (buffer-string))))))
+
+(ert-deftest ru-lang-anonymous-reference-conversions-do-not-open-blocks ()
+  (ru-lang-test--buffer "显 算 f 为 句.\n列表 取 作 输出 为 阵.\n显 算 列[0] 为 句.\n回调 取 算 值 为 数 阵, 操作 为 作, : 得 值. 法.\n"
+    (font-lock-ensure)
+    (search-forward "f")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-function-name-face))
+    (should (= (length (ru-lang--navigation-blocks t)) 1))
+    (should (ru-lang--block-literal (car (ru-lang--navigation-blocks t))))
+    (should-not (ru-lang-imenu-create-index))
+    (let ((original (buffer-string)))
+      (indent-region (point-min) (point-max))
+      (should (equal original (buffer-string))))))
+
+(ert-deftest ru-lang-anonymous-all-editing-prefixes ()
+  (let ((source "算 工厂 初值 为 数:\n当前 取 初值.\n得 [算 步 为 数: 当前 取 当前+步. 得 当前. 法,作: 显 当前. 为].\n法\n显 ((算 值 为 数: 得 值. 法) 3).\n"))
+    (dotimes (end (1+ (length source)))
+      (ru-lang-test--buffer (substring source 0 end)
+        (font-lock-ensure)
+        (indent-region (point-min) (point-max))
+        (let ((once (buffer-string)))
+          (indent-region (point-min) (point-max))
+          (should (equal once (buffer-string))))
+        (ru-lang-imenu-create-index)
+        (ru-lang-beginning-of-defun)
+        (ru-lang-end-of-defun)
+        (ru-lang-forward-block 3)
+        (ru-lang-backward-block 3)
+        (ru-lang-up-block)))))
+
 (provide 'ru-lang-mode-tests)
 ;;; ru-lang-mode-tests.el ends here

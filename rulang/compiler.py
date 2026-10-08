@@ -59,6 +59,7 @@ class Compiler:
                 self.error(entry, '元初必须为恰有一个「句 阵」参数的算')
         self.entry = entry
         self.current_path = self.root
+        self.current_function = None
         self.functions = self._functions(self.root)
         if not full_runtime:
             from .stdlib_pruning import prune_bundled_stdlib
@@ -119,7 +120,7 @@ class Compiler:
             self.function_value_scopes[id(owner)] = value_scopes
         for n in statements:
             d = n.data
-            if n.kind == 'function':
+            if n.kind in ('function', 'function_literal'):
                 self.function_ids[id(n)] = self.new('function')
                 self.all_functions.append((path, n))
                 self.collect_functions(path, d['body'], scopes, owner=n, local=True,
@@ -132,14 +133,37 @@ class Compiler:
                     self.collect_functions(path, method.data['body'], scopes, owner=method, local=True,
                         value_scopes=value_scopes, local_names=[key for key, _ in method.data['params']])
             elif n.kind == 'if':
+                self.collect_expression_functions(path, d['condition'], scopes, value_scopes)
                 self.collect_functions(path, d['yes'], scopes, value_scopes=value_scopes)
                 self.collect_functions(path, d['no'], scopes, value_scopes=value_scopes)
             elif n.kind == 'loop':
+                self.collect_expression_functions(path, d['count'], scopes, value_scopes)
                 self.collect_functions(path, d['body'], scopes, value_scopes=value_scopes)
             elif n.kind == 'try':
                 self.collect_functions(path, d['body'], scopes, value_scopes=value_scopes)
                 self.collect_functions(path, d['rescue'], scopes, local=True,
                     value_scopes=value_scopes, local_names=[d['reason']])
+            else:
+                self.collect_expression_functions(path, d, scopes, value_scopes)
+
+    def collect_expression_functions(self, path, value, scopes, value_scopes):
+        """Find literals at any expression depth without crossing scope boundaries.
+
+        A literal has a statically emitted body just like a declaration, but its
+        closure is created only when the expression is evaluated. Its body must
+        be collected in a new lexical scope, not in the enclosing expression's.
+        """
+        if isinstance(value, Node):
+            if value.kind == 'function_literal':
+                self.collect_functions(path, [value], scopes, value_scopes=value_scopes)
+            else:
+                self.collect_expression_functions(path, value.data, scopes, value_scopes)
+        elif isinstance(value, dict):
+            for child in value.values():
+                self.collect_expression_functions(path, child, scopes, value_scopes)
+        elif isinstance(value, (list, tuple)):
+            for child in value:
+                self.collect_expression_functions(path, child, scopes, value_scopes)
 
     def _functions(self, path, function=None):
         functions = {name: n for name, n in self.exports[path].items() if n.kind == 'function'}
@@ -290,6 +314,9 @@ class Compiler:
             return self.temp(f"env_get(env, {cstr(d['name'])}, {ln})")
         if n.kind == 'call':
             return self.call(n, d['name'], d['args'])
+        if n.kind == 'function_literal':
+            receiver = 'self' if self.current_function is not None else 'v_null()'
+            return self.temp(f'v_function(&{self.function_ids[id(n)]}_descriptor, env, {receiver})')
         if n.kind == 'function_ref':
             value = self.reference(d['expr'])
             out = self.temp(f'v_function_reference({value}, {int(d["procedure"])}, {ln})')
@@ -534,6 +561,7 @@ class Compiler:
 
     def emit_function(self, path, fn):
         ident = self.function_ids[id(fn)]
+        self.current_function = fn
         self.current_path, self.functions = path, self._functions(path, fn)
         self.known_values = self._values(path, fn)
         self.line(f'static Val {ident}(Env *global, Val self, int call_line, Val *args) {{')
@@ -609,6 +637,7 @@ class Compiler:
             self.emit_function(path, fn)
         for path, program in self.modules.items():
             ident = self.module_ids[path]
+            self.current_function = None
             self.current_path, self.functions = path, self._functions(path)
             self.known_values = self._values(path)
             self.line(f'static Val {ident}_init(void) {{')

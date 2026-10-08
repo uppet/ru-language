@@ -44,7 +44,7 @@ The legacy global function 读 is also in `ru-lang--builtins'.")
 (cl-defstruct (ru-lang--token (:constructor ru-lang--make-token))
   text start end kind face)
 (cl-defstruct (ru-lang--block (:constructor ru-lang--make-block))
-  kind start end name parent header closed)
+  kind start end name parent header closed literal)
 
 (defvar-local ru-lang--font-lock-face nil)
 (defvar-local ru-lang--cache-tick nil)
@@ -128,28 +128,69 @@ The legacy global function 读 is also in `ru-lang--builtins'.")
   "Return non-nil when BLOCK is a function, procedure or type."
   (member (ru-lang--block-kind block) '("算" "作" "形")))
 
+(defun ru-lang--literal-header-p (tokens index)
+  "Whether 算/作 at INDEX has a complete anonymous header ending in a colon.
+Require typed bare parameters so a reference conversion such as 算 名 为 句
+remains an expression.  Comments and fullwidth punctuation are accepted."
+  (let ((cursor (1+ index)))
+    (cl-labels
+        ((next-code ()
+           (while (and (< cursor (length tokens))
+                       (eq (ru-lang--token-kind (aref tokens cursor)) 'comment))
+             (setq cursor (1+ cursor)))
+           (when (< cursor (length tokens))
+             (prog1 (aref tokens cursor) (setq cursor (1+ cursor)))))
+         (matches (token text kind)
+           (and token (eq (ru-lang--token-kind token) kind)
+                (equal (ru-lang--token-text token) text))))
+      (let ((token (next-code)))
+        (catch 'header
+          (when (matches token ":" 'punct) (throw 'header t))
+          (while token
+            (unless (and (eq (ru-lang--token-kind token) 'name)
+                         (not (member (ru-lang--token-text token) ru-lang--keywords)))
+              (throw 'header nil))
+            (unless (matches (next-code) "为" 'name) (throw 'header nil))
+            (setq token (next-code))
+            (unless (and token (eq (ru-lang--token-kind token) 'name)
+                         (or (not (member (ru-lang--token-text token) ru-lang--keywords))
+                             (member (ru-lang--token-text token) '("空" "对" "算" "作"))))
+              (throw 'header nil))
+            (setq token (next-code))
+            (while (matches token "阵" 'name) (setq token (next-code)))
+            (when (matches token ":" 'punct) (throw 'header t))
+            (when (matches token "," 'punct)
+              (setq token (next-code))
+              (when (matches token ":" 'punct) (throw 'header t)))))))))
+
 (defun ru-lang--function-header-p (tokens index allow-incomplete)
-  "Whether 算/作 at INDEX starts a definition rather than a reference.
-A name followed by a colon, or by a parameter name and 为, is a header.
-ALLOW-INCOMPLETE accepts a partial header at a statement boundary.
-Skip intervening comments and recognize complete headers in imperfect source."
-  (let ((cursor (1+ index)) following)
-    (while (and (< cursor (length tokens)) (< (length following) 3))
-      (unless (eq (ru-lang--token-kind (aref tokens cursor)) 'comment)
-        (push (aref tokens cursor) following))
-      (setq cursor (1+ cursor)))
-    (setq following (nreverse following))
-    (let ((name (nth 0 following)) (after (nth 1 following))
-          (third (nth 2 following)))
-      (or (and allow-incomplete (null name))
-          (and name (eq (ru-lang--token-kind name) 'name)
-               (not (member (ru-lang--token-text name) ru-lang--keywords))
-               (or (and allow-incomplete (null after))
-                   (and after (equal (ru-lang--token-text after) ":"))
-                   (and after (eq (ru-lang--token-kind after) 'name)
-                        (not (member (ru-lang--token-text after) ru-lang--keywords))
-                        (or (and allow-incomplete (null third))
-                            (and third (equal (ru-lang--token-text third) "为"))))))))))
+  "Classify 算/作 at INDEX as a named header, literal header, or reference.
+Return `named' for a name followed by a colon or a typed parameter.
+Return `literal' for a complete anonymous header, nil for a reference.
+ALLOW-INCOMPLETE accepts a partial named header at a statement boundary.
+Intervening comments are ignored."
+  (if (ru-lang--literal-header-p tokens index)
+      'literal
+    (let ((cursor (1+ index)) following)
+      (while (and (< cursor (length tokens)) (< (length following) 3))
+        (unless (eq (ru-lang--token-kind (aref tokens cursor)) 'comment)
+          (push (aref tokens cursor) following))
+        (setq cursor (1+ cursor)))
+      (setq following (nreverse following))
+      (let ((name (nth 0 following)) (after (nth 1 following))
+            (third (nth 2 following)))
+        (when (or (and allow-incomplete (null name))
+                  (and name (eq (ru-lang--token-kind name) 'name)
+                       (not (member (ru-lang--token-text name) ru-lang--keywords))
+                       (or (and allow-incomplete (null after))
+                           (and after (eq (ru-lang--token-kind after) 'punct)
+                                (equal (ru-lang--token-text after) ":"))
+                           (and after (eq (ru-lang--token-kind after) 'name)
+                                (not (member (ru-lang--token-text after) ru-lang--keywords))
+                                (or (and allow-incomplete (null third))
+                                    (and third (eq (ru-lang--token-kind third) 'name)
+                                         (equal (ru-lang--token-text third) "为")))))))
+          'named)))))
 
 (defun ru-lang--analyze ()
   "Compute block pairs and desired line depths from `ru-lang--tokens'."
@@ -222,26 +263,30 @@ Skip intervening comments and recognize complete headers in imperfect source."
                  ((eq kind 'string) (setq statement-start nil))
                  (closer
                   (setf (ru-lang--block-end top)
-                        (if (and (not (member (ru-lang--block-kind top) '("(" "[")))
+                        (if (and (not (ru-lang--block-literal top))
+                                 (not (member (ru-lang--block-kind top) '("(" "[")))
                                  next (equal (ru-lang--token-text next) "."))
                             (ru-lang--token-end next)
                           (ru-lang--token-end token))
                         (ru-lang--block-closed top) t)
                   (pop stack)
-                  ;; Parentheses and indexing finish expressions, not
-                  ;; statements (which may still use a name such as 终).
+                  ;; Literals and brackets finish expressions.  A following
+                  ;; dot belongs to the containing statement, not the literal.
                   (setq statement-start
-                        (not (member (ru-lang--block-kind top) '("(" "[")))))
+                        (and (not (ru-lang--block-literal top))
+                             (not (member (ru-lang--block-kind top) '("(" "["))))))
                  ((and (assoc text ru-lang--pairs)
                        (or (not callable-kind) definition-start))
                   (let* ((parent (cl-find-if #'ru-lang--definition-p stack))
-                         (name (and (member text '("算" "作" "形")) next
+                         (name (and (not (eq definition-start 'literal))
+                                    (member text '("算" "作" "形")) next
                                     (eq (ru-lang--token-kind next) 'name)
                                     (not (member (ru-lang--token-text next) ru-lang--keywords))
                                     (ru-lang--token-text next)))
                          (block (ru-lang--make-block
                                  :kind text :start (ru-lang--token-start token)
                                  :end (point-max) :name name :parent parent
+                                 :literal (eq definition-start 'literal)
                                  :header (member text '("算" "作" "若" "试")))))
                     (push block stack)
                     (push block structures)
@@ -278,7 +323,8 @@ Skip intervening comments and recognize complete headers in imperfect source."
                          ((member text ru-lang--keywords) 'font-lock-keyword-face)
                          ((member text ru-lang--builtins) 'font-lock-builtin-face))))
                 (when (eq token callable-name) (setq callable-name nil))
-                (when (and callable-kind (not callable-type) next
+                (when (and callable-kind (not callable-type)
+                           (not (eq definition-start 'literal)) next
                            (eq (ru-lang--token-kind next) 'name)
                            (not (member (ru-lang--token-text next) ru-lang--keywords)))
                   (setq callable-name next))
