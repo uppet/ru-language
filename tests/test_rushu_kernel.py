@@ -1,8 +1,10 @@
 """Notebook kernel lifecycle: explicitly spawned workers on every platform."""
+from collections import deque
 import multiprocessing
 from pathlib import Path
 import sys
 import tempfile
+import threading
 import time
 import unittest
 
@@ -237,6 +239,26 @@ class KernelTests(unittest.TestCase):
         self.session.reset()
         self.assertEqual(output(self.run_cell("显 2.")), "2\n")
 
+    def test_repeated_reset_and_startup_death_preserve_replacement_events(self):
+        # Reuse OS handles repeatedly while prior collectors are shutting down.
+        # This catches close/recv races that a single restart rarely exposes.
+        for iteration in range(24):
+            with self.subTest(iteration=iteration):
+                self.session.reset("stop" if iteration % 2 else "restart")
+                if iteration % 4 == 0:
+                    self.session.process.terminate()
+                    wait_for(self.session, "dead")
+                    self.session.reset()
+                if iteration % 5 == 0:
+                    result = self.run_cell("循 3000 次 显 '好'. 环")
+                    self.assertEqual(result["events"][-1]["status"], "ok")
+                    self.assertTrue(any(event.get("truncated") for event in result["events"]))
+                else:
+                    result = self.run_cell("显 " + str(iteration) + ".")
+                    self.assertEqual(output(result), str(iteration) + "\n")
+                    self.assertEqual(result["events"][-1]["status"], "ok")
+                self.assertEqual(self.session.snapshot()["state"], "idle")
+
 
 class SessionManagerTests(unittest.TestCase):
     def test_limit_delete_and_server_cleanup(self):
@@ -285,6 +307,59 @@ class InputAdapterTests(unittest.TestCase):
         self.assertEqual(stream.read(), "\n")
         self.assertEqual(stream.readline(), "")
         self.assertEqual(len(connection.requests), 3)
+
+
+class CollectorExitTests(unittest.TestCase):
+    def collect_after_exit(self, events, generation=1):
+        # A readable sentinel plus an intentionally still-open writer simulates
+        # Windows terminating a worker before its spawn bootstrap duplicates
+        # and releases the pipe handle. recv() alone would wait forever here.
+        context = multiprocessing.get_context("spawn")
+        receiver, writer = context.Pipe(duplex=False)
+        sentinel, signal_exit = context.Pipe(duplex=False)
+        for connection in (receiver, writer, sentinel, signal_exit):
+            self.addCleanup(connection.close)
+        session = Session.__new__(Session)
+        session.lock = threading.RLock()
+        session.events = deque()
+        session.event_text = session.cursor = 0
+        session.execution_count = 1
+        session.generation = generation
+        session.state = "running"
+        session.cell_id = "before-exit"
+        session.request_id = None
+        session.closed = False
+        for event in events:
+            writer.send(event)
+        signal_exit.send("exited")
+        collector = threading.Thread(target=session._collect,
+            args=(receiver, sentinel, 1), daemon=True)
+        collector.start()
+        collector.join(timeout=5)
+        self.assertFalse(collector.is_alive(), "collector waited for EOF after process exit")
+        return session
+
+    def test_process_sentinel_reports_death_without_pipe_eof(self):
+        session = self.collect_after_exit([])
+        self.assertEqual(session.state, "dead")
+        self.assertEqual([event["type"] for event in session.events], ["error", "done"])
+        self.assertEqual(session.events[-1]["status"], "error")
+
+    def test_process_exit_drains_already_buffered_output_in_order(self):
+        session = self.collect_after_exit([
+            {"type": "output", "stream": "stdout", "text": "最后输出\n"},
+            {"type": "done", "status": "ok"},
+        ])
+        self.assertEqual(session.state, "dead")
+        self.assertEqual([event["type"] for event in session.events],
+                         ["output", "done", "error", "done"])
+        self.assertEqual(session.events[0]["text"], "最后输出\n")
+        self.assertEqual(session.events[1]["status"], "ok")
+
+    def test_old_process_exit_cannot_mark_replacement_dead(self):
+        session = self.collect_after_exit([], generation=2)
+        self.assertEqual(session.state, "running")
+        self.assertEqual(list(session.events), [])
 
 
 if __name__ == "__main__":

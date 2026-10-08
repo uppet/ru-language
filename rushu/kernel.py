@@ -1,6 +1,7 @@
 """Spawn-based, interruptible interpreter sessions; no notebook filesystem API."""
 from collections import deque
 import multiprocessing
+from multiprocessing.connection import wait
 import secrets
 import threading
 
@@ -179,6 +180,7 @@ class Session:
         self.closed = False
         self.process = None
         self.connection = None
+        self.collector = None
         self._start()
 
     def _start(self):
@@ -194,8 +196,13 @@ class Session:
             raise
         child.close()
         self.connection, self.process = parent, process
-        threading.Thread(target=self._collect, args=(parent, process, self.generation),
-                         name="rushu-events-" + self.id[:8], daemon=True).start()
+        # Capture the handle before another request can stop/close the Process.
+        # On Windows a child killed during spawn bootstrap can leave a duplicate
+        # pipe writer alive in the parent. EOF alone is not a death notification.
+        self.collector = threading.Thread(target=self._collect,
+            args=(parent, process.sentinel, self.generation),
+            name="rushu-events-" + self.id[:8], daemon=True)
+        self.collector.start()
 
     def _append(self, event):
         self.cursor += 1
@@ -207,9 +214,14 @@ class Session:
             removed = self.events.popleft()
             self.event_text -= len(removed.get("text", "")) + len(removed.get("message", ""))
 
-    def _collect(self, connection, process, generation):
+    def _collect(self, connection, sentinel, generation):
         try:
             while True:
+                ready = wait((connection, sentinel))
+                # Drain every already-ready event before reporting process exit.
+                # Never wait for pipe EOF after the process sentinel has fired.
+                if connection not in ready:
+                    break
                 event = connection.recv()
                 with self.lock:
                     if self.closed or generation != self.generation:
@@ -219,13 +231,16 @@ class Session:
                     elif event["type"] == "done":
                         self.state, self.request_id = "idle", None
                     self._append(event)
-        except (EOFError, OSError, TypeError):
+        except (EOFError, OSError, TypeError, ValueError):
+            pass
+        finally:
             with self.lock:
                 if not self.closed and generation == self.generation:
                     self.state, self.request_id = "dead", None
                     self._append({"type": "error", "category": "会话错误",
                                   "message": "执行进程已退出，请重启会话。", "line": 1, "col": 1})
                     self._append({"type": "done", "status": "error"})
+            connection.close()
 
     def _snapshot(self):
         return {"id": self.id, "state": self.state, "execution_count": self.execution_count,
@@ -293,8 +308,8 @@ class Session:
             return self._snapshot()
 
     def _terminate(self):
-        process, connection = self.process, self.connection
-        self.process = self.connection = None
+        process, connection, collector = self.process, self.connection, self.collector
+        self.process = self.connection = self.collector = None
         if process is not None:
             if process.is_alive():
                 process.terminate()
@@ -302,9 +317,22 @@ class Session:
             if process.is_alive():
                 process.kill()
                 process.join(timeout=2)
-            process.close()
-        if connection is not None:
-            connection.close()
+        # Do not close a Windows HANDLE while another thread is waiting on it.
+        # This method runs under the session lock; joining the collector here
+        # could deadlock its final generation/state check. Let it release that
+        # lock first, then close the exited Process and transport exactly once.
+        def release():
+            if collector is not None:
+                collector.join()
+            if connection is not None:
+                connection.close()
+            if process is not None:
+                process.close()
+
+        if collector is not None and collector.is_alive():
+            threading.Thread(target=release, name="rushu-reap-" + self.id[:8], daemon=True).start()
+        else:
+            release()
 
     def reset(self, reason="restart"):
         with self.lock:
