@@ -1,5 +1,11 @@
 # 版本变化
 
+## 未发布 · Windows 交互提示编码修复
+
+- Python 解释器向 Windows 控制台输出时保留 `WindowsConsoleIO` 的 Unicode 转换，修复 `examples/add.ru` 中文提示被按 CP936 解码为乱码的问题
+- stdout / stderr 及缓冲 / `-u` 模式共用修复；重定向到文件或管道仍使用原有 UTF-8 直接写入与立即错误检查，不改变系统代码页
+- 新增真实 Windows 独立控制台回归与跨平台分派 / 短写 / 失败测试；无需更换 VS Code 扩展
+
 ## 未发布 · Emacs 快捷运行
 
 - `C-c C-r` / `ru-lang-run-file` 先确认保存修改，再异步解释执行当前文件；输出、错误和输入使用独立 Comint 缓冲区

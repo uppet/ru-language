@@ -1,5 +1,15 @@
 # 如 验证记录
 
+## Windows 交互提示编码
+
+日期：2026-10-08 UTC；基于 `wip` 的 `ae0994e92334e8ded648f52bfe8893e1992b76cd`。
+
+- 根因：`_write_stream` 直接 `os.write` UTF-8 字节，绕过 Python 的 Windows 控制台 Unicode 写入层。`输入第一数：` 的 UTF-8 字节按 GB18030 解码，精确复现用户看到的 `杈撳叆绗竴鏁帮細`。
+- 修复仅对实际 `_io._WindowsConsoleIO` 使用原始 Unicode 控制台写入；文件 / 管道、立即失败检查以及注入的测试流保留原路径。没有调整用户系统或终端代码页。
+- 五项跨平台测试覆盖有 / 无缓冲的 stdout / stderr、UTF-8 与补充平面字符、短写 / 写入异常、重定向输出和注入流；本地通过。
+- Windows CI 在 Python 3.10 / 3.12 / 3.14 的独立测试控制台检查真实 Unicode 输出与 `add.ru`；以该提交的 GitHub Actions 结果为准。Linux 完整回归、C / JS 示例构建和 Emacs 测试继续由既有 CI 覆盖。
+- Windows 原生 C / JavaScript 产物和 VS Code 图形界面不在本次验证范围；本次修复的是 Python 解释运行路径，无需更新 VSIX。
+
 ## Emacs 快捷运行当前文件
 
 日期：2026-10-08 UTC；基于 `wip` 的 `2f768846f1943d40af5e4ad9808ce8481c1c2a22`。仅变更 Emacs 扩展、测试与说明，不改变 CLI 或语言语法。

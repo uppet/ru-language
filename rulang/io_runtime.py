@@ -7,6 +7,7 @@ regular files, including symlinks to regular files, sorted by Unicode name.
 Every ordinary I/O failure is a 件作成果, never a language panic.
 """
 import errno
+import _io
 import math
 import os
 import stat
@@ -175,7 +176,16 @@ def _write_stream(stream, content):
     if (stream is sys.stdout or stream is sys.stderr) and hasattr(stream, "buffer"):
         stream.flush()
         encoded = content.encode("utf-8")
-        written = os.write(stream.fileno(), encoded)
+        raw = getattr(stream.buffer, "raw", stream.buffer)
+        console_type = getattr(_io, "_WindowsConsoleIO", ())
+        if isinstance(raw, console_type):
+            # WindowsConsoleIO converts UTF-8 to WriteConsoleW. os.write would
+            # bypass it and decode these bytes using the console's code page.
+            # Write the raw object, not BufferedWriter: retain immediate errors
+            # without leaving failed output to be retried during shutdown.
+            written = raw.write(encoded)
+        else:
+            written = os.write(stream.fileno(), encoded)
         if written != len(encoded):
             raise _invalid("写入不完整", errno.EIO)
         return

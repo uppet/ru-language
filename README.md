@@ -81,7 +81,7 @@ node dist/hello.js
 - 可通过 `--cc gcc` 或 `CC=gcc` 指定编译器；参数通过 argv 传递，不经过 shell
 - 仓库初始化验证：Linux x86-64、Python 3.12.3、GCC 13.3.0；位置调用更新验证：Linux x86-64、Python 3.12.14、GCC 14.2.0。各次记录见 `VALIDATION.md`
 - 仓库只保存源码；`bin/`、`dist/` 由 `make examples` 或 `ru build` 在本机生成。原生程序依赖构建时的目标架构和系统库，应在目标系统重新构建
-- Windows：可在已有 WSL 中按上述命令使用。也提供 `ru.cmd`，可通过 `py -3 ru repl` 运行 Python 前端；Windows 原生 Clang/GCC 编译以及 `.exe` **未实测**，不承诺即开即用
+- Windows：可在已有 WSL 中按上述命令使用。也提供 `ru.cmd`，可通过 `py -3 ru repl` 运行 Python 前端；Python 解释器对 Windows 控制台使用 Unicode 输出（含 `add.ru` 中文输入提示），重定向输出保持 UTF-8，无需修改系统代码页。Windows 原生 Clang/GCC 编译以及 `.exe` **未实测**，不承诺即开即用
 - macOS、其他架构和 Python 3.10/3.11 未在本次环境实测
 
 如需研究静态输出，工具链支持时可使用 `--cc "gcc -static"`；静态库、目标平台兼容性及第三方库再分发义务由该工具链决定。默认构建使用动态链接。
