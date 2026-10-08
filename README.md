@@ -88,7 +88,7 @@ node dist/hello.js
 
 ## Emacs 编辑支持
 
-仓库自带 [`ru-lang-mode`](emacs/README.md)，提供 `.ru` 自动识别、语法高亮、块 / 括号缩进、定义与代码块跳转、空行段落移动、注释和 Imenu 方法索引。
+仓库自带 [`ru-lang-mode`](emacs/README.md)，提供 `C-c C-r` 异步运行当前文件、`.ru` 自动识别、语法高亮、块 / 括号缩进、定义与代码块跳转、空行段落移动、注释和 Imenu 方法索引。
 
 ```elisp
 (add-to-list 'load-path (expand-file-name "~/src/ru-language/emacs"))

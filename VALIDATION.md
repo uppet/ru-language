@@ -1,5 +1,14 @@
 # 如 验证记录
 
+## Emacs 快捷运行当前文件
+
+日期：2026-10-08 UTC；基于 `wip` 的 `2f768846f1943d40af5e4ad9808ce8481c1c2a22`。仅变更 Emacs 扩展、测试与说明，不改变 CLI 或语言语法。
+
+- `make test`：298 项通过，199.215 秒；`make examples`、`make examples-js` 与 `git diff --check` 通过
+- 新增 12 项 ERT，共 92 项；包含直接调用真实 CLI 的中文 / 空格 / shell 特殊字符路径、保存修改、标准输入、运行错误、重跑与相对模块导入；另覆盖配置、缺失文件、保存拒绝与活进程保护
+- 本机无 Emacs，`make test-emacs` 明确因缺失可执行文件未运行；字节编译与 ERT 由发布提交的 CI 验证，不将本地静态检查称为 ERT 通过
+- Windows 配置示例仅说明参数用法；Windows / macOS GUI、TRAMP 远程执行未验证，命令明确拒绝远程文件
+
 ## 匿名函数／过程字面量
 
 日期：2026-10-08 UTC；基于 `wip` 的 `43002add65a62cf27985abdc4daf7bcb32f2b44a`。本机：Linux、Python 3.12.14、Node.js 24.19.0、GCC 14.2.0。保留 0.6.0 版本号，未制作新发布。

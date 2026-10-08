@@ -841,5 +841,147 @@
         (ru-lang-backward-block 3)
         (ru-lang-up-block)))))
 
+
+(defmacro ru-lang-test--run-file (source &rest body)
+  "Create a temporary source file containing SOURCE and evaluate BODY."
+  (declare (indent 1))
+  `(let* ((directory (make-temp-file "ru run 中文 " t))
+          (file (expand-file-name "源 ' ; $ file.ru" directory))
+          (ru-lang-run-command nil))
+     (unwind-protect
+         (progn
+           (with-temp-file file (insert ,source))
+           (with-current-buffer (find-file-noselect file)
+             (cl-letf (((symbol-function 'display-buffer) #'ignore))
+               ,@body)))
+       (let* ((output (get-buffer (ru-lang--run-buffer-name file)))
+              (process (and output (get-buffer-process output))))
+         (when (process-live-p process) (delete-process process))
+         (when output (kill-buffer output)))
+       (when-let ((source-buffer (get-file-buffer file)))
+         (with-current-buffer source-buffer (set-buffer-modified-p nil))
+         (kill-buffer source-buffer))
+       (delete-directory directory t))))
+
+(defun ru-lang-test--await-run (output)
+  "Wait at most ten seconds for OUTPUT's process, and return its exit code."
+  (let ((process (get-buffer-process output))
+        (deadline (+ (float-time) 10)))
+    (should process)
+    (while (and (process-live-p process) (< (float-time) deadline))
+      (accept-process-output process 0.05))
+    (should-not (process-live-p process))
+    (accept-process-output process 0.05)
+    (process-exit-status process)))
+
+(ert-deftest ru-lang-run-keybinding ()
+  (should (eq (lookup-key ru-lang-mode-map (kbd "C-c C-r"))
+              #'ru-lang-run-file)))
+
+(ert-deftest ru-lang-run-requires-visited-local-file ()
+  (with-temp-buffer
+    (should-error (ru-lang-run-file) :type 'user-error)
+    (setq buffer-file-name "/ssh:example:/tmp/a.ru")
+    (should-error (ru-lang-run-file) :type 'user-error)))
+
+(ert-deftest ru-lang-run-declined-save-does-not-run-stale-source ()
+  (ru-lang-test--run-file "显 '旧'."
+    (insert "# changed\n")
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) nil)))
+      (should-error (ru-lang-run-file) :type 'user-error))
+    (should (buffer-modified-p))
+    (should-not (get-buffer (ru-lang--run-buffer-name file)))))
+
+(ert-deftest ru-lang-run-save-and-unicode-shell-metacharacters ()
+  (ru-lang-test--run-file "显 '旧'."
+    (erase-buffer)
+    (insert "显 '新结果'.")
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t)))
+      (let ((output (ru-lang-run-file)))
+        (should-not (buffer-modified-p))
+        (should (= 0 (ru-lang-test--await-run output)))
+        (with-current-buffer output
+          (should (derived-mode-p 'comint-mode))
+          (should (equal default-directory (file-name-as-directory directory)))
+          (should (string-match-p "新结果" (buffer-string))))))))
+
+(ert-deftest ru-lang-run-save-failure-aborts ()
+  (ru-lang-test--run-file "显 1."
+    (insert "# changed\n")
+    (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) t))
+              ((symbol-function 'save-buffer) #'ignore))
+      (should-error (ru-lang-run-file) :type 'user-error))
+    (should-not (get-buffer (ru-lang--run-buffer-name file)))))
+
+(ert-deftest ru-lang-run-invalid-command-and-missing-cli ()
+  (ru-lang-test--run-file "显 1."
+    (dolist (command '("python3" ("") (17) ("ru-no-such-executable-12345")))
+      (let ((ru-lang-run-command command))
+        (should-error (ru-lang-run-file) :type 'user-error)))
+    (let ((ru-lang--bundled-cli (expand-file-name "missing-cli" directory)))
+      (should-error (ru-lang-run-file) :type 'user-error))
+    (should-not (get-buffer (ru-lang--run-buffer-name file)))))
+
+(ert-deftest ru-lang-run-custom-command-preserves-argv ()
+  (ru-lang-test--run-file "显 1."
+    (let* ((ru-lang-run-command '("python3" "-u" "custom cli" "--flag"))
+           (default-directory ru-lang-test--root)
+           captured checked-directory)
+      (cl-letf (((symbol-function 'make-comint-in-buffer)
+                 (lambda (&rest args) (setq captured args)))
+                ((symbol-function 'executable-find)
+                 (lambda (_)
+                   (setq checked-directory default-directory)
+                   t)))
+        (ru-lang-run-file))
+      (should (equal checked-directory (file-name-as-directory directory)))
+      (should (equal (nthcdr 2 captured)
+                     (list "python3" nil "-u" "custom cli" "--flag" "run" file))))))
+
+(ert-deftest ru-lang-run-source-must-exist ()
+  (ru-lang-test--run-file "显 1."
+    (delete-file file)
+    (should-error (ru-lang-run-file) :type 'user-error)
+    (should-not (get-buffer (ru-lang--run-buffer-name file)))))
+
+(ert-deftest ru-lang-run-errors-and-rerun ()
+  (ru-lang-test--run-file "卒 '失败标记'."
+    (let ((output (ru-lang-run-file)))
+      (should (= 1 (ru-lang-test--await-run output)))
+      (with-current-buffer output
+        (should (string-match-p "失败标记" (buffer-string)))))
+    (erase-buffer)
+    (insert "显 '再次成功'.")
+    (save-buffer)
+    (let ((output (ru-lang-run-file)))
+      (should (= 0 (ru-lang-test--await-run output)))
+      (with-current-buffer output
+        (should (string-match-p "再次成功" (buffer-string)))))))
+
+(ert-deftest ru-lang-run-stdin-and-live-process-protection ()
+  (ru-lang-test--run-file "显 读."
+    (let* ((output (ru-lang-run-file))
+           (process (get-buffer-process output)))
+      (should (process-live-p process))
+      (should-error (ru-lang-run-file) :type 'user-error)
+      (should (eq process (get-buffer-process output)))
+      (process-send-string process "输入成功\n")
+      (should (= 0 (ru-lang-test--await-run output)))
+      (with-current-buffer output
+        (should (string-match-p "输入成功" (buffer-string)))))))
+
+(ert-deftest ru-lang-run-distinct-file-output-buffers ()
+  (should-not (equal (ru-lang--run-buffer-name "/tmp/one/main.ru")
+                     (ru-lang--run-buffer-name "/tmp/two/main.ru"))))
+
+(ert-deftest ru-lang-run-module-relative-to-source ()
+  (ru-lang-test--run-file "模 取 外言 '模块.ru'. 显 模 其 值."
+    (with-temp-file (expand-file-name "模块.ru" directory)
+      (insert "值 取 42."))
+    (let ((output (ru-lang-run-file)))
+      (should (= 0 (ru-lang-test--await-run output)))
+      (with-current-buffer output
+        (should (string-match-p "42" (buffer-string)))))))
+
 (provide 'ru-lang-mode-tests)
 ;;; ru-lang-mode-tests.el ends here

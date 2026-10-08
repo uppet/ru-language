@@ -17,12 +17,85 @@
 (require 'cl-lib)
 (require 'imenu)
 (require 'seq)
+(require 'comint)
+(require 'subr-x)
 
 (defgroup ru-lang nil "Editing the 如 language." :group 'languages)
 
 (defcustom ru-lang-indent-offset 4
   "Number of spaces for each 如 block or bracket nesting level."
   :type 'natnum :safe #'natnump :group 'ru-lang)
+
+(defconst ru-lang--bundled-cli
+  (expand-file-name "../ru" (file-name-directory
+                             (or load-file-name buffer-file-name)))
+  "CLI shipped alongside this copy of the mode.")
+
+(defcustom ru-lang-run-command nil
+  "Interpreter command and arguments, before `run' and the source filename.
+Nil uses python3 -u and the CLI shipped alongside this mode.  Set this to
+an argument list of program, flags and CLI path when
+installing the mode separately.  Arguments are passed directly, without a
+shell; do not add shell quotes.  Relative paths use the source directory."
+  :type '(choice (const :tag "Bundled CLI (python3)" nil)
+                 (repeat string))
+  :group 'ru-lang)
+
+(defun ru-lang--run-buffer-name (file)
+  "Return the output buffer name for absolute source FILE."
+  (format "*Ru: %s*" file))
+
+;;;###autoload
+(defun ru-lang-run-file ()
+  "Save if needed and asynchronously interpret the current visited file.
+Ask before saving modifications; declining cancels execution.  Output and
+errors appear in a per-file Comint buffer, where RET sends input, C-c C-d
+sends EOF and C-c C-c interrupts.  A live run is never replaced.  Run from
+the source directory, passing filenames directly without a shell."
+  (interactive)
+  (unless buffer-file-name
+    (user-error "This buffer does not visit a file; save it first"))
+  (when (file-remote-p buffer-file-name)
+    (user-error "Running remote Ru files is not supported"))
+  (let* ((file (expand-file-name buffer-file-name))
+         (default-directory (file-name-directory file))
+         (name (ru-lang--run-buffer-name file))
+         (existing (get-buffer name))
+         (command (or ru-lang-run-command
+                      (list "python3" "-u" ru-lang--bundled-cli))))
+    (when (and existing (comint-check-proc existing))
+      (display-buffer existing)
+      (user-error "This file is already running; interrupt it in %s first" name))
+    (unless (and (consp command) (cl-every #'stringp command)
+                 (not (string-empty-p (car command))))
+      (user-error "Set ru-lang-run-command to a nonempty argument list"))
+    (unless (executable-find (car command))
+      (user-error "Cannot find %s; customize ru-lang-run-command" (car command)))
+    (when (and (null ru-lang-run-command)
+               (not (file-readable-p ru-lang--bundled-cli)))
+      (user-error "Bundled ru CLI not found; customize ru-lang-run-command"))
+    (when (buffer-modified-p)
+      (unless (y-or-n-p "Save this file before running it? ")
+        (user-error "Run canceled; file was not saved"))
+      (save-buffer)
+      (when (buffer-modified-p)
+        (user-error "File is still modified; run canceled")))
+    (unless (file-readable-p file)
+      (user-error "Source file is not readable: %s" file))
+    (let ((output (get-buffer-create name))
+          (default-directory (file-name-directory file))
+          (process-connection-type nil)
+          (coding-system-for-read 'utf-8-unix)
+          (coding-system-for-write 'utf-8-unix))
+      (with-current-buffer output
+        (setq default-directory (file-name-directory file))
+        (let ((inhibit-read-only t))
+          (goto-char (point-max))
+          (insert (format "\nRunning %s\n" file))))
+      (apply #'make-comint-in-buffer "Ru" output (car command) nil
+             (append (cdr command) (list "run" file)))
+      (display-buffer output)
+      output)))
 
 (defconst ru-lang--keywords
   '("显" "取" "为" "得" "破" "若" "则" "另" "然" "循" "次" "环"
@@ -562,6 +635,7 @@ On failure, leave point unchanged."
 
 (defvar ru-lang-mode-map
   (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "C-c C-r") #'ru-lang-run-file)
     (define-key map (kbd "C-c C-p") #'ru-lang-backward-block)
     (define-key map (kbd "C-c C-n") #'ru-lang-forward-block)
     (define-key map (kbd "C-c C-u") #'ru-lang-up-block)
@@ -576,7 +650,8 @@ On failure, leave point unchanged."
   "Major mode for 如 (.ru) source files.
 Use TAB and C-M-\\ for indentation; C-M-a/C-M-e for definitions;
 C-M-n/C-M-p/C-M-u for balanced structures; C-c C-p/C-c C-n/C-c C-u
-for legacy language-block movement; M-{/M-} for paragraphs."
+for legacy language-block movement; M-{/M-} for paragraphs.
+C-c C-r runs the current file with `ru-lang-run-file'."
   :syntax-table ru-lang-mode-syntax-table
   (setq-local indent-tabs-mode nil)
   (setq-local indent-line-function #'ru-lang-indent-line)
