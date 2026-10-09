@@ -126,12 +126,12 @@ def interpreted(source, source_path=None, modules=None):
 
 def native(source, directory, stem='case', source_path=None, modules=None,
            extra_flags=(), inspect_heap=False, remove_sources=(), input_data=''):
-    program = modules[str(source_path)] if modules is not None else parse(source)
+    program = modules[str(Path(source_path).resolve())] if modules is not None else parse(source)
     generated = Compiler(program, str(source_path or '<闭包测试>'), modules=modules).compile()
     if inspect_heap:
         generated = generated.replace('ru_shutdown(); return status;',
             'ru_gc(); fprintf(stderr, "BEFORE_SHUTDOWN live=%zu freed=%zu\\n", ru_live, ru_freed); ru_shutdown(); return status;')
-    path, binary = Path(directory)/(stem+'.c'), Path(directory)/stem
+    path, binary = Path(directory).resolve()/(stem+'.c'), Path(directory).resolve()/stem
     path.write_text(generated, encoding='utf-8')
     built = subprocess.run([CC, '-std=c99', '-O1', '-g', '-Wall', '-Wextra',
         '-Werror', '-Wno-unused-function', '-pedantic', *extra_flags,
@@ -222,9 +222,9 @@ class ClosureTests(unittest.TestCase):
 
     def test_module_factory_and_reference_owner(self):
         with tempfile.TemporaryDirectory() as directory:
-            child = Path(directory)/'factory.ru'
+            child = Path(directory).resolve()/'factory.ru'
             child.write_text("基 取 100. 算 制 起 为 数: 值 取 起. 算 加 步 为 数: 值 取 值+步. 得 值+基. 法 得 算 加. 法", encoding='utf-8')
-            root = Path(directory)/'main.ru'
+            root = Path(directory).resolve()/'main.ru'
             source = "基 取 999. 模块 取 外言 'factory.ru'. 工厂 取 算 模块 其 制. 回调 取 工厂 2. 另一引用 取 算 模块 其 制. 显 工厂 == 另一引用. 显 (回调 3). 显 (回调 4)."
             root.write_text(source, encoding='utf-8')
             modules = load_module_graph(root)
@@ -236,7 +236,7 @@ class ClosureTests(unittest.TestCase):
 
     def test_closure_escapes_failed_module_initializer(self):
         with tempfile.TemporaryDirectory() as directory:
-            folder = Path(directory)
+            folder = Path(directory).resolve()
             (folder/'shared.ru').write_text('存 取 [].', encoding='utf-8')
             (folder/'broken.ru').write_text(
                 "桥 取 外言 'shared.ru'. 基 取 7. "

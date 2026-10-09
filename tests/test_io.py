@@ -21,7 +21,8 @@ from rulang.frontend import parse
 from rulang.interpreter import Interpreter
 from rulang import io_runtime
 
-CC = next((shutil.which(name) for name in ("clang", "gcc", "cc") if shutil.which(name)), None)
+CC = (shutil.which(os.environ['CC']) if os.environ.get('CC') else
+      next((shutil.which(c) for c in ('clang', 'gcc', 'cc') if shutil.which(c)), None))
 
 
 def quote(value):
@@ -34,7 +35,7 @@ class CheckedIOTests(unittest.TestCase):
             if engine == "native" and not CC:
                 continue
             with self.subTest(engine=engine), tempfile.TemporaryDirectory() as temp:
-                root = Path(temp)
+                root = Path(temp).resolve()
                 data = root / "data"
                 data.mkdir()
                 if setup:
@@ -158,7 +159,7 @@ class CheckedIOTests(unittest.TestCase):
         self.assertEqual((output.getvalue(), errors.getvalue()), ('成功\n', '诊断😀'))
         if CC:
             with tempfile.TemporaryDirectory() as temp:
-                binary, _ = build(parse(source), Path(temp)/'test.ru', Path(temp)/'program')
+                binary, _ = build(parse(source), Path(temp).resolve()/'test.ru', Path(temp).resolve()/'program')
                 result = subprocess.run([binary], capture_output=True, text=True, timeout=10)
                 self.assertEqual((result.returncode, result.stdout, result.stderr), (0, '成功\n', '诊断😀'))
 
@@ -184,11 +185,11 @@ class CheckedIOTests(unittest.TestCase):
     def test_closed_stdout_pipe_is_checked_failure(self):
         source = "应 取 显出 其 写 内容:'测试'. 错误 其 写 内容:应 其 结果."
         with tempfile.TemporaryDirectory() as temp:
-            path = Path(temp)/'test.ru'
+            path = Path(temp).resolve()/'test.ru'
             path.write_text(source, encoding='utf-8')
             commands = [[sys.executable, str(ROOT/'ru'), 'run', str(path)]]
             if CC:
-                binary, _ = build(parse(source), path, Path(temp)/'program')
+                binary, _ = build(parse(source), path, Path(temp).resolve()/'program')
                 commands.append([str(binary)])
             for command in commands:
                 with self.subTest(command=command):
@@ -209,11 +210,11 @@ class CheckedIOTests(unittest.TestCase):
         ]
         with tempfile.TemporaryDirectory() as temp:
             for index, (source, data, expected) in enumerate(cases):
-                path = Path(temp)/f'case{index}.ru'
+                path = Path(temp).resolve()/f'case{index}.ru'
                 path.write_text(source, encoding='utf-8')
                 commands = [[sys.executable, str(ROOT/'ru'), 'run', str(path)]]
                 if CC:
-                    binary, _ = build(parse(source), path, Path(temp)/f'program{index}')
+                    binary, _ = build(parse(source), path, Path(temp).resolve()/f'program{index}')
                     commands.append([str(binary)])
                 for command in commands:
                     with self.subTest(command=command, index=index):
@@ -237,7 +238,7 @@ class CheckedIOTests(unittest.TestCase):
 
     def test_builtin_types_cross_module_boundaries_without_exports(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             (root/'text').write_text('跨模块', encoding='utf-8')
             (root/'lib.ru').write_text("算 内容 文件 为 件: 得 文件 其 读. 法 算 解包 应 为 件作成果: 得 应 其 值. 法", encoding='utf-8')
             source = f"尽 取 外言 'lib.ru'. 文档 取 新 件 路径:{quote(root/'text')}. 显 解包 (内容 文档)."
@@ -253,7 +254,7 @@ class CheckedIOTests(unittest.TestCase):
 
     def test_qualified_module_members_do_not_include_builtin_parent(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             (root/'lib.ru').write_text('值 取 1.', encoding='utf-8')
             for name in io_runtime.IO_BUILTIN_NAMES:
                 source = f"模 取 外言 'lib.ru'. 显 模 其 {name}."
@@ -271,7 +272,7 @@ class CheckedIOTests(unittest.TestCase):
 
     def test_qualified_module_members_preserve_explicit_exports(self):
         with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
+            root = Path(temp).resolve()
             (root/'lib.ru').write_text("""
 算 文件 路径 为 句: 得 新 件 路径:路径. 法
 算 目录: 得 新 录. 法 算 成果: 得 新 件作成果. 法
@@ -352,7 +353,7 @@ class CheckedIOTests(unittest.TestCase):
         }
         for failure, wrapper in wrappers.items():
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temp:
-                root = Path(temp)
+                root = Path(temp).resolve()
                 path = root/'data'
                 path.write_text('old', encoding='utf-8')
                 operation = '读' if failure == 'read' else '在' if failure == 'permission' else "写 内容:'text'"

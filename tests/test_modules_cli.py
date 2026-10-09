@@ -18,7 +18,7 @@ HAS_CC = any(shutil.which(cc) for cc in ("clang", "gcc", "cc"))
 class ModuleLoaderTests(unittest.TestCase):
     def test_importer_relative_and_canonical_cache(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             (root / "lib").mkdir()
             main = root / "main.ru"
             main.write_text("甲 取 外言 'lib/a.ru'. 乙 取 外言 'lib/../lib/a.ru'.", encoding="utf-8")
@@ -32,7 +32,7 @@ class ModuleLoaderTests(unittest.TestCase):
 
     def test_import_errors_report_origin_file(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             (root / "main.ru").write_text("甲 取 外言 'a.ru'.", encoding="utf-8")
             (root / "a.ru").write_text("# 注释\n甲 取 外言 'missing.ru'.", encoding="utf-8")
             with self.assertRaises(RuError) as context:
@@ -43,7 +43,7 @@ class ModuleLoaderTests(unittest.TestCase):
 
     def test_import_syntax_error_reports_imported_source(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             (root / "main.ru").write_text("甲 取 外言 'bad.ru'.", encoding="utf-8")
             (root / "bad.ru").write_text("# 注释\n显 ).", encoding="utf-8")
             result = subprocess.run([sys.executable, ROOT / "ru", "check", root / "main.ru"],
@@ -54,7 +54,7 @@ class ModuleLoaderTests(unittest.TestCase):
 
     def test_import_compile_error_reports_imported_source(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             (root / "main.ru").write_text("模 取 外言 'lib.ru'.", encoding="utf-8")
             (root / "lib.ru").write_text("# 注释\n算 平方 根 为 数: 得 根*根. 法\n显 平方 1 2.", encoding="utf-8")
             result = subprocess.run([sys.executable, ROOT / "ru", "check", root / "main.ru"],
@@ -66,7 +66,7 @@ class ModuleLoaderTests(unittest.TestCase):
 
     def test_cycles_even_when_import_is_in_function(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             main = root / "main.ru"
             main.write_text("算 尚未调用: 模 取 外言 'a.ru'. 得 1. 法", encoding="utf-8")
             (root / "a.ru").write_text("模 取 外言 'main.ru'.", encoding="utf-8")
@@ -76,13 +76,13 @@ class ModuleLoaderTests(unittest.TestCase):
 
     def test_loading_never_executes_module(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "main.ru"
+            path = Path(directory).resolve() / "main.ru"
             path.write_text("显 1/0.", encoding="utf-8")
             self.assertEqual(len(load_module_graph(path)), 1)
 
     def test_build_cannot_overwrite_dependency(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             main, dependency = root / "main.ru", root / "dependency.ru"
             main.write_text("模 取 外言 'dependency.ru'.", encoding="utf-8")
             dependency.write_text("值 取 42.", encoding="utf-8")
@@ -104,7 +104,7 @@ class ModuleLoaderTests(unittest.TestCase):
             for requested in ("", "https://example.com/a.ru"):
                 with self.subTest(path=requested):
                     with self.assertRaises(RuError) as context:
-                        load_module_graph(Path(directory) / "main.ru", parse(f"模 取 外言 '{requested}'."))
+                        load_module_graph(Path(directory).resolve() / "main.ru", parse(f"模 取 外言 '{requested}'."))
                     self.assertIn("本地文件路径", context.exception.message)
 
 
@@ -120,7 +120,7 @@ class ImportedParameterTests(unittest.TestCase):
             "形 工具: 算 检查 导入名 为 数: 得 导入名. 法 象\n显 (新 工具) 其 检查 2.",
         )
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             main, binary = root / "main.ru", root / "program"
             (root / "relay.ru").write_text("尽 取 外言 'lib.ru'.", encoding="utf-8")
             for declaration in declarations:
@@ -142,7 +142,7 @@ class ImportedParameterTests(unittest.TestCase):
 
     def test_imported_value_bindings_remain_shadowable(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             main = root / "main.ru"
             (root / "lib.ru").write_text(
                 "普通值 取 1. 形 导入形: 象 实例别名 取 新 导入形.", encoding="utf-8")
@@ -155,7 +155,7 @@ class ImportedParameterTests(unittest.TestCase):
 
     def test_imported_functions_and_methods_use_their_owner_scope(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             main = root / "main.ru"
             (root / "lib.ru").write_text(
                 "算 检查 主函数 为 数: 得 主函数. 法\n"
@@ -181,7 +181,7 @@ class ImportedParameterTests(unittest.TestCase):
 
     def test_collision_diagnostics_name_the_declaration_owner(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             main, library = root / "main.ru", root / "lib.ru"
             (root / "base.ru").write_text("算 导入名: 得 1. 法", encoding="utf-8")
             main.write_text("模 取 外言 'lib.ru'.\n显 模 其 检查 2.", encoding="utf-8")
@@ -197,7 +197,7 @@ class ImportedParameterTests(unittest.TestCase):
 
     def test_interpreter_checks_only_when_called_after_import(self):
         with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
+            root = Path(directory).resolve()
             main = root / "main.ru"
             (root / "lib.ru").write_text("算 导入名: 得 1. 法", encoding="utf-8")
             source = ("算 检查 导入名 为 数: 得 导入名. 法\n"

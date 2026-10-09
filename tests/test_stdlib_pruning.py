@@ -161,7 +161,7 @@ class BundledDeclarationPruningTests(unittest.TestCase):
 
     def test_user_modules_side_effects_and_unused_functions_are_intact(self):
         with tempfile.TemporaryDirectory() as directory:
-            lib = Path(directory) / 'user.ru'
+            lib = Path(directory).resolve() / 'user.ru'
             lib.write_text("显 '初始化'. 算 不用: 得 1. 法", encoding='utf-8')
             source = PRELUDE + "模 取 外言 'user.ru'. 显 (竞 其 小 2 3)."
             graph = self.graph(source, directory)
@@ -175,7 +175,7 @@ class BundledDeclarationPruningTests(unittest.TestCase):
 
     def test_reexported_functions_and_module_aliases(self):
         with tempfile.TemporaryDirectory() as directory:
-            lib = Path(directory) / 'relay.ru'
+            lib = Path(directory).resolve() / 'relay.ru'
             for declaration, expression in (
                     ("尽 取 外言 '如:竞赛'.", '模 其 小 2 3'),
                     ("库 取 外言 '如:竞赛'.", '模 其 库 其 小 2 3')):
@@ -188,7 +188,7 @@ class BundledDeclarationPruningTests(unittest.TestCase):
 
     def test_reexported_module_escape_falls_back(self):
         with tempfile.TemporaryDirectory() as directory:
-            lib = Path(directory) / 'relay.ru'
+            lib = Path(directory).resolve() / 'relay.ru'
             lib.write_text("库 取 外言 '如:竞赛'.", encoding='utf-8')
             for expression in ('模', '模 其 库'):
                 graph = self.graph("模 取 外言 'relay.ru'. 容 取 [" + expression + '].', directory)
@@ -197,7 +197,7 @@ class BundledDeclarationPruningTests(unittest.TestCase):
 
     def test_same_basename_user_library_is_never_pruned(self):
         with tempfile.TemporaryDirectory() as directory:
-            lib = Path(directory) / '竞赛.ru'
+            lib = Path(directory).resolve() / '竞赛.ru'
             lib.write_text(Path(BUNDLED).read_text(encoding='utf-8'), encoding='utf-8')
             graph = self.graph("竞 取 外言 './竞赛.ru'. 显 (竞 其 小 2 3).", directory)
             result = prune_bundled_stdlib(graph[graph.root], graph.root, graph)

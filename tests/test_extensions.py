@@ -142,7 +142,7 @@ class ExtensionValueTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             for name, source, expected in SUCCESS_CASES:
                 with self.subTest(case=name):
-                    binary, _ = build(parse(source), name+".ru", Path(temp)/name)
+                    binary, _ = build(parse(source), name+".ru", Path(temp).resolve()/name)
                     result = subprocess.run([binary], capture_output=True, text=True, timeout=10)
                     self.assertEqual(result.returncode, 0, result.stderr)
                     self.assertEqual(result.stdout, expected)
@@ -159,7 +159,7 @@ class ExtensionValueTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             for name, source in RUNTIME_ERRORS:
                 with self.subTest(case=name):
-                    binary, _ = build(parse(source), name+".ru", Path(temp)/name)
+                    binary, _ = build(parse(source), name+".ru", Path(temp).resolve()/name)
                     result = subprocess.run([binary], capture_output=True, text=True, timeout=10)
                     self.assertEqual(result.returncode, 1, result.stderr)
                     self.assertIn("运行错误", result.stderr)
@@ -186,7 +186,7 @@ class ExtensionValueTests(unittest.TestCase):
                 self.assertEqual(output.getvalue(), "")
                 if HAS_CC:
                     with tempfile.TemporaryDirectory() as temp:
-                        binary, _ = build(parse(prefix+suffix), "target_order.ru", Path(temp)/"target-order")
+                        binary, _ = build(parse(prefix+suffix), "target_order.ru", Path(temp).resolve()/"target-order")
                         result = subprocess.run([binary], capture_output=True, text=True, timeout=10)
                         self.assertEqual(result.returncode, 1, result.stderr)
                         self.assertEqual(result.stdout, "")
@@ -219,7 +219,7 @@ class ExtensionValueTests(unittest.TestCase):
         expected = "41\n真\n3\n真\n"
         self.assertEqual(interpret(source), expected)
         with tempfile.TemporaryDirectory() as temp:
-            binary, _ = build(parse(source), "gc_cycles.ru", Path(temp)/"gc-cycles")
+            binary, _ = build(parse(source), "gc_cycles.ru", Path(temp).resolve()/"gc-cycles")
             environment = dict(os.environ, RU_GC_THRESHOLD="1", RU_GC_STATS="1")
             result = subprocess.run([binary], env=environment, capture_output=True,
                                     text=True, timeout=20)
@@ -264,21 +264,26 @@ class ExtensionCLITests(unittest.TestCase):
             self.assertEqual(result.returncode, exitcode, result.stderr)
             self.assertEqual(result.stdout, expected)
             if HAS_CC:
-                binary, cfile = Path(temp)/"standalone", Path(temp)/"standalone.c"
+                binary, cfile = Path(temp).resolve()/"standalone", Path(temp).resolve()/"standalone.c"
                 result = self.cli("build", main, "-o", str(binary), "--emit-c", str(cfile), cwd="/")
                 self.assertEqual(result.returncode, 0, result.stderr)
                 if standalone:
-                    for path in Path(temp).rglob("*.ru"):
+                    for path in Path(temp).resolve().rglob("*.ru"):
                         path.unlink()
                     cfile.unlink()
-                result = subprocess.run([binary, *args], cwd="/", env={"PATH": ""},
+                result = subprocess.run([binary, *args], cwd="/", env={**os.environ, "PATH": ""},
                                         capture_output=True, text=True, timeout=10)
                 self.assertEqual(result.returncode, exitcode, result.stderr)
                 self.assertEqual(result.stdout, expected)
 
     def test_entry_argv_exit_and_top_level(self):
-        self.both({"main.ru": "显 '顶层'. 算 元初 外参 为 句 阵: 显 外参 其 量. 显 外参[0]. 显 外参[1]. 得 7. 法"},
-                  "顶层\n2\n甲😀\n--flag\n", args=("甲😀", "--flag"), exitcode=7, standalone=True)
+        arguments = ("甲😀", "--flag", "", "空 格", '双"引', "反\\斜")
+        source = "显 '顶层'. 算 元初 外参 为 句 阵: 显 外参 其 量. "
+        source += " ".join(f"显 外参[{index}]." for index in range(len(arguments)))
+        source += " 得 7. 法"
+        self.both({"main.ru": source},
+                  "顶层\n6\n" + "\n".join(arguments) + "\n", args=arguments,
+                  exitcode=7, standalone=True)
 
     def test_shared_pair_dag_equality(self):
         self.both({"main.ru": "左 取 0 对 空. 右 取 0 对 空. 循 30 次 左 取 左 对 左. 右 取 右 对 右. 环 显 左 == 右."}, "真\n")
@@ -357,7 +362,7 @@ class ExtensionCLITests(unittest.TestCase):
                 self.assertIn(diagnostic, result.stderr)
                 self.assertEqual(result.stdout, "")
                 if HAS_CC:
-                    binary = Path(temp)/"import-order"
+                    binary = Path(temp).resolve()/"import-order"
                     result = self.cli("build", main, "-o", str(binary))
                     self.assertEqual(result.returncode, 0, result.stderr)
                     result = subprocess.run([binary], capture_output=True, text=True, timeout=10)
@@ -396,7 +401,7 @@ class ExtensionCLITests(unittest.TestCase):
                 self.assertEqual(result.returncode, 1, result.stderr)
                 self.assertIn("元初", result.stderr)
                 if HAS_CC:
-                    binary = Path(temp)/"bad-entry"
+                    binary = Path(temp).resolve()/"bad-entry"
                     result = self.cli("build", main, "-o", str(binary))
                     self.assertEqual(result.returncode, 0, result.stderr)
                     result = subprocess.run([binary], capture_output=True, text=True, timeout=10)

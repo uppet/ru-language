@@ -5,15 +5,19 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #endif
-/* Standalone C99: temporaries and active/static environments own roots.
- * Mark/sweep traces container edges, bindings, parents and closure captures;
- * shared values and cycles are reclaimed without conservative stack scanning. */
+/* Standalone C99 with precise tracing of rooted values and container edges. */
 #include <math.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#ifdef _WIN32
+#include <fcntl.h>
+#include <io.h>
+#include <windows.h>
+static UINT ru_input_cp, ru_output_cp;
+#endif
 
 enum { RU_NUM, RU_FACT, RU_MAP, RU_STR, RU_NULL, RU_PAIR, RU_ARRAY, RU_OBJECT, RU_FUNCTION, RU_CLASS, RU_MODULE, RU_ENV };
 typedef struct RuHeap RuHeap;
@@ -112,8 +116,7 @@ static void *ru_alloc(size_t size, int line)
     if (!p) ru_fail(line, "内存不足");
     return p;
 }
-/* Temporary argument-binding buffers are registered separately so fatal
- * diagnostics also dispose of in-flight calls before exiting. */
+/* Track argument-binding buffers for cleanup on fatal diagnostics. */
 static void *ru_scratch_alloc(size_t size, int line)
 {
     RuScratch *entry = (RuScratch *)ru_alloc(sizeof(*entry), line);
@@ -178,8 +181,7 @@ static int ru_panic_uncaught(void)
             ru_panic_line, ru_panic_col, ru_panic_reason.s->data);
     ru_panic_clear(); ru_shutdown(); return 1;
 }
-/* Mark iteratively: deeply nested pairs and cyclic graphs cannot overflow the
- * C stack. Each node enters the worklist once per collection. */
+/* Iterative marking visits each node once without recursive stack growth. */
 static void ru_gc(void)
 {
     RuHeap *h, **slot, **todo;
@@ -240,6 +242,14 @@ static void ru_init(void)
     const char *text;
     if (ru_initialized) return;
     ru_initialized=1;
+#ifdef _WIN32
+    _setmode(_fileno(stdin), _O_BINARY);
+    _setmode(_fileno(stdout), _O_BINARY);
+    _setmode(_fileno(stderr), _O_BINARY);
+    ru_input_cp = GetConsoleCP(); ru_output_cp = GetConsoleOutputCP();
+    if (ru_input_cp) SetConsoleCP(CP_UTF8);
+    if (ru_output_cp) SetConsoleOutputCP(CP_UTF8);
+#endif
     text=getenv("RU_GC_THRESHOLD");
     if (text && *text) { char *end; unsigned long n=strtoul(text,&end,10); if (!*end && n>0 && n<=100000000) { ru_threshold=(size_t)n; ru_gc_explicit=1; } }
     ru_next_gc=ru_threshold;
@@ -309,8 +319,7 @@ static int v_truth(Val v)
 {
     return v.kind != RU_NULL && (v.kind != RU_FACT || v.n != 0);
 }
-/* Static module bindings own roots. Lexical bindings are traced edges;
- * env_free releases the active frame root, preserving escaped captures. */
+/* Module bindings own roots; lexical edges preserve escaped captures. */
 static void env_init(Env *env, Env *parent)
 {
     memset(env, 0, sizeof(*env)); env->parent=parent;
@@ -367,9 +376,7 @@ static void env_bind(Env *env, const char *name, Val value, int line)
     Env *target=env, *outer;
     if (!strcmp(name, "读") || (existing && existing->reserved))
         ru_fail(line, "变量名不能与函数名、形名或内置名称重名");
-    /* A rescue always shadows. A function first updates its own binding,
-     * then the nearest already-bound enclosing function/rescue; module globals
-     * remain shadowed, preserving the existing function-local rule. */
+    /* Rescue shadows; functions update the nearest lexical binding, not globals. */
     if(env->scope==RU_SCOPE_FUNCTION && !env_find_local(env,name)) {
         for(outer=env->parent;outer && outer->managed;outer=outer->parent)
             if(env_find_local(outer,name)) { target=outer; break; }
@@ -419,15 +426,18 @@ static void ru_shutdown(void)
 /* RU_END_FEATURE */
     while(ru_envs) env_free(ru_envs);
     while(ru_scratch) ru_scratch_free(ru_scratch->data);
-    /* Fatal diagnostics end the process while native frames still exist.
-     * Their roots are no longer live; clear them before the final sweep. */
+    /* Fatal exit invalidates roots still held by native frames. */
     if(ru_failed) for(h=ru_heap;h;h=h->next) h->roots=0;
     ru_gc();
     if(getenv("RU_GC_STATS")) fprintf(stderr,"RU_GC live=%zu freed=%zu collections=%zu\n",ru_live,ru_freed,ru_collections);
-    /* Error exits can have live generated temporaries. The process is ending,
-     * so dispose of those too, without traversing already-cleared roots. */
+    /* Dispose of remaining temporaries on process exit. */
     while((h=ru_heap)) { ru_heap=h->next; ru_heap_dispose(h); }
     ru_live=0;
+#ifdef _WIN32
+    fflush(stdout); fflush(stderr);
+    if (ru_input_cp) SetConsoleCP(ru_input_cp);
+    if (ru_output_cp) SetConsoleOutputCP(ru_output_cp);
+#endif
 }
 static int ru_ascii_space(unsigned char c)
 {
@@ -440,8 +450,7 @@ static int ru_ascii_digit(unsigned char c)
     return c >= '0' && c <= '9';
 }
 
-/* The span ends at NUL or an ASCII separator. This lets the contest scanner
- * parse a token without allocating it or scanning the remaining input. */
+/* Parse separator-terminated spans without allocating a token. */
 static double ru_parse_number_span(const char *text, size_t length, int line)
 {
     const char *start = text;
@@ -478,8 +487,7 @@ static double ru_parse_number_span(const char *text, size_t length, int line)
         if (!digits) ru_fail(line, "无法转为数字");
     }
     if (p != end) ru_fail(line, "无法转为数字");
-    /* A standalone C program starts in the C locale. The explicit grammar
-     * above excludes strtod's hexadecimal, infinity, and NaN extensions. */
+    /* C locale; grammar above excludes hex, infinity and NaN. */
     result = strtod(start, &parsed_end);
     if (parsed_end != end || !isfinite(result))
         ru_fail(line, "无法转为有限数字");
@@ -816,6 +824,45 @@ static Val v_append(Val v,Val value,int line)
     if(a->len==a->capacity) {if(a->capacity>(SIZE_MAX/sizeof(Val)-1)/2)ru_fail(line,"阵过长");cap=a->capacity?a->capacity*2:4;items=(Val *)realloc(a->items,cap*sizeof(Val));if(!items)ru_fail(line,"内存不足");a->items=items;a->capacity=cap;}
     a->items[a->len++]=value;return v_copy(v);
 }
+/* Read the Unicode command line without depending on an ANSI CRT argv. */
+static Val ru_arguments(int argc, char **argv)
+{
+    Val arguments = v_array(0, NULL, 0);
+    int i;
+#ifdef _WIN32
+    typedef LPWSTR *(WINAPI *RuCommandLineParser)(LPCWSTR, int *);
+    HMODULE library = LoadLibraryExW(L"shell32.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    FARPROC address;
+    RuCommandLineParser parse;
+    LPWSTR *wide;
+    (void)argv;
+    if (!library) ru_fail(0, "无法读取命令行");
+    address = GetProcAddress(library, "CommandLineToArgvW");
+    if (!address) ru_fail(0, "无法读取命令行");
+    memcpy(&parse, &address, sizeof(parse));
+    wide = parse(GetCommandLineW(), &argc);
+    if (!wide) ru_fail(0, "无法读取命令行");
+    for (i = 1; i < argc; ++i) {
+        int size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide[i], -1, NULL, 0, NULL, NULL);
+        Val arg, added;
+        if (!size) ru_fail(0, "命令行不是有效的 Unicode");
+        arg = ru_string_alloc((size_t)size - 1, 0);
+        if (!WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, wide[i], -1, arg.s->data, size, NULL, NULL))
+            ru_fail(0, "无法读取命令行");
+        added = v_append(arguments, arg, 0);
+        v_drop(added); v_drop(arg);
+    }
+    LocalFree(wide);
+    FreeLibrary(library);
+#else
+    for (i = 1; i < argc; ++i) {
+        Val arg = v_str(argv[i]);
+        Val added = v_append(arguments, arg, 0);
+        v_drop(added); v_drop(arg);
+    }
+#endif
+    return arguments;
+}
 static size_t ru_field_count(RuClass *klass) {size_t n=0;for(;klass;klass=klass->parent)n+=klass->count;return n;}
 static int ru_find_field(RuClass *klass, const char *name, size_t *index,
                          const char **type, Env **owner)
@@ -936,9 +983,7 @@ static Val v_member_reference(Val receiver, const char *name, int line)
         return v_copy(!strcmp(name,"囫") ? ((RuPair *)receiver.heap)->first : ((RuPair *)receiver.heap)->second);
     ru_fail(line,"成员暂不支持函数引用：%s",name); return v_null();
 }
-/* Freeze user callable/value members before argument evaluation. A mutable
- * field may be overwritten by an argument, but that must not retarget a call.
- * Builtin operations keep their existing dispatch and checked-I/O contracts. */
+/* Freeze mutable callable members before argument evaluation can replace them. */
 static Val v_member_prepare(Val receiver, const char *name, size_t argc, int line, int *mode)
 {
     *mode=0;
@@ -967,8 +1012,7 @@ static Val v_member_prepare(Val receiver, const char *name, size_t argc, int lin
 
     return v_null();
 }
-/* Allocate an object independently of source-level constructor validation.
- * Protected runtime classes have already-known descriptors and no arguments. */
+/* Allocate protected runtime objects without source constructor validation. */
 static Val ru_object_new(RuClass *klass, int line)
 {
     RuObject *o; Val v = v_null(); size_t i;

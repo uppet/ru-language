@@ -1,10 +1,6 @@
 #ifndef RU_IO_RUNTIME_H
 #define RU_IO_RUNTIME_H
-/* Inlined after runtime.h: standalone checked UTF-8 I/O, no Python runtime.
- * POSIX paths follow symlinks except deletion, which unlinks the link itself.
- * Directory listings include symlinks to regular files; never recurse.
- * File operations open/close on every call, and honor permissions and umask.
- */
+/* Checked UTF-8 I/O. Paths follow symlinks except deletion; listings never recurse. */
 #include <errno.h>
 #include <fcntl.h>
 #include <sys/stat.h>

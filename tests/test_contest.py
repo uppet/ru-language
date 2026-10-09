@@ -18,7 +18,8 @@ from rulang.frontend import RuError, parse
 from rulang.interpreter import Interpreter
 from rulang.modules import load_module_graph, resolve_import
 
-CC = shutil.which('gcc') or shutil.which('clang') or shutil.which('cc')
+CC = (shutil.which(os.environ['CC']) if os.environ.get('CC') else
+      next((shutil.which(c) for c in ('gcc', 'clang', 'cc') if shutil.which(c)), None))
 PRELUDE = "竞 取 外言 '如:竞赛'.\n"
 
 
@@ -35,9 +36,9 @@ def interpreted(source, data='', path='/tmp/contest-test.ru'):
 
 
 def compile_native(source, directory, name='case', extra_flags=(), source_path=None):
-    path = source_path or str(Path(directory)/(name+'.ru'))
+    path = source_path or str(Path(directory).resolve()/(name+'.ru'))
     graph = graph_for(source, path)
-    cfile, binary = Path(directory)/(name+'.c'), Path(directory)/name
+    cfile, binary = Path(directory).resolve()/(name+'.c'), Path(directory).resolve()/(name + ('.exe' if os.name == 'nt' else ''))
     cfile.write_text(Compiler(graph[graph.root], graph.root, modules=graph).compile(), encoding='utf-8')
     result = subprocess.run([CC, '-std=c99', '-O2', '-Wall', '-Wextra', '-Werror',
         '-Wno-unused-function', '-pedantic', *extra_flags, str(cfile), '-o', str(binary)],
@@ -51,8 +52,13 @@ def native_run(binary, data='', force_gc=True, timeout=30):
     env = {**os.environ, 'RU_GC_STATS':'1'}
     if force_gc:
         env['RU_GC_THRESHOLD'] = '1'
-    return subprocess.run([str(binary)], input=data, capture_output=True,
-                          text=isinstance(data, str), timeout=timeout, env=env)
+    result = subprocess.run([str(binary)],
+                            input=data.encode('utf-8') if isinstance(data, str) else data,
+                            capture_output=True, timeout=timeout, env=env)
+    if isinstance(data, str):
+        result.stdout = result.stdout.decode('utf-8')
+        result.stderr = result.stderr.decode('utf-8')
+    return result
 
 
 CASES = [
@@ -99,8 +105,8 @@ class ContestLibraryTests(unittest.TestCase):
                     binary, _ = compile_native(source, directory, name)
                     result = native_run(binary)
                     self.assertEqual(result.returncode, 0, result.stderr)
-                    # text-mode subprocess normalizes CR; preserve comparisons here.
-                    self.assertEqual(result.stdout, expected.replace('\r\n', '\n').replace('\r', '\n'))
+                    # Binary capture preserves literal CR as well as newline bytes.
+                    self.assertEqual(result.stdout, expected)
                     self.assertIn('RU_GC live=0 ', result.stderr)
 
     def test_interpreter_errors(self):
@@ -124,9 +130,9 @@ class ContestLibraryTests(unittest.TestCase):
 
     def test_reserved_import_alias_and_unknown_alias(self):
         with tempfile.TemporaryDirectory() as directory:
-            fake = Path(directory)/'如:竞赛'
+            fake = Path(directory).resolve()/'如:竞赛'
             fake.write_text("卒 'local collision'.", encoding='utf-8')
-            main = str(Path(directory)/'main.ru')
+            main = str(Path(directory).resolve()/'main.ru')
             self.assertNotEqual(resolve_import('如:竞赛', main), str(fake))
             self.assertEqual(interpreted(PRELUDE+"显 (竞 其 小 2 3).", path=main), '2\n')
             with self.assertRaisesRegex(RuError, '未知的标准外言'):
@@ -163,13 +169,13 @@ class ContestLibraryTests(unittest.TestCase):
     def test_standalone_c11_rebuild(self):
         with tempfile.TemporaryDirectory() as directory:
             binary, cfile = compile_native(PRELUDE+"入 取 竞 其 读入. 显 (入 其 数)+(入 其 数).", directory)
-            copy = Path(directory)/'submission.c'
+            copy = Path(directory).resolve()/'submission.c'
             copy.write_bytes(cfile.read_bytes())
             binary.unlink(); cfile.unlink()
             result = subprocess.run([CC, '-std=c11', '-O2', str(copy), '-o', str(binary)], capture_output=True, text=True)
             self.assertEqual(result.returncode, 0, result.stderr)
             result = subprocess.run([str(binary)], input='20 22', capture_output=True, text=True,
-                                    cwd='/', env={'PATH':'/nonexistent'})
+                                    cwd='/', env={**os.environ, 'PATH':'/nonexistent'})
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout, '42\n')
 
@@ -280,9 +286,9 @@ class ContestLibraryTests(unittest.TestCase):
         intent = ROOT/'tests/fixtures/contest/frequency.md'
         specification = (ROOT/'rulang/language-spec.md').read_bytes()
         with tempfile.TemporaryDirectory() as directory,MockResponses(response_for(source)) as server:
-            config = Path(directory)/'config.json'
+            config = Path(directory).resolve()/'config.json'
             config.write_text('{}',encoding='utf-8')
-            destination = Path(directory)/'generated.ru'
+            destination = Path(directory).resolve()/'generated.ru'
             output = generate(intent,destination,environ={'RU_LANG_CONFIG':str(config),
                 'RU_LLM_API_KEY':LOCAL_TEST_API_KEY,'RU_LLM_BASE_URL':server.base,'RU_LLM_MODEL':'fixed-contest-fixture'})
             self.assertEqual(output.read_text(encoding='utf-8'),source)

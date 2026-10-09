@@ -31,6 +31,14 @@ from rulang.modules import generation_intent, read_source
 DUMMY = LOCAL_TEST_API_KEY
 
 
+def isolated_process_env(**values):
+    # Windows crypto initialization needs SystemRoot even for isolated processes.
+    # Do not inherit user configuration, credentials, or executable search paths.
+    environ = {key: value for key, value in os.environ.items()
+               if key.upper() == "SYSTEMROOT"}
+    return {**environ, **values}
+
+
 def response_for(text="显 '生成成功'.", **extra):
     value = {"object": "response", "status": "completed", "output": [
         {"type": "message", "role": "assistant", "status": "completed", "content": [
@@ -63,7 +71,7 @@ class MockResponses:
                     self.send_header("Content-Length", str(len(body)))
                     self.end_headers()
                     self.wfile.write(body)
-                except (BrokenPipeError, ConnectionResetError):
+                except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError):
                     pass
 
             def log_message(self, *args):
@@ -86,7 +94,7 @@ class TemporaryGeneration(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
-        self.root = Path(self.directory.name)
+        self.root = Path(self.directory.name).resolve()
         self.config = self.root / ".ru-lang.json"
         self.config.write_text("{}", encoding="utf-8")
         self.env = {"RU_LANG_CONFIG": str(self.config)}
@@ -170,7 +178,7 @@ class MarkerTests(TemporaryGeneration):
         self.assertIn("输入失败", stderr.getvalue())
 
     def test_repl_keeps_multiline_quoted_marker(self):
-        env = {"PATH": os.defpath, "RU_LANG_CONFIG": str(self.config)}
+        env = isolated_process_env(PATH=os.defpath, RU_LANG_CONFIG=str(self.config))
         result = subprocess.run([sys.executable, ROOT / "ru", "repl"], input="显 '第一行\n如是我言\n末行'.\n", text=True, capture_output=True, env=env, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "第一行\n如是我言\n末行\n")
@@ -205,7 +213,7 @@ class ConfigurationTests(TemporaryGeneration):
     def test_tilde_expansion_config_and_key(self):
         (self.root / "fake-key").write_text("dummy-tilde-key\n", encoding="utf-8")
         self.config.write_text(json.dumps({"api-key": "@file:~/fake-key"}), encoding="utf-8")
-        with patch.dict(os.environ, {"HOME": str(self.root)}, clear=True):
+        with patch.dict(os.environ, {"HOME": str(self.root), "USERPROFILE": str(self.root)}, clear=True):
             self.assertEqual(load_config({}).api_key, "dummy-tilde-key")
             self.assertEqual(load_config({"RU_LANG_CONFIG": "~/.ru-lang.json"}).api_key, "dummy-tilde-key")
 
@@ -311,12 +319,12 @@ class LanguageSpecificationTests(TemporaryGeneration):
     def test_resource_is_loaded_fresh_for_every_request(self):
         resource = self.root / "language-spec.md"
         first = self.specification("第一版规则正文。")
-        second = self.specification("第二版规则正文，立即采用。")
+        second = self.specification("第二版规则正文，立即采用。").replace("\n", "\r\n")
         with patch("rulang.generation.resources.files", return_value=self.root) as package, MockResponses() as server:
             config = GenerationConfig(DUMMY, server.base)
-            resource.write_text(first, encoding="utf-8")
+            resource.write_bytes(first.encode("utf-8"))
             request_response(config, "第一次需求")
-            resource.write_text(second, encoding="utf-8")
+            resource.write_bytes(second.encode("utf-8"))
             request_response(config, "第二次需求")
         self.assertEqual(package.call_count, 2)
         self.assertEqual(package.call_args.args, ("rulang",))
@@ -461,7 +469,7 @@ class LocalResponsesTests(TemporaryGeneration):
 
     def test_cli_success_no_automatic_execution(self):
         with MockResponses(response_for("显 1/0.")) as server:
-            env = {"PATH": os.defpath, **self.local_env(server)}
+            env = isolated_process_env(PATH=os.defpath, **self.local_env(server))
             result = subprocess.run([sys.executable, ROOT / "ru", "generate", self.document, "--timeout", "10"], env=env, text=True, capture_output=True, timeout=15)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("未执行", result.stdout)

@@ -51,9 +51,9 @@ def quote(value):
 
 def compiled(source, folder, name='case', source_path=None, graph=None):
     from rulang.js_compiler import JSCompiler
-    path = str(source_path or Path(folder) / (name + '.ru'))
+    path = str(source_path or Path(folder).resolve() / (name + '.ru'))
     graph = graph if graph is not None else load_module_graph(path, parse(source))
-    output = Path(folder) / (name + '.js')
+    output = Path(folder).resolve() / (name + '.js')
     output.write_text(JSCompiler(graph[graph.root], graph.root, modules=graph).compile(), encoding='utf-8')
     return output, graph
 
@@ -154,7 +154,7 @@ class JavaScriptParityTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.folder = Path(self.temp.name)
+        self.folder = Path(self.temp.name).resolve()
 
     def assert_output(self, source, expected, data='', args=(), status=0, name='case'):
         path, _ = compiled(source, self.folder, name)
@@ -344,7 +344,7 @@ class JavaScriptParityTests(unittest.TestCase):
         self.assertEqual(interpreted(graph, args=args), (status, expected, ''))
         for file in self.folder.rglob('*.ru'):
             file.unlink()
-        self.assertEqual(node_run(path, args=args, cwd='/', env={'PATH': ''}), (status, expected, ''))
+        self.assertEqual(node_run(path, args=args, cwd='/', env={**os.environ, 'PATH': ''}), (status, expected, ''))
 
     def test_standalone_modules_cache_scope_inheritance_and_entry(self):
         self.assert_modules({
@@ -382,7 +382,7 @@ class JavaScriptParityTests(unittest.TestCase):
         self.assertEqual(interpreted(graph), expected)
         for file in self.folder.rglob('*.ru'):
             file.unlink()
-        self.assertEqual(node_run(path, cwd='/', env={'PATH': ''}), expected)
+        self.assertEqual(node_run(path, cwd='/', env={**os.environ, 'PATH': ''}), expected)
 
     def test_custom_read_write_methods_and_legacy_read_need_no_checked_io(self):
         source = ("形 用户: 算 读: 得 '自定义'. 法 作 写 内容 为 句: 显 内容. 为 象 "

@@ -18,7 +18,7 @@ from rulang import __version__
 from rulang.cli import build, main, make_parser
 from rulang.frontend import RuError, parse
 from rulang.generation import GenerationError, generate
-from test_generation import DUMMY, MockResponses, TemporaryGeneration, response_for
+from test_generation import DUMMY, MockResponses, TemporaryGeneration, isolated_process_env, response_for
 
 NODE = shutil.which("node")
 
@@ -27,7 +27,7 @@ class JavaScriptBuildCLI(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
-        self.root = Path(self.directory.name)
+        self.root = Path(self.directory.name).resolve()
         self.source = self.root / "main.ru"
         self.source.write_text("显 '你好😀'.\n", encoding="utf-8")
 
@@ -111,7 +111,7 @@ class JavaScriptBuildCLI(unittest.TestCase):
         build(parse("模 取 外言 'lib.ru'. 显 模 其 值."), self.source, output, target="js")
         self.source.unlink()
         dependency.unlink()
-        result = subprocess.run([NODE, str(output)], cwd=self.root, env={"PATH": ""},
+        result = subprocess.run([NODE, str(output)], cwd=self.root, env=isolated_process_env(PATH=""),
                                 capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, "独立运行😀\n")

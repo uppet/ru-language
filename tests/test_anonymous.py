@@ -310,9 +310,9 @@ class AnonymousParityTests(unittest.TestCase):
 
     def test_module_literal_preserves_owning_globals(self):
         with tempfile.TemporaryDirectory() as directory:
-            child = Path(directory) / 'factory.ru'
+            child = Path(directory).resolve() / 'factory.ru'
             child.write_text('基 取 100. ' + COUNTER.replace('得 起.', '得 起+基.'), encoding='utf-8')
-            root = Path(directory) / 'main.ru'
+            root = Path(directory).resolve() / 'main.ru'
             source = "基 取 999. 模 取 外言 'factory.ru'. 回调 取 模 其 制数 2. 显 (回调 3). 显 (回调 4)."
             root.write_text(source, encoding='utf-8')
             graph = load_module_graph(root)

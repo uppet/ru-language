@@ -25,6 +25,20 @@ def report(error, name, source=""):
         print("  " + lines[error.line-1], file=sys.stderr)
 
 
+def compiler_command(selected, windows=None):
+    """Accept an executable path verbatim, or a quoted compiler command."""
+    if os.path.isfile(selected):
+        return [selected]
+    windows = os.name == "nt" if windows is None else windows
+    try:
+        parts = shlex.split(selected, posix=not windows)
+    except ValueError as error:
+        raise RuError("编译器命令引号不完整", category="编译错误") from error
+    if windows:
+        parts = [part[1:-1] if len(part) >= 2 and part[0] == part[-1] and part[0] in "\"'" else part for part in parts]
+    return parts
+
+
 def build(program, source_path, output, cc=None, emit_c=None, modules=None, target="c", full_runtime=False):
     if target not in ("c", "js"):
         raise RuError("编译目标须为 c 或 js", category="编译错误")
@@ -59,7 +73,7 @@ def build(program, source_path, output, cc=None, emit_c=None, modules=None, targ
         cpath.parent.mkdir(parents=True, exist_ok=True)
         cpath.write_text(generated, encoding="utf-8")
     selected = cc or os.environ.get("CC")
-    command = shlex.split(selected) if selected else None
+    command = compiler_command(selected) if selected else None
     if not command:
         found = next((shutil.which(c) for c in ("clang", "gcc", "cc") if shutil.which(c)), None)
         if not found:

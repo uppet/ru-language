@@ -18,7 +18,8 @@ from rulang.frontend import RuError, parse
 from rulang.js_compiler import JSCompiler
 from rulang.modules import load_module_graph
 
-CC = next((shutil.which(cc) for cc in ('clang', 'gcc', 'cc') if shutil.which(cc)), None)
+CC = (shutil.which(os.environ['CC']) if os.environ.get('CC') else
+      next((shutil.which(c) for c in ('clang', 'gcc', 'cc') if shutil.which(c)), None))
 NODE = shutil.which('node')
 
 
@@ -26,7 +27,7 @@ class RuntimeBuildCLI(unittest.TestCase):
     def setUp(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        self.root = Path(directory.name)
+        self.root = Path(directory.name).resolve()
         self.source = self.root / 'main.ru'
         self.source.write_text("尽 取 外言 '如:竞赛'. 显 小 3 4.\n", encoding='utf-8')
 
@@ -105,7 +106,7 @@ class RuntimeBuildCLI(unittest.TestCase):
         self.assertLess(len(outputs[0].encode('utf-8')), len(outputs[1].encode('utf-8')))
         self.source.unlink()
         for binary in programs:
-            result = subprocess.run([binary], cwd=self.root, env={'PATH': ''},
+            result = subprocess.run([binary], cwd=self.root, env={**os.environ, 'PATH': ''},
                                     capture_output=True, text=True, timeout=10)
             self.assertEqual((result.returncode, result.stdout, result.stderr), (0, '3\n', ''))
 

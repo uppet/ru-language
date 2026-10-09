@@ -1,9 +1,6 @@
 #ifndef RU_CONTEST_RUNTIME_H
 #define RU_CONTEST_RUNTIME_H
-/* Inlined after the core and checked I/O runtimes. The public library is
- * ordinary Ru source; only this protected service object is a builtin.
- * Scanner storage and the bounded output buffer are ordinary traced object
- * edges. Their field names cannot be written as Ru identifiers. */
+/* Protected contest service; scanner and output buffers are traced object edges. */
 #define RU_CONTEST_BUFFER_SIZE 65536
 static const char *ru_contest_private_names[] = {"\001text", "\001position"};
 static const char *ru_contest_private_types[] = {"句", "数"};

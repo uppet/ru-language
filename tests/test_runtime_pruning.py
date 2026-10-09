@@ -25,8 +25,8 @@ from rulang.compiler import Compiler
 from rulang.frontend import parse
 from rulang.modules import load_module_graph
 
-CC = next((shutil.which(name) for name in ('gcc', 'clang', 'cc')
-           if shutil.which(name)), None)
+CC = (shutil.which(os.environ['CC']) if os.environ.get('CC') else
+      next((shutil.which(c) for c in ('gcc', 'clang', 'cc') if shutil.which(c)), None))
 FIXTURE = ROOT / 'tests' / 'fixtures' / 'contest' / 'p1010.ru'
 GC_STATS = re.compile(r'RU_GC live=(\d+) freed=(\d+) collections=(\d+)\n?')
 
@@ -38,7 +38,7 @@ def generate(source, source_name='/runtime-pruning.ru', *, full=False, graph=Non
 
 
 def build(generated, directory, stem):
-    cfile, binary = Path(directory) / (stem + '.c'), Path(directory) / stem
+    cfile, binary = Path(directory).resolve() / (stem + '.c'), Path(directory).resolve() / stem
     cfile.write_text(generated, encoding='utf-8')
     # In particular P1010 must build as portable standalone C99 without libm,
     # project include directories, generated support files or warning fixes.
@@ -243,14 +243,14 @@ class RuntimeGenerationTests(unittest.TestCase):
     def test_compilation_does_not_mutate_graph_or_write_artifacts(self):
         source = "尽 取 外言 '如:竞赛'. 显 小 2 3."
         with tempfile.TemporaryDirectory() as directory:
-            graph = load_module_graph(str(Path(directory) / 'main.ru'), parse(source))
+            graph = load_module_graph(str(Path(directory).resolve() / 'main.ru'), parse(source))
             before = copy.deepcopy(graph)
             for full in (False, True):
                 generated = generate(source, full=full, graph=graph)
                 self.assertIn('Standalone C99', generated)
                 self.assertEqual(graph, before)
                 self.assertEqual(graph.sources, before.sources)
-                self.assertEqual(list(Path(directory).iterdir()), [])
+                self.assertEqual(list(Path(directory).resolve().iterdir()), [])
 
     def test_exact_p1010_is_under_fifty_thousand_utf8_bytes_and_readable(self):
         source = FIXTURE.read_text(encoding='utf-8')
@@ -324,17 +324,17 @@ class RuntimeParityTests(unittest.TestCase):
 
     def test_checked_filesystem_io(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = str(Path(directory) / 'roundtrip.txt').replace('\\', '\\\\').replace("'", "\\'")
+            path = str(Path(directory).resolve() / 'roundtrip.txt').replace('\\', '\\\\').replace("'", "\\'")
             source = f"文档 取 新 件 路径:'{path}'. 文档 其 写 '甲😀'. 显 (文档 其 读) 其 值. 显 (文档 其 除) 其 结果."
             self.compare(source, '甲😀\n成功\n')
-            self.assertFalse((Path(directory) / 'roundtrip.txt').exists())
+            self.assertFalse((Path(directory).resolve() / 'roundtrip.txt').exists())
 
     def test_user_module_side_effects_reexports_and_unused_function_survive(self):
         with tempfile.TemporaryDirectory() as directory:
-            module = Path(directory) / 'helper.ru'
+            module = Path(directory).resolve() / 'helper.ru'
             module.write_text("显 '初始化'. 尽 取 外言 '如:竞赛'. 算 不用: 得 99. 法", encoding='utf-8')
             source = "模 取 外言 'helper.ru'. 显 模 其 小 2 3. 再 取 外言 'helper.ru'. 显 再 其 不用."
-            graph = load_module_graph(str(Path(directory) / 'main.ru'), parse(source))
+            graph = load_module_graph(str(Path(directory).resolve() / 'main.ru'), parse(source))
             # Loading is compile-time; neither generated executable may need
             # even this user module's source file after the graph is loaded.
             module.unlink()

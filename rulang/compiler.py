@@ -717,8 +717,7 @@ class Compiler:
             self.line('if (ru_panicking) return ru_panic_uncaught();')
         self.line('int status = 0;')
         if self.entry:
-            self.line('Val arguments = v_array(0, NULL, 0);')
-            self.line('for (int i = 1; i < argc; ++i) { Val arg = v_str(argv[i]); Val added = v_append(arguments, arg, 0); v_drop(added); v_drop(arg); }')
+            self.line('Val arguments = ru_arguments(argc, argv);')
             self.line('Val entry = env_get(root.module, "元初", 1); const char *keys[] = {NULL};')
             self.line('Val result = v_call(entry, 1, keys, &arguments, 1);')
             if self.can_panic:

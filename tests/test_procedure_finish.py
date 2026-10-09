@@ -158,7 +158,7 @@ class ProcedureFinishTests(unittest.TestCase):
                 self.assertEqual(result.stdout, expected)
                 self.assertIn('RU_GC live=0 ', result.stderr)
                 js = JSCompiler(parse(STRESS), full_runtime=full).compile()
-                path = Path(directory) / ('stress'+str(full)+'.js')
+                path = Path(directory).resolve() / ('stress'+str(full)+'.js')
                 path.write_text(js, encoding='utf-8')
                 self.assertEqual(javascript.node_run(path), (0, expected, ''))
 
@@ -172,8 +172,8 @@ class ProcedureFinishTests(unittest.TestCase):
     @unittest.skipUnless(closures.CC and javascript.NODE, 'C compiler and Node required')
     def test_module_procedures(self):
         with tempfile.TemporaryDirectory() as directory:
-            child = Path(directory) / 'child.ru'
-            root = Path(directory) / 'main.ru'
+            child = Path(directory).resolve() / 'child.ru'
+            root = Path(directory).resolve() / 'main.ru'
             child.write_text('作 提前: 完. 显 9. 为 作 自然: 为', encoding='utf-8')
             source = "模 取 外言 'child.ru'. 显 模 其 提前. 显 模 其 自然."
             graph = load_module_graph(str(root), parse(source))

@@ -16,7 +16,8 @@ from rulang.frontend import Incomplete, RuError, parse, validate
 from rulang.interpreter import Interpreter, Panic
 from rulang.modules import load_module_graph
 
-CC = next((shutil.which(cc) for cc in ('clang', 'gcc', 'cc') if shutil.which(cc)), None)
+CC = (shutil.which(os.environ['CC']) if os.environ.get('CC') else
+      next((shutil.which(c) for c in ('clang', 'gcc', 'cc') if shutil.which(c)), None))
 
 CASES = [
     ('normal', "试 显 '正常'. 救 原因 显 '不应执行'. 终. 显 '之后'.", '正常\n之后\n'),
@@ -75,9 +76,9 @@ def interpreted(source):
 
 
 def native(source, folder, stem='case', flags=(), modules=None, source_path=None):
-    path = Path(folder) / (stem + '.c')
-    binary = Path(folder) / stem
-    program = modules[str(source_path)] if modules is not None else parse(source)
+    path = Path(folder).resolve() / (stem + '.c')
+    binary = Path(folder).resolve() / stem
+    program = modules[str(Path(source_path).resolve())] if modules is not None else parse(source)
     path.write_text(Compiler(program, str(source_path or '<测试>'), modules=modules).compile(), encoding='utf-8')
     result = subprocess.run([CC, '-std=c99', '-O2', '-g', '-Wall', '-Wextra', '-Werror', '-Wno-unused-function', '-pedantic', *flags, str(path), '-lm', '-o', str(binary)], capture_output=True, text=True)
     if result.returncode:
@@ -150,8 +151,8 @@ class PanicTests(unittest.TestCase):
 
     def test_module_calls_and_cached_failure(self):
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder) / 'root.ru'
-            child = Path(folder) / 'child.ru'
+            root = Path(folder).resolve() / 'root.ru'
+            child = Path(folder).resolve() / 'child.ru'
             child.write_text("作 坏: 卒 '跨模块'. 为", encoding='utf-8')
             source = "模 取 外言 'child.ru'. 试 模 其 坏. 救 原因 显 原因. 终."
             root.write_text(source, encoding='utf-8')
@@ -178,10 +179,10 @@ class PanicTests(unittest.TestCase):
 
     def test_failed_module_preserves_escaped_objects(self):
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder) / 'root.ru'
-            store = Path(folder) / 'store.ru'
-            bad = Path(folder) / 'bad.ru'
-            middle = Path(folder) / 'middle.ru'
+            root = Path(folder).resolve() / 'root.ru'
+            store = Path(folder).resolve() / 'store.ru'
+            bad = Path(folder).resolve() / 'bad.ru'
+            middle = Path(folder).resolve() / 'middle.ru'
             store.write_text("对象们 取 [].", encoding='utf-8')
             bad.write_text("存 取 外言 'store.ru'. 文本 取 '仍存'.\n"
                 "形 物: 算 取文: 得 文本. 法 象\n"
@@ -220,8 +221,8 @@ class PanicTests(unittest.TestCase):
 
     def test_module_origin_and_reserved_handler(self):
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder) / 'root.ru'
-            child = Path(folder) / 'child.ru'
+            root = Path(folder).resolve() / 'root.ru'
+            child = Path(folder).resolve() / 'child.ru'
             child.write_text("作 坏:\n  卒 '模块原点'.\n为", encoding='utf-8')
             source = "模 取 外言 'child.ru'. 模 其 坏."
             root.write_text(source, encoding='utf-8')
@@ -276,11 +277,11 @@ class PanicTests(unittest.TestCase):
             read_fd, write_fd = os.pipe()
             os.close(read_fd)
             with os.fdopen(write_fd, 'wb') as output:
-                result = subprocess.run([str(Path(folder) / 'broken')], stdout=output,
+                result = subprocess.run([str(Path(folder).resolve() / 'broken')], stdout=output,
                                         stderr=subprocess.PIPE, text=True, timeout=10)
             self.assertEqual(result.returncode, 1, result.stderr)
             self.assertIn('运行错误：输出失败', result.stderr)
-            source = Path(folder) / 'broken.ru'
+            source = Path(folder).resolve() / 'broken.ru'
             source.write_text("试 显 'x'. 救 原因 显 '不可救'. 终.", encoding='utf-8')
             read_fd, write_fd = os.pipe()
             os.close(read_fd)
@@ -297,12 +298,20 @@ class PanicTests(unittest.TestCase):
     @unittest.skipUnless(CC, 'C compiler unavailable')
     def test_native_sanitizer_stress(self):
         with tempfile.TemporaryDirectory() as folder:
-            result = native(STRESS, folder, flags=('-fsanitize=address,undefined', '-fno-omit-frame-pointer'))
+            flags = ('-fsanitize=address,undefined', '-fno-omit-frame-pointer')
+            probe = Path(folder).resolve() / 'sanitizer-probe.c'
+            probe.write_text('int main(void) { return 0; }\n', encoding='utf-8')
+            supported = subprocess.run(
+                [CC, *flags, str(probe), '-o', str(probe.with_suffix('.exe'))],
+                capture_output=True, text=True, timeout=30)
+            if supported.returncode:
+                self.skipTest('Selected C compiler cannot link ASan/UBSan: ' + supported.stderr)
+            result = native(STRESS, folder, flags=flags)
             # Some managed executors run under ptrace, where LeakSanitizer
             # itself cannot start. Keep ASan/UBSan enabled and separately check
             # the runtime's exact zero-root/live-heap accounting there.
             if 'LeakSanitizer does not work under ptrace' in result.stderr:
-                result = subprocess.run([str(Path(folder) / 'case')], capture_output=True,
+                result = subprocess.run([str(Path(folder).resolve() / 'case')], capture_output=True,
                     text=True, timeout=40, env={**os.environ, 'RU_GC_THRESHOLD': '1',
                     'RU_GC_STATS': '1', 'ASAN_OPTIONS': 'detect_leaks=0:halt_on_error=1'})
             self.assertEqual(result.returncode, 0, result.stderr)
