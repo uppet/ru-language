@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {lex,analyze,highlight,indentText,enterEdit,indentSelection} from '../static/editor.mjs';
+import {lex,analyze,highlight,indentText,enterEdit,indentSelection,needsAutoDedent} from '../static/editor.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 
 test('longest Unicode names; reserved word substrings are ordinary names',()=>{
@@ -195,4 +195,42 @@ test('map and fact hover help is escaped and literal-safe',()=>{
   const html=highlight('显 真. 显 假. 值 为 事实. 表 取 典: 1 对 2. 成.');
   assert.ok(html.includes('事实字面量'));assert.ok(html.includes('键值映射'));
   assert.ok(!highlight("显 '事实 典 成'. # 真 假").includes('data-help'));
+});
+
+
+test('symbolic maps normalize braces and preserve offsets and literal contents',()=>{
+  const source='｛“｛}”:真，\n"空":{}，｝';
+  const result=analyze(source);
+  assert.deepEqual(result.tokens.filter(t=>t.kind==='punct').map(t=>t.text),['{',':',',',':','{','}',',','}']);
+  assert.equal(result.depth,0);
+  assert.deepEqual(result.blocks.map(b=>[b.kind,b.literal,b.closed]),[['{',true,true],['{',true,true]]);
+  assert.equal(source.slice(result.blocks[0].start,result.blocks[0].end),source);
+  assert.ok(highlight(source).includes('tok-keyword'));
+  assert.ok(highlight(source).includes('“｛}”'));
+  assert.equal(analyze('显 "{成}". # ｛\n解. } 释.').blocks.length,0);
+});
+test('symbolic and Chinese maps nest with arrays and anonymous callbacks',()=>{
+  const source="表 取 {\n'子': 典:\n'阵' 对 [｛｝, {}].\n成,\n'回': 算 值:\n得 {'值': 值}.\n法,\n}.";
+  assert.equal(indentText(source),"表 取 {\n    '子': 典:\n        '阵' 对 [｛｝, {}].\n    成,\n    '回': 算 值:\n        得 {'值': 值}.\n    法,\n}.");
+  const result=analyze(source);
+  assert.equal(result.depth,0);assert.ok(result.blocks.every(b=>b.closed));
+  assert.equal(result.blocks.find(b=>b.kind==='算').literal,true);
+  assert.equal(result.tokens.find(t=>t.text==='值').face,null);
+});
+test('map Enter and typed closing braces use expression indentation',()=>{
+  for(const opening of ['表 取 {','表 取 ｛'])assert.equal(enterEdit(opening,opening.length).text,'\n    ');
+  for(const line of ['    },','    ｝。','    }','    成.'])assert.equal(needsAutoDedent(line),true);
+  for(const line of ['    成果','    "}"','    # }'])assert.equal(needsAutoDedent(line),false);
+  assert.deepEqual(analyze('作 展示:\n表 取 {\n1:\n2 +\n3,\n}.\n显 表.\n为').lines.map(l=>l.depth),[0,1,2,2,2,1,1,0]);
+});
+test('map-valued named reference calls remain calls and incomplete maps stay tolerant',()=>{
+  for(const source of ['算 回 值:{}.','显 算 回 值:｛1：真｝.','引用 取 作 回 值:{1:2,}.']) {
+    const result=analyze(source);assert.equal(result.depth,0);
+    assert.deepEqual(result.blocks.map(b=>b.kind),['{']);
+  }
+  const source="表 为 典 取 {\n'回': 算 值: 得 ｛'值': 值｝. 法,\n'子': 典: 1 对 {}. 成,\n}.";
+  for(let end=0;end<=source.length;end++){
+    const prefix=source.slice(0,end),formatted=indentText(prefix);
+    assert.equal(indentText(formatted),formatted);highlight(prefix);enterEdit(prefix,prefix.length);
+  }
 });

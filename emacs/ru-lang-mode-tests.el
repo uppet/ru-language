@@ -1135,3 +1135,58 @@
         (condition-case nil
             (progn (ru-lang-forward-list) (ru-lang-backward-list))
           (user-error nil))))))
+
+
+(ert-deftest ru-lang-symbolic-maps-nested-indent ()
+  (ru-lang-test--indent
+   "表 取 {\n'子': 典:\n'阵' 对 [｛｝, {}].\n成,\n'回': 算 值:\n得 {'值': 值}.\n法,\n}."
+   "表 取 {\n    '子': 典:\n        '阵' 对 [｛｝, {}].\n    成,\n    '回': 算 值:\n        得 {'值': 值}.\n    法,\n}."))
+
+(ert-deftest ru-lang-symbolic-maps-navigation-and-syntax ()
+  (dolist (source '("表 取 {'子': ｛｝,}.\n" "表 取 ｛'子'：{}，｝。\n"))
+    (ru-lang-test--buffer source
+      (search-forward "取 ")
+      (let ((start (point)))
+        (ru-lang-forward-list)
+        (should (looking-at "[.。]\n"))
+        (ru-lang-backward-list)
+        (should (= start (point)))
+        (forward-sexp)
+        (should (looking-at "[.。]\n"))
+        (goto-char start)
+        (search-forward "子")
+        (ru-lang-backward-up-list)
+        (should (= start (point))))
+      (should-not (ru-lang-imenu-create-index))
+      (should-not (ru-lang--navigation-blocks nil)))))
+
+(ert-deftest ru-lang-symbolic-maps-faces-and-opaque-text ()
+  (ru-lang-test--buffer "表 为 典 取 ｛'真'：真，'回'：算 值: 得 值. 法，｝。\n显 '{成}'. # ｛\n解. } 释."
+    (font-lock-ensure)
+    (search-forward "典")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-type-face))
+    (search-forward "：真")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-keyword-face))
+    (search-forward "算 值")
+    (should-not (get-text-property (1- (point)) 'face))
+    (should-not (ru-lang-imenu-create-index))
+    (should (= (length ru-lang--structures) 2))
+    (should (cl-every #'ru-lang--block-closed ru-lang--structures))))
+
+(ert-deftest ru-lang-symbolic-maps-references-and-prefixes ()
+  (ru-lang-test--buffer "算 回 值:{}. 显 算 回 值:｛1：真｝. 引用 取 作 回 值:{1:2,}."
+    (should-not (ru-lang--navigation-blocks t))
+    (should (= (length ru-lang--structures) 3))
+    (should (cl-every #'ru-lang--block-closed ru-lang--structures)))
+  (let ((source "表 为 典 取 {\n'回': 算 值: 得 ｛'值': 值｝. 法,\n'子': 典: 1 对 {}. 成,\n}."))
+    (dotimes (end (1+ (length source)))
+      (ru-lang-test--buffer (substring source 0 end)
+        (font-lock-ensure)
+        (indent-region (point-min) (point-max))
+        (let ((once (buffer-string)))
+          (indent-region (point-min) (point-max))
+          (should (equal once (buffer-string))))
+        (ru-lang-imenu-create-index)
+        (condition-case nil
+            (progn (ru-lang-forward-list) (ru-lang-backward-list))
+          (user-error nil))))))

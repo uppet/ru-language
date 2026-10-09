@@ -62,7 +62,7 @@ def block_comment_end(source, index):
 
 def lex(source):
     tokens, i, line, col = [], 0, 1, 1
-    punct = {"。": ".", "：": ":", "（": "(", "）": ")", "，": ",", "［": "[", "］": "]"}
+    punct = {"。": ".", "：": ":", "（": "(", "）": ")", "，": ",", "［": "[", "］": "]", "｛": "{", "｝": "}"}
     quotes = {"'": "'", '"': '"', "‘": "’", "“": "”"}
 
     def advance(text):
@@ -129,7 +129,7 @@ def lex(source):
             tokens.append(Token("OP", pair, line, col))
             advance(pair)
             continue
-        if ch in ".:(),[]@+-*/%<>=!" or ch in punct:
+        if ch in ".:(),[]{}@+-*/%<>=!" or ch in punct:
             tokens.append(Token("OP", punct.get(ch, ch), line, col))
             advance(ch)
             continue
@@ -411,7 +411,7 @@ class Parser:
     def starts_argument(self):
         t = self.current
         return (t.kind in ("NUMBER", "STRING") or self.isv("(") or
-                self.isv("[") or self.isv("非") or self.isv("空") or
+                self.isv("[") or self.isv("{") or self.isv("非") or self.isv("空") or
                 self.isv("新") or self.isv("外言") or self.isv("其") or
                 self.isv("算") or self.isv("作") or self.isv("典") or
                 self.isv("真") or self.isv("假") or
@@ -536,6 +536,17 @@ class Parser:
                 self.expect(".")
                 entries.append((key, value))
             self.expect("成")
+            left = node("map", t, entries=entries)
+        elif t.value == "{" and t.kind == "OP":
+            entries = []
+            while not self.isv("}"):
+                key = self.expression(allow_call=True)
+                self.expect(":")
+                value = self.expression(allow_call=True)
+                entries.append((key, value))
+                if not self.accept(","):
+                    break
+            self.expect("}")
             left = node("map", t, entries=entries)
         elif t.value == "空":
             left = node("null", t)

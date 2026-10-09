@@ -33,6 +33,22 @@ class SpecificationExamples(unittest.TestCase):
         Compiler(program, "optional_parameters.ru").compile()
         JSCompiler(program, "optional_parameters.ru").compile()
 
+    def test_symbol_map_contract_and_example(self):
+        specification = SPECIFICATION.read_text(encoding="utf-8")
+        self.assertIn("'{' [表达式 ':' 表达式", specification)
+        self.assertIn("`｛` → `{`", specification)
+        self.assertIn("允许尾逗号", specification)
+        self.assertIn("名称键求名称的当前值", specification)
+        self.assertIn("花括号只构造典表达式，不是独立作用域块", specification)
+        self.assertIn("`{(f 1): (g 2), 'x': 3}`", specification)
+        self.assertIn("调用内 `参数名:表达式` 的冒号仍是命名实参", specification)
+        self.assertNotIn("位运算、字典、异步", specification)
+        source = (ROOT / "examples" / "map_symbol_literals.ru").read_text(encoding="utf-8")
+        program = parse(source)
+        validate(program)
+        Compiler(program, "map_symbol_literals.ru").compile()
+        JSCompiler(program, "map_symbol_literals.ru").compile()
+
     def test_complete_examples_parse_and_compile_without_execution(self):
         specification = SPECIFICATION.read_text(encoding="utf-8")
         examples = re.findall(r"^```ru[ \t]*\n(.*?)^```[ \t]*$",
