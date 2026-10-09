@@ -223,11 +223,16 @@ class JSCompiler(Compiler):
             return runtime
         words = set()
         has_map = False
+        has_diagnostics = False
         pending = list(self.modules.values())
         while pending:
             value = pending.pop()
             if isinstance(value, Node):
                 has_map = has_map or value.kind == 'map'
+                # Keep error detail conservatively for every possible call,
+                # typed declaration, member access, and binary operation.
+                has_diagnostics = has_diagnostics or value.kind in (
+                    'function', 'function_literal', 'type', 'call', 'invoke', 'member', 'binary', 'new')
                 pending.append(value.data)
             elif isinstance(value, dict):
                 pending.extend(value.values())
@@ -242,6 +247,12 @@ class JSCompiler(Compiler):
             if not needed:
                 pattern = r'/\* RU_OPTIONAL_' + feature + r'_BEGIN \*/.*?/\* RU_OPTIONAL_' + feature + r'_END \*/'
                 runtime = re.sub(pattern, 'function ' + handler + '(){return MISSING;}', runtime, count=1, flags=re.S)
+        if not has_diagnostics:
+            runtime = re.sub(r'/\* RU_OPTIONAL_DIAGNOSTIC_DETAIL_BEGIN \*/.*?/\* RU_OPTIONAL_DIAGNOSTIC_DETAIL_END \*/',
+                             '',
+                             runtime, count=1, flags=re.S)
+        runtime = re.sub(r'/\* RU_DETAIL \*/(.*?)/\* RU_END_DETAIL \*/',
+                         lambda match: match[1] if has_diagnostics else '', runtime)
         if not has_map:
             runtime = re.sub(r'/\* RU_OPTIONAL_MAP_INDEX_BEGIN \*/.*?/\* RU_OPTIONAL_MAP_INDEX_END \*/',
                              '', runtime, count=1, flags=re.S)

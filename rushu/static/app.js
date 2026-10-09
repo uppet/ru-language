@@ -1,3 +1,4 @@
+import {versionLabel} from './versions.mjs';
 import {analyze,highlight,enterEdit,indentSelection,needsAutoDedent} from './editor.mjs';
 import {welcomeBook,blankBook,newCell,parseBook,serializeBook,appendOutput,historicalBook,MAX_FILE_BYTES,MAX_CELLS,MAX_SOURCE} from './notebook.mjs';
 
@@ -379,4 +380,4 @@ window.addEventListener('beforeunload',event=>{if(dirty||activeRun||generationRe
 const keyboardHelp=el('span','sr-only','按 Tab 缩进。按 Escape 后再按 Tab 可移出编辑器。Shift 加 Enter 运行。');keyboardHelp.id='editor-keyboard-help';document.body.append(keyboardHelp);
 renderBook();
 if(!token){runtimeStatus('dead','缺少连接凭据');notice('请使用启动终端显示的完整本机网址打开如书（包含 #token=…）。内容仍可编辑和保存。',true,true);}
-else{replaceBook(book).catch(error=>{runtimeStatus('dead','连接失败');notice(error.message+' 请使用启动终端显示的完整网址。',true,true);});}
+else{api('/versions').then(info=>{$('#versions').textContent=versionLabel(info);}).catch(()=>{$('#versions').textContent='版本读取失败';});replaceBook(book).catch(error=>{runtimeStatus('dead','连接失败');notice(error.message+' 请使用启动终端显示的完整网址。',true,true);});}

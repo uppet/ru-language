@@ -12,12 +12,13 @@ import threading
 from urllib.parse import parse_qs, urlsplit
 import webbrowser
 
+from .versions import version_info
 from .kernel import KernelError, SessionManager
 from .generation import (DEFAULT_TIMEOUT, configuration, generate_source,
                          validate_generation_timeout)
 
 MAX_BODY = 1_048_576
-STATIC_FILES = {"/": ("index.html", "text/html; charset=utf-8"),
+STATIC_FILES = {"/versions.mjs": ("versions.mjs", "text/javascript; charset=utf-8"),"/": ("index.html", "text/html; charset=utf-8"),
                 "/index.html": ("index.html", "text/html; charset=utf-8"),
                 "/app.js": ("app.js", "text/javascript; charset=utf-8"),
                 "/style.css": ("style.css", "text/css; charset=utf-8"),
@@ -176,6 +177,13 @@ class NotebookHandler(BaseHTTPRequestHandler):
                 if not target.is_file() or target.stat().st_size > 2 * MAX_BODY:
                     raise KernelError("文件不存在", 404)
                 self._respond(200, target.read_bytes(), mime)
+                return
+            if path == "/api/versions":
+                if parsed.query:
+                    raise KernelError("此接口不接受查询参数")
+                if self.command != "GET":
+                    raise KernelError("不支持此请求方式", 405)
+                self._respond(200, version_info())
                 return
             if path in ("/api/generation/config", "/api/generate"):
                 if parsed.query:

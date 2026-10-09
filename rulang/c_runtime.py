@@ -193,7 +193,8 @@ def runtime_source(modules, generated, full=False):
     preliminary = prune_functions(general, generated)
     definitions = {m[1] for m in _FUNCTION.finditer(mask_noncode(preliminary))}
     panic = any(n.kind in ('panic', 'try') for n in walk_nodes(modules))
-    features = {'callable': 'ru_enter' in definitions,
+    features = {'type_detail': user_class or 'v_array' in definitions,
+                'callable': 'ru_enter' in definitions,
                 'panic': panic,
                 'panic_state': panic or bool({'ru_contest_sort', 'v_equal', 'ru_object_equal', 'ru_map_find', 'ru_map_each'} & definitions),
                 'array': 'v_array' in definitions,

@@ -746,7 +746,7 @@ static Val v_binary(const char *op,Val a,Val b,int line)
     if(!strcmp(op,"含")) { if(a.kind!=RU_STR||b.kind!=RU_STR)ru_fail(line,"含 需要两个字符串");return v_fact(strstr(a.s->data,b.s->data)!=NULL); }
 /* RU_END_MEMBERS */
     if(!strcmp(op,"<")||!strcmp(op,"<=")||!strcmp(op,">")||!strcmp(op,">=")) {
-        int cmp;if(a.kind!=b.kind || (a.kind!=RU_NUM&&a.kind!=RU_STR))ru_fail(line,"比较需要相同的数字或字符串类型");
+        int cmp;if(a.kind!=b.kind || (a.kind!=RU_NUM&&a.kind!=RU_STR))ru_fail(line,"比较需要相同的数字或字符串类型%s",(a.kind==RU_FACT||b.kind==RU_FACT)?"；比较结果为事实，若要连续比较，请拆成两个比较并用「且」连接":"");
         cmp=a.kind==RU_NUM?(a.n>b.n)-(a.n<b.n):strcmp(a.s->data,b.s->data);
         if (!strcmp(op,"<")) return v_fact(cmp<0);
         if (!strcmp(op,"<=")) return v_fact(cmp<=0);
@@ -930,6 +930,46 @@ static int v_is_type(Val v,const char *type,Env *env)
     {RuBinding *b=env_find(env,type);RuClass *klass;if(!b||b->value.kind!=RU_CLASS||v.kind!=RU_OBJECT)return 0;for(klass=((RuObject *)v.heap)->klass;klass;klass=klass->parent)if(klass==b->value.klass)return 1;}
     return 0;
 }
+/* RU_FEATURE: type_detail */
+/* Error-only detail: finite annotation depth bounds traversal, even for cycles.
+ * Scratch storage survives until ru_fail exits; no values or addresses are shown. */
+static const char *v_type_detail(Val value,const char *type,Env *env,int line)
+{
+    size_t length=strlen(type),capacity=length*32+256,used=0;
+    char *detail=(char *)ru_scratch_alloc(capacity,line);
+    char *item=(char *)ru_scratch_alloc(length+1,line);
+    strcpy(item,type);detail[0]=0;(void)env;
+    while(length>=4 && !strcmp(item+length-4," 阵") && value.kind==RU_ARRAY) {
+        size_t i;RuArray *array=(RuArray *)value.heap;
+        item[length-4]=0;
+        for(i=0;i<array->len;++i)if(!v_is_type(array->items[i],item,env))break;
+        if(i==array->len){item[length-4]=' ';break;}
+        if(!used)used+=(size_t)snprintf(detail+used,capacity-used,"；元素");
+        used+=(size_t)snprintf(detail+used,capacity-used,"[%zu]",i);
+        value=array->items[i];length-=4;
+    }
+    if(used) {
+        const char *actual=v_type_name(value);
+        size_t extra=strlen(actual)+strlen(item)+64;
+        char *grown=(char *)ru_scratch_alloc(used+extra,line);
+        memcpy(grown,detail,used);
+        snprintf(grown+used,extra,"须为%s，实际收到%s",item,actual);
+        detail=grown;
+    }
+    if(value.kind==RU_OBJECT && !strcmp(v_type_name(value),item)) {
+        const char *identity="；同名但不同形身份：期望形与实际形来自不同声明；请核对所用形声明，若曾重定义，请按需重建相关实例或函数";
+        size_t size=strlen(detail)+strlen(identity)+1;
+        char *grown=(char *)ru_scratch_alloc(size,line);
+        snprintf(grown,size,"%s%s",detail,identity);detail=grown;
+    }
+    return detail;
+}
+/* RU_ELSE_FEATURE */
+static const char *v_type_detail(Val value,const char *type,Env *env,int line)
+{
+    (void)value;(void)type;(void)env;(void)line;return "";
+}
+/* RU_END_FEATURE */
 static void v_check_member_target(Val receiver, const char *name, int line)
 {
     size_t index;
@@ -945,7 +985,7 @@ static void v_set_member(Val receiver,const char *name,Val value,int line)
     if(receiver.kind!=RU_OBJECT)ru_fail(line,"只能修改对象字段");
     o=(RuObject *)receiver.heap;
     if(!ru_find_field(o->klass,name,&index,&type,&owner))ru_fail(line,"未知字段：%s",name);
-    if(value.kind!=RU_NULL&&!v_is_type(value,type,owner))ru_fail(line,"字段「%s」须为%s，实际收到%s",name,type,v_type_name(value));
+    if(value.kind!=RU_NULL&&!v_is_type(value,type,owner))ru_fail(line,"字段「%s」须为%s，实际收到%s%s",name,type,v_type_name(value),v_type_detail(value,type,owner,line));
     o->fields[index]=value;
 }
 static Val v_class(RuClass *klass) {Val v=v_null();v.kind=RU_CLASS;v.klass=klass;return v;}
@@ -1053,7 +1093,7 @@ static void ru_bind(const char *name,size_t count,const char **names,size_t argc
 static Val v_call(Val callable,size_t argc,const char **keys,Val *args,int line)
 {
     RuCallable *f;RuFunction *fn;Val *bound,result;size_t i;
-    if(callable.kind!=RU_FUNCTION)ru_fail(line,"值不是函数");
+    if(callable.kind!=RU_FUNCTION)ru_fail(line,"值不是函数%s",((callable.kind==RU_ARRAY||callable.kind==RU_STR||callable.kind==RU_MAP)&&argc==1&&args[0].kind==RU_ARRAY)?"；若要索引，请让方括号紧邻接收者，如 列[0]；列 [0] 会被解析为调用":"");
     f=(RuCallable *)callable.heap;fn=f->function;
     bound=(Val *)ru_scratch_alloc((fn->count?fn->count:1)*sizeof(Val),line);ru_bind(fn->name,fn->count,fn->names,argc,keys,args,bound,line);
     for(i=0;i<fn->count;++i) {
@@ -1061,7 +1101,7 @@ static Val v_call(Val callable,size_t argc,const char **keys,Val *args,int line)
         ru_annotation_ready(fn->types[i],f->global,line);
 /* RU_ELSE_FEATURE */
 /* RU_END_FEATURE */
-        if(!v_is_type(bound[i],fn->types[i],f->global))ru_fail(line,"函数「%s」的实参「%s」须为%s，实际收到%s",fn->name,fn->names[i],fn->types[i],v_type_name(bound[i]));
+        if(!v_is_type(bound[i],fn->types[i],f->global))ru_fail(line,"函数「%s」的实参「%s」须为%s，实际收到%s%s",fn->name,fn->names[i],fn->types[i],v_type_name(bound[i]),v_type_detail(bound[i],fn->types[i],f->global,line));
     }
     ru_enter(line);result=fn->code(f->closure,f->self,line,bound);ru_leave();ru_scratch_free(bound);return result;
 }

@@ -11,6 +11,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from rulang import __version__
 from rulang.compiler import Compiler
 from rulang.js_compiler import JSCompiler
 from rulang.frontend import parse, validate
@@ -94,7 +95,7 @@ class SpecificationExamples(unittest.TestCase):
                             if line.startswith("|")))
 
     def test_editor_version_blocks_and_alias_tracker(self):
-        self.assertIn("编辑器同步如 0.11.0", (ROOT / "rushu/README.md").read_text(encoding="utf-8"))
+        self.assertIn("编辑器同步如 " + __version__, (ROOT / "rushu/README.md").read_text(encoding="utf-8"))
         emacs = (ROOT / "emacs/README.md").read_text(encoding="utf-8")
         blocks = next(line for line in emacs.splitlines() if line.startswith("“代码块”包括"))
         self.assertIn("`段: … 落.` / 语句花括号块", blocks)

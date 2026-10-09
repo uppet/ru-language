@@ -394,6 +394,25 @@ class Interpreter:
             self.fail(n, f"未定义类型：{annotation}；类型注解须使用已声明或已尽取导入的形名")
         return typ
 
+    def type_detail(self, value, annotation, identity=None):
+        """Describe only types and the first failing index, never payload values."""
+        typ = annotation if identity is None else identity
+        path = ""
+        while annotation.endswith(" 阵") and isinstance(value, list):
+            item_annotation = annotation[:-2]
+            item_type = typ[1] if isinstance(typ, tuple) else item_annotation
+            bad = next(((i, item) for i, item in enumerate(value)
+                        if not self.type_matches(item, item_type)), None)
+            if bad is None:
+                break
+            i, value = bad
+            path += f"[{i}]"
+            annotation, typ = item_annotation, item_type
+        detail = f"；元素{path}须为{annotation}，实际收到{value_type_name(value)}" if path else ""
+        if isinstance(value, Instance) and value.type.name == annotation:
+            detail += "；同名但不同形身份：期望形与实际形来自不同声明；请核对所用形声明，若曾重定义，请按需重建相关实例或函数"
+        return detail
+
     def ordinary_value(self, n, value):
         if isinstance(value, RuType):
             self.fail(n, f"形名「{value.name}」不能作为普通值；创建实例请用「新 {value.name}」，类型注解请直接使用形名")
@@ -566,7 +585,7 @@ class Interpreter:
 
     def invoke_value(self, n, value, args):
         if not isinstance(value, Function):
-            self.fail(n, "值不是算／作")
+            self.fail(n, "值不是算／作" + ("；若要索引，请让方括号紧邻接收者，如 列[0]；列 [0] 会被解析为调用" if isinstance(value, (list, str, RuMap)) and len(args) == 1 and isinstance(args[0][1], list) else ""))
         result = value.owner.invoke(n, value.node, args, value.receiver,
                                     caller=self, environment=value.environment, parameter_types=value.parameter_types)
         self.last_call_procedure = value.node.data["procedure"]
@@ -628,7 +647,7 @@ class Interpreter:
             value = self.expr(n.data["expr"], scope)
             field_type, owner = receiver.type.fields[d["name"]]
             if value is not None and not owner.type_matches(value, field_type):
-                self.fail(n, f"字段「{d['name']}」须为{field_type}，实际收到{value_type_name(value)}")
+                self.fail(n, f"字段「{d['name']}」须为{field_type}，实际收到{value_type_name(value)}" + owner.type_detail(value, field_type))
             receiver.fields[d["name"]] = value
             return
         if not isinstance(receiver, list):
@@ -734,7 +753,7 @@ class Interpreter:
                 value = self.expr(expr, scope)
                 field_type, owner = typ.fields[key]
                 if value is not None and not owner.type_matches(value, field_type):
-                    self.fail(n, f"字段「{key}」须为{field_type}，实际收到{value_type_name(value)}")
+                    self.fail(n, f"字段「{key}」须为{field_type}，实际收到{value_type_name(value)}" + owner.type_detail(value, field_type))
                 fields[key] = value
                 provided.add(key)
             return Instance(typ, fields)
@@ -809,7 +828,7 @@ class Interpreter:
                 return right in left
             if op in ("<", "<=", ">", ">="):
                 if type(left) is not type(right) or not isinstance(left, (str, float)):
-                    self.fail(n, "大小比较需要两个数或两个句")
+                    self.fail(n, "大小比较需要两个数或两个句" + ("；比较结果为事实，若要连续比较，请拆成两个比较并用「且」连接" if isinstance(left, bool) or isinstance(right, bool) else ""))
                 return {"<": lambda: left < right, "<=": lambda: left <= right,
                               ">": lambda: left > right, ">=": lambda: left >= right}[op]()
             if op == "+" and isinstance(left, str) and isinstance(right, str):
@@ -1024,7 +1043,7 @@ class Interpreter:
         for key, typ in params:
             value = kwargs[key]
             if not self.type_matches(value, parameter_types[key] if parameter_types is not None else self.type_identity(typ, function)):
-                caller.fail(n, f"函数「{name}」的实参「{key}」须为{typ}，实际收到{value_type_name(value)}")
+                caller.fail(n, f"函数「{name}」的实参「{key}」须为{typ}，实际收到{value_type_name(value)}" + self.type_detail(value, typ, parameter_types[key] if parameter_types is not None else self.type_identity(typ, function)))
             local.values[key] = value
         self.hoist(function.data["body"], local)
         if self.call_state[0] >= 128:

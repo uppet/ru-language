@@ -396,9 +396,27 @@ const R = (() => {
     for (let t = value.type; t; t = t.parent) if (t === expected) return true;
     return false;
   }
+/* RU_OPTIONAL_DIAGNOSTIC_DETAIL_BEGIN */
+  function typeDetail(m,value,annotation,identity = annotation) {
+    let indices = '';
+    while (annotation.endsWith(' 阵') && Array.isArray(value)) {
+      const itemAnnotation = annotation.slice(0,-2);
+      const itemType = Array.isArray(identity) ? identity[1] : itemAnnotation;
+      const i = value.findIndex(x => !matches(m,x,itemType));
+      if (i < 0) break;
+      indices += '['+i+']'; value = value[i]; annotation = itemAnnotation; identity = itemType;
+    }
+    let detail = indices ? '；元素'+indices+'须为'+annotation+'，实际收到'+valueTypeName(value) : '';
+    if (value instanceof Instance && value.type.name === annotation)
+      detail += '；同名但不同形身份：期望形与实际形来自不同声明；请核对所用形声明，若曾重定义，请按需重建相关实例或函数';
+    return detail;
+  }
+  function callHint(value,args) { return ((Array.isArray(value) || typeof value === 'string' || value instanceof RuMap) && args.length === 1 && Array.isArray(args[0][1]) ? '；若要索引，请让方括号紧邻接收者，如 列[0]；列 [0] 会被解析为调用' : ''); }
+  function comparisonHint(left,right) { return (typeof left === 'boolean' || typeof right === 'boolean' ? '；比较结果为事实，若要连续比较，请拆成两个比较并用「且」连接' : ''); }
+/* RU_OPTIONAL_DIAGNOSTIC_DETAIL_END */
   let depth = 0;
   function call(m,value,args,loc) {
-    if (!(value instanceof Fn)) fail(m, '值不是算／作',loc);
+    if (!(value instanceof Fn)) fail(m, '值不是算／作'/* RU_DETAIL */+callHint(value,args)/* RU_END_DETAIL */,loc);
     const owner = value.owner;
     if (value.params.some(([name]) => value.env.protected(name) || own(owner.types,name)))
       fail(owner,'参数名不能与函数名、形名或内置名称重名',value.loc);
@@ -406,7 +424,7 @@ const R = (() => {
     const s = new Scope(value.env,'function');
     if (value.receiver !== null) s.values.其 = value.receiver;
     for (const [i,[name,typ]] of value.params.entries()) {
-      if (!matches(owner,bound[name],value.parameterTypes ? value.parameterTypes[i] : typeIdentity(owner,typ,value.loc))) fail(m,'函数「'+value.name+'」的实参「'+name+'」须为'+typ+'，实际收到'+valueTypeName(bound[name]),loc);
+      if (!matches(owner,bound[name],value.parameterTypes ? value.parameterTypes[i] : typeIdentity(owner,typ,value.loc))) fail(m,'函数「'+value.name+'」的实参「'+name+'」须为'+typ+'，实际收到'+valueTypeName(bound[name])/* RU_DETAIL */+typeDetail(owner,bound[name],typ,value.parameterTypes ? value.parameterTypes[i] : typeIdentity(owner,typ,value.loc))/* RU_END_DETAIL */,loc);
       s.values[name] = bound[name];
     }
     if (depth >= 128) fail(m,'函数调用层数超过 128',loc);
@@ -466,7 +484,7 @@ const R = (() => {
   function setField(m,receiver,name,rhs,loc) {
     if (!(receiver instanceof Instance) || !own(receiver.type.fields,name)) fail(m,'不可赋值的字段：'+name,loc);
     const value = rhs(), [typ,owner] = receiver.type.fields[name];
-    if (value !== null && !matches(owner,value,typ)) fail(m,'字段「'+name+'」须为'+typ+'，实际收到'+valueTypeName(value),loc);
+    if (value !== null && !matches(owner,value,typ)) fail(m,'字段「'+name+'」须为'+typ+'，实际收到'+valueTypeName(value)/* RU_DETAIL */+typeDetail(owner,value,typ)/* RU_END_DETAIL */,loc);
     receiver.fields[name] = value; return value;
   }
   function construct(m,s,name,argsThunk,loc) {
@@ -484,7 +502,7 @@ const R = (() => {
       if (!own(fields,key)) fail(m,'未知字段：'+key,loc);
       const value = typeof expression === 'function' ? expression() : expression;
       const [typ,owner] = t.fields[key];
-      if (value !== null && !matches(owner,value,typ)) fail(m,'字段「'+key+'」须为'+typ+'，实际收到'+valueTypeName(value),loc);
+      if (value !== null && !matches(owner,value,typ)) fail(m,'字段「'+key+'」须为'+typ+'，实际收到'+valueTypeName(value)/* RU_DETAIL */+typeDetail(owner,value,typ)/* RU_END_DETAIL */,loc);
       fields[key] = value; provided.add(key);
     }
     return new Instance(t,fields);
@@ -514,7 +532,7 @@ const R = (() => {
       return left.includes(right);
     }
     if (['<','<=','>','>='].includes(op)) {
-      if (typeof left !== typeof right || !['number','string'].includes(typeof left)) fail(m,'大小比较需要两个数或两个句',loc);
+      if (typeof left !== typeof right || !['number','string'].includes(typeof left)) fail(m,'大小比较需要两个数或两个句'/* RU_DETAIL */+comparisonHint(left,right)/* RU_END_DETAIL */,loc);
       const c = typeof left === 'string' ? compareText(left,right) : left === right ? 0 : left < right ? -1 : 1;
       return (op === '<' ? c < 0 : op === '<=' ? c <= 0 : op === '>' ? c > 0 : c >= 0);
     }
