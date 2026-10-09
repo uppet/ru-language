@@ -62,13 +62,26 @@ static int ru_io_open(const char *path, int flags, int mode)
     result = _wopen(wide, flags, mode); error = errno;
     free(wide); errno = error; return result;
 }
+/* Only st_mode is consumed: classify the target, not a symlink's own metadata. */
 static int ru_io_stat(const char *path, struct _stat64 *status)
 {
     wchar_t *wide = ru_io_wide(path);
-    int result, error;
+    HANDLE handle;
+    BY_HANDLE_FILE_INFORMATION info;
+    DWORD error = ERROR_SUCCESS;
     if (!wide) return -1;
-    result = _wstat64(wide, status); error = errno;
-    free(wide); errno = error; return result;
+    /* No OPEN_REPARSE_POINT: dangling links fail and directory links resolve. */
+    handle = CreateFileW(wide, 0, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                         NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
+    if (handle == INVALID_HANDLE_VALUE) error = GetLastError();
+    free(wide);
+    if (error != ERROR_SUCCESS) { errno = ru_io_windows_errno(error); return -1; }
+    if (!GetFileInformationByHandle(handle, &info)) error = GetLastError();
+    if (!CloseHandle(handle) && error == ERROR_SUCCESS) error = GetLastError();
+    if (error != ERROR_SUCCESS) { errno = ru_io_windows_errno(error); return -1; }
+    memset(status, 0, sizeof(*status));
+    status->st_mode = (info.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? _S_IFDIR : _S_IFREG;
+    return 0;
 }
 static int ru_io_unlink(const char *path)
 {

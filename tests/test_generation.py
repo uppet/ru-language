@@ -99,7 +99,7 @@ class TemporaryGeneration(unittest.TestCase):
         self.config.write_text("{}", encoding="utf-8")
         self.env = {"RU_LANG_CONFIG": str(self.config)}
         self.document = self.root / "wish.md"
-        self.document.write_text("# 输出\n显示一个问候。\n如是我言\n", encoding="utf-8")
+        self.document.write_bytes("# 输出\n显示一个问候。\n如是我言\n".encode("utf-8"))
 
     def configured(self, **values):
         self.config.write_text(json.dumps(values, ensure_ascii=False), encoding="utf-8")

@@ -351,6 +351,13 @@ class CheckedIOTests(unittest.TestCase):
             'read': 'static size_t test_read(void*p,size_t s,size_t n,FILE*f){(void)p;(void)s;(void)n;(void)f;errno=EIO;return 0;}\nstatic int test_error(FILE*f){(void)f;return 1;}\n#define fread test_read\n#define ferror test_error\n',
             'permission': 'static int test_stat(const char*p,struct stat*s){(void)p;(void)s;errno=EACCES;return -1;}\n#define stat(...) test_stat(__VA_ARGS__)\n',
         }
+        if os.name == 'nt':
+            wrappers['permission'] = (
+                'static HANDLE WINAPI test_metadata_open(LPCWSTR p,DWORD a,DWORD s,'
+                'LPSECURITY_ATTRIBUTES x,DWORD c,DWORD f,HANDLE t)'
+                '{(void)p;(void)a;(void)s;(void)x;(void)c;(void)f;(void)t;'
+                'SetLastError(ERROR_ACCESS_DENIED);return INVALID_HANDLE_VALUE;}\n'
+                '#define CreateFileW test_metadata_open\n')
         for failure, wrapper in wrappers.items():
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp).resolve()

@@ -130,7 +130,7 @@ class ContestLibraryTests(unittest.TestCase):
 
     def test_reserved_import_alias_and_unknown_alias(self):
         with tempfile.TemporaryDirectory() as directory:
-            fake = Path(directory).resolve()/'如:竞赛'
+            fake = Path(directory).resolve()/('local.ru' if os.name == 'nt' else '如:竞赛')
             fake.write_text("卒 'local collision'.", encoding='utf-8')
             main = str(Path(directory).resolve()/'main.ru')
             self.assertNotEqual(resolve_import('如:竞赛', main), str(fake))
@@ -138,7 +138,7 @@ class ContestLibraryTests(unittest.TestCase):
             with self.assertRaisesRegex(RuError, '未知的标准外言'):
                 graph_for("外言 '如:不存在'.", main)
             # The explicit relative path is still a local file, rather than an alias.
-            self.assertEqual(resolve_import('./如:竞赛', main), str(fake))
+            self.assertEqual(resolve_import('./' + fake.name, main), str(fake))
 
     def test_ascii_whitespace_and_eof(self):
         source = PRELUDE+"入 取 竞 其 读入. 循 值 取 入 其 词. 若 值 == 空 则 破. 然 显 值. 环"
