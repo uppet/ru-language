@@ -212,7 +212,8 @@ class MapsFactsContract:
         self.output("别 取 典: 成. 形 键形: 算 同 另一: 别 其 增 '同' 真. 得 真. 法 算 印: 别 其 增 '印' 真. 得 0. 法 象 物 取 典: (新 键形) 对 7. 成. 显 物 其 查 (新 键形). 显 别 其 量.", '7\n2\n')
 
     def test_map_rejects_sequence_operations(self):
-        for operation in ('显 物[0].', '显 物[:].', '显 物[0:1].', '物[0] 取 7.', '显 物 其 位 0.', '显 物 其 段 0 1.', '物 其 位 0 取 7.'):
+        self.output("物 取 典: 0 对 2. 成. 显 物[0]. 显 物[1].", "2\n空\n")
+        for operation in ('显 物[:].', '显 物[0:1].', '物[0] 取 7.', '显 物 其 位 0.', '显 物 其 段 0 1.', '物 其 位 0 取 7.'):
             for literal in ('典: 成', '典: 1 对 2. 成'):
                 with self.subTest(operation=operation, literal=literal):
                     status, _, error = self.run_source('物 取 '+literal+'. '+operation)

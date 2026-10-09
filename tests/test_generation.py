@@ -315,6 +315,8 @@ class LanguageSpecificationTests(TemporaryGeneration):
         self.assertIn("不新增 `Any` 或 `任意`", system)
         self.assertNotIn("每个参数都必须有类型", system)
         self.assertIn("整段可按既有引用调用解析，则保留引用调用", system)
+        self.assertIn("`典值[键]`", system)
+        self.assertIn("不提供典的方括号赋值或切片", system)
 
     def test_resource_is_loaded_fresh_for_every_request(self):
         resource = self.root / "language-spec.md"

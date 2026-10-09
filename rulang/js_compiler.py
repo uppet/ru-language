@@ -228,6 +228,8 @@ class JSCompiler(Compiler):
                 pattern = r'/\* RU_OPTIONAL_' + feature + r'_BEGIN \*/.*?/\* RU_OPTIONAL_' + feature + r'_END \*/'
                 runtime = re.sub(pattern, 'function ' + handler + '(){return MISSING;}', runtime, count=1, flags=re.S)
         if not has_map:
+            runtime = re.sub(r'/\* RU_OPTIONAL_MAP_INDEX_BEGIN \*/.*?/\* RU_OPTIONAL_MAP_INDEX_END \*/',
+                             '', runtime, count=1, flags=re.S)
             runtime = re.sub(r'/\* RU_OPTIONAL_MAP_BEGIN \*/.*?/\* RU_OPTIONAL_MAP_END \*/',
                              'function map(){throw new Error("map runtime unavailable");} function mapMember(){return MISSING;}',
                              runtime, count=1, flags=re.S)

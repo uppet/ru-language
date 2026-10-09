@@ -592,6 +592,8 @@ class Interpreter:
         return int(value)
 
     def get_index(self, n, receiver, index):
+        if isinstance(receiver, RuMap):
+            return self.map_member(n, receiver, "查", [(None, index)])
         if not isinstance(receiver, (list, str)):
             self.fail(n, "「位」／索引只适用于阵或句")
         return receiver[self.bounded_index(n, index, len(receiver))]

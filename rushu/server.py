@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlsplit
 import webbrowser
 
 from .kernel import KernelError, SessionManager
+from .generation import configuration, generate_source
 
 MAX_BODY = 1_048_576
 STATIC_FILES = {"/": ("index.html", "text/html; charset=utf-8"),
@@ -20,7 +21,8 @@ STATIC_FILES = {"/": ("index.html", "text/html; charset=utf-8"),
                 "/app.js": ("app.js", "text/javascript; charset=utf-8"),
                 "/style.css": ("style.css", "text/css; charset=utf-8"),
                 "/editor.mjs": ("editor.mjs", "text/javascript; charset=utf-8"),
-                "/notebook.mjs": ("notebook.mjs", "text/javascript; charset=utf-8")}
+                "/notebook.mjs": ("notebook.mjs", "text/javascript; charset=utf-8"),
+                "/history.mjs": ("history.mjs", "text/javascript; charset=utf-8")}
 SESSION_PATH = re.compile(r"/api/sessions/([a-f0-9]{32})(?:/(execute|events|input|stop|restart))?\Z")
 
 
@@ -171,6 +173,16 @@ class NotebookHandler(BaseHTTPRequestHandler):
                 if not target.is_file() or target.stat().st_size > 2 * MAX_BODY:
                     raise KernelError("文件不存在", 404)
                 self._respond(200, target.read_bytes(), mime)
+                return
+            if path in ("/api/generation/config", "/api/generate"):
+                if parsed.query:
+                    raise KernelError("此接口不接受查询参数")
+                if path == "/api/generation/config" and self.command == "GET":
+                    self._respond(200, configuration())
+                elif path == "/api/generate" and self.command == "POST":
+                    self._respond(200, generate_source(self._body()))
+                else:
+                    raise KernelError("不支持此请求方式", 405)
                 return
             if path == "/api/sessions" and self.command == "POST" and not parsed.query:
                 self._body()

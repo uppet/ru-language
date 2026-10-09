@@ -444,6 +444,9 @@ const R = (() => {
     return index;
   }
   function index(m,receiver,i,loc) {
+/* RU_OPTIONAL_MAP_INDEX_BEGIN */
+    if (receiver instanceof RuMap) return mapMember(m,receiver,'查',[[null,i]],loc);
+/* RU_OPTIONAL_MAP_INDEX_END */
     if (typeof receiver === 'string') receiver = chars(receiver);
     if (!Array.isArray(receiver)) fail(m,'「位」／索引只适用于阵或句',loc);
     return receiver[bounded(m,i,receiver.length,loc)];

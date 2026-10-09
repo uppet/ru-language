@@ -791,9 +791,16 @@ static size_t v_length(Val v,int line)
     if(v.kind==RU_ARRAY)return ((RuArray *)v.heap)->len;
     ru_fail(line,"量／索引需要阵或句");return 0;
 }
+/* RU_MAP */
+static Val ru_map_get(Val receiver, Val key, int remove, int line);
+/* RU_END_MAP */
 static Val v_index(Val v,Val index,int line)
 {
-    size_t i=ru_index(index,v_length(v,line),0,line);
+    size_t i;
+/* RU_MAP */
+    if(v.kind==RU_MAP)return ru_map_get(v,index,0,line);
+/* RU_END_MAP */
+    i=ru_index(index,v_length(v,line),0,line);
     if(v.kind==RU_ARRAY)return v_copy(((RuArray *)v.heap)->items[i]);
     {size_t a=ru_utf8_offset(v,i),b=ru_utf8_offset(v,i+1);Val out=ru_string_alloc(b-a,line);memcpy(out.s->data,v.s->data+a,b-a);return out;}
 }
@@ -1194,7 +1201,7 @@ static Val ru_map_each(Val receiver, Val callback, int line)
 static Val ru_map_member(Val receiver,const char *name,size_t argc,const char **keys,Val *args,int line)
 {
     const char *key_name[]={"键"}, *both[]={"键","值"}, *callback[]={"回调"}; Val bound[2];
-    (void)key_name; (void)both; (void)callback; (void)bound;
+    (void)receiver; (void)key_name; (void)both; (void)callback; (void)bound;
     (void)argc; (void)keys; (void)args;
 /* RU_MEMBERS: 查,除 */
     if(!strcmp(name,"查") || !strcmp(name,"除")){ru_bind(name,1,key_name,argc,keys,args,bound,line);return ru_map_get(receiver,bound[0],!strcmp(name,"除"),line);}
@@ -1213,12 +1220,10 @@ static Val ru_map_member(Val receiver,const char *name,size_t argc,const char **
 static Val v_member(Val receiver,const char *name,size_t argc,const char **keys,Val *args,int line)
 {
     const char *one[]={"值"},*position[]={"位"},*range[]={"始","终"};Val bound[2], io_result;
-/* RU_MEMBERS: 查,增,除,列,量 */
 /* RU_FEATURE: map */
     if(receiver.kind==RU_MAP)return ru_map_member(receiver,name,argc,keys,args,line);
 /* RU_ELSE_FEATURE */
 /* RU_END_FEATURE */
-/* RU_END_MEMBERS */
     (void)one; (void)position; (void)range; (void)bound; (void)io_result;
 /* RU_MEMBERS: 读入,扫句,拆词,拆行,字列,合句,排序,取整,蓄出,词,数,行,写,清 */
     if (ru_contest_member(receiver, name, argc, keys, args, line, &io_result)) return io_result;

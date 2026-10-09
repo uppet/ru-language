@@ -1,3 +1,4 @@
+import {validateGeneration} from './history.mjs';
 /** Portable document data only. No executable JavaScript or kernel state. */
 export const FORMAT='rushu-notebook';
 export const MAX_FILE_BYTES=10*1024*1024;
@@ -38,12 +39,17 @@ export function parseBook(text) {
       count+=output.text.length; if(count>MAX_OUTPUT) fail('保存的输出过大。');
       return {type:output.type,text:output.text};
     });
-    return {...newCell(cell.type,cell.source),id,execution_count:cell.execution_count??null,outputs:safeOutputs,historical:!!(safeOutputs.length||cell.execution_count),status:'idle'};
+    let generation;
+    if(Object.hasOwn(cell,'generation')) {
+      if(cell.type!=='code') fail('只有代码格可以保存生成历史。');
+      try { generation=validateGeneration(cell.generation); } catch(error) { fail(error.message); }
+    }
+    return {...newCell(cell.type,cell.source),...(generation?{generation}:{}),id,execution_count:cell.execution_count??null,outputs:safeOutputs,historical:!!(safeOutputs.length||cell.execution_count),status:'idle'};
   });
   return {title:raw.title||'未命名如书',cells:cells.length?cells:[newCell()]};
 }
 export function serializeBook(book) {
-  const text=JSON.stringify({format:FORMAT,version:1,title:book.title,updated_at:new Date().toISOString(),cells:book.cells.map(cell=>({id:cell.id,type:cell.type,source:cell.source,execution_count:cell.execution_count??null,outputs:cell.outputs.map(({type,text})=>({type,text}))}))},null,2)+'\n';
+  const text=JSON.stringify({format:FORMAT,version:1,title:book.title,updated_at:new Date().toISOString(),cells:book.cells.map(cell=>({id:cell.id,type:cell.type,source:cell.source,...(cell.generation===undefined?{}:{generation:validateGeneration(cell.generation)}),execution_count:cell.execution_count??null,outputs:cell.outputs.map(({type,text})=>({type,text}))}))},null,2)+'\n';
   parseBook(text); // Validate our own export against the exact import contract.
   return text;
 }

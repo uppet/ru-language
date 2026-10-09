@@ -1,0 +1,45 @@
+{
+  "format": "rushu-notebook",
+  "version": 1,
+  "title": "从意图到源码 · 学习示例",
+  "cells": [
+    {
+      "id": "learning-note",
+      "type": "markdown",
+      "source": "# 读懂每一次变化\n\n下面是三个**人工写成的示例版本**，并非真实模型输出。展开版本历史，对比意图和源码，试着恢复旧版本。\n\n修改意图或代码后，点「如是我言 · 生成」可使用你配置的提供方继续学习。没有密钥也能编辑、记录人工版本和查看历史。生成不运行；审阅后单独运行。",
+      "outputs": []
+    },
+    {
+      "id": "learning-example",
+      "type": "code",
+      "source": "资料 取 典:\n    '问候' 对 '你好，如书'.\n    '就绪' 对 真.\n成.\n显 资料['问候'].\n显 资料['就绪'] == 真.\n",
+      "outputs": [],
+      "generation": {
+        "prompt": "把问候和就绪状态放入典，显示问候，并检查状态。\n如是我言",
+        "revisions": [
+          {
+            "id": "revision-example-1",
+            "timestamp": "2026-10-09T00:00:00.000Z",
+            "kind": "human",
+            "prompt": "显示一个问候。\n如是我言",
+            "source": "显 '你好'.\n"
+          },
+          {
+            "id": "revision-example-2",
+            "timestamp": "2026-10-09T00:01:00.000Z",
+            "kind": "human",
+            "prompt": "把问候改为你好，如书。\n如是我言",
+            "source": "显 '你好，如书'.\n"
+          },
+          {
+            "id": "revision-example-3",
+            "timestamp": "2026-10-09T00:02:00.000Z",
+            "kind": "human",
+            "prompt": "把问候和就绪状态放入典，显示问候，并检查状态。\n如是我言",
+            "source": "资料 取 典:\n    '问候' 对 '你好，如书'.\n    '就绪' 对 真.\n成.\n显 资料['问候'].\n显 资料['就绪'] == 真.\n"
+          }
+        ]
+      }
+    }
+  ]
+}

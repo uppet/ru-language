@@ -19,9 +19,9 @@
     </nav>
   </header>
   <main>
-    <div class="page-overline"><span>本地计算笔记</span><span class="offline-pill"><i></i> 离线 · 本机运行</span></div>
+    <div class="page-overline"><span>本地计算笔记</span><span class="offline-pill"><i></i> 本机运行 · 生成可联网</span></div>
     <div class="title-row"><input id="book-title" aria-label="书名" maxlength="200" value="第一本如书"><span class="edition">WIP / 01</span></div>
-    <p class="book-meta"><span id="document-status">尚未保存</span><span class="meta-dot">·</span><span id="cell-count"></span><span class="meta-dot">·</span><span>如语言 0.6</span></p>
+    <p class="book-meta"><span id="document-status">尚未保存</span><span class="meta-dot">·</span><span id="cell-count"></span><span class="meta-dot">·</span><span>如语言</span></p>
     <section class="runtime-toolbar" aria-label="运行控制">
       <div class="run-actions">
         <button id="run-all" class="primary"><span aria-hidden="true">▶</span> 运行全部</button>
@@ -38,7 +38,7 @@
     <div id="notice" class="notice" role="status" hidden></div>
     <div id="cells" class="cells" aria-label="笔记格子"></div>
     <div class="add-row" aria-label="添加格子">
-      <span class="add-rule"></span><button id="add-code">＋ 代码</button><button id="add-markdown">＋ 文字</button><span class="add-rule"></span>
+      <span class="add-rule"></span><button id="add-code">＋ 代码</button><button id="add-markdown">＋ 文字</button><button id="add-learning">＋ 学习</button><span class="add-rule"></span>
     </div>
     <footer><span>如书 <span class="footer-dot">/</span> 思考，在此发生。</span><button id="help-button">快捷键与说明 <span aria-hidden="true">?</span></button></footer>
   </main>
@@ -49,7 +49,7 @@
     <dl><div><dt>Shift + Enter</dt><dd>运行当前格，移到下一格</dd></div><div><dt>Ctrl / ⌘ + Enter</dt><dd>运行当前格，保留焦点</dd></div><div><dt>Tab / Shift + Tab</dt><dd>缩进 / 减少缩进</dd></div><div><dt>Escape，再按 Tab</dt><dd>从编辑器移到下一个控件</dd></div><div><dt>Ctrl / ⌘ + S</dt><dd>下载保存为 .rushu.json</dd></div></dl>
     <p>代码格支持如语言高亮、自动缩进与结构引导线。高亮是编辑辅助，不代表语法检查通过。文字格支持标题、列表、粗体、斜体、链接与代码块；原始 HTML 只显示为文字。</p>
     <p>保存的是文字、代码、运行次数和输出快照，不包含变量、函数或文件句柄。重新打开后，输出标为历史，需要从头执行来恢复计算过程。浏览器刷新后不会自动恢复或运行代码，请先保存。</p>
-    <p class="help-warning">本机服务不是安全沙箱。请审阅后再运行陌生代码。运行中的会话最多保留 262,144 字符的单格输出；大量输出会截断并显示提示。</p>
+    <p>学习模式：直接在普通代码格末行写「如是我言」并点运行，即在本页确认生成；在文字格末行写标记后按 Shift + Enter，或点「如是我言」按钮也可以。已生成源码再补标记点运行，会继续生成。也可添加学习格，分别编辑意图与源码。点击生成时补上末行标记，确认后只发送本格意图、当前源码草稿和完整语言规范给配置的提供方。生成与恢复版本均不运行代码，「运行全部」跳过学习格。先审阅，再单独运行。密钥仅在本机服务端配置。</p><p>学习格记录人工修改、模型生成和恢复版本；可查看任意两版的意图和源码差异。保存书本会带上全部记录。取消等待不能撤回提供方请求，可能仍会计费。浏览器不会自动保存，刷新前请下载保存。</p><p class="help-warning">本机服务不是安全沙箱。请审阅后再运行陌生代码。运行中的会话最多保留 262,144 字符的单格输出；大量输出会截断并显示提示。</p>
   </dialog>
 </body>
 </html>

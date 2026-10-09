@@ -425,7 +425,7 @@ class Compiler:
             receiver = self.expr(d['receiver'])
             if n.kind == 'index':
                 index = self.expr(d['index'])
-                out = self.temp(f'v_index({receiver}, {index}, {ln})')
+                out = self.temp(f'v_index({receiver}, {index}, {ln})', can_panic=True)
                 self.drop(receiver, index)
             else:
                 start = self.expr(d['start']) if d['start'] else self.temp('v_null()')
