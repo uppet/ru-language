@@ -12,7 +12,7 @@
 
 0.7.0 将形名称限定为类型用途，移除一等形值及普通形别名：`别名 取 学生.` 不再合法。类型注解、`新 学生`、`如 学生` 与 `尽` 导入仍可使用形名；实例、函数值和返回实例的工厂保持不变。跨模块覆写按声明模块解析后的类型身份检查。迁移示例见下方“形、对象、继承和方法”。同时新增非嵌套中文注释 `批.`、`解.…释.`；类型不匹配报告期望与实际类型，不再给出不存在的通用转换建议。
 
-0.6.0 新增真正的 AST → JavaScript 后端：`ru build --target js` 输出包含运行时和静态外言的独立 CommonJS 文件，通过 Node.js 18+ 运行。`ru generate --target js` 把意图先生成合规如源码，再本地编译为 JavaScript；仍逐次传输完整当前规范，不自动执行。语言语法及数值语义保持不变。
+0.6.0 新增真正的 AST → JavaScript 后端：`ru build --target js` 输出包含运行时和静态外言的独立 CommonJS 文件，通过 Node.js 18+ 运行。`ru generate --target js` 把意图先生成合规如源码，再本地编译为 JavaScript；仍逐次传输完整当前规范，默认不执行（显式 `--run` 除外）。语言语法及数值语义保持不变。
 
 默认生成的 C 会按实际依赖裁剪运行时，并保守地移除未引用的随附标准库声明；JavaScript 同样裁剪随附标准库声明和未引用的可选运行时区段。输出仍可读、独立，不做压缩或针对题目的改写。可用 `ru build --full-runtime` 保留完整运行时与已导入标准库，供诊断对比，详见下方命令说明。
 
@@ -637,7 +637,7 @@ python3 ru build examples/entry.ru -o bin/entry
 
 `examples/wish.md` 示范自由 Markdown 文档；Org 或其他 UTF-8 文本也可使用。最后一个非空行必须单独写 `如是我言`，且不能位于如的字符串内部。前面的文本作为生成意图，不要求预先符合如语法。为避免把多行源码字符串误当文档，引号需成对；两侧紧邻 ASCII 字母的单引号按英文词内撇号处理（如 `Don't`）。ASCII 函数名后直接贴字符串起始引号可能有歧义，源码应在两者之间加空格。
 
-仅显式执行 `ru generate` 会联网，将这份意图和当前语言规则发给配置的提供方。每次请求都会重新读取包内 [完整语言规范](rulang/language-spec.md)，明确要求按该规范生成，并把实际全文、规范版本和 SHA-256 放入模型上下文；不会仅发送私有仓库链接，也不依赖模型已经知道如。缺失、无效或版本不一致的规范会在联网前报错。`run`、`check`、`build` 与 REPL 遇到意图文档会提示先生成，始终不会代为联网。生成后也不会自动执行。
+仅显式执行 `ru generate` 会联网，将这份意图和当前语言规则发给配置的提供方。每次请求都会重新读取包内 [完整语言规范](rulang/language-spec.md)，明确要求按该规范生成，并把实际全文、规范版本和 SHA-256 放入模型上下文；不会仅发送私有仓库链接，也不依赖模型已经知道如。缺失、无效或版本不一致的规范会在联网前报错。`run`、`check`、`build` 与 REPL 遇到意图文档会提示先生成，始终不会代为联网。生成后默认不执行；仅显式追加 `--run` 才会在检查、保存成功后运行本次生成的程序。
 
 ### 配置与间接密钥文件
 
@@ -675,9 +675,17 @@ python3 ru generate examples/wish.md -o examples/wish.generated.ru
 
 ```sh
 python3 ru generate intent.md                  # 默认 intent.generated.ru
-python3 ru generate intent.md -o draft.ru --timeout 120
+python3 ru generate intent.md -o draft.ru --timeout 3600
 # 直接保存编译后的 JavaScript；不会另存中间 .ru：
 python3 ru generate intent.md --target js -o fresh.js
+# 只将验证完成的源码写入 stdout，诊断走 stderr；不会创建默认输出文件：
+python3 ru generate intent.md --stdout --verbose > stdout-draft.ru
+python3 ru generate intent.md --target js --stdout > stdout-fresh.js
+# 明确授权生成后立即运行，仅用于你愿意信任生成结果的场景：
+python3 ru generate intent.md -o run-fresh.ru --run
+# 明确替换已有产物；生成或验证失败时保留旧文件：
+python3 ru generate intent.md -o run-fresh.ru --force --run
+python3 ru generate intent.md --target js -o run-fresh.cjs --run
 python3 ru check draft.ru
 # 先阅读 draft.ru，确认其行为，再决定执行：
 python3 ru run draft.ru
@@ -686,16 +694,20 @@ python3 ru build draft.ru --target js -o dist/draft.js
 node dist/draft.js
 ```
 
-- 单次非流式 Responses 请求，无自动重试。默认超时 60 秒，可用 `--timeout` 设为大于 0、至多 300 秒；超时或取消后服务端可能已计费
+- `--verbose` 在 stderr 汇报读取、发送、等待、检查等真实阶段及累计耗时，等待时定期更新；非流式请求无法报告模型 token 进度或百分比。与 `--stdout` 同用时，标准输出仍只含检查后的源码；与 `--run` 同用时，标准输出为程序输出。通讯失败区分 TLS 证书、TLS 连接、HTTP 状态、超时、连接失败和响应中断；不会记录密钥、认证头或原始请求／响应正文。
+- 单次非流式 Responses 请求，无自动重试。默认连接／读取超时 1800 秒（半小时），可用 `--timeout 秒数` 覆盖（如 3600）；接受有限正数，无固定 300 秒上限；超时或取消后服务端可能已计费
 - 不启用模型工具，忽略 reasoning 内容，只提取完成的 assistant 文本；工具调用、拒绝、错误、空输出、未完成 / 取消响应都不会执行或保存
 - 接受纯源码，或恰好一段完整的 Markdown / Org 如代码围栏；混合说明、多段或残缺围栏拒绝
-- 输出先通过 lexer / parser、结构及显式调用检查，包括已有本地外言依赖。不会执行源码或导入模块的顶层语句；这不是静态证明或安全审计
-- 默认 `--target ru` 保存新的 `.ru`，默认 `原名.generated.ru`；`--target js` 保存新的 `.js` / `.cjs`，默认 `原名.generated.js`。父目录须已存在；输出、原文、符号链接和依赖都不能覆盖。完整内容验证并同步后原子发布，不自动创建目录
-- JavaScript 目标仍只向模型索取如源码，再由本地编译器降为 JavaScript；不增加第二次模型请求、不调用 Node、不执行，也不保存中间 `.ru`。需要审阅和保留如源码时使用上面的两步生成 / 编译流程
-- 外言相对最终输出路径所在目录解析；JavaScript 将已检查的静态依赖内联。编译失败不留下半份输出
+- 输出先通过 lexer / parser、结构及显式调用检查，包括已有本地外言依赖。检查阶段不会执行源码或导入模块的顶层语句；这不是静态证明或安全审计
+- 默认 `--target ru` 保存新的 `.ru`，默认 `原名.generated.ru`；`--target js` 保存新的 `.js` / `.cjs`，默认 `原名.generated.js`。父目录须已存在；默认拒绝覆盖已有输出。`--force` 仅允许替换普通输出文件，仍拒绝意图本身、与意图或依赖同 inode 的文件、符号链接、目录与特殊文件。完整内容验证并同步后原子发布，不自动创建目录
+- JavaScript 目标仍只向模型索取如源码，再由本地编译器降为 JavaScript；不增加第二次模型请求，也不保存中间 `.ru`；默认不调用 Node 或执行，只有 `--run` 才通过 Node 运行已保存的 JavaScript。需要审阅和保留如源码时使用上面的两步生成 / 编译流程
+- `--stdout` 与 `-o` / `--output`、`--run`、`--force` 互斥，冲突会在读取配置、联网前拒绝。输出完整验证后才写入 stdout，失败不会输出部分源码。重定向由 shell 管理，可能提前创建或截断目标文件，请自行选择新路径；生成命令本身不执行源码，管道另一端的行为由用户选择。
+- `--force` 可与 `-o`、`--run` 组合；旧产物直到新结果完整验证并写入临时文件、同步成功后才原子替换。请求、验证或编译失败保留旧文件；显式运行只运行本次成功发布的文件，失败生成不会退回运行旧产物。
+- `--run` 明确选择跳过人工审阅：验证、保存成功后运行本次文件，Ru 使用正常 `ru run` 语义，JS 使用 Node（缺少 Node 时在联网前拒绝），标准输入／输出／错误保持交互可用，退出码反映运行结果；生成提示写 stderr。运行失败仍保留生成文件，不自动重试模型。源码检查不是安全审计或沙箱，执行具有当前用户权限；如书仍只在手动点击运行后执行。
+- `--stdout` 的外言相对意图文档所在目录解析，与 shell 的重定向位置无关；文件模式的外言相对最终输出路径所在目录解析；JavaScript 将已检查的静态依赖内联。编译失败不留下半份输出
 - 响应上限 2 MiB，意图 / 生成源码上限 1 MiB；配置和密钥文件也有读取上限
 - 不回显密钥、请求认证头、提供方原始错误正文或无效生成源码；发现意图、返回源码或输出路径含当前密钥也会拒绝处理
-- 生成源码可能调用文件写入 / 删除等真实操作，必须先审阅；生成成功不代表程序正确或安全
+- 生成源码可能调用文件写入 / 删除等真实操作，建议先审阅，仅在愿意承担这些风险时使用 `--run`；生成成功不代表程序正确或安全
 
 提供方依据：[BigModel OpenAI 兼容说明](https://docs.bigmodel.cn/cn/guide/develop/openai/introduction)、[Responses 指南](https://docs.bigmodel.cn/cn/guide/develop/responses/introduction)、[GLM-5.3-Flash](https://docs.bigmodel.cn/cn/guide/models/vlm/glm-5.3-flash)。本实现不强制关闭该模型的 thinking。**协议模拟通过不等于真实 GLM 端点、账号权限或模型兼容性已验证**；本轮未使用真实提供方凭据，也未发出真实 GLM 请求。
 

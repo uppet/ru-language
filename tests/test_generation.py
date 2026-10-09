@@ -477,6 +477,94 @@ class LocalResponsesTests(TemporaryGeneration):
         self.assertIn("未执行", result.stdout)
         self.assertEqual(result.stderr, "")
 
+    def test_timeout_default_and_override_reach_transport(self):
+        from rulang.generation import DEFAULT_TIMEOUT
+        self.assertEqual(DEFAULT_TIMEOUT, 1800)
+        for arguments, expected in (([], 1800), (["--timeout", "3600"], 3600)):
+            with MockResponses() as server:
+                # Wrap the actual local opener to verify its socket timeout.
+                from urllib.request import OpenerDirector
+                real_open = OpenerDirector.open
+                calls = []
+                def record(opener, request, *args, **kwargs):
+                    calls.append(kwargs["timeout"])
+                    return real_open(opener, request, *args, **kwargs)
+                with patch.object(OpenerDirector, "open", record):
+                    env = self.local_env(server)
+                    with patch.dict(os.environ, env, clear=True), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                        self.assertEqual(main(["generate", str(self.document), "--stdout", *arguments]), 0)
+                self.assertEqual(calls, [expected])
+
+    def test_stdout_pipeline_ru_and_js_no_files_no_execution(self):
+        # The default path may already exist: stdout must neither inspect nor overwrite it.
+        for target in ("ru", "js"):
+            sentinel = self.root / ("wish.generated." + target)
+            sentinel.write_text("keep", encoding="utf-8")
+            (self.root / "lib.ru").write_text("显 1/0. 值 取 2.", encoding="utf-8")
+            code = "模 取 外言 'lib.ru'. 显 模 其 值. 显 1/0."
+            before = set(self.root.iterdir())
+            with MockResponses(response_for(code)) as server:
+                result = subprocess.run([sys.executable, ROOT / "ru", "generate", self.document,
+                                         "--stdout", "--target", target], env=self.local_env(server),
+                                        text=True, capture_output=True, timeout=15)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            if target == "ru":
+                self.assertEqual(result.stdout, code + "\n")
+            else:
+                self.assertIn("use strict", result.stdout)
+                self.assertNotIn("已生成", result.stdout)
+            self.assertIn("未执行", result.stderr)
+            self.assertEqual(sentinel.read_text(), "keep")
+            self.assertEqual(set(self.root.iterdir()), before)
+            self.assertEqual(len(server.requests), 1)
+
+    def test_stdout_ignores_default_output_symlink_when_resolving_imports(self):
+        elsewhere = self.root / "elsewhere"
+        elsewhere.mkdir()
+        (self.root / "lib.ru").write_text("值 取 2.", encoding="utf-8")
+        (self.root / "wish.generated.ru").symlink_to(elsewhere / "other.ru")
+        with MockResponses(response_for("模 取 外言 'lib.ru'. 显 模 其 值.")) as server:
+            source = generate(self.document, environ=self.local_env(server), stdout=True)
+        self.assertIn("显 模 其 值", source)
+        self.assertFalse((elsewhere / "other.ru").exists())
+
+    def test_stdout_conflicting_destination_before_config_or_network(self):
+        with patch("rulang.generation.load_config", side_effect=AssertionError("config")), patch("rulang.generation.request_response", side_effect=AssertionError("network")):
+            with self.assertRaises(GenerationError):
+                generate(self.document, self.root / "out.ru", stdout=True)
+            for args in (("--stdout", "-o", "out.ru"), ("--output", "out.js", "--stdout", "--target", "js")):
+                with contextlib.redirect_stderr(io.StringIO()) as stderr, self.assertRaises(SystemExit) as error:
+                    main(["generate", str(self.document), *args])
+                self.assertEqual(error.exception.code, 2)
+                self.assertIn("--stdout", stderr.getvalue())
+
+    def test_stdout_failure_has_no_partial_source_or_output_file(self):
+        for code in ("显 ).", "模 取 外言 'missing.ru'.", "显 '" + DUMMY + "'."):
+            with MockResponses(response_for(code)) as server:
+                with patch.dict(os.environ, self.local_env(server), clear=True), contextlib.redirect_stdout(io.StringIO()) as stdout, contextlib.redirect_stderr(io.StringIO()) as stderr:
+                    self.assertEqual(main(["generate", str(self.document), "--stdout"]), 1)
+                self.assertEqual(stdout.getvalue(), "")
+                self.assertNotIn(DUMMY, stderr.getvalue())
+            self.assertFalse((self.root / "wish.generated.ru").exists())
+
+    def test_force_cli_replaces_then_runs_and_keeps_program_stdout_clean(self):
+        output = self.root / "out.ru"
+        output.write_text("显 'old'.", encoding="utf-8")
+        with MockResponses(response_for("显 'new'.")) as server:
+            with patch.dict(os.environ, self.local_env(server), clear=True), contextlib.redirect_stdout(io.StringIO()) as stdout, contextlib.redirect_stderr(io.StringIO()) as stderr:
+                self.assertEqual(main(["generate", str(self.document), "-o", str(output), "--force", "--run"]), 0)
+            self.assertEqual(len(server.requests), 1)
+        self.assertEqual(stdout.getvalue(), "new\n")
+        self.assertIn("正在运行", stderr.getvalue())
+        self.assertEqual(output.read_text(encoding="utf-8"), "显 'new'.\n")
+
+    def test_force_stdout_conflict_precedes_generation(self):
+        with patch("rulang.cli.generate", side_effect=AssertionError("generation")):
+            with contextlib.redirect_stderr(io.StringIO()) as stderr, self.assertRaises(SystemExit) as error:
+                main(["generate", str(self.document), "--force", "--stdout"])
+        self.assertEqual(error.exception.code, 2)
+        self.assertIn("--force", stderr.getvalue())
+
     def test_output_collision_source_symlink_dependency_before_network(self):
         dependency = self.root / "dependency.ru"
         dependency.write_text("显 '保留'.", encoding="utf-8")
@@ -554,7 +642,7 @@ class LocalResponsesTests(TemporaryGeneration):
 
     def test_invalid_timeout_never_requests(self):
         with MockResponses() as server:
-            for timeout in (0, -1, 301, float("nan"), float("inf")):
+            for timeout in (0, -1, True, "3600", float("nan"), float("inf"), -float("inf")):
                 with self.subTest(timeout=timeout), self.assertRaises(GenerationError):
                     generate(self.document, timeout=timeout, environ=self.local_env(server))
             self.assertEqual(server.requests, [])

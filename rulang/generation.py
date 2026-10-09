@@ -14,6 +14,8 @@ import math
 import os
 from pathlib import Path
 import re
+import ssl
+import stat
 import tempfile
 from urllib import error as urlerror, parse as urlparse, request as urlrequest
 
@@ -31,7 +33,7 @@ MAX_KEY_BYTES = 16 * 1024
 MAX_DOCUMENT_BYTES = 1024 * 1024
 MAX_LANGUAGE_SPEC_BYTES = 1024 * 1024
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
-DEFAULT_TIMEOUT = 60.0
+DEFAULT_TIMEOUT = 1800.0
 
 SYSTEM_PROMPT = """你把用户的意图文档转换为「如」语言当前版本的源码。
 必须完整参考并严格遵守本次请求随附的权威《如语言规范》全文；只使用该规范定义的语法和语义。
@@ -44,10 +46,37 @@ SYSTEM_PROMPT = """你把用户的意图文档转换为「如」语言当前版�
 
 class GenerationError(RuError):
     """A diagnostic that is safe to display without source or config contents."""
-    def __init__(self, message, category="生成错误", line=1, col=1):
+    def __init__(self, message, category="生成错误", line=1, col=1, *, code=None, status=None):
         super().__init__(message, line, col, category)
         self.suppress_source = True
         self.source_name = "<生成>"
+        self.code = code
+        self.status = status
+
+
+def generation_diagnostic(error):
+    """Allowlisted notebook diagnostics: never stringify provider exceptions."""
+    messages = {
+        "tls_certificate": "TLS 证书验证失败；请检查系统证书与代理信任配置，不要关闭证书验证。",
+        "tls": "TLS 安全连接失败；请检查提供方及本机 TLS 配置。",
+        "timeout": "Responses 请求连接或读取超时；可以增加生成等待秒数。",
+        "connection": "Responses 请求连接失败；请检查网络与提供方地址。",
+        "response_interrupted": "Responses 响应传输中断；没有完整生成结果。",
+        "timeout_range": "当前系统无法使用该超时数值；请设置较小的有限正数。",
+    }
+    if error.code == "http":
+        status = error.status
+        message = f"Responses 请求失败（HTTP {status}）。" if type(status) is int and 100 <= status <= 599 else "Responses 请求失败（HTTP 错误）。"
+    else:
+        message = messages.get(error.code, "生成请求失败或结果无效；请检查提示、提供方权限及额度。")
+    return message + "未自动重试，提供方可能已经计费；未保存或执行。"
+
+
+def _communication_error(code, status=None):
+    error = GenerationError("", "生成通讯错误", code=code, status=status)
+    error.message = generation_diagnostic(error)
+    error.args = (error.message,)
+    return error
 
 
 @dataclass(frozen=True)
@@ -217,11 +246,11 @@ class _NoRedirect(urlrequest.HTTPRedirectHandler):
         raise GenerationError("提供方返回重定向；为保护密钥已停止，未自动重试")
 
 
-def request_response(config, intent, timeout=DEFAULT_TIMEOUT):
+def request_response(config, intent, timeout=DEFAULT_TIMEOUT, progress=None):
     """Make exactly one bounded non-streaming Responses request; never run tools."""
     endpoint = responses_url(config)
-    if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or not math.isfinite(timeout) or not 0 < timeout <= 300:
-        raise GenerationError("超时应为大于 0 且不超过 300 的秒数", "生成配置错误")
+    if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or not math.isfinite(timeout) or not timeout > 0:
+        raise GenerationError("超时应为有限且大于 0 的秒数", "生成配置错误")
     if config.api_key in intent:
         raise GenerationError("意图文档含有已配置密钥，已停止发送；请先移除密钥")
     system_prompt = _generation_system_prompt()
@@ -251,10 +280,15 @@ def request_response(config, intent, timeout=DEFAULT_TIMEOUT):
         if endpoint.startswith("http:"):
             handlers.append(urlrequest.ProxyHandler({}))
         opener = urlrequest.build_opener(*handlers)
+        if progress:
+            progress("发送生成请求")
+            progress("等待提供方响应")
         with opener.open(request, timeout=timeout) as response:
             if response.status != 200:
-                raise GenerationError("提供方未返回成功响应；未自动重试")
+                raise _communication_error("http", response.status)
             raw = response.read(MAX_RESPONSE_BYTES + 1)
+        if progress:
+            progress("收到提供方响应")
         if len(raw) > MAX_RESPONSE_BYTES:
             raise GenerationError("提供方响应超过大小上限；未保存或执行")
         try:
@@ -268,9 +302,27 @@ def request_response(config, intent, timeout=DEFAULT_TIMEOUT):
         status = exc.code if isinstance(exc.code, int) else 0
         exc.close()
         # Never expose response bodies, URL, headers, reason or exception repr.
-        raise GenerationError(f"Responses 请求失败（HTTP {status}）；未自动重试，请检查提供方、权限、额度或稍后手动重试") from None
-    except (TimeoutError, urlerror.URLError, OSError, http.client.HTTPException, ValueError, UnicodeError):
-        raise GenerationError("Responses 请求连接失败、超时或响应中断；未自动重试，服务端可能已经计费") from None
+        raise _communication_error("http", status) from None
+    except ssl.SSLCertVerificationError:
+        raise _communication_error("tls_certificate") from None
+    except ssl.SSLError:
+        raise _communication_error("tls") from None
+    except urlerror.URLError as exc:
+        reason = exc.reason
+        code = ("tls_certificate" if isinstance(reason, ssl.SSLCertVerificationError)
+                else "tls" if isinstance(reason, ssl.SSLError)
+                else "timeout" if isinstance(reason, TimeoutError)
+                else "connection")
+        raise _communication_error(code) from None
+    except TimeoutError:
+        raise _communication_error("timeout") from None
+    except (http.client.HTTPException, ConnectionResetError, ConnectionAbortedError):
+        raise _communication_error("response_interrupted") from None
+    except OverflowError:
+        raise _communication_error("timeout_range") from None
+    except (OSError, ValueError, UnicodeError):
+        raise _communication_error("connection") from None
+
 
 
 def extract_output_text(response):
@@ -331,10 +383,7 @@ def clean_generated_source(text):
     return source + "\n"
 
 
-def _unused_destination(path, document, target="ru"):
-    # lexists detects broken symlinks too; never replace even an existing output.
-    if path == document or os.path.lexists(path):
-        raise GenerationError(f"输出路径已存在或与意图文档相同；请选择新的 .{target} 路径，不能覆盖源文件或依赖")
+def _destination_format(path, target):
     extensions = (".js", ".cjs") if target == "js" else (".ru",)
     if path.suffix.lower() not in extensions:
         raise GenerationError("生成输出路径须使用 " + " 或 ".join(extensions) + " 扩展名")
@@ -342,34 +391,89 @@ def _unused_destination(path, document, target="ru"):
         raise GenerationError("生成输出目录不存在；请先创建目录")
 
 
-def generate(document, output=None, timeout=DEFAULT_TIMEOUT, environ=None, target="ru"):
-    """Generate Ru, statically check, and publish a new Ru or JavaScript file.
+def _unused_destination(path, document, target="ru"):
+    # lexists detects broken symlinks too; never replace even an existing output.
+    if path == document or os.path.lexists(path):
+        raise GenerationError(f"输出路径已存在或与意图文档相同；请选择新的 .{target} 路径，不能覆盖源文件或依赖")
+    _destination_format(path, target)
 
-    Existing files are never replaced. Validation resolves local imports without
-    executing them; generated text and raw provider errors never reach diagnostics.
+
+def _file_identity(status):
+    return status.st_dev, status.st_ino
+
+
+def _replaceable_destination(path, protected_paths, protected_identities, target):
+    """Permit only a regular artifact, never an input, dependency, or symlink.
+
+    Check both current identities and identities captured before the request or
+    after graph loading. This also protects hard links if a protected pathname
+    changes while generation is in progress. lstat never follows the output.
+    """
+    if path in protected_paths:
+        raise GenerationError("不能覆盖意图文档或本地依赖；请为生成产物选择其他路径")
+    _destination_format(path, target)
+    try:
+        status = path.lstat()
+    except FileNotFoundError:
+        return
+    if not stat.S_ISREG(status.st_mode):
+        raise GenerationError("--force 只允许替换普通产物文件，不能覆盖符号链接、目录或特殊文件")
+    identity = _file_identity(status)
+    if (identity in protected_identities
+            or any(identity == _file_identity(protected.stat()) for protected in protected_paths)):
+        raise GenerationError("不能覆盖意图文档或本地依赖的硬链接；请为生成产物选择其他路径")
+
+
+def generate(document, output=None, timeout=DEFAULT_TIMEOUT, environ=None, target="ru", stdout=False, progress=None, force=False):
+    """Generate Ru, statically check, and atomically publish Ru or JavaScript.
+
+    Existing regular artifacts are replaced only with force=True, after all
+    checks succeed; input documents, dependencies and symlinks stay protected.
+    Validation resolves local imports without executing them; generated text and
+    raw provider errors never reach diagnostics.
     A JS target lowers the checked Ru locally, with no additional model request,
     Node invocation or intermediate .ru file. Its imports are relative to the
     output file's directory, just as they are for ordinary Ru generation.
+    stdout=True returns the fully checked artifact without creating any file;
+    local imports then resolve relative to the intent document's directory.
     """
     if target not in ("ru", "js"):
         raise GenerationError("生成目标须为 ru 或 js", "生成配置错误")
+    if stdout and output is not None:
+        raise GenerationError("--stdout 不能与 -o / --output 同时使用", "生成配置错误")
+    if stdout and force:
+        raise GenerationError("--stdout 不能与 --force 同时使用", "生成配置错误")
     temporary = None
+    temporary_fd = None
     try:
+        if progress:
+            progress("读取意图文档")
         document = Path(document).expanduser().resolve()
         text = _read_bounded(document, MAX_DOCUMENT_BYTES, "无法读取 UTF-8 意图文档")
         intent = generation_intent(text)
         if intent is None or not intent.strip():
             raise GenerationError("意图文档最后一个非空行必须单独写「如是我言」，且标记不在源码字符串中", "生成输入错误")
-        destination = Path(output).expanduser().absolute() if output else document.with_suffix(".generated." + target)
+        destination = (document if stdout else
+                       Path(output).expanduser().absolute() if output else document.with_suffix(".generated." + target))
         # Do not resolve the destination itself: that would follow broken symlinks.
         destination = destination.parent.resolve() / destination.name
-        _unused_destination(destination, document, target)
+        protected_paths = {document}
+        protected_identities = {_file_identity(document.stat())} if force else set()
+        if not stdout:
+            if force:
+                _replaceable_destination(destination, protected_paths, protected_identities, target)
+            else:
+                _unused_destination(destination, document, target)
+        if progress:
+            progress("检查生成配置")
         config = load_config(environ)
         if config.api_key in str(destination):
             raise GenerationError("输出路径含有已配置密钥，已停止生成")
-        generated = request_response(config, intent, timeout)
+        generated = request_response(config, intent, timeout, **({"progress": progress} if progress else {}))
         if config.api_key in generated:
             raise GenerationError("提供方输出含有已配置密钥，已拒绝保存")
+        if progress:
+            progress("检查生成源码")
         source = clean_generated_source(generated)
         try:
             program = parse(source)
@@ -377,6 +481,11 @@ def generate(document, output=None, timeout=DEFAULT_TIMEOUT, environ=None, targe
                 raise GenerationError("生成结果没有任何语句")
             validate(program)
             modules = load_module_graph(destination, program)
+            if force:
+                dependencies = {Path(path) for path in modules if path != modules.root}
+                protected_paths.update(dependencies)
+                protected_identities.update(_file_identity(path.stat()) for path in dependencies)
+                _replaceable_destination(destination, protected_paths, protected_identities, target)
             # Same non-executing call and declaration checks as ru check.
             Compiler(program, str(destination), modules=modules).compile()
             artifact = source
@@ -392,21 +501,43 @@ def generate(document, output=None, timeout=DEFAULT_TIMEOUT, environ=None, targe
             raise GenerationError("生成源码或本地依赖未通过语法／结构检查；未保存或执行", line=exc.line, col=exc.col) from None
         except RecursionError:
             raise GenerationError("生成源码结构过深；未保存或执行") from None
-        _unused_destination(destination, document, target)
-        fd, temporary = tempfile.mkstemp(prefix=".ru-generate-", suffix=".tmp", dir=destination.parent)
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
+        if progress:
+            progress("生成源码检查完成")
+        if stdout:
+            return artifact
+        if force:
+            _replaceable_destination(destination, protected_paths, protected_identities, target)
+        else:
+            _unused_destination(destination, document, target)
+        if progress:
+            progress("发布生成文件")
+        temporary_fd, temporary = tempfile.mkstemp(prefix=".ru-generate-", suffix=".tmp", dir=destination.parent)
+        stream = os.fdopen(temporary_fd, "w", encoding="utf-8", newline="\n")
+        temporary_fd = None  # The stream owns the descriptor from this point.
+        with stream:
             stream.write(artifact)
             stream.flush()
             os.fsync(stream.fileno())
-        # A hard link publishes an already complete file and fails if another
-        # process created the destination since our check. os.replace would not.
-        os.link(temporary, destination)
+        if force:
+            # Recheck after callbacks and temporary-file I/O, immediately before
+            # replacing the directory entry. Never truncate the existing file.
+            _replaceable_destination(destination, protected_paths, protected_identities, target)
+            os.replace(temporary, destination)
+        else:
+            # A hard link publishes an already complete file and fails if another
+            # process created the destination since our check. os.replace would not.
+            os.link(temporary, destination)
         return destination
     except GenerationError:
         raise
     except (OSError, UnicodeError, ValueError, RuntimeError):
         raise GenerationError("读取、验证或保存生成文件失败；未覆盖已有文件，未执行代码") from None
     finally:
+        if temporary_fd is not None:
+            try:
+                os.close(temporary_fd)
+            except OSError:
+                pass
         if temporary is not None:
             try:
                 os.unlink(temporary)

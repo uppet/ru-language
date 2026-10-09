@@ -154,13 +154,25 @@ function buildGenerationPanel(cell,view){
   const save=button('记下手动修改','把当前意图和源码保存为一个人工版本',()=>{try{checkpoint(cell);markDirty();renderHistory(cell);generationStatus(cell,'手动修改已记入版本历史。');}catch(error){notice(error.message,true,true);}});save.dataset.mutates='true';
   view.generate=generate;view.cancelGeneration=cancel;cancel.hidden=true;const branch=button('另起学习格','保留这格全部历史，把当前意图和草稿复制到新格继续学习',()=>{if(busy()||book.cells.length>=MAX_CELLS)return;const next=newCell('code',cell.source);ensureGeneration(next,cell.generation.prompt);book.cells.splice(book.cells.indexOf(cell)+1,0,next);renderBook();markDirty();focusCell(next);});branch.dataset.mutates='true';controls.append(generate,cancel,save,branch);
   view.provider=el('p','generation-disclosure','正在读取服务端生成配置…');view.generationStatus=el('p','generation-status','生成后先审阅源码，再单独点击本格「运行」。全部运行会跳过学习格。');view.generationStatus.setAttribute('role','status');
-  panel.append(label,prompt,controls,view.provider,view.generationStatus,el('div','draft-label','当前如源码草稿 · 可直接修改'));
+  const diagnostics=el('details','generation-diagnostics generation-disclosure');
+  view.generationDiagnostic=el('p','','尚未开始生成。');
+  diagnostics.append(el('summary','','生成诊断'),view.generationDiagnostic,el('p','','仅显示本机可观察到的阶段和耗时；等待期间无法知道模型的 token 进度。不记录意图、源码、凭据或提供方响应原文。'));
+  panel.append(label,prompt,controls,view.provider,view.generationStatus,diagnostics,el('div','draft-label','当前如源码草稿 · 可直接修改'));
   // This is only a local configuration read, never a provider request.
   queueMicrotask(()=>loadProvider(view));return panel;
 }
+function generationDiagnostic(request,phase=request.diagnosticPhase){
+  if(generationRequest!==request)return;
+  request.diagnosticPhase=phase;
+  const node=views.get(request.cell.id)?.generationDiagnostic;if(!node)return;
+  const elapsed=request.sentAt==null?'':` · 请求已用时 ${Math.max(0,Math.floor((performance.now()-request.sentAt)/1000))} 秒`;
+  node.textContent=phase+elapsed;
+}
 function cancelGeneration(announce=true){
   const pending=generationRequest;if(!pending)return;
-  generationRequest=null;pending.controller.abort();clearTimeout(pending.timer);refreshControls();
+  generationDiagnostic(pending,pending.sentAt==null?'已取消，未发送生成请求。':'已取消页面等待；提供方请求状态未知。');
+  clearInterval(pending.elapsedTimer);
+  generationRequest=null;pending.controller.abort();refreshControls();
   generationStatus(pending.cell,'已取消等待，编辑内容未被替换。提供方可能仍在处理或计费；本机服务在请求结束前会拒绝新的生成。');
   if(announce)notice('已取消等待并丢弃后续结果。提供方可能仍在处理或计费，请勿连续重试。',false,true);
 }
@@ -177,18 +189,24 @@ async function generateCell(cell){
   }catch(error){notice(error.message,true,true);return;}
   const request={cell,book:owner,epoch,prompt:cell.generation.prompt,source:cell.source,controller:new AbortController()};
   generationRequest=request;refreshControls();generationStatus(cell,'正在生成新版本…你可以继续编辑；若内容改变，返回结果不会覆盖它。');
-  request.timer=setTimeout(()=>{if(generationRequest===request)cancelGeneration();},75000);
+  generationDiagnostic(request,'正在读取本机生成配置，尚未发送生成请求。');
+  // The server owns the configurable generation deadline. Abort only when the
+  // user cancels or changes books/sessions, never through a shorter page timer.
   try{
     // Re-read configuration before every request; the service enforces it too.
     const config=await api('/generation/config');providerInfo=config;
     if(generationRequest!==request)return;
     if(!config.configured)throw new Error(config.message+'。请在启动如书的终端配置，勿把密钥写入书本。');
-    if(!confirm(`发送给 ${config.provider_host}？\n\n仅发送本格意图（${request.prompt.length} 字符）、当前源码草稿（${request.source.length} 字符）和完整如语言规范。可能按提供方计费。\n\n生成结果只供审阅，不自动运行。`)){generationStatus(cell,'已取消发送。当前编辑和版本记录保留。');return;}
+    if(!confirm(`发送给 ${config.provider_host}？\n\n仅发送本格意图（${request.prompt.length} 字符）、当前源码草稿（${request.source.length} 字符）和完整如语言规范。可能按提供方计费。\n\n生成结果只供审阅，不自动运行。`)){generationStatus(cell,'已取消发送。当前编辑和版本记录保留。');generationDiagnostic(request,'已取消确认，未发送生成请求。');return;}
+    request.sentAt=performance.now();
+    generationDiagnostic(request,'正在请求生成并等待本机服务返回。');
+    request.elapsedTimer=setInterval(()=>generationDiagnostic(request),1000);
     const response=await fetch('/api/generate',{method:'POST',headers:{'X-Rushu-Token':token,'Content-Type':'application/json'},body:JSON.stringify({prompt:request.prompt,draft:request.source}),signal:request.controller.signal,cache:'no-store',credentials:'same-origin'});
+    generationDiagnostic(request,'已收到本机服务响应，正在读取生成结果。');
     let result;try{result=await response.json();}catch{throw new Error('本机服务返回了无法读取的生成响应；没有替换草稿。');}
     if(!response.ok)throw new Error(result.error||'生成请求失败，草稿未改变。');
     if(generationRequest!==request||book!==owner||epoch!==request.epoch||!book.cells.includes(cell))return;
-    if(cell.source!==request.source||cell.generation.prompt!==request.prompt){generationStatus(cell,'生成期间有新的编辑，已丢弃过期结果。当前编辑未被覆盖，请重新生成。',true);return;}
+    if(cell.source!==request.source||cell.generation.prompt!==request.prompt){generationStatus(cell,'生成期间有新的编辑，已丢弃过期结果。当前编辑未被覆盖，请重新生成。',true);generationDiagnostic(request,'已收到结果；因编辑改变，结果已丢弃。');return;}
     if(typeof result.source!=='string'||result.source.length>MAX_SOURCE)throw new Error('生成源码超过本格上限或响应无效；草稿未替换。');
     const candidate={...cell,generation:structuredClone(cell.generation)};
     replaceWithRevision(candidate,{source:result.source,prompt:request.prompt,kind:'model'});
@@ -197,8 +215,9 @@ async function generateCell(cell){
     cell.source=candidate.source;cell.generation=candidate.generation;cell.stale=!!(cell.execution_count||cell.outputs.length);markDirty();
     const currentView=views.get(cell.id);if(currentView){currentView.input.value=cell.source;currentView.renderEditor();}renderOutput(cell);renderHistory(cell);
     generationStatus(cell,result.valid?'新版本已加入历史。语法／结构检查通过；未检查外言依赖，未执行。请审阅后单独运行。':`新版本已加入历史，但尚未通过语法／结构检查：${result.validation?.message||'请检查源码'}。未执行。`,!result.valid);
-  }catch(error){if(generationRequest===request){generationStatus(cell,error.name==='AbortError'?'等待已取消，当前编辑保留。':error.message,true);notice(error.name==='AbortError'?'已取消生成等待。':error.message,true,true);}}
-  finally{clearTimeout(request.timer);if(generationRequest===request){generationRequest=null;refreshControls();}}
+    generationDiagnostic(request,result.valid?'生成结果已加入历史；服务端语法／结构检查通过，未执行。':'生成结果已加入历史；服务端语法／结构检查未通过，未执行。');
+  }catch(error){if(generationRequest===request){generationDiagnostic(request,error.name==='AbortError'?'等待已取消，当前编辑保留。':'生成未完成：'+error.message);generationStatus(cell,error.name==='AbortError'?'等待已取消，当前编辑保留。':error.message,true);notice(error.name==='AbortError'?'已取消生成等待。':error.message,true,true);}}
+  finally{clearInterval(request.elapsedTimer);if(generationRequest===request){generationRequest=null;refreshControls();}}
 }
 function buildHistory(cell,view){
   const details=el('details','generation-history'),summary=el('summary','','版本历史与变化'),body=el('div','history-body');

@@ -1,20 +1,28 @@
 """Explicit notebook generation, isolated from sessions and filesystem imports."""
+import math
 import threading
 from urllib.parse import urlsplit
 
 from rulang.frontend import RuError, parse, validate
-from rulang.generation import (GenerationError, clean_generated_source, load_config,
-                               request_response)
+from rulang.generation import (DEFAULT_TIMEOUT, GenerationError,
+                               clean_generated_source, generation_diagnostic,
+                               load_config, request_response)
 from rulang.modules import generation_intent
 
 from .kernel import KernelError, MAX_SOURCE
 
-GENERATION_TIMEOUT = 60.0
 # Process-wide, including separate NotebookServer instances. The worker retains
 # this lock after a client disconnect or response deadline until the paid call
 # actually finishes. Browser cancellation cannot start a duplicate paid request.
 _GENERATION_SLOT = threading.Lock()
 CONFIG_HELP = "请在启动如书前配置 RU_LLM_API_KEY 或 RU_LLM_API_KEY_FILE，或 ~/.ru-lang.json 的 api-key，并检查提供方配置。"
+
+
+def validate_generation_timeout(timeout):
+    if (not isinstance(timeout, (int, float)) or isinstance(timeout, bool)
+            or not math.isfinite(timeout) or timeout <= 0):
+        raise ValueError("生成超时须为有限且大于 0 的秒数")
+    return timeout
 
 
 def _host(config):
@@ -46,7 +54,8 @@ def _validate(source):
         return {"valid": False, "message": "生成源码结构过深，无法完成检查；尚未执行。"}
 
 
-def generate_source(body):
+def generate_source(body, timeout=DEFAULT_TIMEOUT):
+    timeout = validate_generation_timeout(timeout)
     if set(body) - {"prompt", "draft"}:
         raise KernelError("生成请求只接受 prompt 与可选 draft")
     prompt, draft = body.get("prompt"), body.get("draft", "")
@@ -73,7 +82,7 @@ def generate_source(body):
             # request_response supplies the exact packaged specification/hash,
             # token cap, no-tool policy and credential-input checks.
             try:
-                generated = request_response(config, selected, timeout=GENERATION_TIMEOUT)
+                generated = request_response(config, selected, timeout=timeout)
                 if not isinstance(generated, str) or config.api_key in generated:
                     raise KernelError("提供方输出无效或含有密钥，已拒绝返回。", 502)
                 if len(generated) > MAX_SOURCE:
@@ -82,8 +91,10 @@ def generate_source(body):
                 if len(source) > MAX_SOURCE:
                     raise KernelError("生成源码超过 200000 字符上限；未保存或执行。", 502)
                 validation = _validate(source)
-            except GenerationError:
-                raise KernelError("生成请求失败或结果无效；请检查提示、提供方权限及额度后手动重试。未自动重试，提供方可能已经计费。", 502) from None
+            except GenerationError as error:
+                # Only allowlisted categories are exposed, never arbitrary
+                # provider exception text, response bodies or credentials.
+                raise KernelError(generation_diagnostic(error), 502) from None
             result["value"] = {"source": source, "valid": validation["valid"],
                                "validation": validation, "provider_host": _host(config)}
         except KernelError as error:
@@ -100,7 +111,13 @@ def generate_source(body):
     except Exception:
         _GENERATION_SLOT.release()
         raise KernelError("无法启动生成请求；请稍后手动重试。", 503) from None
-    if not finished.wait(GENERATION_TIMEOUT):
+    try:
+        completed = finished.wait(timeout)
+    except OverflowError:
+        # Some platforms cannot represent extremely large finite timeouts.
+        # The worker still owns the process-wide slot until its request ends.
+        raise KernelError(generation_diagnostic(GenerationError("", code="timeout_range")), 502) from None
+    if not completed:
         raise KernelError("生成等待已超时；提供方可能仍在处理并计费，当前请求结束前不能再次生成。", 504)
     if "error" in result:
         raise result["error"]

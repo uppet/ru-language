@@ -1,0 +1,48 @@
+"""Safe transport diagnostics and genuine stage signals, with no live requests."""
+import http.client
+import io
+import ssl
+import unittest
+from unittest.mock import MagicMock, patch
+from urllib import error as urlerror
+
+from rulang.generation import GenerationConfig, GenerationError, generation_diagnostic, request_response
+from test_generation import MockResponses, response_for
+
+
+class TransportDiagnosticsTests(unittest.TestCase):
+    def test_errors_are_classified_without_sensitive_details_or_retry(self):
+        config = GenerationConfig("fake-secret", "https://provider.example/private", "model")
+        cert = ssl.SSLCertVerificationError(1, "SECRET CERTIFICATE_VERIFY_FAILED")
+        cases = [(cert, "tls_certificate"), (urlerror.URLError(cert), "tls_certificate"),
+                 (ssl.SSLError("SECRET"), "tls"), (urlerror.URLError(ssl.SSLError("SECRET")), "tls"),
+                 (TimeoutError("SECRET"), "timeout"), (urlerror.URLError(TimeoutError("SECRET")), "timeout"),
+                 (urlerror.URLError("SECRET"), "connection"), (OSError("SECRET"), "connection"),
+                 (http.client.IncompleteRead(b"SECRET"), "response_interrupted"),
+                 (ConnectionResetError("SECRET"), "response_interrupted"),
+                 (urlerror.HTTPError("https://SECRET", 429, "SECRET", {}, io.BytesIO(b"SECRET")), "http")]
+        for exception, code in cases:
+            with self.subTest(code=code, kind=type(exception)), patch("rulang.generation.urlrequest.build_opener") as factory:
+                factory.return_value.open.side_effect = exception
+                with self.assertRaises(GenerationError) as raised:
+                    request_response(config, "生成测试")
+                self.assertEqual(raised.exception.code, code)
+                self.assertEqual(factory.return_value.open.call_count, 1)
+                self.assertNotIn("SECRET", str(raised.exception))
+                self.assertNotIn(config.api_key, str(raised.exception))
+                self.assertIn("未自动重试", str(raised.exception))
+                if code == "http":
+                    self.assertIn("429", str(raised.exception))
+
+    def test_unknown_error_and_invalid_status_never_echo_raw_details(self):
+        for error in (GenerationError("SECRET"), GenerationError("SECRET", code="SECRET"),
+                      GenerationError("SECRET", code="http", status="SECRET")):
+            self.assertNotIn("SECRET", generation_diagnostic(error))
+
+    def test_progress_reports_only_fixed_phases_after_transport_returns(self):
+        stages = []
+        with MockResponses(response_for("显 1/0.")) as server:
+            from rulang.generation import LOCAL_TEST_API_KEY
+            result = request_response(GenerationConfig(LOCAL_TEST_API_KEY, server.base), "测试", progress=stages.append)
+        self.assertEqual(result, "显 1/0.")
+        self.assertEqual(stages, ["发送生成请求", "等待提供方响应", "收到提供方响应"])

@@ -244,8 +244,18 @@ class NotebookReviewTests(unittest.TestCase):
         self.assertTrue(process.is_alive())
         self.assertEqual(self.request("DELETE", f"/api/sessions/{identifier}", {})[0], 200)
         self.assertEqual(self.request("GET", f"/api/sessions/{identifier}/events")[0], 404)
-        with self.assertRaises(ValueError):
-            process.is_alive()  # joined and closed, not merely forgotten
+        # The Windows-safe reaper closes the Process only after its collector
+        # exits. DELETE joins the worker, but handle cleanup may finish just
+        # after the response; require eventual closure rather than a race.
+        deadline = time.monotonic() + 5
+        while True:
+            try:
+                self.assertFalse(process.is_alive())
+            except ValueError:
+                break  # joined and closed, not merely forgotten
+            if time.monotonic() >= deadline:
+                self.fail("Deleted worker handle was not closed by the reaper")
+            time.sleep(0.01)
 
 
 if __name__ == "__main__":

@@ -13,7 +13,8 @@ from urllib.parse import parse_qs, urlsplit
 import webbrowser
 
 from .kernel import KernelError, SessionManager
-from .generation import configuration, generate_source
+from .generation import (DEFAULT_TIMEOUT, configuration, generate_source,
+                         validate_generation_timeout)
 
 MAX_BODY = 1_048_576
 STATIC_FILES = {"/": ("index.html", "text/html; charset=utf-8"),
@@ -30,7 +31,9 @@ class NotebookServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = False
 
-    def __init__(self, port=0, token=None, static_dir=None):
+    def __init__(self, port=0, token=None, static_dir=None,
+                 generation_timeout=DEFAULT_TIMEOUT):
+        self.generation_timeout = validate_generation_timeout(generation_timeout)
         self.token = token if token is not None else secrets.token_urlsafe(32)
         if not isinstance(self.token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{16,256}", self.token):
             raise ValueError("token must be 16-256 URL-safe ASCII characters")
@@ -180,7 +183,7 @@ class NotebookHandler(BaseHTTPRequestHandler):
                 if path == "/api/generation/config" and self.command == "GET":
                     self._respond(200, configuration())
                 elif path == "/api/generate" and self.command == "POST":
-                    self._respond(200, generate_source(self._body()))
+                    self._respond(200, generate_source(self._body(), timeout=self.server.generation_timeout))
                 else:
                     raise KernelError("不支持此请求方式", 405)
                 return
@@ -232,8 +235,9 @@ class NotebookHandler(BaseHTTPRequestHandler):
     do_GET = do_HEAD = do_POST = do_DELETE = do_PUT = do_PATCH = do_OPTIONS = _dispatch
 
 
-def make_server(port=0, token=None, static_dir=None):
-    return NotebookServer(port=port, token=token, static_dir=static_dir)
+def make_server(port=0, token=None, static_dir=None, generation_timeout=DEFAULT_TIMEOUT):
+    return NotebookServer(port=port, token=token, static_dir=static_dir,
+                          generation_timeout=generation_timeout)
 
 
 def main(argv=None):
@@ -244,11 +248,17 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="python -m rushu", description="如书 · 仅在本机运行的如语言笔记本")
     parser.add_argument("--port", type=int, default=0, help="本机端口，默认自动选择")
     parser.add_argument("--no-browser", action="store_true", help="仅打印地址，不自动打开浏览器")
+    parser.add_argument("--generation-timeout", type=float, default=DEFAULT_TIMEOUT,
+                        help=f"生成请求超时秒数，须为有限正数，默认 {DEFAULT_TIMEOUT:g} 秒")
     args = parser.parse_args(argv)
     if not 0 <= args.port <= 65535:
         parser.error("端口须在 0 至 65535 之间")
     try:
-        server = make_server(args.port)
+        validate_generation_timeout(args.generation_timeout)
+    except ValueError as error:
+        parser.error(str(error))
+    try:
+        server = make_server(args.port, generation_timeout=args.generation_timeout)
     except OSError as error:
         parser.exit(1, "无法启动本机服务：" + str(error) + "\n")
     print("如书 · 请用此完整链接打开：\n" + server.url, flush=True)
