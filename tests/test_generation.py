@@ -297,6 +297,10 @@ class LanguageSpecificationTests(TemporaryGeneration):
         self.assertIn("`解.` / `解。` 开始非嵌套块注释", system)
         self.assertIn("说明性注释指出更新外层捕获绑定", system)
         self.assertIn("不一律建议 `为 类型` 转换", system)
+        self.assertIn("自然结束和执行 `完.` / `完。` 都返回 `空`", system)
+        self.assertIn("包括嵌套在 `作` 中的 `算`", system)
+        self.assertIn("`完 值.`、`完 空.` 均不合法", system)
+        self.assertIn("是否只在最近的 `作` 边界内", system)
 
     def test_resource_is_loaded_fresh_for_every_request(self):
         resource = self.root / "language-spec.md"

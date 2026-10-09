@@ -323,7 +323,7 @@ const R = (() => {
       const result = value.body(s,value.receiver);
       if (result === NO_RETURN || result === undefined) {
         if (!value.procedure) fail(m,'函数「'+value.name+'」没有执行「得」',loc);
-        m.lastCallProcedure = true; return '';
+        m.lastCallProcedure = true; return null;
       }
       m.lastCallProcedure = value.procedure; return result;
     } finally { depth--; }

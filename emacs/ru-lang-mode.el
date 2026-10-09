@@ -1,6 +1,6 @@
 ;;; ru-lang-mode.el --- Editing support for the 如 language -*- lexical-binding: t; -*-
 
-;; Version: 0.7.0
+;; Version: 0.8.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: languages
 ;; URL: https://github.com/uppet/ru-language
@@ -98,7 +98,7 @@ the source directory, passing filenames directly without a shell."
       output)))
 
 (defconst ru-lang--keywords
-  '("显" "取" "为" "得" "破" "若" "则" "另" "然" "循" "次" "环"
+  '("显" "取" "为" "得" "完" "破" "若" "则" "另" "然" "循" "次" "环"
     "算" "作" "法" "其" "且" "或" "非" "空" "对" "形" "象" "如" "新"
     "外言" "尽" "卒" "试" "救"))
 (defconst ru-lang--types '("数" "句" "阵" "对" "空" "件" "录" "件作成果" "算" "作"))

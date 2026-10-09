@@ -496,6 +496,11 @@ class Compiler:
                     self.live_temps.remove(value)
                     continue
                 self.drop(value)
+            elif n.kind == 'finish':
+                self.clean_scopes()
+                self.line(f'env_free({self.base_env});')
+                self.line('ru_source = previous_source;')
+                self.line('return v_null();')
             elif n.kind == 'assign':
                 target = d['target']
                 td = target.data
@@ -608,7 +613,7 @@ class Compiler:
         if not fn.data['procedure']:
             self.line(f"ru_fail(call_line, {cstr('函数「' + fn.data['name'] + '」没有执行「得」')});")
         self.line('ru_source = previous_source;')
-        self.line('return v_str("");')
+        self.line('return v_null();')
         if self.can_panic:
             self.line(f'{self.panic_exit}: env_free(local); ru_source = previous_source; return v_null();')
         self.indent -= 1

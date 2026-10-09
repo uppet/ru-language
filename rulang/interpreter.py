@@ -216,6 +216,11 @@ class Return(Exception):
         self.value = value
 
 
+class Finish(Exception):
+    """Normal procedure completion, distinct from recoverable 卒."""
+    pass
+
+
 class Break(Exception):
     pass
 
@@ -468,6 +473,8 @@ class Interpreter:
                     self.block(d["rescue"], handler)
             elif n.kind == "return":
                 raise Return(self.expr(d["expr"], scope))
+            elif n.kind == "finish":
+                raise Finish()
             elif n.kind == "break":
                 raise Break()
             elif n.kind == "if":
@@ -892,8 +899,10 @@ class Interpreter:
                 self.block(function.data["body"], local)
             except Return as result:
                 return result.value
+            except Finish:
+                return None
             if function.data["procedure"]:
-                return ""
+                return None
             caller.fail(n, f"函数「{name}」没有执行「得」")
         except RuError as error:
             self.locate_error(error)

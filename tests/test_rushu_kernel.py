@@ -60,6 +60,14 @@ class KernelTests(unittest.TestCase):
         finally:
             other.close()
 
+    def test_procedure_finish_null_and_suppressed_echo(self):
+        self.run_cell("作 停: 试 完. 救 因 显 因. 终. 显 9. 为 作 自然: 为")
+        self.assertEqual(output(self.run_cell("停. 自然. 回 取 作: 完. 为. 回().")), "")
+        self.assertEqual(output(self.run_cell("显 停. 显 自然. 显 回(). 空.")), "空\n" * 4)
+        bad = self.run_cell("完.")
+        self.assertEqual(bad["events"][-1]["status"], "error")
+        self.assertEqual(output(self.run_cell("显 停 == 空.")), "1\n")
+
     def test_declarations_can_be_reexecuted_and_share_functions(self):
         self.run_cell("算 平方 值 为 数: 得 值*值. 法")
         self.assertEqual(output(self.run_cell("平方 5.")), "25\n")

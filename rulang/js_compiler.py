@@ -122,6 +122,8 @@ class JSCompiler(Compiler):
                 self.line(self.expr(d['expr']) + ';')
             elif kind == 'return':
                 self.line('return ' + self.expr(d['expr']) + ';')
+            elif kind == 'finish':
+                self.line('return null;')
             elif kind == 'import_all':
                 self.line(f'R.importAll(m,s,{self.expr(d["expr"])},{loc});')
             elif kind == 'assign':

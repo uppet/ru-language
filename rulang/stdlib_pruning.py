@@ -19,7 +19,7 @@ from .modules import import_nodes
 _BUNDLED_PATH = str((Path(__file__).parent / 'stdlib' / '竞赛.ru').resolve())
 _KNOWN_KINDS = frozenset((
     'function', 'function_literal', 'type', 'bind', 'assign', 'import_all', 'print', 'expr',
-    'return', 'break', 'if', 'loop', 'try', 'panic', 'number', 'string',
+    'return', 'finish', 'break', 'if', 'loop', 'try', 'panic', 'number', 'string',
     'null', 'self', 'name', 'call', 'function_ref', 'invoke', 'array',
     'convert', 'unary', 'binary', 'member', 'index', 'slice', 'new', 'import',
 ))

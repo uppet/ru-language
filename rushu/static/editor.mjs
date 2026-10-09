@@ -1,7 +1,7 @@
-/** Editing aids for 如 0.6. These are tolerant lexical aids, not a parser/checker.
+/** Editing aids for 如 0.8. These are tolerant lexical aids, not a parser/checker.
  * The structural model mirrors emacs/ru-lang-mode.el, including anonymous
  * 算/作 headers, contextual 为/终, longest names and literal strings. */
-export const KEYWORDS = new Set('显 取 为 得 破 若 则 另 然 循 次 环 算 作 法 其 且 或 非 空 对 形 象 如 新 外言 尽 试 救 卒'.split(' '));
+export const KEYWORDS = new Set('显 取 为 得 完 破 若 则 另 然 循 次 环 算 作 法 其 且 或 非 空 对 形 象 如 新 外言 尽 试 救 卒'.split(' '));
 const TYPES = new Set('数 句 阵 空 对 件 录 件作成果'.split(' '));
 const BUILTINS = new Set('读 件 录 件作成果 读取 显出 错误 __竞赛'.split(' '));
 const MEMBERS = new Set('含 位 段 增 量 囫 囵 写 行 读 开 关'.split(' '));

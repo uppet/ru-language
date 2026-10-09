@@ -101,3 +101,24 @@ test('assignment hover is conservative and never annotates literals or name subs
   assert.ok(html.includes('直接救正文'));
   assert.ok(html.includes('不判断具体名称'));
 });
+
+test('procedure finish is a keyword statement, never a block closer',()=>{
+  const source='作 提前:\n若 1 则\n完。\n然\n完.\n完成 取 1.\n为';
+  const result=analyze(source);
+  assert.equal(result.depth,0);
+  assert.deepEqual(result.blocks.map(b=>b.kind),['作','若']);
+  assert.equal(result.tokens.filter(t=>t.text==='完').length,2);
+  for(const token of result.tokens.filter(t=>t.text==='完'))assert.equal(token.face,'keyword');
+  assert.equal(result.tokens.find(t=>t.text==='完成').face,null);
+  assert.equal(indentText(source),'作 提前:\n    若 1 则\n        完。\n    然\n    完.\n    完成 取 1.\n为');
+  const prefix='作 提前:\n    完.';
+  assert.equal(enterEdit(prefix,prefix.length).text,'\n    ');
+  assert.equal(analyze('作 提前:\n完.').depth,1);
+  assert.equal(analyze('作 提前:\n完.').blocks[0].closed,false);
+});
+test('finish in strings and comments stays nonstructural',()=>{
+  const source='作 提前:\n显 "完。". # 完.\n批. 完。\n解. 完. 释.\n完.\n为';
+  const result=analyze(source);
+  assert.equal(result.depth,0);assert.equal(result.blocks.length,1);
+  assert.equal(result.tokens.filter(t=>t.text==='完'&&t.face==='keyword').length,1);
+});

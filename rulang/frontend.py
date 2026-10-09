@@ -40,7 +40,7 @@ BUILTIN_NAMES = BUILTIN_TYPES | {"读", "读取", "显出", "错误", "__竞赛"
 MEMBER_PARAMS = {"含": ["句"], "位": ["位"], "段": ["始", "终"], "增": ["值"],
                  "量": [], "囫": [], "囵": []}
 
-KEYWORDS = set("显 取 为 得 破 若 则 另 然 循 次 环 算 作 法 其 且 或 非 空 对 形 象 如 新 外言 尽 试 救 卒".split())
+KEYWORDS = set("显 取 为 得 完 破 若 则 另 然 循 次 环 算 作 法 其 且 或 非 空 对 形 象 如 新 外言 尽 试 救 卒".split())
 NUMBER = re.compile(r"(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
 
 
@@ -298,6 +298,9 @@ class Parser:
             expr = self.expression()
             self.expect(".")
             return node("return", t, expr=expr)
+        if self.accept("完"):
+            self.expect(".")
+            return node("finish", t)
         if self.accept("破"):
             self.expect(".")
             return node("break", t)
@@ -757,6 +760,8 @@ def validate(program, existing_functions=(), existing_types=()):
                 error(n, "「破」只能出现在当前函数的循环内")
             elif n.kind == "return" and (function is None or function.data["procedure"]):
                 error(n, "「得」只能出现在「算」定义内")
+            elif n.kind == "finish" and (function is None or not function.data["procedure"]):
+                error(n, "「完」只能出现在「作」定义内")
             elif n.kind == "bind" and (d["name"] in visible_functions or d["name"] in BUILTIN_NAMES or d["name"] in type_nodes):
                 error(n, "变量名不能与函数名、形名或内置名称重名")
             elif n.kind == "if":

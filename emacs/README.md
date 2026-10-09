@@ -1,12 +1,14 @@
 # ru-lang-mode：Emacs 基础语言支持
 
-`ru-lang-mode.el` 用于查看和编辑如语言 0.6.x 的 `.ru` 源码。只使用 Emacs 自带的库，编辑功能不需要安装其他包、Python 进程、LSP 或 tree-sitter；快捷运行需要 Python 3 和如 CLI。
+`ru-lang-mode.el` 用于查看和编辑如语言 0.8.0 的 `.ru` 源码。只使用 Emacs 自带的库，编辑功能不需要安装其他包、Python 进程、LSP 或 tree-sitter；快捷运行需要 Python 3 和如 CLI。
 
-0.6 的 JavaScript 后端与生成目标不改变 `.ru` 语法；未发布的匿名算 / 作字面量更新已同步高亮、缩进、定义和结构导航。
+0.6 的 JavaScript 后端与生成目标不改变 `.ru` 语法；匿名算 / 作字面量更新已同步高亮、缩进、定义和结构导航。
 
 默认运行时 / 随附标准库裁剪和 `build --full-runtime` 也只是编译选项，不新增关键词或语法，高亮、缩进、Imenu 和导航无需改动。此模式不封装构建命令；可在仓库根目录用 Emacs 自带的 `M-x compile` 执行 `python3 ru build 文件.ru -o 程序 --emit-c 程序.c`。要诊断裁剪前后的差异，在命令末尾加 `--full-runtime` 并使用另一组输出路径；JavaScript 同样可用 `python3 ru build 文件.ru --target js -o 程序.js --full-runtime`。编译不会自动运行生成程序。
 
 目标版本为 Emacs 28.1+；本次本地实测 GNU Emacs 30.1（Linux）。仓库 CI 另用 Ubuntu 24.04 提供的 `emacs-nox` 运行相同测试。macOS / Windows 的图形界面未实测。
+
+0.8.0 的 `完.` / `完。` 按完整保留字高亮，`完成` 等名称不受影响。`完` 是过程内提前返回 `空` 的简单语句，不关闭块、不改变缩进或导航边界；过程仍由 `为` 关闭。
 
 ## 加载
 

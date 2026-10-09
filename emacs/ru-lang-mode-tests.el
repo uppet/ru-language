@@ -1008,3 +1008,35 @@
     (goto-char (point-max))
     (should (nth 4 (syntax-ppss)))
     (should-not (ru-lang--navigation-blocks nil))))
+
+(ert-deftest ru-lang-procedure-finish-is-not-a-closer ()
+  (ru-lang-test--indent
+   "作 提前:\n若 1 则\n完。\n然\n完.\n完成 取 1.\n为"
+   "作 提前:\n    若 1 则\n        完。\n    然\n    完.\n    完成 取 1.\n为")
+  (ru-lang-test--buffer "作 提前:\n若 1 则\n完。\n然\n完.\n完成 取 1.\n为"
+    (font-lock-ensure)
+    (search-forward "完。")
+    (should (eq (get-text-property (- (point) 2) 'face) 'font-lock-keyword-face))
+    (ru-lang-up-block)
+    (should (looking-at "若"))
+    (ru-lang-forward-block)
+    (should (eq (char-before) ?然))
+    (ru-lang-forward-block)
+    (should (eq (char-before) ?为))
+    (goto-char (point-min))
+    (search-forward "完成")
+    (should-not (get-text-property (- (point) 2) 'face))
+    (goto-char (point-min))
+    (ru-lang-end-of-defun)
+    (should (eq (char-before) ?为))))
+
+(ert-deftest ru-lang-procedure-finish-strings-and-comments ()
+  (ru-lang-test--buffer "作 提前:\n显 '完。'. # 完.\n批. 完。\n解. 完. 释.\n完.\n为"
+    (font-lock-ensure)
+    (search-forward "完。")
+    (should (eq (get-text-property (- (point) 2) 'face) 'font-lock-string-face))
+    (search-forward "完.")
+    (should (eq (get-text-property (- (point) 2) 'face) 'font-lock-comment-face))
+    (goto-char (point-min))
+    (ru-lang-forward-block)
+    (should (eq (char-before) ?为))))
