@@ -14,14 +14,16 @@ from rulang.js_compiler import JSCompiler
 from rulang.modules import load_module_graph
 
 NODE = shutil.which('node') or shutil.which('nodejs')
-CC = next((shutil.which(c) for c in ('clang', 'gcc', 'cc') if shutil.which(c)), None)
+CC = (shutil.which(os.environ['CC']) if os.environ.get('CC') else
+      next((shutil.which(c) for c in ('clang', 'gcc', 'cc') if shutil.which(c)), None))
 SECRET = 'private-payload-never-print'
 
 
 class ActionableDiagnostics(unittest.TestCase):
     def check(self, source, expected, *, other=None, output=None):
         with tempfile.TemporaryDirectory() as folder:
-            root = Path(folder) / 'main.ru'
+            # Match the module loader's canonical path, including Windows 8.3 aliases.
+            root = (Path(folder) / 'main.ru').resolve()
             root.write_text(source, encoding='utf-8')
             if other:
                 (Path(folder) / 'other.ru').write_text(other, encoding='utf-8')
