@@ -360,7 +360,7 @@ class Interpreter:
             raise
 
     def type_identity(self, annotation, n):
-        """Resolve in the declaration's module; variable bindings are not types."""
+        """Resolve in the declaration's module; empty annotations mean any value."""
         if annotation.endswith(" 阵"):
             return ("array", self.type_identity(annotation[:-2], n))
         if annotation in ("", "数", "句", "空", "阵", "对", "算", "作"):

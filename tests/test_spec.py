@@ -21,6 +21,18 @@ SPECIFICATION = ROOT / "rulang" / "language-spec.md"
 
 
 class SpecificationExamples(unittest.TestCase):
+    def test_optional_parameter_contract_and_example(self):
+        specification = SPECIFICATION.read_text(encoding="utf-8")
+        self.assertIn("参数       = 名称 ['为' 类型] ;", specification)
+        self.assertIn("所有用户参数仍必需", specification)
+        self.assertIn("无类型与任何显式类型均不兼容", specification)
+        self.assertNotIn("每个参数都必须有类型", specification)
+        source = (ROOT / "examples" / "optional_parameters.ru").read_text(encoding="utf-8")
+        program = parse(source)
+        validate(program)
+        Compiler(program, "optional_parameters.ru").compile()
+        JSCompiler(program, "optional_parameters.ru").compile()
+
     def test_complete_examples_parse_and_compile_without_execution(self):
         specification = SPECIFICATION.read_text(encoding="utf-8")
         examples = re.findall(r"^```ru[ \t]*\n(.*?)^```[ \t]*$",

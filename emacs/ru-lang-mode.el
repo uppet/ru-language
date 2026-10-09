@@ -1,6 +1,6 @@
 ;;; ru-lang-mode.el --- Editing support for the 如 language -*- lexical-binding: t; -*-
 
-;; Version: 0.8.0
+;; Version: 0.9.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: languages
 ;; URL: https://github.com/uppet/ru-language
@@ -212,8 +212,8 @@ The legacy global function 读 is also in `ru-lang--builtins'.")
 
 (defun ru-lang--literal-header-p (tokens index)
   "Whether 算/作 at INDEX has a complete anonymous header ending in a colon.
-Require typed bare parameters so a reference conversion such as 算 名 为 句
-remains an expression.  Comments and fullwidth punctuation are accepted."
+Parameters may omit annotations.  Require the colon so a reference
+conversion such as 算 名 为 句 remains an expression.  Comments and fullwidth punctuation are accepted."
   (let ((cursor (1+ index)))
     (cl-labels
         ((next-code ()
@@ -232,35 +232,89 @@ remains an expression.  Comments and fullwidth punctuation are accepted."
             (unless (and (eq (ru-lang--token-kind token) 'name)
                          (not (member (ru-lang--token-text token) ru-lang--keywords)))
               (throw 'header nil))
-            (unless (matches (next-code) "为" 'name) (throw 'header nil))
             (setq token (next-code))
-            (unless (and token (eq (ru-lang--token-kind token) 'name)
-                         (or (not (member (ru-lang--token-text token) ru-lang--keywords))
-                             (member (ru-lang--token-text token) '("空" "对" "算" "作"))))
-              (throw 'header nil))
-            (setq token (next-code))
-            (while (matches token "阵" 'name) (setq token (next-code)))
+            (when (matches token "为" 'name)
+              (setq token (next-code))
+              (unless (and token (eq (ru-lang--token-kind token) 'name)
+                           (or (not (member (ru-lang--token-text token) ru-lang--keywords))
+                               (member (ru-lang--token-text token) '("空" "对" "算" "作"))))
+                (throw 'header nil))
+              (setq token (next-code))
+              (while (matches token "阵" 'name) (setq token (next-code))))
             (when (matches token ":" 'punct) (throw 'header t))
             (when (matches token "," 'punct)
               (setq token (next-code))
               (when (matches token ":" 'punct) (throw 'header t)))))))))
 
+(defun ru-lang--reference-call-ahead-p (tokens index)
+  "Recognize named reference calls, ignoring closers of nested definitions."
+  (let ((cursor (1+ index)) code)
+    (while (and (< cursor (length tokens)) (< (length code) 4))
+      (unless (eq (ru-lang--token-kind (aref tokens cursor)) 'comment)
+        (push (aref tokens cursor) code))
+      (setq cursor (1+ cursor)))
+    (setq code (nreverse code))
+    (cl-labels ((bare (token)
+                 (and token (eq (ru-lang--token-kind token) 'name)
+                      (not (member (ru-lang--token-text token) ru-lang--keywords)))))
+      (let ((value (nth 3 code)))
+        (when (and (bare (nth 0 code)) (bare (nth 1 code))
+                   (nth 2 code) (equal (ru-lang--token-text (nth 2 code)) ":")
+                   value
+                   (or (memq (ru-lang--token-kind value) '(number string)) (bare value)
+                       (member (ru-lang--token-text value) '("空" "新" "外言" "其" "非" "(" "[" "+" "-"))))
+          (let ((ends (list (if (equal (ru-lang--token-text (aref tokens index)) "算") "法" "为")))
+                (previous ":") dot)
+            (setq cursor (1- cursor))
+            (catch 'complete
+              (while (< cursor (length tokens))
+                (let* ((token (aref tokens cursor)) (text (ru-lang--token-text token)))
+                  (unless (memq (ru-lang--token-kind token) '(comment string))
+                    (cond
+                     ((and (member text '("算" "作")) (not (equal previous "为"))
+                           (ru-lang--literal-header-p tokens cursor))
+                      (push (if (equal text "算") "法" "为") ends)
+                      (while (not (equal (ru-lang--token-text (aref tokens cursor)) ":"))
+                        (setq cursor (1+ cursor))))
+                     ((equal text (car ends))
+                      (let ((next (1+ cursor)))
+                        (while (and (< next (length tokens))
+                                    (eq (ru-lang--token-kind (aref tokens next)) 'comment))
+                          (setq next (1+ next)))
+                        (when (or (not (equal text "为")) (member previous '("." ":"))
+                                  (>= next (length tokens))
+                                  (not (eq (ru-lang--token-kind (aref tokens next)) 'name)))
+                          (pop ends)
+                          (unless ends (throw 'complete nil)))))
+                     ((and (eq (ru-lang--token-kind token) 'punct) (equal text "."))
+                      (setq dot t)))
+                    (setq previous text)))
+                (setq cursor (1+ cursor)))
+              dot)))))))
+
 (defun ru-lang--function-header-p (tokens index allow-incomplete)
   "Classify 算/作 at INDEX as a named header, literal header, or reference.
-Return `named' for a name followed by a colon or a typed parameter.
+Return `named' for a declaration at a statement boundary.
 Return `literal' for a complete anonymous header, nil for a reference.
 ALLOW-INCOMPLETE accepts a partial named header at a statement boundary.
 Intervening comments are ignored."
-  (if (ru-lang--literal-header-p tokens index)
-      'literal
-    (let ((cursor (1+ index)) following)
-      (while (and (< cursor (length tokens)) (< (length following) 3))
-        (unless (eq (ru-lang--token-kind (aref tokens cursor)) 'comment)
-          (push (aref tokens cursor) following))
-        (setq cursor (1+ cursor)))
-      (setq following (nreverse following))
-      (let ((name (nth 0 following)) (after (nth 1 following))
-            (third (nth 2 following)))
+  (let ((cursor (1+ index)) following)
+    (while (and (< cursor (length tokens)) (< (length following) 3))
+      (unless (eq (ru-lang--token-kind (aref tokens cursor)) 'comment)
+        (push (aref tokens cursor) following))
+      (setq cursor (1+ cursor)))
+    (setq following (nreverse following))
+    (let ((name (nth 0 following)) (after (nth 1 following))
+          (third (nth 2 following)))
+      (cond
+       ((ru-lang--reference-call-ahead-p tokens index) nil)
+       ((ru-lang--literal-header-p tokens index)
+          (if (and allow-incomplete name
+                   (eq (ru-lang--token-kind name) 'name)
+                   (not (member (and after (ru-lang--token-text after)) '("为" ","))))
+              'named
+            'literal))
+       (t
         (when (or (and allow-incomplete (null name))
                   (and name (eq (ru-lang--token-kind name) 'name)
                        (not (member (ru-lang--token-text name) ru-lang--keywords))
@@ -269,10 +323,10 @@ Intervening comments are ignored."
                                 (equal (ru-lang--token-text after) ":"))
                            (and after (eq (ru-lang--token-kind after) 'name)
                                 (not (member (ru-lang--token-text after) ru-lang--keywords))
-                                (or (and allow-incomplete (null third))
+                                (or allow-incomplete
                                     (and third (eq (ru-lang--token-kind third) 'name)
                                          (equal (ru-lang--token-text third) "为")))))))
-          'named)))))
+          'named))))))
 
 (defun ru-lang--analyze ()
   "Compute block pairs and desired line depths from `ru-lang--tokens'."

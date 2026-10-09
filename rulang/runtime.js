@@ -219,6 +219,7 @@ const R = (() => {
     return value;
   }
   function typeIdentity(m,annotation,loc) {
+    // Empty parameter annotations accept every ordinary value, including null.
     if (annotation.endsWith(' 阵')) return ['array',typeIdentity(m,annotation.slice(0,-2),loc)];
     if (['','数','句','空','阵','对','算','作'].includes(annotation)) return annotation;
     const t = m.types[annotation] || builtinTypes[annotation];

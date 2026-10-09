@@ -1,4 +1,4 @@
-/** Editing aids for 如 0.8. These are tolerant lexical aids, not a parser/checker.
+/** Editing aids for 如 0.9. These are tolerant lexical aids, not a parser/checker.
  * The structural model mirrors emacs/ru-lang-mode.el, including anonymous
  * 算/作 headers, contextual 为/终, longest names and literal strings. */
 export const KEYWORDS = new Set('显 取 为 得 完 破 若 则 另 然 循 次 环 算 作 法 其 且 或 非 空 对 形 象 如 新 外言 尽 试 救 卒'.split(' '));
@@ -45,22 +45,57 @@ function literalHeader(tokens, index) {
   const match = (token,text,kind='name') => token?.kind === kind && token.text === text;
   let token = next(); if (match(token,':','punct')) return true;
   while (token) {
-    if (token.kind !== 'name' || KEYWORDS.has(token.text) || !match(next(),'为')) return false;
+    if (token.kind !== 'name' || KEYWORDS.has(token.text)) return false;
     token = next();
-    if (token?.kind !== 'name' || (KEYWORDS.has(token.text) && !['空','对','算','作'].includes(token.text))) return false;
-    token = next(); while (match(token,'阵')) token = next();
+    if (match(token,'为')) {
+      token = next();
+      if (token?.kind !== 'name' || (KEYWORDS.has(token.text) && !['空','对','算','作'].includes(token.text))) return false;
+      token = next(); while (match(token,'阵')) token = next();
+    }
     if (match(token,':','punct')) return true;
     if (match(token,',','punct')) { token = next(); if (match(token,':','punct')) return true; }
   }
   return false;
 }
+function referenceCallAhead(tokens,index) {
+  const code=[]; let cursor=index+1;
+  for(;cursor<tokens.length&&code.length<4;cursor++) if(tokens[cursor].kind!=='comment') code.push(tokens[cursor]);
+  const [name,param,colon,value]=code;
+  const bare=token=>token?.kind==='name'&&!KEYWORDS.has(token.text);
+  if (!bare(name)||!bare(param)||colon?.text!==':'||!value) return false;
+  const startsValue=['number','string'].includes(value.kind)||bare(value)||
+    ['空','新','外言','其','非','(','[','+','-'].includes(value.text);
+  if (!startsValue) return false;
+  // Stop at this body's closer, ignoring closers owned by nested definitions.
+  // In particular a later independent definition cannot close a reference call.
+  const ends=[tokens[index].text==='算'?'法':'为']; let dot=false, previous=':';
+  for(let i=cursor-1;i<tokens.length;i++) {
+    const token=tokens[i]; if(['comment','string'].includes(token.kind)) continue;
+    if(['算','作'].includes(token.text)&&previous!=='为'&&literalHeader(tokens,i)) {
+      ends.push(token.text==='算'?'法':'为');
+      while(tokens[i]?.text!==':') i++;
+    } else if(token.text===ends.at(-1)) {
+      let j=i+1; while(tokens[j]?.kind==='comment') j++;
+      if(token.text!=='为'||['.',':'].includes(previous)||!tokens[j]||tokens[j].kind!=='name'||tokens[j].text==='.') {
+        ends.pop(); if(!ends.length) return false;
+      }
+    } else if(token.kind==='punct'&&token.text==='.') dot=true;
+    previous=token.text;
+  }
+  return dot;
+}
 function headerKind(tokens,index,allowIncomplete) {
-  if (literalHeader(tokens,index)) return 'literal';
+  if (referenceCallAhead(tokens,index)) return null;
   const following=[]; for(let i=index+1;i<tokens.length&&following.length<3;i++) if(tokens[i].kind!=='comment') following.push(tokens[i]);
   const [name, after, third]=following;
+  if (literalHeader(tokens,index)) {
+    // At statement boundaries a bare first name belongs to the declaration.
+    // Expression headers have no definition name, even with untyped parameters.
+    return allowIncomplete && name?.kind==='name' && after?.text!=='为' && after?.text!==',' ? 'named' : 'literal';
+  }
   if ((allowIncomplete && !name) || (name?.kind==='name' && !KEYWORDS.has(name.text) &&
       ((!after && allowIncomplete) || (after?.kind==='punct' && after.text===':') ||
-       (after?.kind==='name' && !KEYWORDS.has(after.text) && ((!third && allowIncomplete) || (third?.kind==='name' && third.text==='为')))))) return 'named';
+       (after?.kind==='name' && !KEYWORDS.has(after.text) && (allowIncomplete || (third?.kind==='name' && third.text==='为')))))) return 'named';
   return null;
 }
 export function analyze(source) {

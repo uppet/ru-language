@@ -301,6 +301,12 @@ class LanguageSpecificationTests(TemporaryGeneration):
         self.assertIn("包括嵌套在 `作` 中的 `算`", system)
         self.assertIn("`完 值.`、`完 空.` 均不合法", system)
         self.assertIn("是否只在最近的 `作` 边界内", system)
+        self.assertIn("每个参数的 `为 类型` 均可省略", system)
+        self.assertIn("所有用户参数仍必需", system)
+        self.assertIn("无类型只与对应的无类型参数匹配", system)
+        self.assertIn("不新增 `Any` 或 `任意`", system)
+        self.assertNotIn("每个参数都必须有类型", system)
+        self.assertIn("整段可按既有引用调用解析，则保留引用调用", system)
 
     def test_resource_is_loaded_fresh_for_every_request(self):
         resource = self.root / "language-spec.md"
@@ -417,6 +423,21 @@ class ExtractionTests(unittest.TestCase):
 
 
 class LocalResponsesTests(TemporaryGeneration):
+    def test_generated_optional_parameter_source_is_checked_without_execution(self):
+        source = (ROOT / "examples" / "optional_parameters.ru").read_text(encoding="utf-8")
+        # This failure would be observable if generation executed model output.
+        source += "显 1/0.\n"
+        for target, suffix in (("ru", ".ru"), ("js", ".js")):
+            with self.subTest(target=target), MockResponses(response_for(source)) as server:
+                output = generate(self.document, output=self.root / ("optional" + suffix),
+                                  environ=self.local_env(server), target=target)
+                self.assertTrue(output.is_file())
+                self.assertEqual(len(server.requests), 1)
+                if target == "ru":
+                    self.assertEqual(output.read_text(encoding="utf-8"), source)
+                else:
+                    self.assertIn("use strict", output.read_text(encoding="utf-8"))
+
     def test_real_local_http_request_and_atomic_new_output(self):
         original = self.document.read_bytes()
         # A side effect would fail the test if the code were ever executed.

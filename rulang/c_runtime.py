@@ -169,6 +169,7 @@ def runtime_source(modules, generated, full=False):
         return re.sub(r'/\* RU_(?:MEMBERS: [^*]*|OPERATORS: [^*]*|END_MEMBERS) \*/\n', '', source)
     strings = set(ast_strings(modules))
     io_names = {'件', '录', '件作成果', '读取', '显出', '错误'}
+    # Empty (untyped) parameter annotations add no type dependency.
     # Type annotations may include a trailing array qualifier. Unknown strings
     # conservatively keep I/O, including string literals that merely name it.
     uses_io = any(word in io_names for text in strings for word in text.split())

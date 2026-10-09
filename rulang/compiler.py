@@ -192,6 +192,7 @@ class Compiler:
                 self.error(function, '参数名不能与函数名、形名或内置名称重名')
 
     def type_identity(self, path, annotation, n):
+        # Empty parameter annotations are the existing internal any sentinel.
         if annotation.endswith(' 阵'):
             return ('array', self.type_identity(path, annotation[:-2], n))
         if annotation in ('', '数', '句', '空', '阵', '对', '算', '作') or annotation in BUILTIN_TYPES:

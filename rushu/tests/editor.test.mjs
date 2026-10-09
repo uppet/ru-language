@@ -122,3 +122,46 @@ test('finish in strings and comments stays nonstructural',()=>{
   assert.equal(result.depth,0);assert.equal(result.blocks.length,1);
   assert.equal(result.tokens.filter(t=>t.text==='完'&&t.face==='keyword').length,1);
 });
+
+test('optional annotations preserve named declarations, literal parameters and references',()=>{
+  const source='算 保留 值, 次数 为 数, 后:\n得 值.\n法\n副本 取 算 值，次数 为 数 后：\n得 值.\n法。\n作 输出 值:\n回 取 作 参数:\n显 参数.\n为.\n为\n引用 取 算 保留.\n转换 取 算 保留 为 句.';
+  const result=analyze(source);
+  assert.equal(result.depth,0);
+  assert.deepEqual(result.blocks.map(b=>[b.kind,b.literal,b.closed]),[['算',false,true],['算',true,true],['作',false,true],['作',true,true]]);
+  assert.equal(result.tokens.find(t=>t.text==='保留').face,'function');
+  for(const token of result.tokens.filter(t=>['值','次数','后','参数'].includes(t.text))) assert.equal(token.face,null);
+  assert.equal(indentText(indentText(source)),indentText(source));
+  assert.ok(indentText(source).includes('    回 取 作 参数:\n        显 参数.\n    为.'));
+  for(let i=0;i<=source.length;i++) assert.doesNotThrow(()=>analyze(source.slice(0,i)));
+});
+test('optional anonymous headers accept comments, mixed types and fullwidth separators',()=>{
+  const source='列表 取 ［算 # 参数\n左，右 为 数，后：\n得 左.\n法，作 值：\n完.\n为］。\n算 参数 为 数: 得 参数. 法.';
+  const result=analyze(source);
+  assert.equal(result.depth,0);
+  assert.equal(result.blocks.filter(b=>b.literal).length,3);
+  assert.equal(indentText(source), '列表 取 ［算 # 参数\n        左，右 为 数，后：\n        得 左.\n    法，作 值：\n        完.\n    为］。\n算 参数 为 数: 得 参数. 法.');
+  const incomplete='算 名 左 右'; assert.equal(enterEdit(incomplete,incomplete.length).text,'\n    ');
+  const prefix='回 取 算 值:'; assert.equal(enterEdit(prefix,prefix.length).text,'\n    ');
+  const html=highlight('回 取 算 值: 得 值. 法.');
+  assert.equal((html.match(/data-help=/g)||[]).length,1);
+});
+
+test('reference calls with named arguments do not leave open optional headers',()=>{
+  for(const source of ['算 回 值:1.','显 算 回 值:1.','引用 取 作 回 值:空.']) {
+    assert.equal(analyze(source).depth,0);
+    assert.equal(analyze(source).blocks.length,0);
+    assert.equal(enterEdit(source,source.length).text,'\n');
+  }
+  const prefix='回 取 算 值:'; assert.equal(analyze(prefix).depth,1);
+  assert.equal(analyze('回 取 算 回 值: 1. 法.').blocks[0].literal,true);
+});
+
+test('later independent definitions do not close reference named calls',()=>{
+  const source='算 回 值:1.\n算 其他 参数: 得 参数. 法\n显 算 回 值:1.\n作 输出 值: 显 值. 为';
+  assert.equal(analyze(source).depth,0);
+  assert.deepEqual(analyze(source).blocks.map(b=>[b.kind,b.literal]),[['算',false],['作',false]]);
+  assert.equal(indentText(source),source);
+  const many='算 返回 值: 值. 法\n'.repeat(4000);
+  assert.equal(analyze(many).blocks.length,4000);
+  assert.equal(analyze(many).depth,0);
+});

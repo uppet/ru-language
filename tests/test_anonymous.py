@@ -171,6 +171,7 @@ class AnonymousSyntaxTests(unittest.TestCase):
     def test_complete_typed_headers_are_literals(self):
         headers = [
             ('值 为 数', [('值', '数')]),
+            ('名 值 为 数', [('名', ''), ('值', '数')]),
             ('左 为 数 右 为 数', [('左', '数'), ('右', '数')]),
             ('物 为 盒', [('物', '盒')]),
             ('回 为 算 动 为 作', [('回', '算'), ('动', '作')]),
@@ -213,8 +214,6 @@ class AnonymousSyntaxTests(unittest.TestCase):
             '回 取 作 显 1. 为.',
             '回 取 算: 得 1. 为.',
             '回 取 作: 显 1. 法.',
-            '回 取 算 名 值 为 数: 得 值. 法.',
-            '回 取 作 名 值 为 数: 显 值. 为.',
         ):
             with self.subTest(source=source), self.assertRaises(RuError):
                 parse(source)

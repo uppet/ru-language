@@ -155,6 +155,7 @@ class Parser:
         self.tokens, self.i = lex(source), 0
         self.depth = 0
         self.call_allowed = True
+        self.callable_cache = {}
 
     @property
     def current(self):
@@ -217,13 +218,39 @@ class Parser:
             out.append(self.statement())
         return out
 
+    def callable_parse(self, kind, parse_body):
+        # Header/reference ambiguity can revisit the same body via several
+        # alternatives. Memoize those attempts instead of exponential reparsing.
+        key = (kind, self.i, self.call_allowed)
+        cached = self.callable_cache.get(key)
+        if cached is not None:
+            result, end, depth = cached
+            if isinstance(result, RuError):
+                if "嵌套过深" not in result.message or self.depth >= depth:
+                    self.i = end
+                    raise result
+            # A result parsed with a smaller remaining nesting budget is safe
+            # here. Recheck at deeper positions so caching cannot bypass limits.
+            elif self.depth <= depth:
+                self.i = end
+                return result
+        try:
+            result = parse_body()
+        except RuError as error:
+            self.callable_cache[key] = (error, self.i, self.depth)
+            raise
+        self.callable_cache[key] = (result, self.i, self.depth)
+        return result
+
     def function(self):
+        return self.callable_parse("named", self._function)
+
+    def _function(self):
         t = self.pop()
         kind, name, params = t.value, self.name().value, []
         while not self.isv(":"):
             param = self.name()
-            self.expect("为")
-            params.append((param.value, self.type_name()))
+            params.append((param.value, self.type_name() if self.accept("为") else ""))
             self.accept(",")
         self.expect(":")
         end = "法" if kind == "算" else "为"
@@ -233,14 +260,16 @@ class Parser:
         return node("function", t, name=name, params=params, body=body, procedure=kind == "作")
 
     def literal(self, token):
+        return self.callable_parse("literal", lambda: self._literal(token))
+
+    def _literal(self, token):
         """A literal owns its body delimiter, never its enclosing statement dot."""
         params = []
         while not self.isv(":"):
             if self.current.kind != "NAME" or self.current.value in KEYWORDS:
                 self.fail("匿名算／作的参数后必须有「:」")
             param = self.name()
-            self.expect("为")
-            params.append((param.value, self.type_name()))
+            params.append((param.value, self.type_name() if self.accept("为") else ""))
             self.accept(",")
         self.expect(":")
         end = "法" if token.value == "算" else "为"
@@ -327,7 +356,20 @@ class Parser:
             self.accept(".")
             return node("loop", t, count=count, body=body)
         if (self.isv("算") or self.isv("作")) and self.definition_ahead():
-            return self.function()
+            start = self.i
+            try:
+                return self.function()
+            except RuError as declaration_error:
+                # An untyped header overlaps a reference's named call:
+                # `算 回 值:1.`. Prefer a complete declaration, but preserve
+                # an existing complete reference expression when no body closes.
+                self.i = start
+                try:
+                    expr = self.expression()
+                    self.expect(".")
+                    return node("expr", t, expr=expr)
+                except RuError:
+                    raise declaration_error
         if self.isv("形"):
             return self.type_definition()
         if self.accept("尽"):
@@ -379,44 +421,40 @@ class Parser:
         name, after_name = self.peek(), self.peek(2)
         if name.kind != "NAME" or name.value in KEYWORDS:
             return False
-        return (after_name.kind == "OP" and after_name.value == ":") or (
-            after_name.kind == "NAME" and after_name.value not in KEYWORDS and
-            self.peek(3).kind == "NAME" and self.peek(3).value == "为")
+        return ((after_name.kind == "OP" and after_name.value == ":") or (
+            after_name.kind == "NAME" and after_name.value not in KEYWORDS)) and self.literal_ahead(2)
 
-    def literal_ahead(self):
-        """Recognize typed headers without stealing reference conversions.
+    def literal_ahead(self, offset=0, require_colon=False):
+        """Recognize optional-type headers without stealing reference conversions.
 
-        Viable EOF prefixes belong to the literal parser so the REPL can request
+        A colon completes the header. Viable EOF prefixes request REPL
         continuation, including when the colon starts the next input line.
+        Empty annotations are an internal sentinel, never a source type name.
         """
-        if self.isv(":"):
-            return True
-        offset = 0
         while True:
-            param, marker, typ = self.peek(offset), self.peek(offset + 1), self.peek(offset + 2)
-            if param.kind == "EOF":
-                return True
-            if param.kind != "NAME" or param.value in KEYWORDS:
-                return False
-            if marker.kind == "EOF":
-                return True
-            if marker.kind != "NAME" or marker.value != "为":
-                return False
-            if typ.kind == "EOF":
-                return True
-            if (typ.kind != "NAME" or
-                    (typ.value in KEYWORDS and typ.value not in ("空", "对", "算", "作"))):
-                return False
-            offset += 3
-            while self.peek(offset).kind == "NAME" and self.peek(offset).value == "阵":
-                offset += 1
             token = self.peek(offset)
-            if token.kind == "EOF" or (token.kind == "OP" and token.value == ":"):
+            if token.kind == "EOF":
+                return not require_colon
+            if token.kind == "OP" and token.value == ":":
                 return True
+            if token.kind != "NAME" or token.value in KEYWORDS:
+                return False
+            offset += 1
+            marker = self.peek(offset)
+            if marker.kind == "NAME" and marker.value == "为":
+                offset += 1
+                typ = self.peek(offset)
+                if typ.kind == "EOF":
+                    return not require_colon
+                if (typ.kind != "NAME" or
+                        (typ.value in KEYWORDS and typ.value not in ("空", "对", "算", "作"))):
+                    return False
+                offset += 1
+                while self.peek(offset).kind == "NAME" and self.peek(offset).value == "阵":
+                    offset += 1
+            token = self.peek(offset)
             if token.kind == "OP" and token.value == ",":
                 offset += 1
-                if self.peek(offset).kind == "OP" and self.peek(offset).value == ":":
-                    return True
 
     def empty_call_ahead(self):
         return self.isv("(") and self.peek().kind == "OP" and self.peek().value == ")"
@@ -492,7 +530,8 @@ class Parser:
             args = [] if adjacent or self.isv("其") or self.isv("@") or self.empty_call_ahead() else self.call_arguments()
         return node("member", token, receiver=receiver, name=name, args=args)
 
-    def _expression(self, minimum=0):
+    def _expression(self, minimum=0, reference_only=False):
+        start = self.i
         t = self.pop()
         grouped = False
         if t.kind == "NUMBER":
@@ -502,9 +541,28 @@ class Parser:
         elif t.value == "空":
             left = node("null", t)
         elif t.value in ("算", "作") and t.kind == "NAME":
-            # The mandatory colon distinguishes a typed literal header from
+            # The mandatory colon distinguishes a literal header from
             # existing references followed by conversions (算 名 为 句).
-            left = self.literal(t) if self.literal_ahead() else self.reference(t)
+            if not reference_only and self.literal_ahead():
+                complete_header = self.literal_ahead(require_colon=True)
+                try:
+                    left = self.literal(t)
+                except RuError as literal_error:
+                    if not complete_header:
+                        raise
+                    # `算 回 值:1.` is also a viable untyped header prefix.
+                    # A complete literal wins; otherwise preserve reference
+                    # calls with named arguments in every expression context.
+                    self.i = start
+                    try:
+                        result = self._expression(minimum, reference_only=True)
+                        if self.isv(":"):
+                            raise literal_error
+                        return result
+                    except RuError:
+                        raise literal_error
+            else:
+                left = self.reference(t)
         elif t.value == "外言":
             path = self.pop()
             if path.kind != "STRING":
@@ -712,6 +770,8 @@ def validate(program, existing_functions=(), existing_types=()):
         visible_functions = functions if visible_functions is None else visible_functions
         bindings = known_bindings if bindings is None else bindings
         for _, typ in d["params"]:
+            if not typ:  # Omitted parameter annotation accepts any ordinary value.
+                continue
             base = typ.split()[0]
             if base not in known_types and not has_imports:
                 error(n, f"未定义类型：{base}")

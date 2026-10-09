@@ -20,7 +20,7 @@
     {
       "id": "closure",
       "type": "code",
-      "source": "加起点 取 算 数值 为 数:\n    得 起点 + 数值.\n法.\n显 (加起点 5).",
+      "source": "加起点 取 算 数值:\n    得 起点 + 数值.\n法.\n显 (加起点 5).",
       "execution_count": null,
       "outputs": []
     },

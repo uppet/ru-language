@@ -1040,3 +1040,44 @@
     (goto-char (point-min))
     (ru-lang-forward-block)
     (should (eq (char-before) ?为))))
+
+(ert-deftest ru-lang-optional-parameter-annotations-indent ()
+  (ru-lang-test--indent
+   "算 保留 值, 次数 为 数, 后:\n得 值.\n法\n副本 取 算 值，次数 为 数 后：\n得 值.\n法。\n作 输出 值:\n回 取 作 参数:\n显 参数.\n为.\n为\n引用 取 算 保留.\n转换 取 算 保留 为 句.\n"
+   "算 保留 值, 次数 为 数, 后:\n    得 值.\n法\n副本 取 算 值，次数 为 数 后：\n    得 值.\n法。\n作 输出 值:\n    回 取 作 参数:\n        显 参数.\n    为.\n为\n引用 取 算 保留.\n转换 取 算 保留 为 句.\n"))
+
+(ert-deftest ru-lang-optional-parameter-annotations-faces-and-imenu ()
+  (ru-lang-test--buffer "算 保留 值: 得 值. 法\n回 取 算 参数, 次数 为 数: 得 参数. 法.\n作 输出 参数: 显 参数. 为\n"
+    (font-lock-ensure)
+    (should (equal (mapcar #'car (ru-lang-imenu-create-index)) '("算 保留" "作 输出")))
+    (search-forward "保留")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-function-name-face))
+    (search-forward "取 算 参数")
+    (should-not (get-text-property (1- (point)) 'face))
+    (search-forward "为 数")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-type-face))
+    (should (= (length (ru-lang--navigation-blocks t)) 3))
+    (should (cl-every #'ru-lang--block-closed (ru-lang--navigation-blocks t)))))
+
+(ert-deftest ru-lang-optional-parameter-annotations-all-prefixes ()
+  (let ((source "算 保留 值, 次数 为 数:\n得 算 左，右 为 数 后：\n得 左.\n法.\n法\n回 取 作 # 参数\n值：\n完.\n为。\n引用 取 算 保留 为 句.\n"))
+    (dotimes (end (1+ (length source)))
+      (ru-lang-test--buffer (substring source 0 end)
+        (font-lock-ensure)
+        (ru-lang-imenu-create-index)
+        (indent-region (point-min) (point-max))))))
+
+(ert-deftest ru-lang-optional-headers-preserve-named-reference-calls ()
+  (dolist (source '("算 回 值:1." "显 算 回 值:1." "引用 取 作 回 值:空."))
+    (ru-lang-test--buffer source
+      (should-not (ru-lang--navigation-blocks t))
+      (should-not (ru-lang-imenu-create-index))))
+  (ru-lang-test--buffer "回 取 算 值:"
+    (should (= (length (ru-lang--navigation-blocks t)) 1))))
+
+(ert-deftest ru-lang-named-reference-before-independent-definition ()
+  (ru-lang-test--buffer "算 回 值:1.\n算 其他 参数: 得 参数. 法\n显 算 回 值:1.\n作 输出 值: 显 值. 为"
+    (should (equal (mapcar #'car (ru-lang-imenu-create-index)) '("算 其他" "作 输出")))
+    (should (cl-every #'ru-lang--block-closed (ru-lang--navigation-blocks t))))
+  (ru-lang-test--buffer (apply #'concat (make-list 1000 "算 返回 值: 值. 法\n"))
+    (should (= (length (ru-lang--navigation-blocks t)) 1000))))

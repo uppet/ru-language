@@ -76,6 +76,17 @@ class KernelTests(unittest.TestCase):
         bad = self.run_cell("算 同名: 得 1. 法 算 同名: 得 2. 法")
         self.assertEqual(bad["events"][-1]["status"], "error")
 
+    def test_optional_parameter_types_persist_across_cells(self):
+        defined = self.run_cell("算 保留 值: 得 值. 法 "
+                                "回 取 算 值, 数值 为 数: 得 值. 法. "
+                                "作 输出 值: 显 值. 为")
+        self.assertEqual(defined["events"][-1]["status"], "ok")
+        self.assertEqual(output(self.run_cell("显 (保留 空). 显 (回 '好' 2). 输出 [1,2].")),
+                         "空\n好\n[1, 2]\n")
+        bad = self.run_cell("回 空 '错'.")
+        self.assertEqual(bad["events"][-1]["status"], "error")
+        self.assertEqual(output(self.run_cell("保留 7.")), "7\n")
+
     def test_input_prompts_empty_line_checked_stream_and_eof(self):
         self.session.execute("甲 取 读 提示:'输入😀：'. 显 甲. 显 (读取 其 读) 其 值. 显 ((读取 其 读) 其 值) == 空.", "input")
         waiting = wait_for(self.session, "waiting_input")
