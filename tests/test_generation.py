@@ -505,7 +505,7 @@ class LocalResponsesTests(TemporaryGeneration):
             before = set(self.root.iterdir())
             with MockResponses(response_for(code)) as server:
                 result = subprocess.run([sys.executable, ROOT / "ru", "generate", self.document,
-                                         "--stdout", "--target", target], env=self.local_env(server),
+                                         "--stdout", "--target", target], env=isolated_process_env(**self.local_env(server)),
                                         text=True, capture_output=True, timeout=15)
             self.assertEqual(result.returncode, 0, result.stderr)
             if target == "ru":
