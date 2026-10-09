@@ -107,20 +107,22 @@ class NotebookReviewTests(unittest.TestCase):
         self.assertGreater(int(headers["Content-Length"]), 0)
         self.assertEqual(body, b"")
 
+    # Header rejection happens before body parsing. Do not send an unread body:
+    # Windows can reset a closing connection before the client sees its 4xx.
     def test_missing_or_wrong_token_cannot_create_session(self):
         for token in (None, "", "wrong", self.server.token + "x"):
             with self.subTest(token=token):
-                status, _, _ = self.request("POST", "/api/sessions", {}, {"X-Rushu-Token": token})
+                status, _, _ = self.request("POST", "/api/sessions", None, {"X-Rushu-Token": token})
                 self.assertEqual(status, 401)
         self.assertEqual(len(self.server.sessions.sessions), 0)
 
     def test_origin_and_rebinding_host_are_rejected_even_with_token(self):
         for origin in (None, "null", "https://evil.example", self.server.origin + "/", self.server.origin + ".evil.example"):
             with self.subTest(origin=origin):
-                self.assertEqual(self.request("POST", "/api/sessions", {}, {"Origin": origin})[0], 403)
+                self.assertEqual(self.request("POST", "/api/sessions", None, {"Origin": origin})[0], 403)
         for host in ("evil.example", "localhost", "127.0.0.1", self.server.host + ".evil.example"):
             with self.subTest(host=host):
-                self.assertEqual(self.request("POST", "/api/sessions", {}, {"Host": host})[0], 403)
+                self.assertEqual(self.request("POST", "/api/sessions", None, {"Host": host})[0], 403)
         self.assertEqual(len(self.server.sessions.sessions), 0)
 
     def test_cross_origin_static_read_and_preflight_rejected(self):
@@ -144,7 +146,7 @@ class NotebookReviewTests(unittest.TestCase):
             headers = [line for line in self.standard_headers() if not line.startswith("Content-Length:")]
             status, _ = self.raw(headers + ["Content-Length: " + length])
             self.assertIn(status, (400, 413))
-        self.assertEqual(self.request("POST", "/api/sessions", {}, {"Content-Type": "text/plain"})[0], 415)
+        self.assertEqual(self.request("POST", "/api/sessions", None, {"Content-Type": "text/plain"})[0], 415)
         for data in ([], None, "not an object", {"bad": "\ud800"}):
             self.assertGreaterEqual(self.request("POST", "/api/sessions", data)[0], 400)
 

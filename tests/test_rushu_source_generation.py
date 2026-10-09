@@ -79,8 +79,8 @@ class SourceGenerationTests(unittest.TestCase):
 
     def test_security_and_input_rejected_before_provider(self):
         with patch.object(generation, "request_response") as provider:
-            self.assertEqual(self.request("/api/generate", {"prompt": PROMPT}, authenticated=False)[0], 401)
-            self.assertEqual(self.request("/api/generate", {"prompt": PROMPT}, origin="https://evil.example")[0], 403)
+            self.assertEqual(self.request("/api/generate", method="POST", authenticated=False)[0], 401)
+            self.assertEqual(self.request("/api/generate", method="POST", origin="https://evil.example")[0], 403)
             self.assertEqual(self.request("/api/generate")[0], 405)
             self.assertEqual(self.request("/api/generate?x=1", {"prompt": PROMPT})[0], 400)
             for body in ({}, {"prompt": None}, {"prompt": "如是我言"},
