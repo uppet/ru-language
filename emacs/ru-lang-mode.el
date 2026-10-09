@@ -103,8 +103,8 @@ the source directory, passing filenames directly without a shell."
     "外言" "尽" "卒" "试" "救" "真" "假" "典" "成"))
 (defconst ru-lang--types '("数" "句" "阵" "事实" "典" "对" "空" "件" "录" "件作成果" "算" "作"))
 (defconst ru-lang--builtins
-  '("读" "含" "位" "增" "量" "囫" "囵" "读取" "显出" "错误" "__竞赛"))
-(defconst ru-lang--member-builtins '("段" "查" "增" "量" "读" "写" "在" "除" "列" "词" "数" "行" "清")
+  '("读" "含" "位" "增" "量" "囫" "囵" "读取" "显出" "错误" "__竞赛" "__实用"))
+(defconst ru-lang--member-builtins '("段" "查" "增" "删" "弹" "量" "读" "写" "在" "除" "列" "词" "数" "行" "清")
   "I/O and contest stream members highlighted only after a member operator.
 The legacy global function 读 is also in `ru-lang--builtins'.")
 (defconst ru-lang--pairs '(("算" . "法") ("作" . "为") ("形" . "象")
@@ -523,6 +523,11 @@ Intervening comments are ignored."
     ("事实" . "事实：真或假，与数不同。比较和非／且／或返回事实。为 事实 转换时仅空、假为假。")
     ("真" . "真：事实字面量。") ("假" . "假：事实字面量。")))
 
+(defconst ru-lang--practical-member-help
+  '(("删" . "内置阵：删 位，原地删除合法位置并返回原元素；越界报错。用户同名方法按其声明。")
+    ("弹" . "内置阵：弹，裸成员零参调用，移出最后项并返回原元素；空阵报错。用户同名方法按其声明。")
+    ("查" . "内置阵：查 值，按相等协议从初始浅快照返回首个位置，未找到为空。典：查 键，按目返回相。用户同名方法按其声明。")))
+
 (defun ru-lang--syntax-propertize (_start _end)
   "Apply string and comment syntax properties across the accessible buffer."
   (ru-lang--ensure-cache)
@@ -538,6 +543,9 @@ Intervening comments are ignored."
                            "段: … 落.：独立词法作用域，与语句位置的 { … } 等价。每次进入创建新局部环境，落后必须有句点。"))
       (when (eq (ru-lang--token-kind token) 'name)
         (when-let ((help (cdr (assoc (ru-lang--token-text token) ru-lang--token-help))))
+          (put-text-property start end 'help-echo help)))
+      (when (eq (ru-lang--token-face token) 'font-lock-builtin-face)
+        (when-let ((help (cdr (assoc (ru-lang--token-text token) ru-lang--practical-member-help))))
           (put-text-property start end 'help-echo help)))
       (pcase (ru-lang--token-kind token)
         ('comment

@@ -7,7 +7,7 @@ const R = (() => {
   const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const dict = () => Object.create(null);
   const NO_RETURN = Symbol('no return'), MISSING = Symbol('missing');
-  const reserved = new Set(['读','件','录','件作成果','读取','显出','错误','__竞赛']);
+  const reserved = new Set(['读','件','录','件作成果','读取','显出','错误','__竞赛','__实用']);
   class RuError extends Error {
     constructor(m, message, loc, category = '运行错误') {
       super(message); this.category = category;
@@ -570,6 +570,9 @@ const R = (() => {
     if (receiver instanceof Instance) {
       const a = contestMember(m,receiver,name,args,loc); if (a !== MISSING) return a;
       const b = ioMember(m,receiver,name,args,loc); if (b !== MISSING) return b;
+      /* RU_PRACTICAL_DISPATCH_BEGIN */
+      const c = practicalMember(m,receiver,name,args,loc); if (c !== MISSING) return c;
+      /* RU_PRACTICAL_DISPATCH_END */
     }
     if (receiver instanceof Pair && (name === '囫' || name === '囵')) {
       argsBind(m,name,args,[],loc); return name === '囫' ? receiver.left : receiver.right;
@@ -582,6 +585,22 @@ const R = (() => {
         const a = argsBind(m,name,args,['句'],loc); if (typeof a.句 !== 'string') fail(m,'「含」需要两个句',loc);
         return receiver.includes(a.句);
       }
+      /* RU_OPTIONAL_ARRAY_EDIT_BEGIN */
+      if (Array.isArray(receiver) && ['删','弹','查'].includes(name)) {
+        const a = argsBind(m,name,args,name === '删' ? ['位'] : name === '查' ? ['值'] : [],loc);
+        if (name === '查') {
+          // Equality may mutate the original array. Scan a shallow snapshot,
+          // with each original element as the left operand of equality.
+          const snapshot = receiver.slice();
+          for (let i = 0; i < snapshot.length; i++) if (equal(snapshot[i],a.值,m,loc)) {
+            m.lastMemberProcedure = false; return i;
+          }
+          m.lastMemberProcedure = false; return null;
+        }
+        const i = bounded(m,name === '删' ? a.位 : receiver.length-1,receiver.length,loc);
+        return receiver.splice(i,1)[0];
+      }
+      /* RU_OPTIONAL_ARRAY_EDIT_END */
       if (name === '增' && Array.isArray(receiver)) { const a = argsBind(m,name,args,['值'],loc); receiver.push(a.值); return receiver; }
     }
     fail(m,'未知成员：'+name,loc);
@@ -830,6 +849,139 @@ const R = (() => {
     throw new Error('unknown contest helper');
   }
   /* RU_OPTIONAL_CONTEST_END */
+  /* RU_OPTIONAL_PRACTICAL_BEGIN */
+  // PCG32: Copyright 2014 Melissa O'Neill; Apache License 2.0.
+  // https://www.apache.org/licenses/LICENSE-2.0 ; see docs/third-party-notices.md.
+  const practicalTypes = dict();
+  for (const [kind,name] of [['helpers','实用工具'],['random','随机源']])
+    practicalTypes[kind] = builtin(name,[],kind,'practicalKind');
+  builtins.values.__实用 = new Instance(practicalTypes.helpers,dict());
+  const practicalParams = {
+    '拆分':['文','隔'],'替换':['文','旧','新文'],'去空白':['文'],
+    '定点':['值','位数'],'平方根':['值'],'幂':['底数','指数'],
+    '向下取整':['值'],'向上取整':['值'],'四舍五入':['值'],'造源':['种子'],
+  };
+  const randomParams = {'整数':['下','上'],'洗牌':['列']};
+  function practicalNumber(m,value,label,loc) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) fail(m,label+'须为有限数',loc);
+    return value;
+  }
+  function practicalInteger(m,value,label,low,high,loc) {
+    practicalNumber(m,value,label,loc);
+    if (!Number.isInteger(value) || value < low || value > high) fail(m,label+'须为范围内整数',loc);
+    return value;
+  }
+  function fixedText(value,places) {
+    // Scale the exact binary64 rational, never an already-rounded double
+    // product. This also handles subnormals and the largest finite double.
+    const negative = value < 0 || Object.is(value,-0);
+    bits.setFloat64(0,Math.abs(value));
+    const hi = bits.getUint32(0), lo = bits.getUint32(4), exponent = (hi >>> 20) & 2047;
+    let numerator = (BigInt(hi & 1048575) << 32n) | BigInt(lo), denominator = 1n;
+    if (exponent) numerator |= 1n << 52n;
+    const binaryExponent = (exponent || 1)-1023-52;
+    if (binaryExponent >= 0) numerator <<= BigInt(binaryExponent);
+    else denominator <<= BigInt(-binaryExponent);
+    numerator *= pow10(places);
+    let quotient = numerator / denominator;
+    if ((numerator % denominator)*2n >= denominator) quotient++;
+    let text = quotient.toString().padStart(places+1,'0');
+    if (places) text = text.slice(0,-places)+'.'+text.slice(-places);
+    return (negative ? '-' : '')+text;
+  }
+  class PracticalRandom {
+    constructor(seed) {
+      this.state = 0n;
+      this.next();
+      this.state = (this.state+BigInt(seed)) & 0xffffffffffffffffn;
+      this.next();
+    }
+    next() {
+      // PCG32 XSH-RR, fixed initseq=54, state modulo 2^64. The
+      // xorshifted value is truncated before the 32-bit rotation.
+      const old = this.state;
+      this.state = (old*6364136223846793005n+109n) & 0xffffffffffffffffn;
+      const shifted = Number((((old >> 18n)^old) >> 27n) & 0xffffffffn);
+      const rotation = Number(old >> 59n);
+      return ((shifted >>> rotation) | (shifted << ((-rotation)&31))) >>> 0;
+    }
+    bounded(count) {
+      if (count === 1) return 0;
+      const threshold = 4294967296 % count;
+      for (;;) {
+        const value = this.next();
+        if (value >= threshold) return value % count;
+      }
+    }
+  }
+  function practicalMember(m,receiver,name,args,loc) {
+    if (!(receiver instanceof Instance) || !receiver.type.practicalKind) return MISSING;
+    const kind = receiver.type.practicalKind, params = kind === 'random' ? randomParams : practicalParams;
+    if (!own(params,name)) fail(m,(kind === 'random' ? '未知随机源成员：' : '未知实用库成员：')+name,loc);
+    const b = argsBind(m,name,args,params[name],loc);
+    if (kind === 'random') {
+      if (name === '整数') {
+        const low = practicalInteger(m,b.下,'下',-9007199254740991,9007199254740991,loc);
+        const high = practicalInteger(m,b.上,'上',-9007199254740991,9007199254740991,loc);
+        const width = BigInt(high)-BigInt(low)+1n;
+        if (width < 1n || width > 4294967296n)
+          fail(m,'随机整数须满足下不大于上且范围不超过 4294967296 项',loc);
+        const result = low+receiver.practicalState.bounded(Number(width));
+        return result === 0 ? 0 : result;
+      }
+      if (!Array.isArray(b.列)) fail(m,'洗牌的列须为阵',loc);
+      if (b.列.length > 4294967296) fail(m,'洗牌的列超过随机范围限制',loc);
+      const result = b.列.slice();
+      for (let i = result.length-1; i > 0; i--) {
+        const target = receiver.practicalState.bounded(i+1);
+        [result[i],result[target]] = [result[target],result[i]];
+      }
+      return result;
+    }
+    if (['拆分','替换','去空白'].includes(name)) {
+      for (const [label,value] of Object.entries(b)) if (typeof value !== 'string') fail(m,label+'须为句',loc);
+      if (name === '去空白') return b.文.replace(/^[ \t\r\n\v\f]+|[ \t\r\n\v\f]+$/g,'');
+      const separator = name === '拆分' ? b.隔 : b.旧;
+      if (separator === '') fail(m,(name === '拆分' ? '隔' : '旧')+'不能为空句',loc);
+      const pieces = b.文.split(separator);
+      return name === '拆分' ? pieces : pieces.join(b.新文);
+    }
+    if (name === '造源') {
+      const seed = practicalInteger(m,b.种子,'种子',0,4294967295,loc);
+      const result = new Instance(practicalTypes.random,dict());
+      result.practicalState = new PracticalRandom(seed); return result;
+    }
+    if (name === '定点') {
+      const value = practicalNumber(m,b.值,'值',loc);
+      const places = practicalInteger(m,b.位数,'位数',0,15,loc);
+      return fixedText(value,places);
+    }
+    let result;
+    if (name === '幂') {
+      const base = practicalNumber(m,b.底数,'底数',loc), exponent = practicalNumber(m,b.指数,'指数',loc);
+      if (base < 0 && !Number.isInteger(exponent)) fail(m,'负底数的指数须为整数',loc);
+      if (base === 0 && exponent < 0) fail(m,'零的指数不能为负数',loc);
+      result = Math.pow(base,exponent);
+    } else {
+      const value = practicalNumber(m,b.值,'值',loc);
+      if (name === '平方根') {
+        if (value < 0) fail(m,'平方根的值不能为负数',loc);
+        result = Math.sqrt(value);
+      } else {
+        if (name === '向下取整') result = Math.floor(value);
+        else if (name === '向上取整') result = Math.ceil(value);
+        else {
+          const magnitude = Math.abs(value), integral = Math.floor(magnitude);
+          result = integral+(magnitude-integral >= 0.5 ? 1 : 0);
+          if (value < 0 || Object.is(value,-0)) result = -result;
+        }
+        if (result === 0) result = value < 0 || Object.is(value,-0) ? -0 : 0;
+      }
+    }
+    if (!Number.isFinite(result)) fail(m,name+'的结果不是有限数',loc);
+    return result;
+  }
+  /* RU_OPTIONAL_PRACTICAL_END */
   function importAll(m,s,module,loc) {
     if (!(module instanceof Module)) fail(m,'尽取需要外言',loc);
     const values = module.exports();

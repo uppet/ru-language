@@ -7,6 +7,7 @@ not reference-counted. Module source is resolved and compiled at build time.
 from pathlib import Path
 from . import __version__
 from .frontend import BUILTIN_TYPES, Node, RuError, bind_arguments, validate
+from .c_runtime import ast_strings
 
 
 def cstr(value):
@@ -721,7 +722,8 @@ class Compiler:
             self.line(f'if ({ident}_state == 1) ru_fail(1, "循环外言");')
             self.line(f'{ident}_state = 1;')
             self.line(f'const char *previous_source = ru_source; ru_source = {cstr(path)};')
-            self.line(f'Env *global = &{ident}_env; Env *env = global; env_init(env, ru_contest_builtins());')
+            builtins = 'ru_practical_builtins' if '__实用' in set(ast_strings(self.modules)) else 'ru_contest_builtins'
+            self.line(f'Env *global = &{ident}_env; Env *env = global; env_init(env, {builtins}());')
             self.panic_context(f'&{ident}_env')
             for n in program:
                 if n.kind == 'function':

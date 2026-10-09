@@ -164,11 +164,21 @@ static int ru_io_member(Val receiver, const char *name, size_t argc, const char 
 def runtime_source(modules, generated, full=False):
     directory = Path(__file__).parent
     headers = [(directory / name).read_text(encoding='utf-8')
-               for name in ('runtime.h', 'io_runtime.h', 'contest_runtime.h')]
+               for name in ('runtime.h', 'io_runtime.h', 'contest_runtime.h', 'practical_runtime.h')]
     if full:
         source = _FEATURE.sub(lambda m: m[2], _MAP_REGION.sub(lambda m: m[1], '\n'.join(headers)))
         return re.sub(r'/\* RU_(?:MEMBERS: [^*]*|OPERATORS: [^*]*|END_MEMBERS) \*/\n', '', source)
     strings = set(ast_strings(modules))
+    if '__实用' not in strings:
+        headers[3] = """
+static Env *ru_practical_builtins(void) { return ru_contest_builtins(); }
+static int ru_practical_member(Val receiver, const char *name, size_t argc,
+                              const char **keys, Val *args, int line, Val *out)
+{
+    (void)receiver; (void)name; (void)argc; (void)keys; (void)args; (void)line; (void)out;
+    return 0;
+}
+"""
     io_names = {'件', '录', '件作成果', '读取', '显出', '错误'}
     # Empty (untyped) parameter annotations add no type dependency.
     # Type annotations may include a trailing array qualifier. Unknown strings

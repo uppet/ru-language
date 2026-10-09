@@ -10,7 +10,8 @@ from .frontend import Node, RuError, parse, validate, comment_marker, block_comm
 
 
 GENERATION_MARKER = "如是我言"
-STANDARD_MODULES = {"如:竞赛": "竞赛.ru"}
+STANDARD_MODULES = {"如:竞赛": "竞赛.ru", "如:文本": "文本.ru",
+                    "如:数学": "数学.ru", "如:随机": "随机.ru"}
 
 
 def resolve_import(requested, importer_path):

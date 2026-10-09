@@ -11,6 +11,7 @@ import sys
 from .frontend import BUILTIN_NAMES, RuError, bind_arguments, validate
 from .io_runtime import install_io, io_member, io_new_defaults, read_stream_line, _write_stream
 from .contest_runtime import install_contest, contest_member
+from .practical_runtime import install_practical, practical_member
 
 DECIMAL = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?\Z")
 
@@ -288,6 +289,7 @@ class Interpreter:
         self.last_call_procedure = False
         install_io(self)
         install_contest(self)
+        install_practical(self)
         if sys.getrecursionlimit() < 10000:
             sys.setrecursionlimit(10000)
 
@@ -954,6 +956,9 @@ class Interpreter:
         self.last_member_procedure = False
         if isinstance(receiver, RuMap):
             return self.map_member(n, receiver, name, args)
+        handled, result = practical_member(self, n, receiver, name, args)
+        if handled:
+            return result
         handled, result = contest_member(self, n, receiver, name, args)
         if handled:
             return result
@@ -996,6 +1001,19 @@ class Interpreter:
                 if not isinstance(bound["句"], str):
                     self.fail(n, "「含」需要两个句")
                 return bound["句"] in receiver
+            if isinstance(receiver, list) and name in ("删", "弹", "查"):
+                parameters = {"删": ["位"], "弹": [], "查": ["值"]}[name]
+                bound = bind_arguments(name, args, parameters, fail)
+                if name == "查":
+                    for index, value in enumerate(receiver[:]):
+                        if self.equals(n, value, bound["值"]):
+                            self.last_member_procedure = False
+                            return float(index)
+                    self.last_member_procedure = False
+                    return None
+                position = bound["位"] if name == "删" else float(len(receiver) - 1)
+                self.get_index(n, receiver, position)
+                return receiver.pop(int(position))
             if name == "增" and isinstance(receiver, list):
                 bound = bind_arguments(name, args, ["值"], fail)
                 receiver.append(bound["值"])

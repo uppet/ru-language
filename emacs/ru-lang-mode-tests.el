@@ -1273,3 +1273,9 @@
         (condition-case nil
             (progn (ru-lang-forward-list) (ru-lang-backward-list))
           (user-error nil))))))
+
+(ert-deftest ru-practical-members-and-library-names ()
+  (dolist (name '("删" "弹" "查"))
+    (should (member name ru-lang--member-builtins)))
+  (dolist (name '("拆分" "替换" "去空白" "定点" "平方根" "幂" "造源"))
+    (should-not (member name ru-lang--builtins))))

@@ -4,7 +4,7 @@
 export const KEYWORDS = new Set('显 取 为 得 完 破 若 则 另 然 循 次 环 算 作 法 其 且 或 非 空 对 形 象 如 新 外言 尽 试 救 卒 真 假 典 成'.split(' '));
 const TYPES = new Set('数 句 阵 空 对 事实 典 件 录 件作成果'.split(' '));
 const BUILTINS = new Set('读 件 录 件作成果 读取 显出 错误 __竞赛'.split(' '));
-const MEMBERS = new Set('含 位 段 增 量 囫 囵 写 行 读 开 关 查 除 列'.split(' '));
+const MEMBERS = new Set('含 位 段 增 删 弹 量 囫 囵 写 行 读 开 关 查 除 列'.split(' '));
 const PAIRS = new Map(Object.entries({'算':'法','作':'为','若':'然','循':'环','形':'象','试':'终','典':'成','段':'落','(' : ')','[':']','{':'}'}));
 const PUNCT = {'。':'.','：':':','（':'(','）':')','，':',','［':'[','］':']','｛':'{','｝':'}'};
 const nameStart = c => !!c && /[_\p{L}]/u.test(c);
@@ -159,7 +159,13 @@ export const TOKEN_HELP = {
   '事实': '事实：真或假，与数不同。比较和非／且／或返回事实。为 事实 转换时仅空、假为假。',
   '真': '真：事实字面量。', '假': '假：事实字面量。'
 };
+const PRACTICAL_MEMBER_HELP = {
+  '删': '内置阵：删 位，原地删除合法位置并返回原元素；越界报错。用户同名方法按其声明。',
+  '弹': '内置阵：弹，裸成员零参调用，移出最后项并返回原元素；空阵报错。用户同名方法按其声明。',
+  '查': '内置阵：查 值，按相等协议从初始浅快照返回首个位置，未找到为空。典：查 键，按目返回相。用户同名方法按其声明。'
+};
 export function tokenHelp(token) {
+  if(token.face==='builtin' && PRACTICAL_MEMBER_HELP[token.text]) return PRACTICAL_MEMBER_HELP[token.text];
   if(token.open==='段'||token.close==='段') return '段: … 落.：独立词法作用域，与语句位置的 { … } 等价。每次进入创建新局部环境，落后必须有句点。';
   return token.kind === 'name'||token.text===':=' ? TOKEN_HELP[token.text] || null : null;
 }

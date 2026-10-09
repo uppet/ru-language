@@ -103,6 +103,8 @@ static int ru_io_member(Val receiver, const char *name, size_t argc, const char 
                         Val *args, int line, Val *out);
 static int ru_contest_member(Val receiver, const char *name, size_t argc, const char **keys,
                             Val *args, int line, Val *out);
+static int ru_practical_member(Val receiver, const char *name, size_t argc, const char **keys,
+                              Val *args, int line, Val *out);
 static void ru_fail(int line, const char *format, ...)
 {
     va_list args;
@@ -831,6 +833,53 @@ static Val v_append(Val v,Val value,int line)
     if(a->len==a->capacity) {if(a->capacity>(SIZE_MAX/sizeof(Val)-1)/2)ru_fail(line,"阵过长");cap=a->capacity?a->capacity*2:4;items=(Val *)realloc(a->items,cap*sizeof(Val));if(!items)ru_fail(line,"内存不足");a->items=items;a->capacity=cap;}
     a->items[a->len++]=value;return v_copy(v);
 }
+/* Removed container edges become owned roots before the mutation. */
+static Val v_array_delete(Val receiver, Val index, int line)
+{
+    RuArray *array;
+    size_t at;
+    Val out;
+    if (receiver.kind != RU_ARRAY) ru_fail(line, "删 需要阵");
+    array = (RuArray *)receiver.heap;
+    at = ru_index(index, array->len, 0, line);
+    out = v_copy(array->items[at]);
+    --array->len;
+    if (at < array->len)
+        memmove(array->items + at, array->items + at + 1, (array->len - at) * sizeof(Val));
+    array->items[array->len] = v_null();
+    return out;
+}
+static Val v_array_pop(Val receiver, int line)
+{
+    RuArray *array;
+    Val out;
+    if (receiver.kind != RU_ARRAY) ru_fail(line, "弹 需要阵");
+    array = (RuArray *)receiver.heap;
+    if (!array->len) ru_fail(line, "空阵不能弹出");
+    out = v_copy(array->items[--array->len]);
+    array->items[array->len] = v_null();
+    return out;
+}
+/* User equality may mutate the receiver, allocate, or panic. A rooted shallow
+ * snapshot keeps both traversal storage and every original element reachable. */
+static Val v_array_find(Val receiver, Val needle, int line)
+{
+    Val snapshot, result = v_null();
+    RuArray *array;
+    size_t i;
+    if (receiver.kind != RU_ARRAY) ru_fail(line, "查 需要阵或典");
+    array = (RuArray *)receiver.heap;
+    needle = v_copy(needle);
+    snapshot = v_array(array->len, array->items, line);
+    array = (RuArray *)snapshot.heap;
+    for (i = 0; i < array->len; ++i) {
+        int same = v_equal(array->items[i], needle, line);
+        if (ru_panicking) break;
+        if (same) { result = v_num((double)i); break; }
+    }
+    v_drop(snapshot); v_drop(needle);
+    return result;
+}
 /* Read the Unicode command line without depending on an ANSI CRT argv. */
 static Val ru_arguments(int argc, char **argv)
 {
@@ -1268,6 +1317,9 @@ static Val v_member(Val receiver,const char *name,size_t argc,const char **keys,
 /* RU_MEMBERS: 读入,扫句,拆词,拆行,字列,合句,排序,取整,蓄出,词,数,行,写,清 */
     if (ru_contest_member(receiver, name, argc, keys, args, line, &io_result)) return io_result;
 /* RU_END_MEMBERS */
+/* RU_MEMBERS: 拆分,替换,去空白,定点,平方根,幂,向下取整,向上取整,四舍五入,造源,整数,洗牌 */
+    if (ru_practical_member(receiver, name, argc, keys, args, line, &io_result)) return io_result;
+/* RU_END_MEMBERS */
 /* RU_MEMBERS: 读,写,在,除,列 */
     if (ru_io_member(receiver, name, argc, keys, args, line, &io_result)) return io_result;
 /* RU_END_MEMBERS */
@@ -1307,6 +1359,15 @@ static Val v_member(Val receiver,const char *name,size_t argc,const char **keys,
 /* RU_END_MEMBERS */
 /* RU_MEMBERS: 增 */
     if(!strcmp(name,"增")){ru_bind(name,1,one,argc,keys,args,bound,line);return v_append(receiver,bound[0],line);}
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 删 */
+    if(!strcmp(name,"删")){ru_bind(name,1,position,argc,keys,args,bound,line);return v_array_delete(receiver,bound[0],line);}
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 弹 */
+    if(!strcmp(name,"弹")){ru_bind(name,0,NULL,argc,keys,args,bound,line);return v_array_pop(receiver,line);}
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 查 */
+    if(!strcmp(name,"查")){ru_bind(name,1,one,argc,keys,args,bound,line);return v_array_find(receiver,bound[0],line);}
 /* RU_END_MEMBERS */
 /* RU_MEMBERS: 含 */
     if(!strcmp(name,"含")){const char *text[]={"句"};ru_bind(name,1,text,argc,keys,args,bound,line);return v_binary("含",receiver,bound[0],line);}

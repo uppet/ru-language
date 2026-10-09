@@ -13,10 +13,12 @@ also roots, preserving runtime protected-name and import-all checks.
 from pathlib import Path
 
 from .frontend import Node, RuError, parse
-from .modules import import_nodes
+from .modules import import_nodes, STANDARD_MODULES
 
 
 _BUNDLED_PATH = str((Path(__file__).parent / 'stdlib' / '竞赛.ru').resolve())
+_BUNDLED_PATHS = tuple(str((Path(__file__).parent / 'stdlib' / filename).resolve())
+                       for filename in STANDARD_MODULES.values())
 _KNOWN_KINDS = frozenset((
     'function', 'function_literal', 'type', 'bind', 'assign', 'import_all', 'print', 'expr',
     'return', 'finish', 'break', 'scope', 'if', 'loop', 'try', 'panic', 'number', 'string',
@@ -67,14 +69,14 @@ def _shape(value):
     return value
 
 
-def _trusted_declarations(statements):
+def _trusted_declarations(statements, path=_BUNDLED_PATH):
     # A client can supply its own AST at any path; a trusted path alone does not
     # prove that those declarations are the shipped library. Refuse substitutes
     # and future library versions with observable top-level initialization.
     if not statements or any(n.kind != 'function' for n in statements):
         return False
     try:
-        bundled = parse(Path(_BUNDLED_PATH).read_text(encoding='utf-8-sig'))
+        bundled = parse(Path(path).read_text(encoding='utf-8-sig'))
     except (OSError, UnicodeError, RuError):
         return False
     return _shape(statements) == _shape(bundled)
@@ -167,23 +169,27 @@ def prune_bundled_stdlib(program, source_name, modules):
     root = str(Path(source_name).resolve()) if modules else str(source_name)
     result = {path: list(body) for path, body in (modules or {}).items()}
     result[root] = list(program)
-    candidate = result.get(_BUNDLED_PATH)
-    if not _trusted_declarations(candidate or []):
-        return result
-    if _module_escapes(result, _BUNDLED_PATH):
-        return result
-
-    declarations = {n.data['name']: n for n in candidate}
-    names = set(declarations)
-    needed = set()
-    for path, body in result.items():
-        if path != _BUNDLED_PATH:
-            needed.update(names.intersection(_strings(body)))
-    pending = list(needed)
-    while pending:
-        name = pending.pop()
-        dependencies = names.intersection(_strings(declarations[name])) - needed
-        needed.update(dependencies)
-        pending.extend(dependencies)
-    result[_BUNDLED_PATH] = [n for n in candidate if n.data['name'] in needed]
+    # Analyze each shipped declaration-only library against the ORIGINAL graph.
+    # Other libraries are roots, deliberately conservative for shared names and
+    # cross-library dependencies. Validation has already seen all declarations.
+    original = dict(result)
+    for path in _BUNDLED_PATHS:
+        candidate = original.get(path)
+        if not _trusted_declarations(candidate or [], path):
+            continue
+        if _module_escapes(original, path):
+            continue
+        declarations = {n.data['name']: n for n in candidate}
+        names = set(declarations)
+        needed = set()
+        for other, body in original.items():
+            if other != path:
+                needed.update(names.intersection(_strings(body)))
+        pending = list(needed)
+        while pending:
+            name = pending.pop()
+            dependencies = names.intersection(_strings(declarations[name])) - needed
+            needed.update(dependencies)
+            pending.extend(dependencies)
+        result[path] = [n for n in candidate if n.data['name'] in needed]
     return result

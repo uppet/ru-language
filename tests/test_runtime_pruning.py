@@ -45,7 +45,7 @@ def build(generated, directory, stem):
     result = subprocess.run(
         [CC, '-std=c99', '-O2', '-Wall', '-Wextra', '-Werror',
          '-Wno-unused-function', '-pedantic', str(cfile),
-         *(['-lm'] if '#define RU_ENABLE_MODULO 1' in generated else []),
+         *(['-lm'] if '#define RU_ENABLE_MODULO 1' in generated or any(name in generated for name in ('ru_practical_pow', 'ru_practical_sqrt', 'ru_practical_round', 'ru_random_integer')) else []),
          '-o', str(binary)],
         capture_output=True, text=True, timeout=60)
     if result.returncode:

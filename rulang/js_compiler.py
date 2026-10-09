@@ -243,16 +243,24 @@ class JSCompiler(Compiler):
         for feature, needed, handler in (
             ('IO', bool(words & {'件', '录', '件作成果', '读取', '显出', '错误'}), 'ioMember'),
             ('CONTEST', '__竞赛' in words, 'contestMember'),
+            ('PRACTICAL', '__实用' in words, 'practicalMember'),
         ):
             if not needed:
                 pattern = r'/\* RU_OPTIONAL_' + feature + r'_BEGIN \*/.*?/\* RU_OPTIONAL_' + feature + r'_END \*/'
-                runtime = re.sub(pattern, 'function ' + handler + '(){return MISSING;}', runtime, count=1, flags=re.S)
+                replacement = '' if feature == 'PRACTICAL' else 'function ' + handler + '(){return MISSING;}'
+                runtime = re.sub(pattern, replacement, runtime, count=1, flags=re.S)
+                if feature == 'PRACTICAL':
+                    runtime = re.sub(r'/\* RU_PRACTICAL_DISPATCH_BEGIN \*/.*?/\* RU_PRACTICAL_DISPATCH_END \*/',
+                                     '', runtime, count=1, flags=re.S)
         if not has_diagnostics:
             runtime = re.sub(r'/\* RU_OPTIONAL_DIAGNOSTIC_DETAIL_BEGIN \*/.*?/\* RU_OPTIONAL_DIAGNOSTIC_DETAIL_END \*/',
                              '',
                              runtime, count=1, flags=re.S)
         runtime = re.sub(r'/\* RU_DETAIL \*/(.*?)/\* RU_END_DETAIL \*/',
                          lambda match: match[1] if has_diagnostics else '', runtime)
+        if not words.intersection({'删', '弹', '查'}):
+            runtime = re.sub(r'/\* RU_OPTIONAL_ARRAY_EDIT_BEGIN \*/.*?/\* RU_OPTIONAL_ARRAY_EDIT_END \*/',
+                             '', runtime, count=1, flags=re.S)
         if not has_map:
             runtime = re.sub(r'/\* RU_OPTIONAL_MAP_INDEX_BEGIN \*/.*?/\* RU_OPTIONAL_MAP_INDEX_END \*/',
                              '', runtime, count=1, flags=re.S)

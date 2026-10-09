@@ -286,3 +286,11 @@ test('scope Enter, closing marker dedent and incomplete prefixes remain tolerant
     assert.equal(indentText(formatted),formatted);highlight(prefix);enterEdit(prefix,prefix.length);
   }
 });
+
+test('practical array members are contextual and library functions stay ordinary',()=>{
+  const result=analyze("列 其 删 位:0. 列 其 弹. 列 其 查 值:1. 拆分 取 1. 定点 取 2. 造源 取 3.");
+  for(const name of ['删','弹','查'])assert.equal(result.tokens.find(t=>t.text===name).face,'builtin');
+  for(const name of ['拆分','定点','造源'])assert.equal(result.tokens.find(t=>t.text===name).face,null);
+  assert.match(highlight('列 其 查 1.'), /初始浅快照/);
+  assert.doesNotMatch(highlight('查 取 1.'), /初始浅快照/);
+});

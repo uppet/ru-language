@@ -3,6 +3,7 @@ EMACS ?= emacs
 test:
 	python3 -m unittest discover -s tests -v
 examples:
+	python3 ru build examples/practical_libraries.ru -o bin/practical_libraries --emit-c dist/practical_libraries.c
 	python3 ru build examples/scoped_blocks.ru -o bin/scoped_blocks --emit-c dist/scoped_blocks.c
 	python3 ru build examples/map_symbol_literals.ru -o bin/map_symbol_literals --emit-c dist/map_symbol_literals.c
 	python3 ru build examples/map_index_read.ru -o bin/map_index_read --emit-c dist/map_index_read.c
