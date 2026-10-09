@@ -244,11 +244,11 @@ def io_member(owner, n, receiver, name, args):
                                         bool(append) if name == "写" else False)
             if name == "在":
                 try:
-                    value = float(stat.S_ISREG(os.stat(path).st_mode))
+                    value = stat.S_ISREG(os.stat(path).st_mode)
                 except OSError as caught:
                     if caught.errno not in (errno.ENOENT, errno.ENOTDIR):
                         raise
-                    value = 0.0
+                    value = False
                 return True, _result(value)
             # unlink refuses directories and removes the symlink itself.
             mode = os.lstat(path).st_mode

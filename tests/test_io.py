@@ -73,7 +73,7 @@ class CheckedIOTests(unittest.TestCase):
 显 (文档 其 除) 其 值. 显 (文档 其 在) 其 值.
 应 取 文档 其 读. 显 应 其 结果. 显 应 其 值. 显 应 其 错误信息 其 含 'errno'.
 """
-        self.engines(source, "0\n成功\n空\n1\n1\n成功\n甲😀\n乙\n末\n空\n0\n失败\n空\n1\n")
+        self.engines(source, "假\n成功\n空\n真\n真\n成功\n甲😀\n乙\n末\n空\n假\n失败\n空\n真\n")
 
     def test_result_is_normal_typed_mutable_object(self):
         source = """
@@ -84,7 +84,7 @@ class CheckedIOTests(unittest.TestCase):
 文档 取 新 件. 显 文档 其 路径 == ''. 显 (文档 其 读) 其 结果.
 目录 取 新 录. 显 目录 其 路径.
 """
-        self.engines(lambda _: source, "成功\n1\n二\n用户\n1\n1\n失败\n.\n", gc_stress=True)
+        self.engines(lambda _: source, "成功\n真\n二\n用户\n真\n真\n失败\n.\n", gc_stress=True)
 
     def test_list_sorted_regular_files_and_empty(self):
         def setup(path):
@@ -99,7 +99,7 @@ class CheckedIOTests(unittest.TestCase):
 空录 取 新 录 路径:{quote(path/'子录'/'..'/'empty')}.
 空件 取 新 件 路径:{quote(path)}. 显 (空件 其 在) 其 值. 显 (空件 其 除) 其 结果.
 """
-        self.engines(source, "成功\n2\na\n乙\n0\n失败\n", setup=setup, gc_stress=True)
+        self.engines(source, "成功\n2\na\n乙\n假\n失败\n", setup=setup, gc_stress=True)
         self.engines(lambda p: f"显 ((新 录 路径:{quote(p)}) 其 列) 其 值 其 量.", "0\n")
 
     @unittest.skipUnless(hasattr(os, 'symlink'), 'symlinks unavailable')
@@ -118,7 +118,7 @@ class CheckedIOTests(unittest.TestCase):
 显 (链接 其 除) 其 结果. 显 ((新 件 路径:{quote(path/'base')}) 其 在) 其 值.
 失链 取 新 件 路径:{quote(path/'dangling')}. 显 (失链 其 在) 其 值. 显 (失链 其 除) 其 结果.
 """
-        self.engines(source, "2\n原\n新\n成功\n1\n0\n成功\n", setup=setup)
+        self.engines(source, "2\n原\n新\n成功\n真\n假\n成功\n", setup=setup)
 
     def test_failures_are_values_and_do_not_create_invalid_writes(self):
         def setup(path):
@@ -137,19 +137,19 @@ class CheckedIOTests(unittest.TestCase):
 显 (文档 其 写 内容:3) 其 结果. 显 (文档 其 写 内容:'damage' 追加:2) 其 结果.
 显 (文档 其 读) 其 值.
 """
-        self.engines(source, "失败\n失败\n0\n失败\n失败\n失败\n失败\n失败\n失败\nsafe\n", setup=setup)
+        self.engines(source, "失败\n失败\n假\n失败\n失败\n失败\n失败\n失败\n失败\nsafe\n", setup=setup)
 
     def test_stdin_lines_empty_lines_and_eof(self):
         source = """
 显 (读取 其 读) 其 值. 显 (读取 其 读) 其 值. 显 (读取 其 读) 其 值.
 应 取 读取 其 读. 显 应 其 结果. 显 应 其 值 == 空. 显 应 其 错误信息 == ''.
 """
-        self.engines(lambda _: source, "甲😀\n\n尾\n成功\n1\n1\n", stdin='甲😀\r\n\n尾'.encode())
+        self.engines(lambda _: source, "甲😀\n\n尾\n成功\n真\n真\n", stdin='甲😀\r\n\n尾'.encode())
         self.engines(lambda _: "显 (读取 其 读) 其 结果.", "失败\n", stdin=b'bad\xff\n')
         self.engines(lambda _: "显 (读取 其 读) 其 结果.", "失败\n", stdin=b'bad\x00\n')
 
     def test_stdout_no_implicit_newline(self):
-        self.engines(lambda _: "应 取 显出 其 写 内容:'甲😀'. 显 应 其 结果. 显 应 其 值. 显 应 其 错误信息 == ''.", "甲😀成功\n空\n1\n")
+        self.engines(lambda _: "应 取 显出 其 写 内容:'甲😀'. 显 应 其 结果. 显 应 其 值. 显 应 其 错误信息 == ''.", "甲😀成功\n空\n真\n")
 
     def test_stderr_no_implicit_newline(self):
         source = "应 取 错误 其 写 内容:'诊断😀'. 显 应 其 结果."
@@ -165,7 +165,7 @@ class CheckedIOTests(unittest.TestCase):
     @unittest.skipUnless(hasattr(os, 'mkfifo'), 'requires POSIX FIFO')
     def test_special_files_fail_without_blocking(self):
         self.engines(lambda p: f"文档 取 新 件 路径:{quote(p/'pipe')}. 显 (文档 其 读) 其 结果. 显 (文档 其 在) 其 值. 显 (文档 其 除) 其 结果.",
-                     '失败\n0\n失败\n', setup=lambda p: os.mkfifo(p/'pipe'))
+                     '失败\n假\n失败\n', setup=lambda p: os.mkfifo(p/'pipe'))
 
     def test_gc_stress_with_result_and_listing_roots(self):
         def source(path):
@@ -299,7 +299,7 @@ class CheckedIOTests(unittest.TestCase):
                     result = subprocess.run(command, input='输入\n', capture_output=True, text=True,
                                             timeout=10, env=dict(os.environ, RU_GC_THRESHOLD='1'))
                     self.assertEqual((result.returncode, result.stdout, result.stderr),
-                                     (0, '0\n.\n成功\n输入\n输出跨模块\n7\n12\n13\n', '诊断'))
+                                     (0, '假\n.\n成功\n输入\n输出跨模块\n7\n12\n13\n', '诊断'))
 
     def test_builtin_registry_does_not_retain_interpreters(self):
         owner = Interpreter(io.StringIO(), io.StringIO())
@@ -332,14 +332,14 @@ class CheckedIOTests(unittest.TestCase):
                 source = "文档 取 新 件 路径:'unused'. 应 取 文档 其 " + ('读' if failure == 'read' else "写 内容:'text'") + ". 显 应 其 结果. 显 应 其 错误信息 其 含 'errno'."
                 with mock.patch.object(io_runtime, '_open_regular', return_value=fake):
                     Interpreter(io.StringIO(), output).execute(parse(source))
-                self.assertEqual(output.getvalue(), '失败\n1\n')
+                self.assertEqual(output.getvalue(), '失败\n真\n')
                 self.assertTrue(fake.closed)
         for operation in ('stat', 'open'):
             output = io.StringIO()
             source = "文档 取 新 件 路径:'unused'. 应 取 文档 其 " + ('在' if operation == 'stat' else '读') + ". 显 应 其 结果. 显 应 其 错误信息 其 含 'errno 13'."
             with mock.patch.object(io_runtime.os, operation, side_effect=PermissionError(errno.EACCES, 'denied')):
                 Interpreter(io.StringIO(), output).execute(parse(source))
-            self.assertEqual(output.getvalue(), '失败\n1\n')
+            self.assertEqual(output.getvalue(), '失败\n真\n')
 
     @unittest.skipUnless(CC, 'C compiler unavailable')
     def test_native_short_write_flush_close_and_read_errors(self):
@@ -366,7 +366,7 @@ class CheckedIOTests(unittest.TestCase):
                 compiled = subprocess.run([CC, '-std=c99', '-Werror=implicit-function-declaration', str(cfile), '-lm', '-o', str(binary)], capture_output=True, text=True)
                 self.assertEqual(compiled.returncode, 0, compiled.stderr)
                 result = subprocess.run([binary], capture_output=True, text=True, timeout=10)
-                self.assertEqual((result.returncode, result.stdout), (0, '失败\n1\n'), result.stderr)
+                self.assertEqual((result.returncode, result.stdout), (0, '失败\n真\n'), result.stderr)
 
 
 if __name__ == '__main__':

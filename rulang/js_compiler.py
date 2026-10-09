@@ -46,7 +46,7 @@ class JSCompiler(Compiler):
     def expr(self, n):
         d, loc = n.data, self.loc(n)
         kind = n.kind
-        if kind in ('number', 'string'):
+        if kind in ('number', 'string', 'fact'):
             return js(d['value'])
         if kind == 'null':
             return 'null'
@@ -68,8 +68,11 @@ class JSCompiler(Compiler):
             return f'R.call(m,{self.reference(d["callee"])},{self.args(d["args"])},{loc})'
         if kind == 'array':
             return '[' + ','.join(self.expr(item) for item in d['items']) + ']'
+        if kind == 'map':
+            entries = '[' + ','.join('[()=>'+self.expr(k)+',()=>'+self.expr(v)+']' for k,v in d['entries']) + ']'
+            return f'R.map(m,{entries},{loc})'
         if kind == 'convert':
-            if d['target'] not in ('数', '句', '阵'):
+            if d['target'] not in ('数', '句', '阵', '事实'):
                 self.error(n, 'JavaScript 后端不支持转换：' + d['target'])
             return f'R.convert(m,{self.expr(d["expr"])},{js(d["target"])},{loc})'
         if kind == 'unary':
@@ -82,7 +85,7 @@ class JSCompiler(Compiler):
             left, right = self.expr(d['left']), self.expr(d['right'])
             if d['op'] in ('且', '或'):
                 op = '&&' if d['op'] == '且' else '||'
-                return f'Number(R.truth({left}){op}R.truth({right}))'
+                return f'(R.truth({left}){op}R.truth({right}))'
             return f'R.binary(m,{js(d["op"])},{left},{right},{loc})'
         if kind == 'member':
             return f'R.member(m,{self.expr(d["receiver"])},{js(d["name"])},()=>{self.args(d["args"])},{loc})'
@@ -204,10 +207,12 @@ class JSCompiler(Compiler):
         if self.full_runtime:
             return runtime
         words = set()
+        has_map = False
         pending = list(self.modules.values())
         while pending:
             value = pending.pop()
             if isinstance(value, Node):
+                has_map = has_map or value.kind == 'map'
                 pending.append(value.data)
             elif isinstance(value, dict):
                 pending.extend(value.values())
@@ -222,6 +227,10 @@ class JSCompiler(Compiler):
             if not needed:
                 pattern = r'/\* RU_OPTIONAL_' + feature + r'_BEGIN \*/.*?/\* RU_OPTIONAL_' + feature + r'_END \*/'
                 runtime = re.sub(pattern, 'function ' + handler + '(){return MISSING;}', runtime, count=1, flags=re.S)
+        if not has_map:
+            runtime = re.sub(r'/\* RU_OPTIONAL_MAP_BEGIN \*/.*?/\* RU_OPTIONAL_MAP_END \*/',
+                             'function map(){throw new Error("map runtime unavailable");} function mapMember(){return MISSING;}',
+                             runtime, count=1, flags=re.S)
         return runtime
 
     def compile(self):

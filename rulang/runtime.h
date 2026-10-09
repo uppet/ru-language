@@ -5,13 +5,9 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 #endif
-/* Standalone C99 runtime. Every generated temporary and environment binding
- * owns one external root. Active lexical environments own one root; their
- * bindings and captured/parent environment links are traced edges, so escaped
- * closures survive returns and closure/environment cycles are reclaimed.
- * Static module environments own roots for their bindings. Mark/sweep follows
- * edges from external roots, so shared references and cycles are reclaimed.
- * No conservative stack scanning, reference-count cycle leaks, AST, or VM. */
+/* Standalone C99: temporaries and active/static environments own roots.
+ * Mark/sweep traces container edges, bindings, parents and closure captures;
+ * shared values and cycles are reclaimed without conservative stack scanning. */
 #include <math.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -19,7 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-enum { RU_NUM, RU_STR, RU_NULL, RU_PAIR, RU_ARRAY, RU_OBJECT, RU_FUNCTION, RU_CLASS, RU_MODULE, RU_ENV };
+enum { RU_NUM, RU_FACT, RU_MAP, RU_STR, RU_NULL, RU_PAIR, RU_ARRAY, RU_OBJECT, RU_FUNCTION, RU_CLASS, RU_MODULE, RU_ENV };
 typedef struct RuHeap RuHeap;
 typedef struct RuString RuString;
 typedef struct RuClass RuClass;
@@ -27,6 +23,10 @@ typedef struct Env Env;
 typedef struct Val { int kind; double n; RuString *s; RuHeap *heap; RuClass *klass; Env *module; } Val;
 struct RuHeap { size_t roots; unsigned mark; int kind; RuHeap *next; };
 struct RuString { RuHeap gc; size_t len; char data[]; };
+/* RU_MAP */
+typedef struct { Val key, value; uint64_t hash; unsigned state; } RuMapEntry;
+typedef struct { RuHeap gc; size_t len, used, capacity; uint64_t version; RuMapEntry *entries; } RuMap;
+/* RU_END_MAP */
 typedef struct { RuHeap gc; Val first, second; } RuPair;
 typedef struct { RuHeap gc; size_t len, capacity; Val *items; } RuArray;
 typedef struct { RuHeap gc; RuClass *klass; size_t len; Val *fields; } RuObject;
@@ -43,6 +43,8 @@ static const char *v_type_name(Val value)
 {
     switch (value.kind) {
     case RU_NUM: return "数";
+    case RU_FACT: return "事实";
+    case RU_MAP: return "典";
     case RU_STR: return "句";
     case RU_NULL: return "空";
     case RU_PAIR: return "对";
@@ -131,6 +133,7 @@ static void ru_scratch_free(void *data)
     }
 }
 static Val v_num(double n) { Val v = {0}; v.kind = RU_NUM; v.n = n; return v; }
+static Val v_fact(int n) { Val v = {0}; v.kind = RU_FACT; v.n = !!n; return v; }
 static Val v_null(void) { Val v = {0}; v.kind = RU_NULL; return v; }
 static Val v_copy(Val v)
 {
@@ -203,6 +206,10 @@ static void ru_gc(void)
         else if (h->kind == RU_ARRAY) { RuArray *a=(RuArray *)h; size_t i; RU_GC_WORK(a->len); for(i=0;i<a->len;++i) RU_MARK(a->items[i]); }
 /* RU_ELSE_FEATURE */
 /* RU_END_FEATURE */
+        /* RU_FEATURE: map */
+        else if (h->kind == RU_MAP) { RuMap *m=(RuMap *)h; size_t i; RU_GC_WORK(m->capacity); for(i=0;i<m->capacity;++i) if(m->entries[i].state==1) { RU_MARK(m->entries[i].key); RU_MARK(m->entries[i].value); } }
+/* RU_ELSE_FEATURE */
+/* RU_END_FEATURE */
         else if (h->kind == RU_OBJECT) { RuObject *o=(RuObject *)h; size_t i; RU_GC_WORK(o->len); for(i=0;i<o->len;++i) RU_MARK(o->fields[i]); }
         else if (h->kind == RU_FUNCTION) { RuCallable *f=(RuCallable *)h; RU_GC_WORK(2); RU_MARK(f->self); RU_MARK_ENV(f->closure); }
         else if (h->kind == RU_ENV) {
@@ -222,10 +229,8 @@ static void ru_gc(void)
         *slot = h->next;
         ru_heap_dispose(h); --ru_live; ++ru_freed;
     }
-    /* A comparator allocates short-lived call frames. A fixed tiny budget
-     * repeatedly scans large live arrays, causing quadratic tracing work.
-     * Scale the default with reachable slots as well as heap nodes, while
-     * retaining bounded deferred garbage and exact explicit stress budgets. */
+    /* Scale default GC work to the reachable graph: callback call frames
+     * otherwise cause quadratic rescans. Explicit stress budgets stay fixed. */
     budget = ru_threshold;
     if (!ru_gc_explicit && work / 16 > budget) budget = work / 16;
     ru_next_gc = ru_live > SIZE_MAX - budget ? SIZE_MAX : ru_live + budget;
@@ -302,15 +307,10 @@ static Val v_array(size_t count, Val *items, int line)
 }
 static int v_truth(Val v)
 {
-    if(v.kind==RU_NULL) return 0;
-    if(v.kind==RU_NUM) return v.n!=0;
-    if(v.kind==RU_STR) return v.s->len!=0;
-    if(v.kind==RU_ARRAY) return ((RuArray *)v.heap)->len!=0;
-    return 1;
+    return v.kind != RU_NULL && (v.kind != RU_FACT || v.n != 0);
 }
-/* Static module environments have process lifetime and own binding roots.
- * Function/rescue environments are traced heap nodes: bindings are edges,
- * and env_free releases only the active frame root, not escaped captures. */
+/* Static module bindings own roots. Lexical bindings are traced edges;
+ * env_free releases the active frame root, preserving escaped captures. */
 static void env_init(Env *env, Env *parent)
 {
     memset(env, 0, sizeof(*env)); env->parent=parent;
@@ -391,7 +391,11 @@ static void env_free(Env *env)
 }
 static void ru_heap_dispose(RuHeap *heap)
 {
-    if(heap->kind==RU_ARRAY) free(((RuArray *)heap)->items);
+    if(0) {}
+/* RU_MAP */
+    else if(heap->kind==RU_MAP) free(((RuMap *)heap)->entries);
+/* RU_END_MAP */
+    else if(heap->kind==RU_ARRAY) free(((RuArray *)heap)->items);
     else if(heap->kind==RU_OBJECT) free(((RuObject *)heap)->fields);
     else if(heap->kind==RU_ENV) {
         RuBinding *binding=((Env *)heap)->bindings;
@@ -532,6 +536,7 @@ static void ru_format(RuText *out, Val value)
         if (step.action == 1) { ru_text_word(out, step.text); continue; }
         if (step.action == 2) { v.heap->mark = step.old_mark; continue; }
         if (v.kind == RU_NUM) { snprintf(buffer, sizeof(buffer), "%.15g", v.n); ru_text_word(out, buffer); }
+        else if (v.kind == RU_FACT) ru_text_word(out, v.n ? "真" : "假");
         else if (v.kind == RU_STR) ru_text_add(out, v.s->data, v.s->len);
         else if (v.kind == RU_NULL) ru_text_word(out, "空");
         else if (v.kind == RU_OBJECT || v.kind == RU_CLASS) {
@@ -556,7 +561,21 @@ static void ru_format(RuText *out, Val value)
                 RU_PUSH(1, v_null(), " 对 ", 0);
                 RU_PUSH(0, pair->first, NULL, 0);
                 ru_text_word(out, "(");
-            } else if (v.kind == RU_ARRAY) {
+            }
+/* RU_MAP */
+            else if (v.kind == RU_MAP) {
+                RuMap *map = (RuMap *)v.heap; size_t count = 0;
+                RU_PUSH(1, v_null(), "}", 0);
+                for (i=map->capacity;i>0;--i) if(map->entries[i-1].state==1) {
+                    if(count++) RU_PUSH(1,v_null(),", ",0);
+                    RU_PUSH(0,map->entries[i-1].value,NULL,0);
+                    RU_PUSH(1,v_null(),": ",0);
+                    RU_PUSH(0,map->entries[i-1].key,NULL,0);
+                }
+                ru_text_word(out,"{");
+            }
+/* RU_END_MAP */
+            else if (v.kind == RU_ARRAY) {
                 RuArray *array = (RuArray *)v.heap;
                 RU_PUSH(1, v_null(), "]", 0);
                 for (i = array->len; i > 0; --i) {
@@ -576,6 +595,7 @@ static void ru_format(RuText *out, Val v)
 {
     char buffer[64];
     if (v.kind == RU_NUM) { snprintf(buffer, sizeof(buffer), "%.15g", v.n); ru_text_word(out, buffer); }
+    else if (v.kind == RU_FACT) ru_text_word(out, v.n ? "真" : "假");
     else if (v.kind == RU_STR) ru_text_add(out, v.s->data, v.s->len);
     else if (v.kind == RU_NULL) ru_text_word(out, "空");
     else if (v.kind == RU_OBJECT || v.kind == RU_CLASS) {
@@ -603,6 +623,7 @@ static Val v_to_string(Val value)
 }
 static Val v_convert(Val value,int kind,int line)
 {
+    if(kind==RU_FACT)return v_fact(v_truth(value));
     if(kind==RU_NUM) { if(value.kind==RU_NUM)return v_copy(value);if(value.kind!=RU_STR)ru_fail(line,"无法转为数字");return v_num(ru_parse_number(value.s->data,line)); }
     if(kind==RU_STR)return v_to_string(value);
     if(kind==RU_ARRAY)return v_array(1,&value,line);
@@ -611,7 +632,7 @@ static Val v_convert(Val value,int kind,int line)
 static Val ru_finite(double n,int line) { if(!isfinite(n))ru_fail(line,"运算结果不是有限数字");return v_num(n); }
 static Val v_unary(const char *op,Val v,int line)
 {
-    if(!strcmp(op,"非"))return v_num(!v_truth(v));
+    if(!strcmp(op,"非"))return v_fact(!v_truth(v));
     if(!strcmp(op,"+")||!strcmp(op,"-")) { if(v.kind!=RU_NUM)ru_fail(line,"运算符 %s 需要数字",op);return ru_finite(op[0]=='-'?-v.n:v.n,line); }
     ru_fail(line,"未知一元运算符：%s",op);return v_null();
 }
@@ -619,6 +640,7 @@ static Val v_unary(const char *op,Val v,int line)
 typedef struct { RuHeap *a, *b; } RuCompared;
 /* RU_ELSE_FEATURE */
 /* RU_END_FEATURE */
+static int ru_object_equal(Val a, Val b, int line);
 static size_t ru_compare_hash(RuHeap *a, RuHeap *b)
 {
     uintptr_t x = (uintptr_t)a >> 3, y = (uintptr_t)b >> 3;
@@ -652,18 +674,19 @@ static int ru_compare_seen(RuCompared **table, size_t *capacity, size_t *count,
     return 0;
 }
 /* RU_FEATURE: pair */
-static int v_equal(Val a, Val b)
+static int v_equal(Val a, Val b, int line)
 {
+    (void)ru_panicking;
     typedef struct { Val a, b; } Compare;
     size_t used = 1, capacity = 16, seen_capacity = 0, seen_count = 0;
     Compare *stack = (Compare *)ru_alloc(capacity * sizeof(*stack), 0);
     RuCompared *seen = NULL;
     int equal = 1;
     stack[0].a = a; stack[0].b = b;
-    while (used && equal) {
+    while (used && equal && !ru_panicking) {
         Compare comparison = stack[--used]; a = comparison.a; b = comparison.b;
         if (a.kind != b.kind) { equal = 0; break; }
-        if (a.kind == RU_NUM) equal = a.n == b.n;
+        if (a.kind == RU_NUM || a.kind == RU_FACT) equal = a.n == b.n;
         else if (a.kind == RU_STR) equal = !strcmp(a.s->data, b.s->data);
         else if (a.kind == RU_PAIR) {
             RuPair *pa = (RuPair *)a.heap, *pb = (RuPair *)b.heap;
@@ -678,7 +701,8 @@ static int v_equal(Val a, Val b)
             }
             stack[used].a = pa->second; stack[used++].b = pb->second;
             stack[used].a = pa->first; stack[used++].b = pb->first;
-        } else if (a.kind == RU_CLASS) equal = a.klass == b.klass;
+        } else if (a.kind == RU_OBJECT) equal = ru_object_equal(a,b,line);
+        else if (a.kind == RU_CLASS) equal = a.klass == b.klass;
         else if (a.kind == RU_MODULE) equal = a.module == b.module;
         else if (a.kind != RU_NULL) equal = a.heap == b.heap;
     }
@@ -686,11 +710,13 @@ static int v_equal(Val a, Val b)
 }
 /* RU_ELSE_FEATURE */
 /* No pair constructor is reachable: equality is shallow for every live kind. */
-static int v_equal(Val a, Val b)
+static int v_equal(Val a, Val b, int line)
 {
+    (void)ru_panicking;
     if (a.kind != b.kind) return 0;
-    if (a.kind == RU_NUM) return a.n == b.n;
+    if (a.kind == RU_NUM || a.kind == RU_FACT) return a.n == b.n;
     if (a.kind == RU_STR) return !strcmp(a.s->data, b.s->data);
+    if (a.kind == RU_OBJECT) return ru_object_equal(a,b,line);
     if (a.kind == RU_CLASS) return a.klass == b.klass;
     if (a.kind == RU_MODULE) return a.module == b.module;
     return a.kind == RU_NULL || a.heap == b.heap;
@@ -702,26 +728,26 @@ static Val v_binary(const char *op,Val a,Val b,int line)
     if(!strcmp(op,"对"))return v_pair(a,b,line);
 /* RU_END_MEMBERS */
 /* RU_OPERATORS: 且 */
-    if(!strcmp(op,"且"))return v_num(v_truth(a)&&v_truth(b));
+    if(!strcmp(op,"且"))return v_fact(v_truth(a)&&v_truth(b));
 /* RU_END_MEMBERS */
 /* RU_OPERATORS: 或 */
-    if(!strcmp(op,"或"))return v_num(v_truth(a)||v_truth(b));
+    if(!strcmp(op,"或"))return v_fact(v_truth(a)||v_truth(b));
 /* RU_END_MEMBERS */
-    if(!strcmp(op,"==")||!strcmp(op,"!=")) {int equal=v_equal(a,b);return v_num(!strcmp(op,"==")?equal:!equal);}
+    if(!strcmp(op,"==")||!strcmp(op,"!=")) {int equal=v_equal(a,b,line);return v_fact(!strcmp(op,"==")?equal:!equal);}
 /* RU_OPERATORS: 含 */
-    if(!strcmp(op,"含")) { if(a.kind!=RU_STR||b.kind!=RU_STR)ru_fail(line,"含 需要两个字符串");return v_num(strstr(a.s->data,b.s->data)!=NULL); }
+    if(!strcmp(op,"含")) { if(a.kind!=RU_STR||b.kind!=RU_STR)ru_fail(line,"含 需要两个字符串");return v_fact(strstr(a.s->data,b.s->data)!=NULL); }
 /* RU_END_MEMBERS */
     if(!strcmp(op,"<")||!strcmp(op,"<=")||!strcmp(op,">")||!strcmp(op,">=")) {
         int cmp;if(a.kind!=b.kind || (a.kind!=RU_NUM&&a.kind!=RU_STR))ru_fail(line,"比较需要相同的数字或字符串类型");
         cmp=a.kind==RU_NUM?(a.n>b.n)-(a.n<b.n):strcmp(a.s->data,b.s->data);
-        if (!strcmp(op,"<")) return v_num(cmp<0);
-        if (!strcmp(op,"<=")) return v_num(cmp<=0);
-        if (!strcmp(op,">")) return v_num(cmp>0);
-        return v_num(cmp>=0);
+        if (!strcmp(op,"<")) return v_fact(cmp<0);
+        if (!strcmp(op,"<=")) return v_fact(cmp<=0);
+        if (!strcmp(op,">")) return v_fact(cmp>0);
+        return v_fact(cmp>=0);
     }
     if(!strcmp(op,"+")&&a.kind==RU_STR&&b.kind==RU_STR) {Val v;if(a.s->len>SIZE_MAX-b.s->len)ru_fail(line,"字符串过长");v=ru_string_alloc(a.s->len+b.s->len,line);memcpy(v.s->data,a.s->data,a.s->len);memcpy(v.s->data+a.s->len,b.s->data,b.s->len);return v;}
     if(!strcmp(op,"+")||!strcmp(op,"-")||!strcmp(op,"*")||!strcmp(op,"/")||!strcmp(op,"%")) {
-        if(a.kind!=RU_NUM||b.kind!=RU_NUM)ru_fail(line,"运算符 %s 需要两个数字",op);
+        if(a.kind!=RU_NUM||b.kind!=RU_NUM)ru_fail(line,"算术运算符 %s 需要两个数字",op);
         if((op[0]=='/'||op[0]=='%')&&b.n==0)ru_fail(line,"除数不能为零");
         switch(op[0]) {case '+':return ru_finite(a.n+b.n,line);case '-':return ru_finite(a.n-b.n,line);case '*':return ru_finite(a.n*b.n,line);case '/':return ru_finite(a.n/b.n,line);
 #ifdef RU_ENABLE_MODULO
@@ -751,7 +777,12 @@ static size_t ru_index(Val v,size_t max,int endpoint,int line)
 }
 static size_t ru_utf8_len(Val v) {size_t i,n=0;for(i=0;i<v.s->len;++i)if(((unsigned char)v.s->data[i]&0xc0)!=0x80)++n;return n;}
 static size_t ru_utf8_offset(Val v,size_t at) {size_t i,n=0;for(i=0;i<v.s->len;++i)if(((unsigned char)v.s->data[i]&0xc0)!=0x80){if(n++==at)return i;}return v.s->len;}
-static size_t v_length(Val v,int line) {if(v.kind==RU_STR)return ru_utf8_len(v);if(v.kind==RU_ARRAY)return ((RuArray *)v.heap)->len;ru_fail(line,"量／索引需要阵或句");return 0;}
+static size_t v_length(Val v,int line)
+{
+    if(v.kind==RU_STR)return ru_utf8_len(v);
+    if(v.kind==RU_ARRAY)return ((RuArray *)v.heap)->len;
+    ru_fail(line,"量／索引需要阵或句");return 0;
+}
 static Val v_index(Val v,Val index,int line)
 {
     size_t i=ru_index(index,v_length(v,line),0,line);
@@ -804,7 +835,7 @@ static void ru_annotation_ready(const char *type,Env *env,int line)
 {
     size_t length=strlen(type); RuBinding *binding;
     while(length>=4 && !strncmp(type+length-4," 阵",4)) length-=4;
-    if ((length==0) || (length==3 && (!strncmp(type,"数",3)||!strncmp(type,"句",3)||!strncmp(type,"空",3)||!strncmp(type,"对",3)||!strncmp(type,"阵",3)||!strncmp(type,"算",3)||!strncmp(type,"作",3)))) return;
+    if ((length==6 && !strncmp(type,"事实",6)) || (length==0) || (length==3 && (!strncmp(type,"典",3)||!strncmp(type,"数",3)||!strncmp(type,"句",3)||!strncmp(type,"空",3)||!strncmp(type,"对",3)||!strncmp(type,"阵",3)||!strncmp(type,"算",3)||!strncmp(type,"作",3)))) return;
     for(;env;env=env->parent) for(binding=env->bindings;binding;binding=binding->next)
         if(strlen(binding->name)==length && !strncmp(binding->name,type,length) && binding->value.kind==RU_CLASS) return;
     ru_fail(line,"未定义类型：%s；类型注解须使用已声明或已尽取导入的形名",type);
@@ -835,6 +866,8 @@ static int v_is_type(Val v,const char *type,Env *env)
     if(suffix && !strcmp(suffix," 阵")) return 0;
 /* RU_END_FEATURE */
     if(!strcmp(type,"算")||!strcmp(type,"作"))return v.kind==RU_FUNCTION && ((RuCallable *)v.heap)->function->procedure==!strcmp(type,"作");
+    if(!strcmp(type,"典"))return v.kind==RU_MAP;
+    if(!strcmp(type,"事实"))return v.kind==RU_FACT;
     if(!strcmp(type,"数"))return v.kind==RU_NUM;
     if(!strcmp(type,"句"))return v.kind==RU_STR;
     if(!strcmp(type,"空"))return v.kind==RU_NULL;
@@ -981,9 +1014,167 @@ static Val v_call(Val callable,size_t argc,const char **keys,Val *args,int line)
     }
     ru_enter(line);result=fn->code(f->closure,f->self,line,bound);ru_leave();ru_scratch_free(bound);return result;
 }
+/* Look up protocol methods without treating fields as methods. */
+static RuFunction *ru_protocol(Val object, const char *name, Env **owner)
+{
+    RuClass *klass; size_t i;
+    if(object.kind!=RU_OBJECT) return NULL;
+    for(klass=((RuObject *)object.heap)->klass;klass;klass=klass->parent)
+        for(i=0;i<klass->methods_count;++i) if(!strcmp(klass->methods[i]->name,name)) {
+            *owner=klass->global; return klass->methods[i];
+        }
+    return NULL;
+}
+static Val ru_protocol_call(Val object, const char *name, size_t count, Val *args, int line)
+{
+    Env *owner=NULL; RuFunction *fn=ru_protocol(object,name,&owner); Val callable,result;
+    const char *keys[]={NULL};
+    if(!fn || fn->procedure || fn->count!=count) ru_fail(line,"典键的「%s」须为接收 %zu 个参数的算",name,count);
+    callable=v_function(fn,owner,object);
+    result=v_call(callable,count,keys,args,line); v_drop(callable); return result;
+}
+/* RU_FEATURE: user_class */
+static int ru_object_equal(Val a, Val b, int line)
+{
+    Env *owner=NULL; RuFunction *fn; Val result; int equal;
+    if(((RuObject *)a.heap)->klass!=((RuObject *)b.heap)->klass) return 0;
+    fn=ru_protocol(a,"同",&owner);
+    if(!fn) return a.heap==b.heap;
+    a=v_copy(a); b=v_copy(b);
+    result=ru_protocol_call(a,"同",1,&b,line);
+    v_drop(a); v_drop(b);
+    if(ru_panicking) {v_drop(result);return 0;}
+    if(result.kind!=RU_FACT) ru_fail(line,"「同」须返回事实，实际收到%s",v_type_name(result));
+    equal=result.n!=0; v_drop(result); return equal;
+}
+/* RU_ELSE_FEATURE */
+static int ru_object_equal(Val a, Val b, int line) { (void)line; return a.heap==b.heap; }
+/* RU_END_FEATURE */
+static uint64_t ru_hash_mix(uint64_t x)
+{
+    x ^= x >> 30; x *= UINT64_C(0xbf58476d1ce4e5b9);
+    x ^= x >> 27; x *= UINT64_C(0x94d049bb133111eb);
+    return x ^ (x >> 31);
+}
+static uint64_t ru_key_hash(Val key, int line)
+{
+    uint64_t bits=0; size_t i;
+    if(key.kind==RU_NUM) { double n=key.n==0 ? 0 : key.n; if(!isfinite(n))ru_fail(line,"典键须为有限数"); memcpy(&bits,&n,sizeof(bits)); return ru_hash_mix(bits ^ UINT64_C(0x1234)); }
+    if(key.kind==RU_FACT) return ru_hash_mix((uint64_t)key.n ^ UINT64_C(0x2345));
+    if(key.kind==RU_STR) { bits=UINT64_C(1469598103934665603); for(i=0;i<key.s->len;++i) {bits^=(unsigned char)key.s->data[i];bits*=UINT64_C(1099511628211);}return ru_hash_mix(bits ^ UINT64_C(0x3456)); }
+    if(key.kind==RU_OBJECT) {
+        Env *owner=NULL; RuFunction *same=ru_protocol(key,"同",&owner), *hash=ru_protocol(key,"印",&owner); Val result;
+        if(!same || same->procedure || same->count!=1 || !hash || hash->procedure || hash->count)
+            ru_fail(line,"形典键须定义算「同」的一参数与算「印」的零参数");
+        result=ru_protocol_call(key,"印",0,NULL,line);
+        if(ru_panicking) {v_drop(result);return 0;}
+        if(result.kind!=RU_NUM || !isfinite(result.n) || result.n < -9007199254740991.0 || result.n > 9007199254740991.0 || result.n!=(double)(int64_t)result.n)
+            ru_fail(line,"「印」须返回安全整数数");
+        bits=(uint64_t)(int64_t)result.n;v_drop(result);
+        return ru_hash_mix(bits ^ (uint64_t)(uintptr_t)((RuObject *)key.heap)->klass ^ UINT64_C(0x4567));
+    }
+    ru_fail(line,"%s不能作为典键",v_type_name(key));return 0;
+}
+static Val v_map_new(int line)
+{
+    Val value=v_null(); RuMap *map=(RuMap *)ru_new_heap(sizeof(*map),RU_MAP,line);
+    value.kind=RU_MAP;value.heap=&map->gc;
+    map->len=map->used=map->capacity=0;map->version=0;map->entries=NULL;return value;
+}
+/* Rehash cached hashes without user code; compact tombstones before growing. */
+static void ru_map_grow(RuMap *map, int line)
+{
+    size_t cap=map->capacity ? (map->len>=map->capacity/4 ? map->capacity*2 : map->capacity) : 16,i,at; RuMapEntry *entries;
+    if(cap<map->capacity || cap>SIZE_MAX/sizeof(*entries))ru_fail(line,"典过大");
+    entries=(RuMapEntry *)ru_alloc(cap*sizeof(*entries),line);memset(entries,0,cap*sizeof(*entries));
+    for(i=0;i<map->capacity;++i) if(map->entries[i].state==1) {
+        at=(size_t)map->entries[i].hash & (cap-1);
+        while(entries[at].state)at=(at+1)&(cap-1);
+        entries[at]=map->entries[i];
+    }
+    free(map->entries);map->entries=entries;map->capacity=cap;map->used=map->len;
+}
+static size_t ru_map_find(RuMap *map, Val key, uint64_t hash, uint64_t version, int line, int *found)
+{
+    size_t at=(size_t)hash&(map->capacity-1), tomb=SIZE_MAX;
+    *found=0;
+    while(map->entries[at].state) {
+        if(map->entries[at].state==2) {if(tomb==SIZE_MAX)tomb=at;}
+        else if(map->entries[at].hash==hash) {
+            Val stored=v_copy(map->entries[at].key); int same=v_equal(stored,key,line); v_drop(stored);
+            if(ru_panicking)return 0;
+            if(map->version!=version)ru_fail(line,"典键的同／印回调修改了当前典");
+            if(same){*found=1;return at;}
+        }
+        at=(at+1)&(map->capacity-1);
+    }
+    return tomb==SIZE_MAX ? at : tomb;
+}
+static uint64_t ru_map_hash(RuMap *map, Val key, int line)
+{
+    uint64_t version=map->version, hash=ru_key_hash(key,line);
+    if(!ru_panicking && version!=map->version)ru_fail(line,"典键的同／印回调修改了当前典");
+    return hash;
+}
+static Val v_map_put(Val receiver, Val key, Val value, int line)
+{
+    RuMap *map=(RuMap *)receiver.heap; uint64_t hash=ru_map_hash(map,key,line); size_t at; int found;
+    if(ru_panicking)return v_null();
+    if(map->used>=map->capacity/2)ru_map_grow(map,line);
+    at=ru_map_find(map,key,hash,map->version,line,&found);
+    if(ru_panicking)return v_null();
+    if(!found){if(!map->entries[at].state)++map->used;++map->len;map->entries[at].key=key;map->entries[at].hash=hash;map->entries[at].state=1;}
+    map->entries[at].value=value;++map->version;return v_copy(receiver);
+}
+static Val ru_map_get(Val receiver, Val key, int remove, int line)
+{
+    RuMap *map=(RuMap *)receiver.heap; uint64_t hash=ru_map_hash(map,key,line); size_t at; int found;
+    if(ru_panicking)return v_null();
+    if(!map->capacity)return remove ? v_fact(0) : v_null();
+    at=ru_map_find(map,key,hash,map->version,line,&found);
+    if(ru_panicking)return v_null();
+    if(remove){if(found){map->entries[at].state=2;map->entries[at].key=v_null();map->entries[at].value=v_null();--map->len;++map->version;}return v_fact(found);}
+    return found ? v_copy(map->entries[at].value) : v_null();
+}
+static Val ru_map_each(Val receiver, Val callback, int line)
+{
+    RuMap *map=(RuMap *)receiver.heap; Val snapshot; RuArray *array; size_t i,at=0; const char *keys[]={NULL,NULL};
+    if(callback.kind!=RU_FUNCTION || ((RuCallable *)callback.heap)->function->count!=2)ru_fail(line,"典的列需要接收键和值两个参数的算或作");
+    snapshot=v_array(0,NULL,line);array=(RuArray *)snapshot.heap;
+    if(map->len>SIZE_MAX/sizeof(Val)/2)ru_fail(line,"典过大");
+    free(array->items);array->items=(Val *)ru_alloc(map->len*2*sizeof(Val),line);array->len=array->capacity=map->len*2;
+    for(i=0;i<map->capacity;++i)if(map->entries[i].state==1){array->items[at++]=map->entries[i].key;array->items[at++]=map->entries[i].value;}
+    for(i=0;i<array->len;i+=2){Val result=v_call(callback,2,keys,array->items+i,line);v_drop(result);if(ru_panicking)break;}
+    v_drop(snapshot);return v_null();
+}
+static Val ru_map_member(Val receiver,const char *name,size_t argc,const char **keys,Val *args,int line)
+{
+    const char *key_name[]={"键"}, *both[]={"键","值"}, *callback[]={"回调"}; Val bound[2];
+    (void)key_name; (void)both; (void)callback; (void)bound;
+    (void)argc; (void)keys; (void)args;
+/* RU_MEMBERS: 查,除 */
+    if(!strcmp(name,"查") || !strcmp(name,"除")){ru_bind(name,1,key_name,argc,keys,args,bound,line);return ru_map_get(receiver,bound[0],!strcmp(name,"除"),line);}
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 增 */
+    if(!strcmp(name,"增")){ru_bind(name,2,both,argc,keys,args,bound,line);return v_map_put(receiver,bound[0],bound[1],line);}
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 列 */
+    if(!strcmp(name,"列")){ru_bind(name,1,callback,argc,keys,args,bound,line);return ru_map_each(receiver,bound[0],line);}
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 量 */
+    if(!strcmp(name,"量")){if(argc)ru_fail(line,"量不接收实参");return v_num((double)((RuMap *)receiver.heap)->len);}
+/* RU_END_MEMBERS */
+    ru_fail(line,"未知典成员：%s",name);return v_null();
+}
 static Val v_member(Val receiver,const char *name,size_t argc,const char **keys,Val *args,int line)
 {
     const char *one[]={"值"},*position[]={"位"},*range[]={"始","终"};Val bound[2], io_result;
+/* RU_MEMBERS: 查,增,除,列,量 */
+/* RU_FEATURE: map */
+    if(receiver.kind==RU_MAP)return ru_map_member(receiver,name,argc,keys,args,line);
+/* RU_ELSE_FEATURE */
+/* RU_END_FEATURE */
+/* RU_END_MEMBERS */
     (void)one; (void)position; (void)range; (void)bound; (void)io_result;
 /* RU_MEMBERS: 读入,扫句,拆词,拆行,字列,合句,排序,取整,蓄出,词,数,行,写,清 */
     if (ru_contest_member(receiver, name, argc, keys, args, line, &io_result)) return io_result;
@@ -1058,7 +1249,7 @@ Val read_input(Val prompt, int line)
     char *buffer;
     int ch;
     Val result;
-    if (prompt.kind != 1) ru_fail(line, "输入提示须为字符串");
+    if (prompt.kind != RU_STR) ru_fail(line, "输入提示须为字符串");
     if (fputs(prompt.s->data, stdout) == EOF || fflush(stdout) == EOF)
         ru_fail(line, "输出失败");
     buffer = (char *)ru_alloc(capacity, line);

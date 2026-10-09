@@ -474,9 +474,9 @@ static int ru_io_member(Val receiver, const char *name, size_t argc, const char 
     } else if (!strcmp(name, "在")) {
         errno = 0;
         if (ru_io_stat(path.s->data, &status) == 0)
-            *out = ru_io_result(v_num(S_ISREG(status.st_mode) ? 1 : 0), 0, name, NULL, line);
+            *out = ru_io_result(v_fact(S_ISREG(status.st_mode) ? 1 : 0), 0, name, NULL, line);
         else { error = ru_io_errno();
-            *out = error == ENOENT || error == ENOTDIR ? ru_io_result(v_num(0), 0, name, NULL, line) :
+            *out = error == ENOENT || error == ENOTDIR ? ru_io_result(v_fact(0), 0, name, NULL, line) :
                 ru_io_result(v_null(), error, name, NULL, line);
         }
     } else {

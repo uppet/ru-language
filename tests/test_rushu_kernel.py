@@ -66,7 +66,7 @@ class KernelTests(unittest.TestCase):
         self.assertEqual(output(self.run_cell("显 停. 显 自然. 显 回(). 空.")), "空\n" * 4)
         bad = self.run_cell("完.")
         self.assertEqual(bad["events"][-1]["status"], "error")
-        self.assertEqual(output(self.run_cell("显 停 == 空.")), "1\n")
+        self.assertEqual(output(self.run_cell("显 停 == 空.")), "真\n")
 
     def test_declarations_can_be_reexecuted_and_share_functions(self):
         self.run_cell("算 平方 值 为 数: 得 值*值. 法")
@@ -101,7 +101,7 @@ class KernelTests(unittest.TestCase):
         waiting = wait_for(self.session, "waiting_input")
         self.session.provide_input(waiting["request_id"], eof=True)
         result = wait_for(self.session)
-        self.assertEqual(output(result), "输入😀：中文\n\n1\n")
+        self.assertEqual(output(result), "输入😀：中文\n\n真\n")
         self.assertEqual(result["events"][-1]["status"], "ok")
         # EOF belongs to that execution; the next cell can request input again.
         self.session.execute("显 读.", "next")

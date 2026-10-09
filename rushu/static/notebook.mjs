@@ -12,7 +12,9 @@ export function welcomeBook() {
     newCell('markdown','# 从一句话开始\n\n如书，让想法与代码写在一起。每个代码格共享这本书的运行会话，你可以一步步试验，也可以从头运行。\n\n按 **Shift + Enter** 运行当前格并移到下一格。先试试下面的问候。'),
     newCell('code',"问候 取 '你好，如书'.\n显 问候."),
     newCell('markdown','## 把想法接下去\n\n上一格的名字依然可用。下面用匿名函数，把一个数变成它的平方。'),
-    newCell('code',"平方 取 算 数值 为 数:\n    得 数值 * 数值.\n法.\n\n显 问候.\n显 (平方 9).")
+    newCell('code',"平方 取 算 数值 为 数:\n    得 数值 * 数值.\n法.\n\n显 问候.\n显 (平方 9)."),
+    newCell('markdown','## 保存事实与键值\n\n事实只有 `真`、`假` 两个值。用 `典: 键 对 值. 成` 保存键值，`查 键:` 读取。'),
+    newCell('code',"资料 取 典:\n    '标题' 对 问候.\n    '就绪' 对 真.\n成.\n显 (资料 其 查 键: '标题').\n显 (资料 其 查 键: '就绪').")
   ]};
 }
 export function parseBook(text) {

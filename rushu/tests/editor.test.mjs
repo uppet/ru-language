@@ -165,3 +165,34 @@ test('later independent definitions do not close reference named calls',()=>{
   assert.equal(analyze(many).blocks.length,4000);
   assert.equal(analyze(many).depth,0);
 });
+
+test('facts, map types, reserved closers and longest names',()=>{
+  const result=analyze('值 为 事实 取 真. 空表 为 典 取 典: 成. 假设 取 假. 成果 取 1. 典籍 取 2.');
+  assert.equal(result.depth,0);
+  assert.deepEqual(result.blocks.map(b=>b.kind),['典']);
+  for(const word of ['真','假','成'])assert.equal(result.tokens.find(t=>t.text===word).face,'keyword');
+  assert.equal(result.tokens.find(t=>t.text==='事实').face,'type');
+  assert.deepEqual(result.tokens.filter(t=>t.text==='典').map(t=>t.face),['type','keyword']);
+  for(const word of ['假设','成果','典籍'])assert.equal(result.tokens.find(t=>t.text===word).face,null);
+});
+test('map nesting, callable values, fullwidth and annotation boundaries',()=>{
+  const source="资料 取 典：\n'设置' 对 典：\n'就绪' 对 真。\n成。\n'回调' 对 算 值 为 事实：\n得 值。\n法。\n成。\n作 展示 数据 为 典：\n显 数据。\n为";
+  assert.equal(indentText(source),"资料 取 典：\n    '设置' 对 典：\n        '就绪' 对 真。\n    成。\n    '回调' 对 算 值 为 事实：\n        得 值。\n    法。\n成。\n作 展示 数据 为 典：\n    显 数据。\n为");
+  const result=analyze(source);assert.equal(result.depth,0);assert.ok(result.blocks.every(b=>b.closed));
+  assert.deepEqual(result.blocks.map(b=>[b.kind,b.literal]),[['典',true],['典',true],['算',true],['作',false]]);
+  assert.equal(enterEdit('资料 取 典：',8).text,'\n    ');
+});
+test('maps in references, strings, comments, conversions and every prefix',()=>{
+  assert.equal(analyze('算 回 值:真. 算 回 值:假. 算 回 值:典: 成.').blocks.filter(b=>b.kind==='算').length,0);
+  assert.equal(analyze("显 '典: 成 真'. 批. 典: 成\n解。 典： 成 释。\n作 展示:\n显 值\n为 事实.\n显 值\n为 典.\n为").depth,0);
+  const source="空表 为 典.\n表 取 典: '回' 对 算 参数 为 典: 得 参数. 法. 成.\n";
+  for(let end=0;end<=source.length;end++){
+    const prefix=source.slice(0,end),formatted=indentText(prefix);
+    assert.equal(indentText(formatted),formatted);highlight(prefix);enterEdit(prefix,prefix.length);
+  }
+});
+test('map and fact hover help is escaped and literal-safe',()=>{
+  const html=highlight('显 真. 显 假. 值 为 事实. 表 取 典: 1 对 2. 成.');
+  assert.ok(html.includes('事实字面量'));assert.ok(html.includes('键值映射'));
+  assert.ok(!highlight("显 '事实 典 成'. # 真 假").includes('data-help'));
+});

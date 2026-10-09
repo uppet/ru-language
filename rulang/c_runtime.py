@@ -13,6 +13,7 @@ from .frontend import Node
 
 # Markers describe closed sets of statically spelled Ru member names. Unknown
 # receiver types are safe: all implementations of a used name remain eligible.
+_MAP_REGION = re.compile(r'/\* RU_MAP \*/\n(.*?)/\* RU_END_MAP \*/\n', re.S)
 _FEATURE = re.compile(r'/\* RU_FEATURE: (\w+) \*/\n(.*?)/\* RU_ELSE_FEATURE \*/\n(.*?)/\* RU_END_FEATURE \*/\n', re.S)
 _REGION = re.compile(r'/\* RU_MEMBERS: ([^\n*]+) \*/\n(.*?)/\* RU_END_MEMBERS \*/\n', re.S)
 _C_NONCODE = re.compile(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'', re.S)
@@ -165,7 +166,7 @@ def runtime_source(modules, generated, full=False):
     headers = [(directory / name).read_text(encoding='utf-8')
                for name in ('runtime.h', 'io_runtime.h', 'contest_runtime.h')]
     if full:
-        source = _FEATURE.sub(lambda m: m[2], '\n'.join(headers))
+        source = _FEATURE.sub(lambda m: m[2], _MAP_REGION.sub(lambda m: m[1], '\n'.join(headers)))
         return re.sub(r'/\* RU_(?:MEMBERS: [^*]*|OPERATORS: [^*]*|END_MEMBERS) \*/\n', '', source)
     strings = set(ast_strings(modules))
     io_names = {'件', '录', '件作成果', '读取', '显出', '错误'}
@@ -175,7 +176,9 @@ def runtime_source(modules, generated, full=False):
     uses_io = any(word in io_names for text in strings for word in text.split())
     if not uses_io:
         headers[1] = _IO_STUB
-    source = specialize_members('\n'.join(headers), member_names(modules))
+    uses_map = any(n.kind == 'map' for n in walk_nodes(modules))
+    source = _MAP_REGION.sub(lambda m: m[1] if uses_map else '', '\n'.join(headers))
+    source = specialize_members(source, member_names(modules))
     # Binary operators are statically spelled too (含 can also be a member).
     source = source.replace('/* RU_OPERATORS:', '/* RU_MEMBERS:')
     source = specialize_members(source, strings | member_names(modules))
@@ -184,16 +187,18 @@ def runtime_source(modules, generated, full=False):
     # Class lookup can be removed before closure: runtime-only classes expose no
     # public fields or source-defined methods. Keep it for every user class.
     source = _FEATURE.sub(lambda m: (m[2] if user_class else m[3])
-                          if m[1] == 'user_class' else m[0], source)
+                          if m[1] == 'user_class' else (m[2] if uses_map else m[3])
+                          if m[1] == 'map' else m[0], source)
     general = _FEATURE.sub(lambda m: m[2], source)
     preliminary = prune_functions(general, generated)
     definitions = {m[1] for m in _FUNCTION.finditer(mask_noncode(preliminary))}
     panic = any(n.kind in ('panic', 'try') for n in walk_nodes(modules))
     features = {'callable': 'ru_enter' in definitions,
                 'panic': panic,
-                'panic_state': panic or 'ru_contest_sort' in definitions,
+                'panic_state': panic or bool({'ru_contest_sort', 'v_equal', 'ru_object_equal', 'ru_map_find', 'ru_map_each'} & definitions),
                 'array': 'v_array' in definitions,
+                'map': 'v_map_new' in definitions,
                 'pair': 'v_pair' in definitions,
-                'container': bool({'v_pair', 'v_array'} & definitions)}
+                'container': bool({'v_pair', 'v_array', 'v_map_new'} & definitions)}
     source = _FEATURE.sub(lambda m: m[2] if features[m[1]] else m[3], source)
     return prune_functions(source, generated)

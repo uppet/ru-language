@@ -12,7 +12,7 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -40,7 +40,7 @@ jobs:
         run: make examples-js
   emacs:
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install Emacs
@@ -53,7 +53,7 @@ jobs:
         run: make test-emacs
   windows-console:
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -63,16 +63,13 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Test actual Windows console Unicode output
-        run: python -m unittest discover -s tests -p test_windows_console.py -v
-      - name: Test standard-stream dispatch and checked failures
-        run: python -m unittest discover -s tests -p test_stdio_dispatch.py -v
-      - name: Test notebook spawned workers and local API
-        run: python -m unittest discover -s tests -p "test_rushu*.py" -v
-      - name: Test optional parameter annotations and cross-backend parity
+      - name: Run complete Windows regression suite
         env:
           PYTHONUTF8: "1"
           CC: gcc
         run: |
           gcc --version
-          python -m unittest discover -s tests -p test_optional_parameters.py -v
+          node --version
+          python -m unittest discover -s tests -v
+      - name: Test offline notebook editor
+        run: node --test rushu/tests/*.mjs

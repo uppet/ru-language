@@ -195,7 +195,7 @@ class Compiler:
         # Empty parameter annotations are the existing internal any sentinel.
         if annotation.endswith(' 阵'):
             return ('array', self.type_identity(path, annotation[:-2], n))
-        if annotation in ('', '数', '句', '空', '阵', '对', '算', '作') or annotation in BUILTIN_TYPES:
+        if annotation in ('', '数', '句', '空', '阵', '对', '算', '作', '事实', '典') or annotation in BUILTIN_TYPES:
             return annotation
         declaration = self.exports[path].get(annotation)
         if declaration is None or declaration.kind != 'type':
@@ -331,6 +331,16 @@ class Compiler:
 
     def expr(self, n):
         d, ln = n.data, n.token.line
+        if n.kind == 'fact':
+            return self.temp(f"v_fact({int(d['value'])})")
+        if n.kind == 'map':
+            out = self.temp(f'v_map_new({ln})')
+            for key_node, value_node in d['entries']:
+                key = self.expr(key_node)
+                value = self.expr(value_node)
+                added = self.temp(f'v_map_put({out}, {key}, {value}, {ln})', can_panic=True)
+                self.drop(added, key, value)
+            return out
         if n.kind == 'number':
             return self.temp(f"v_num({d['value'].hex()})")
         if n.kind == 'string':
@@ -371,7 +381,7 @@ class Compiler:
             return out
         if n.kind == 'convert':
             arg = self.expr(d['expr'])
-            target = {'数': 'RU_NUM', '句': 'RU_STR', '阵': 'RU_ARRAY'}[d['target']]
+            target = {'数': 'RU_NUM', '句': 'RU_STR', '阵': 'RU_ARRAY', '事实': 'RU_FACT'}[d['target']]
             out = self.temp(f'v_convert({arg}, {target}, {ln})')
             self.drop(arg)
             return out
@@ -386,11 +396,11 @@ class Compiler:
                 flag = self.new('truth')
                 self.line(f'int {flag} = v_truth({left});')
                 self.drop(left)
-                out = self.temp(f'v_num({flag})')
+                out = self.temp(f'v_fact({flag})')
                 self.line(f'if ({"" if d["op"] == "且" else "!"}{flag}) {{')
                 self.indent += 1
                 right = self.expr(d['right'])
-                self.line(f'{out} = v_num(v_truth({right}));')
+                self.line(f'{out} = v_fact(v_truth({right}));')
                 self.drop(right)
                 self.indent -= 1
                 self.line('}')
@@ -399,7 +409,7 @@ class Compiler:
             if d['op'] == '含':
                 out = self.temp(f'v_member({left}, "含", 1, (const char *[]){{NULL}}, (Val[]){{{right}}}, {ln})', can_panic=True)
             else:
-                out = self.temp(f"v_binary({cstr(d['op'])}, {left}, {right}, {ln})")
+                out = self.temp(f"v_binary({cstr(d['op'])}, {left}, {right}, {ln})", can_panic=True)
             self.drop(left, right)
             return out
         if n.kind == 'member':

@@ -40,7 +40,7 @@ BUILTIN_NAMES = BUILTIN_TYPES | {"读", "读取", "显出", "错误", "__竞赛"
 MEMBER_PARAMS = {"含": ["句"], "位": ["位"], "段": ["始", "终"], "增": ["值"],
                  "量": [], "囫": [], "囵": []}
 
-KEYWORDS = set("显 取 为 得 完 破 若 则 另 然 循 次 环 算 作 法 其 且 或 非 空 对 形 象 如 新 外言 尽 试 救 卒".split())
+KEYWORDS = set("显 取 为 得 完 破 若 则 另 然 循 次 环 算 作 法 其 且 或 非 空 真 假 典 成 对 形 象 如 新 外言 尽 试 救 卒".split())
 NUMBER = re.compile(r"(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
 
 
@@ -194,7 +194,7 @@ class Parser:
 
     def type_name(self):
         t = self.current
-        if t.kind != "NAME" or (t.value in KEYWORDS and t.value not in ("空", "对", "算", "作")):
+        if t.kind != "NAME" or (t.value in KEYWORDS and t.value not in ("空", "对", "算", "作", "典")):
             self.fail("此处需要类型名称", t)
         value = self.pop().value
         while self.accept("阵"):
@@ -413,7 +413,8 @@ class Parser:
         return (t.kind in ("NUMBER", "STRING") or self.isv("(") or
                 self.isv("[") or self.isv("非") or self.isv("空") or
                 self.isv("新") or self.isv("外言") or self.isv("其") or
-                self.isv("算") or self.isv("作") or
+                self.isv("算") or self.isv("作") or self.isv("典") or
+                self.isv("真") or self.isv("假") or
                 (t.kind == "NAME" and t.value not in KEYWORDS))
 
     def definition_ahead(self):
@@ -447,7 +448,7 @@ class Parser:
                 if typ.kind == "EOF":
                     return not require_colon
                 if (typ.kind != "NAME" or
-                        (typ.value in KEYWORDS and typ.value not in ("空", "对", "算", "作"))):
+                        (typ.value in KEYWORDS and typ.value not in ("空", "对", "算", "作", "典"))):
                     return False
                 offset += 1
                 while self.peek(offset).kind == "NAME" and self.peek(offset).value == "阵":
@@ -510,24 +511,9 @@ class Parser:
     def member(self, receiver, token):
         name_token = self.name()
         name = name_token.value
-        if name in ("囫", "囵", "量"):
-            args = []
-        elif name in ("含", "位", "增", "段"):
-            # Fixed-arity operators bind as tightly as indexing. Named 段
-            # arguments retain the ordinary named-call expression rules.
-            named = self.current.kind == "NAME" and self.peek().value == ":"
-            if named:
-                args = self.call_arguments(allow=True)
-            else:
-                args = []
-                for _ in range(2 if name == "段" else 1):
-                    self.accept(",")
-                    args.append((None, self.expression(76, allow_call=None if name == "含" else False)))
-            if name == "含" and len(args) == 1 and args[0][0] is None:
-                return node("binary", token, op="含", left=receiver, right=args[0][1])
-        else:
-            adjacent = self.isv("[") and self.current.line == name_token.line and self.current.col == name_token.col + len(name)
-            args = [] if adjacent or self.isv("其") or self.isv("@") or self.empty_call_ahead() else self.call_arguments()
+        # Member names have no global arity: dispatch belongs to the receiver.
+        adjacent = self.isv("[") and self.current.line == name_token.line and self.current.col == name_token.col + len(name)
+        args = [] if adjacent or self.isv("其") or self.isv("@") or self.empty_call_ahead() else self.call_arguments()
         return node("member", token, receiver=receiver, name=name, args=args)
 
     def _expression(self, minimum=0, reference_only=False):
@@ -538,6 +524,19 @@ class Parser:
             left = node("number", t, value=float(t.value))
         elif t.kind == "STRING":
             left = node("string", t, value=t.value)
+        elif t.value in ("真", "假"):
+            left = node("fact", t, value=t.value == "真")
+        elif t.value == "典":
+            self.expect(":")
+            entries = []
+            while not self.isv("成"):
+                key = self.expression(8, allow_call=True)
+                self.expect("对")
+                value = self.expression(allow_call=True)
+                self.expect(".")
+                entries.append((key, value))
+            self.expect("成")
+            left = node("map", t, entries=entries)
         elif t.value == "空":
             left = node("null", t)
         elif t.value in ("算", "作") and t.kind == "NAME":
@@ -617,7 +616,7 @@ class Parser:
                     self.expect("]")
                     left = node("index", bracket, receiver=left, index=first)
                 continue
-            if self.isv("为") and self.peek().kind == "NAME" and self.peek().value in ("数", "句", "阵") and 5 >= minimum:
+            if self.isv("为") and self.peek().kind == "NAME" and self.peek().value in ("数", "句", "阵", "事实") and 5 >= minimum:
                 cast = self.pop()
                 typ = self.pop()
                 left = node("convert", cast, expr=left, target=typ.value)
@@ -703,7 +702,7 @@ def validate(program, existing_functions=(), existing_types=()):
         raise RuError(message, n.token.line, n.token.col)
 
     has_imports = any(n.kind == "import_all" for n in program)
-    known_types = set(type_nodes) | set(existing_types) | BUILTIN_TYPES | {"数", "句", "阵", "对", "空", "算", "作"}
+    known_types = set(type_nodes) | set(existing_types) | BUILTIN_TYPES | {"数", "句", "阵", "对", "空", "算", "作", "典", "事实"}
     known_bindings = {n.data["name"] for n in program if n.kind == "bind"}
 
     def check_type(n, typ):
@@ -776,8 +775,6 @@ def validate(program, existing_functions=(), existing_types=()):
             if base not in known_types and not has_imports:
                 error(n, f"未定义类型：{base}")
         names = [p[0] for p in d["params"]]
-        if method_definitions and d["name"] in MEMBER_PARAMS and names != MEMBER_PARAMS[d["name"]]:
-            error(n, f"标准成员「{d['name']}」须使用固定参数：" + "、".join(MEMBER_PARAMS[d["name"]]))
         if len(names) != len(set(names)):
             error(n, "参数名重复")
         protected = declarations(d["body"], visible_functions, names)
@@ -803,12 +800,10 @@ def validate(program, existing_functions=(), existing_types=()):
             elif n.kind == "type":
                 if not top:
                     error(n, "形只能定义在顶层")
-                if d["name"] in ("数", "句", "阵"):
+                if d["name"] in ("数", "句", "阵", "事实", "典"):
                     error(n, "形名不能与内置类型重名")
                 for field, typ in d["fields"]:
                     check_type(n, typ)
-                    if field in ("含", "位", "段", "增"):
-                        error(n, f"字段名「{field}」保留给带参数的标准成员")
                 members = [f[0] for f in d["fields"]] + [m.data["name"] for m in d["methods"]]
                 if len(members) != len(set(members)):
                     error(n, "字段／方法名称重复")

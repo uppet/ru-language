@@ -263,7 +263,7 @@ class JavaScriptParityTests(unittest.TestCase):
         source = ("显 '𐀀' > '\uffff'. 显 '😀' > '\ue000'. "
                   "显 'a😀' > 'a\uffff'. 显 'é👩‍💻' 其 量. "
                   "显 'é👩‍💻'[2:5]. 显 'a😀b' 其 含 '😀'.")
-        self.assert_output(source, '1\n1\n1\n5\n👩‍💻\n1\n')
+        self.assert_output(source, '真\n真\n真\n5\n👩‍💻\n真\n')
 
     def test_javascript_special_names_and_string_escaping(self):
         source = ("__proto__ 取 1. constructor 取 2. prototype 取 3. "
@@ -276,7 +276,7 @@ class JavaScriptParityTests(unittest.TestCase):
     def test_shared_pair_dag_and_cyclic_display(self):
         source = ("左 取 0 对 空. 右 取 0 对 空. 循 30 次 左 取 左 对 左. "
                   "右 取 右 对 右. 环 显 左 == 右. 列 取 []. 列 其 增 列. 显 列.")
-        self.assert_output(source, '1\n[<循环>]\n')
+        self.assert_output(source, '真\n[<循环>]\n')
 
     def test_closure_and_panic_allocation_stress(self):
         self.assert_output(closures.STRESS, '11\n', name='closure_stress')
@@ -357,7 +357,7 @@ class JavaScriptParityTests(unittest.TestCase):
                               "算 加 步 为 数: 值 取 值+步. 得 值+基. 法 得 算 加. 法 "
                               "算 元初 参数 为 句 阵: 卒 '不能运行库入口'. 法",
             'base.ru': "形 父: 值 为 数. 算 读取: 得 其 值. 法 算 双读: 得 (其 读取)*2. 法 象",
-        }, '初始化\n1\n105\n12\n甲😀\n', args=('甲😀',), status=7)
+        }, '初始化\n真\n105\n12\n甲😀\n', args=('甲😀',), status=7)
 
     def test_import_all_aliasing_and_diamond(self):
         self.assert_modules({
@@ -366,7 +366,7 @@ class JavaScriptParityTests(unittest.TestCase):
                        "显 甲 其 共 其 值. 显 甲 其 共 其 列. 显 值.",
             'a.ru': "共 取 外言 'common.ru'.", 'b.ru': "共 取 外言 'common.ru'.",
             'common.ru': "显 '一次'. 值 取 1. 列 取 [1].",
-        }, '一次\n1\n1\n[1, 3]\n2\n')
+        }, '一次\n真\n1\n[1, 3]\n2\n')
 
     def test_imported_io_factories_keep_runtime_for_the_whole_graph(self):
         main = self.write_modules({
@@ -407,7 +407,7 @@ class JavaScriptParityTests(unittest.TestCase):
                        "显 (模 其 竞具) == __竞赛. 算 查 文档 为 件: 得 1. 法 显 查 (模 其 文件).",
             'lib.ru': "算 输入口: 得 读取. 法 算 输出口: 得 显出. 法 "
                       "算 错误口: 得 错误. 法 算 竞具: 得 __竞赛. 法 算 文件: 得 新 件. 法",
-        }, '0\n0\n0\n0\n1\n')
+        }, '假\n假\n假\n假\n1\n')
 
     def test_compact_recursive_contest_program(self):
         path, graph = compiled(POWER_DECOMPOSITION, self.folder)
@@ -456,14 +456,14 @@ class JavaScriptParityTests(unittest.TestCase):
 显 (文档 其 除) 其 结果. 显 (文档 其 在) 其 值.
 应 取 文档 其 读. 显 应 其 结果. 显 应 其 值. 显 应 其 错误信息 其 含 'errno'.
 """
-        self.assert_output(source, '0\n成功\n空\n成功\n甲😀\n乙\n失败\n失败\n甲😀\n乙\n成功\n0\n失败\n空\n1\n')
+        self.assert_output(source, '假\n成功\n空\n成功\n甲😀\n乙\n失败\n失败\n甲😀\n乙\n成功\n假\n失败\n空\n真\n')
         self.assertFalse(data.exists())
 
     def test_checked_io_result_is_typed_mutable_object(self):
         source = "算 查 回 为 件作成果: 得 回 其 值. 法 应 取 新 件作成果. 显 应 其 结果. "
         source += "应 其 值 取 [1,'二']. 显 (查 应)[1]. 应 其 结果 取 '用户'. 显 应 其 结果. "
         source += "应 其 值 取 应. 显 应 其 值 == 应. 显 (新 件) 其 路径 == ''. 显 (新 录) 其 路径."
-        self.assert_output(source, '成功\n二\n用户\n1\n1\n.\n')
+        self.assert_output(source, '成功\n二\n用户\n真\n真\n.\n')
 
     def test_invalid_file_utf8_nul_and_nonfiles_are_checked_failures(self):
         (self.folder / 'badutf8').write_bytes(b'\xff\xfe')
@@ -472,7 +472,7 @@ class JavaScriptParityTests(unittest.TestCase):
         for path in (self.folder / 'badutf8', self.folder / 'nul', self.folder / 'directory'):
             with self.subTest(path=path.name):
                 self.assert_output(f"显 ((新 件 路径:{quote(path)}) 其 读) 其 结果.", '失败\n')
-        self.assert_output(f"显 ((新 件 路径:{quote(self.folder / 'directory')}) 其 在) 其 值.", '0\n')
+        self.assert_output(f"显 ((新 件 路径:{quote(self.folder / 'directory')}) 其 在) 其 值.", '假\n')
 
     def test_directory_listing_is_sorted_and_regular_only(self):
         listing = self.folder / 'listing'
@@ -490,7 +490,7 @@ class JavaScriptParityTests(unittest.TestCase):
         link.symlink_to(target)
         dangling.symlink_to(self.folder / 'absent')
         source = f"链接 取 新 件 路径:{quote(link)}. 显 (链接 其 读) 其 值. 链接 其 写 '新'. 显 ((新 件 路径:{quote(target)}) 其 读) 其 值. 显 (链接 其 除) 其 结果. 显 ((新 件 路径:{quote(target)}) 其 在) 其 值. 失链 取 新 件 路径:{quote(dangling)}. 显 (失链 其 在) 其 值. 显 (失链 其 除) 其 结果."
-        self.assert_output(source, '原\n新\n成功\n1\n0\n成功\n')
+        self.assert_output(source, '原\n新\n成功\n真\n假\n成功\n')
         self.assertTrue(target.exists())
         self.assertFalse(link.is_symlink())
         self.assertFalse(dangling.is_symlink())
@@ -499,7 +499,7 @@ class JavaScriptParityTests(unittest.TestCase):
     def test_special_files_fail_without_blocking(self):
         fifo = self.folder / 'fifo'
         os.mkfifo(fifo)
-        self.assert_output(f"文件 取 新 件 路径:{quote(fifo)}. 显 (文件 其 读) 其 结果. 显 (文件 其 在) 其 值. 显 (文件 其 除) 其 结果.", '失败\n0\n失败\n')
+        self.assert_output(f"文件 取 新 件 路径:{quote(fifo)}. 显 (文件 其 读) 其 结果. 显 (文件 其 在) 其 值. 显 (文件 其 除) 其 结果.", '失败\n假\n失败\n')
 
     def test_stdin_checked_utf8_recovery_and_legacy_reads(self):
         source = '循 3 次 应 取 读取 其 读. 显 应 其 结果. 显 应 其 值. 环'
@@ -507,7 +507,7 @@ class JavaScriptParityTests(unittest.TestCase):
             with self.subTest(invalid=invalid):
                 self.assert_output(source, '成功\ngood\n失败\n空\n成功\nafter\n', b'good\n' + invalid + b'\nafter\n')
         self.assert_output('显 读. 显 (读取 其 读) 其 值. 显 读.', '甲\n\n尾\n', '甲\r\n\n尾')
-        self.assert_output('应 取 读取 其 读. 显 应 其 结果. 显 应 其 值 == 空. 显 应 其 错误信息 == \'\'.', '成功\n1\n1\n')
+        self.assert_output('应 取 读取 其 读. 显 应 其 结果. 显 应 其 值 == 空. 显 应 其 错误信息 == \'\'.', '成功\n真\n真\n')
         # UTF-8 BOM is a codepoint in input, never stripped as a decoder option.
         self.assert_output('显 读.', '\ufeffhello\n', b'\xef\xbb\xbfhello\n')
         self.assert_output("显 (读取 其 读) 其 值.", '\ufeffhello\n', b'\xef\xbb\xbfhello\n')

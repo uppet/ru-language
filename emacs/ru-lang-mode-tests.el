@@ -1081,3 +1081,57 @@
     (should (cl-every #'ru-lang--block-closed (ru-lang--navigation-blocks t))))
   (ru-lang-test--buffer (apply #'concat (make-list 1000 "算 返回 值: 值. 法\n"))
     (should (= (length (ru-lang--navigation-blocks t)) 1000))))
+
+(ert-deftest ru-lang-maps-and-facts-faces ()
+  (ru-lang-test--buffer "值 为 事实 取 真. 表 为 典 取 典: 1 对 假. 成. 假设 取 1. 成果 取 2. 典籍 取 3."
+    (font-lock-ensure)
+    (search-forward "事实")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-type-face))
+    (search-forward "真")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-keyword-face))
+    (should (get-text-property (1- (point)) 'help-echo))
+    (search-forward "为 典")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-type-face))
+    (search-forward "取 典")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-keyword-face))
+    (dolist (word '("假设" "成果" "典籍"))
+      (search-forward word)
+      (should-not (get-text-property (1- (point)) 'face)))
+    (should (= (length (ru-lang--navigation-blocks nil)) 1))))
+
+(ert-deftest ru-lang-maps-nested-callback-and-fullwidth-indent ()
+  (ru-lang-test--indent
+   "资料 取 典：\n‘设置’ 对 典：\n‘就绪’ 对 真。\n成。\n‘回调’ 对 算 值 为 事实：\n得 值。\n法。\n成。\n作 展示 数据 为 典：\n显 数据。\n为"
+   "资料 取 典：\n    ‘设置’ 对 典：\n        ‘就绪’ 对 真。\n    成。\n    ‘回调’ 对 算 值 为 事实：\n        得 值。\n    法。\n成。\n作 展示 数据 为 典：\n    显 数据。\n为"))
+
+(ert-deftest ru-lang-maps-navigation-keeps-outer-dot ()
+  (ru-lang-test--buffer "表 取 典: '子' 对 典: 成. 成.\n"
+    (search-forward "取 ")
+    (let ((start (point)))
+      (ru-lang-forward-list)
+      (should (looking-at "\\.\n"))
+      (ru-lang-backward-list)
+      (should (= start (point)))
+      (search-forward "子")
+      (ru-lang-backward-up-list)
+      (should (= start (point))))
+    (should-not (ru-lang-imenu-create-index))))
+
+(ert-deftest ru-lang-maps-types-references-and-prefixes ()
+  (ru-lang-test--buffer "算 回 值:真. 算 回 值:假. 算 回 值:典: 成."
+    (should-not (ru-lang--navigation-blocks t)))
+  (ru-lang-test--indent
+   "作 展示:\n显 值\n为 事实.\n显 值\n为 典.\n为"
+   "作 展示:\n    显 值\n    为 事实.\n    显 值\n    为 典.\n为")
+  (let ((source "空表 为 典.\n表 取 典: '回' 对 算 参数 为 典: 得 参数. 法. 成.\n"))
+    (dotimes (end (1+ (length source)))
+      (ru-lang-test--buffer (substring source 0 end)
+        (font-lock-ensure)
+        (indent-region (point-min) (point-max))
+        (let ((once (buffer-string)))
+          (indent-region (point-min) (point-max))
+          (should (equal once (buffer-string))))
+        (ru-lang-imenu-create-index)
+        (condition-case nil
+            (progn (ru-lang-forward-list) (ru-lang-backward-list))
+          (user-error nil))))))

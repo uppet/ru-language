@@ -1,11 +1,11 @@
-/** Editing aids for 如 0.9. These are tolerant lexical aids, not a parser/checker.
+/** Editing aids for 如 0.10. These are tolerant lexical aids, not a parser/checker.
  * The structural model mirrors emacs/ru-lang-mode.el, including anonymous
  * 算/作 headers, contextual 为/终, longest names and literal strings. */
-export const KEYWORDS = new Set('显 取 为 得 完 破 若 则 另 然 循 次 环 算 作 法 其 且 或 非 空 对 形 象 如 新 外言 尽 试 救 卒'.split(' '));
-const TYPES = new Set('数 句 阵 空 对 件 录 件作成果'.split(' '));
+export const KEYWORDS = new Set('显 取 为 得 完 破 若 则 另 然 循 次 环 算 作 法 其 且 或 非 空 对 形 象 如 新 外言 尽 试 救 卒 真 假 典 成'.split(' '));
+const TYPES = new Set('数 句 阵 空 对 事实 典 件 录 件作成果'.split(' '));
 const BUILTINS = new Set('读 件 录 件作成果 读取 显出 错误 __竞赛'.split(' '));
-const MEMBERS = new Set('含 位 段 增 量 囫 囵 写 行 读 开 关'.split(' '));
-const PAIRS = new Map(Object.entries({'算':'法','作':'为','若':'然','循':'环','形':'象','试':'终','(' : ')','[':']'}));
+const MEMBERS = new Set('含 位 段 增 量 囫 囵 写 行 读 开 关 查 除 列'.split(' '));
+const PAIRS = new Map(Object.entries({'算':'法','作':'为','若':'然','循':'环','形':'象','试':'终','典':'成','(' : ')','[':']'}));
 const PUNCT = {'。':'.','：':':','（':'(','）':')','，':',','［':'[','］':']'};
 const nameStart = c => !!c && /[_\p{L}]/u.test(c);
 const namePart = c => !!c && /[_\p{L}\p{N}]/u.test(c);
@@ -49,7 +49,7 @@ function literalHeader(tokens, index) {
     token = next();
     if (match(token,'为')) {
       token = next();
-      if (token?.kind !== 'name' || (KEYWORDS.has(token.text) && !['空','对','算','作'].includes(token.text))) return false;
+      if (token?.kind !== 'name' || (KEYWORDS.has(token.text) && !['空','对','典','算','作'].includes(token.text))) return false;
       token = next(); while (match(token,'阵')) token = next();
     }
     if (match(token,':','punct')) return true;
@@ -64,7 +64,7 @@ function referenceCallAhead(tokens,index) {
   const bare=token=>token?.kind==='name'&&!KEYWORDS.has(token.text);
   if (!bare(name)||!bare(param)||colon?.text!==':'||!value) return false;
   const startsValue=['number','string'].includes(value.kind)||bare(value)||
-    ['空','新','外言','其','非','(','[','+','-'].includes(value.text);
+    ['真','假','典','空','新','外言','其','非','(','[','+','-'].includes(value.text);
   if (!startsValue) return false;
   // Stop at this body's closer, ignoring closers owned by nested definitions.
   // In particular a later independent definition cannot close a reference call.
@@ -113,25 +113,25 @@ export function analyze(source) {
       const top=stack.at(-1), code=kind!=='comment'&&kind!=='string';
       const closer=code&&!binding&&top&&text===PAIRS.get(top.kind)&&
         (text!=='终'||statementStart)&&
-        (text!=='为'||(!top.header&&(statementStart||(first&&!['数','句','阵','算','作'].includes(next?.text)))));
+        (text!=='为'||(!top.header&&(statementStart||(first&&![...TYPES,'算','作'].includes(next?.text)))));
       const branch=code&&top&&!binding&&((top.kind==='若'&&['则','另'].includes(text))||(top.kind==='试'&&text==='救'&&statementStart));
       if (kind!=='comment') {
         if(top?.kind==='试'&&top.header&&!binding&&!branch&&text!==':') top.header=false;
         if(first) { depth=Math.max(0,stack.length-((closer||branch)?1:0)); first=false; }
         if(binding) { rescueBinding=null; statementStart=true; }
         else if(kind==='string') statementStart=false;
-        else if(closer) { top.end=token.end; top.endLine=lines.length; top.closed=true; token.close=top.kind; stack.pop(); statementStart=!top.literal&&!['(','['].includes(top.kind); }
-        else if(PAIRS.has(text)&&(!callable||definition)) {
-          const block={kind:text,start:token.start,end:source.length,startLine:lines.length,endLine:sourceLines.length-1,depth:stack.length,literal:definition==='literal',header:['算','作','若','试'].includes(text),closed:false};
+        else if(closer) { top.end=token.end; top.endLine=lines.length; top.closed=true; token.close=top.kind; stack.pop(); statementStart=!top.literal&&!['(','[','典'].includes(top.kind); }
+        else if(PAIRS.has(text)&&(!callable||definition)&&(text!=='典'||(previous!=='为'&&next?.kind==='punct'&&next.text===':'))) {
+          const block={kind:text,start:token.start,end:source.length,startLine:lines.length,endLine:sourceLines.length-1,depth:stack.length,literal:definition==='literal'||text==='典',header:['算','作','若','试','典'].includes(text),closed:false};
           stack.push(block); blocks.push(block); token.open=text; statementStart=['循','试'].includes(text);
-        } else if(branch||(top&&text===':'&&(['算','作','形'].includes(top.kind)||(top.kind==='试'&&top.header)))) {
+        } else if(branch||(top&&text===':'&&(['算','作','形','典'].includes(top.kind)||(top.kind==='试'&&top.header)))) {
           top.header=false;
           if(branch&&text==='救'&&next?.kind==='name'&&!KEYWORDS.has(next.text)) { rescueBinding=next; top.header=true; }
-          statementStart=true;
-        } else if(text==='.'||text==='次') statementStart=true;
+          statementStart=top.kind!=='典';
+        } else if(text==='.'||text==='次') statementStart=top?.kind!=='典';
         else statementStart=false;
         if(kind==='name') {
-          token.face=binding?'variable':closer&&text==='终'?'keyword':token===callableName?'function':callableType?'type':callable?'keyword':
+          token.face=text==='对'&&top?.kind==='典'?'keyword':text==='典'&&token.open?'keyword':binding?'variable':closer&&text==='终'?'keyword':token===callableName?'function':callableType?'type':callable?'keyword':
             ['@','其'].includes(previous)&&MEMBERS.has(text)?'builtin':
             ['形','如','新'].includes(previous)||(previous==='为'&&!statementStart)||TYPES.has(text)?'type':
             KEYWORDS.has(text)?'keyword':BUILTINS.has(text)?'builtin':null;
@@ -147,7 +147,15 @@ export function analyze(source) {
   return {tokens,blocks,lines,depth:stack.length};
 }
 export const ASSIGNMENT_HELP = '取（词法规则）：函数内先更新当前局部，否则更新最近已有的非模块捕获绑定；未找到则新建当前局部，不隐式改写模块变量。直接救正文中的取写救局部；闭包共享捕获绑定。参数属于本次调用局部。此提示不判断具体名称的运行时绑定。';
-export function tokenHelp(token) { return token.kind === 'name' && token.text === '取' ? ASSIGNMENT_HELP : null; }
+export const TOKEN_HELP = {
+  '取': ASSIGNMENT_HELP,
+  '典': '典：键值映射。字面量 典: 键 对 值. 键 对 值. 成；空典写作 典: 成。',
+  '成': '成：结束典字面量；外层语句的句点另写。',
+  '对': '对：二元素对；在典字面量中分隔键与值。',
+  '事实': '事实：真或假，与数不同。比较和非／且／或返回事实。为 事实 转换时仅空、假为假。',
+  '真': '真：事实字面量。', '假': '假：事实字面量。'
+};
+export function tokenHelp(token) { return token.kind === 'name' ? TOKEN_HELP[token.text] || null : null; }
 export const escapeHTML = text => text.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');
 export function highlight(source) {
   const {tokens}=analyze(source); let html='',at=0;

@@ -32,6 +32,20 @@
       "outputs": []
     },
     {
+      "id": "maps-facts-note",
+      "type": "markdown",
+      "source": "## 事实与典\n\n`真`、`假` 是事实字面量。`典: 键 对 值. 成` 保存键值，`量` 返回条目数，`查 键:` 读取已有键。",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
+      "id": "maps-facts",
+      "type": "code",
+      "source": "资料 取 典:\n    '起点' 对 起点.\n    '就绪' 对 真.\n成.\n显 (资料 其 查 键: '起点').\n显 (资料 其 查 键: '就绪').\n显 资料 其 量.",
+      "execution_count": null,
+      "outputs": []
+    },
+    {
       "id": "input-note",
       "type": "markdown",
       "source": "## 在格内输入\n\n下一格与 examples/add.ru 相同。每次提示出现时，在格内输入一个数并送出。全部运行也会在这里等待你的输入。",

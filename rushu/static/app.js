@@ -92,7 +92,7 @@ function buildEditor(cell,view) {
   function applyEdit(edit){input.setRangeText(edit.text,edit.start,edit.end,'end');input.setSelectionRange(edit.selectionStart??edit.selection??input.selectionStart,edit.selectionEnd??edit.selection??input.selectionEnd);update();}
   function update(auto=false){
     if(auto&&!composing){const pos=input.selectionStart,start=input.value.lastIndexOf('\n',pos-1)+1,end=input.value.indexOf('\n',pos),line=input.value.slice(start,end<0?undefined:end);
-      if(/^\s*(法|为|然|环|象|终|另|则|救)(?:\s|[。.：:]|$)/.test(line)){
+      if(/^\s*(法|为|然|环|象|终|成|另|则|救)(?:\s|[。.：:]|$)/.test(line)){
         const result=analyze(input.value),lineIndex=input.value.slice(0,start).split('\n').length-1,depth=result.lines[lineIndex].depth;
         if(depth!=null){const old=line.match(/^\s*/)[0].length,wanted=depth*4;if(old!==wanted){input.setRangeText(' '.repeat(wanted),start,start+old,'preserve');input.setSelectionRange(Math.max(start,pos+wanted-old),Math.max(start,pos+wanted-old));}}
       }

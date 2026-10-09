@@ -21,6 +21,17 @@ class Pair:
     right: object
 
 
+class RuMap:
+    """Hash-indexed buckets; entries hold shared keys/values, never host equality."""
+    def __init__(self):
+        self.buckets = {}
+        self.size = 0
+        self.version = 0
+
+    def snapshot(self):
+        return [entry for bucket in self.buckets.values() for entry in bucket]
+
+
 @dataclass(eq=False)
 class Function:
     owner: object
@@ -67,6 +78,10 @@ def value_type_name(value):
     """Describe the received value without suggesting unsupported conversions."""
     if value is None:
         return "空"
+    if isinstance(value, bool):
+        return "事实"
+    if isinstance(value, RuMap):
+        return "典"
     if isinstance(value, float):
         return "数"
     if isinstance(value, str):
@@ -100,6 +115,8 @@ def display(value, active=None):
             continue
         if current is None:
             output.append("空")
+        elif isinstance(current, bool):
+            output.append("真" if current else "假")
         elif isinstance(current, float):
             output.append(format(current, ".15g"))
         elif isinstance(current, str):
@@ -113,7 +130,7 @@ def display(value, active=None):
         elif isinstance(current, Function):
             kind = "作" if current.node.data["procedure"] else "算"
             output.append(f"<{kind} {current.node.data['name']}>")
-        elif isinstance(current, (Pair, list)):
+        elif isinstance(current, (Pair, list, RuMap)):
             identity = id(current)
             if identity in active:
                 output.append("<循环>")
@@ -124,6 +141,15 @@ def display(value, active=None):
                 output.append("(")
                 stack.extend([("text", ")"), ("value", current.right),
                               ("text", " 对 "), ("value", current.left)])
+            elif isinstance(current, RuMap):
+                entries = current.snapshot()
+                output.append("{")
+                stack.append(("text", "}"))
+                for i in range(len(entries)-1, -1, -1):
+                    key, value = entries[i]
+                    stack.extend([("value", value), ("text", ": "), ("value", key)])
+                    if i:
+                        stack.append(("text", ", "))
             else:
                 output.append("[")
                 stack.append(("text", "]"))
@@ -137,21 +163,19 @@ def display(value, active=None):
 
 
 def truth(value):
-    if value is None:
-        return False
-    if isinstance(value, (str, list)):
-        return bool(len(value))
-    if isinstance(value, float):
-        return value != 0
-    return True
+    return value is not None and value is not False
 
 
-def equal(left, right):
+def equal(left, right, instance_equal=None):
     pending, compared = [(left, right)], set()
     while pending:
         left, right = pending.pop()
         if type(left) is not type(right):
             return False
+        if isinstance(left, Instance) and instance_equal is not None:
+            if not instance_equal(left, right):
+                return False
+            continue
         if left is right:
             continue
         if isinstance(left, Pair):
@@ -160,7 +184,7 @@ def equal(left, right):
                 continue
             compared.add(identities)
             pending.extend(((left.right, right.right), (left.left, right.left)))
-        elif isinstance(left, (list, Instance, Module, RuType, Function)):
+        elif isinstance(left, (list, RuMap, Instance, Module, RuType, Function)):
             return False
         elif left != right:
             return False
@@ -363,7 +387,7 @@ class Interpreter:
         """Resolve in the declaration's module; empty annotations mean any value."""
         if annotation.endswith(" 阵"):
             return ("array", self.type_identity(annotation[:-2], n))
-        if annotation in ("", "数", "句", "空", "阵", "对", "算", "作"):
+        if annotation in ("", "数", "句", "空", "阵", "对", "算", "作", "事实", "典"):
             return annotation
         typ = self.types.get(annotation) or self.builtin_types.get(annotation)
         if not isinstance(typ, RuType):
@@ -389,6 +413,10 @@ class Interpreter:
             return True
         if typ.endswith(" 阵"):
             return isinstance(value, list) and all(self.type_matches(item, typ[:-2]) for item in value)
+        if typ == "事实":
+            return isinstance(value, bool)
+        if typ == "典":
+            return isinstance(value, RuMap)
         if typ == "数":
             return isinstance(value, float)
         if typ == "句":
@@ -636,10 +664,17 @@ class Interpreter:
 
     def expr(self, n, scope):
         d = n.data
-        if n.kind in ("number", "string"):
+        if n.kind in ("number", "string", "fact"):
             return d["value"]
         if n.kind == "null":
             return None
+        if n.kind == "map":
+            result = RuMap()
+            for key_node, value_node in d["entries"]:
+                key = self.expr(key_node, scope)
+                value = self.expr(value_node, scope)
+                self.map_put(n, result, key, value)
+            return result
         if n.kind == "array":
             return [self.expr(item, scope) for item in d["items"]]
         if n.kind == "self":
@@ -730,6 +765,8 @@ class Interpreter:
             return self.get_slice(n, receiver, start, end)
         if n.kind == "convert":
             value = self.expr(d["expr"], scope)
+            if d["target"] == "事实":
+                return truth(value)
             if d["target"] == "阵":
                 return [value]
             if d["target"] == "句":
@@ -738,7 +775,7 @@ class Interpreter:
         if n.kind == "unary":
             value = self.expr(d["expr"], scope)
             if d["op"] == "非":
-                return float(not truth(value))
+                return not truth(value)
             if not isinstance(value, float):
                 self.fail(n, "正负号只能用于数")
             return value if d["op"] == "+" else -value
@@ -746,27 +783,27 @@ class Interpreter:
             op = d["op"]
             left = self.expr(d["left"], scope)
             if op == "且":
-                return float(truth(left) and truth(self.expr(d["right"], scope)))
+                return truth(left) and truth(self.expr(d["right"], scope))
             if op == "或":
-                return float(truth(left) or truth(self.expr(d["right"], scope)))
+                return truth(left) or truth(self.expr(d["right"], scope))
             right = self.expr(d["right"], scope)
             if op == "对":
                 return Pair(left, right)
             if op in ("==", "!="):
-                same = equal(left, right)
-                return float(same if op == "==" else not same)
+                same = self.equals(n, left, right)
+                return same if op == "==" else not same
             if op == "含":
                 if isinstance(left, (Instance, Module)):
                     return self.member(n, left, "含", [(None, right)])
                 self.last_member_procedure = False
                 if not isinstance(left, str) or not isinstance(right, str):
                     self.fail(n, "「含」需要两个句")
-                return float(right in left)
+                return right in left
             if op in ("<", "<=", ">", ">="):
                 if type(left) is not type(right) or not isinstance(left, (str, float)):
                     self.fail(n, "大小比较需要两个数或两个句")
-                return float({"<": lambda: left < right, "<=": lambda: left <= right,
-                              ">": lambda: left > right, ">=": lambda: left >= right}[op]())
+                return {"<": lambda: left < right, "<=": lambda: left <= right,
+                              ">": lambda: left > right, ">=": lambda: left >= right}[op]()
             if op == "+" and isinstance(left, str) and isinstance(right, str):
                 return left + right
             if not isinstance(left, float) or not isinstance(right, float):
@@ -780,6 +817,96 @@ class Interpreter:
                 self.fail(n, "运算结果不是有限数")
             return result
         raise AssertionError(n.kind)
+
+    def special_method(self, n, value, name, arity):
+        method = value.type.methods.get(name)
+        if method is None or method.node.data["procedure"] or len(method.node.data["params"]) != arity:
+            self.fail(n, f"形的「{name}」须为接受 {arity} 个参数的算")
+        return Function(method.owner, method.node, method.environment, value, method.parameter_types)
+
+    def equals(self, n, left, right):
+        def instance_equal(a, b):
+            if a.type is not b.type:
+                return False
+            if "同" not in a.type.methods:
+                return a is b
+            method = self.special_method(n, a, "同", 1)
+            result = self.invoke_value(n, method, [(None, b)])
+            if not isinstance(result, bool):
+                self.fail(n, "「同」须返回事实")
+            return result
+        return equal(left, right, instance_equal)
+
+    def map_hash(self, n, key):
+        if isinstance(key, bool):
+            return ("事实", key)
+        if isinstance(key, float):
+            if not math.isfinite(key):
+                self.fail(n, "典的数键须为有限数")
+            return ("数", key)
+        if isinstance(key, str):
+            return ("句", key)
+        if isinstance(key, Instance):
+            self.special_method(n, key, "同", 1)
+            method = self.special_method(n, key, "印", 0)
+            value = self.invoke_value(n, method, [])
+            if not isinstance(value, float) or not math.isfinite(value) or value != math.trunc(value) or abs(value) > 9007199254740991:
+                self.fail(n, "「印」须返回安全整数范围内的数")
+            return ("形", id(key.type), value)
+        self.fail(n, "典的键须为数、句、事实或提供同与印的形实例；实际收到" + value_type_name(key))
+
+    def map_find(self, n, receiver, key):
+        version = receiver.version
+        hashed = self.map_hash(n, key)
+        if receiver.version != version:
+            self.fail(n, "典在键的印／同比较期间被修改")
+        bucket = receiver.buckets.get(hashed, [])
+        for index, (stored, _) in enumerate(bucket):
+            same = self.equals(n, stored, key)
+            if receiver.version != version:
+                self.fail(n, "典在键的印／同比较期间被修改")
+            if same:
+                return hashed, bucket, index
+        return hashed, bucket, -1
+
+    def map_put(self, n, receiver, key, value):
+        hashed, bucket, index = self.map_find(n, receiver, key)
+        if index < 0:
+            receiver.buckets.setdefault(hashed, bucket).append((key, value))
+            receiver.size += 1
+        else:
+            bucket[index] = (bucket[index][0], value)
+        receiver.version += 1
+        return receiver
+
+    def map_member(self, n, receiver, name, args):
+        params = {"查": ["键"], "增": ["键", "值"], "除": ["键"], "列": ["回调"], "量": []}
+        if name not in params:
+            self.fail(n, f"未知成员：{name}")
+        bound = bind_arguments(name, args, params[name], lambda message: self.fail(n, message))
+        if name == "量":
+            return float(receiver.size)
+        if name == "增":
+            return self.map_put(n, receiver, bound["键"], bound["值"])
+        if name == "列":
+            callback = bound["回调"]
+            if not isinstance(callback, Function) or len(callback.node.data["params"]) != 2:
+                self.fail(n, "典的列回调须为接受两个参数的算或作")
+            for key, value in receiver.snapshot():
+                self.invoke_value(n, callback, [(None, key), (None, value)])
+            self.last_member_procedure = False
+            return None
+        hashed, bucket, index = self.map_find(n, receiver, bound["键"])
+        if name == "查":
+            return None if index < 0 else bucket[index][1]
+        if index < 0:
+            return False
+        del bucket[index]
+        if not bucket:
+            del receiver.buckets[hashed]
+        receiver.size -= 1
+        receiver.version += 1
+        return True
 
     def number_value(self, n, value):
         """One strict numeric conversion shared by 为 数 and contest input."""
@@ -798,6 +925,8 @@ class Interpreter:
     def member(self, n, receiver, name, args):
         fail = lambda message: self.fail(n, message)
         self.last_member_procedure = False
+        if isinstance(receiver, RuMap):
+            return self.map_member(n, receiver, name, args)
         handled, result = contest_member(self, n, receiver, name, args)
         if handled:
             return result
@@ -839,7 +968,7 @@ class Interpreter:
                 bound = bind_arguments(name, args, ["句"], fail)
                 if not isinstance(bound["句"], str):
                     self.fail(n, "「含」需要两个句")
-                return float(bound["句"] in receiver)
+                return bound["句"] in receiver
             if name == "增" and isinstance(receiver, list):
                 bound = bind_arguments(name, args, ["值"], fail)
                 receiver.append(bound["值"])

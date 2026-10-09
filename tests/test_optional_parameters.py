@@ -27,9 +27,9 @@ CASES = [
 显 回 空 == 空. 显 回 3. 显 回 '好'. 显 回 [1,'二',空].
 显 (回 (1 对 2)) 其 囫. 显 (回 (新 盒 值:8)) 其 值.
 显 (回 (算: 得 9. 法))(). (回 (作: 显 '作'. 为))().
-''', '1\n3\n好\n[1, 二, 空]\n1\n8\n9\n作\n'),
+''', '真\n3\n好\n[1, 二, 空]\n1\n8\n9\n作\n'),
     ('named_procedure', "作 报 值: 显 值. 为 报 空. 报 '好'. 报 [1,2].", '空\n好\n[1, 2]\n'),
-    ('anonymous_function', "回 取 算 值: 得 值. 法. 显 回 空 == 空. 显 回 '好'. 显 回 [1,2].", '1\n好\n[1, 2]\n'),
+    ('anonymous_function', "回 取 算 值: 得 值. 法. 显 回 空 == 空. 显 回 '好'. 显 回 [1,2].", '真\n好\n[1, 2]\n'),
     ('anonymous_procedure', "报 取 作 值: 显 值. 为. 报 空. 报 '好'.", '空\n好\n'),
     ('mixed_whitespace', "算 合 左 中 为 数 右: 得 [左,中,右]. 法 显 合 '甲' 2 空.", '[甲, 2, 空]\n'),
     ('mixed_commas', "合 取 算 左, 中 为 数, 右,: 得 [左,中,右]. 法. 显 合 右:空 中:2 左:'甲'.", '[甲, 2, 空]\n'),
@@ -42,7 +42,7 @@ CASES = [
 对象 取 新 盒 值:4. 显 对象 其 回 空 == 空.
 回调 取 算 对象 其 回. 动作 取 作 对象 其 报.
 显 回调 '好'. 动作 [1,2].
-''', '1\n好\n[1, 2]\n'),
+''', '真\n好\n[1, 2]\n'),
     ('nested_named_closure', '算 制 起: 算 加 步: 起 取 起+步. 得 起. 法 得 算 加. 法 回 取 制 3. 显 回 2. 显 回 步:4.', '5\n9\n'),
     ('anonymous_closure_mutation', '算 制 起: 得 算 步: 起 取 起+步. 得 起. 法. 法 回 取 制 3. 显 回 2. 显 回 步:4.', '5\n9\n'),
     ('recursion', '算 阶 值: 若 值 <= 1 则 得 1. 然 得 值*(阶 值-1). 法 显 阶 6.', '720\n'),
@@ -50,7 +50,7 @@ CASES = [
     ('unparenthesized_callback', '算 用 回调: 得 回调 4. 法 显 用 算 值: 得 值+1. 法.', '5\n'),
     ('standalone_reference_calls', '算 回 值: 显 值. 得 值. 法 作 报 值: 显 值. 为 参数 取 7. 算 回 参数. 算 回 值:8. 作 报 参数. 作 报 值:9.', '7\n8\n7\n9\n'),
     ('expression_reference_named_calls', '算 回 值: 得 值. 法 算 加 值: 得 值+10. 法 显 算 回 值:1. 结果 取 算 回 值:2. 显 结果. 显 (算 回 值:3). 显 加 (算 回 值:4).', '1\n2\n3\n14\n'),
-    ('expression_procedure_named_calls', '作 报 值: 显 值. 为 算 用 值: 得 值 == 空. 法 显 作 报 值:1. 结果 取 作 报 值:2. 显 结果 == 空. (作 报 值:3). 显 用 (作 报 值:4).', '1\n空\n2\n1\n3\n4\n1\n'),
+    ('expression_procedure_named_calls', '作 报 值: 显 值. 为 算 用 值: 得 值 == 空. 法 显 作 报 值:1. 结果 取 作 报 值:2. 显 结果 == 空. (作 报 值:3). 显 用 (作 报 值:4).', '1\n空\n2\n真\n3\n4\n真\n'),
     ('reference_conversion', "算 回 值: 得 值. 法 作 报 值: 显 值. 为 显 算 回 为 句. 显 作 报 为 句. 显 算 回 '为'. 作 报 ':'.", '<算 回>\n<作 报>\n为\n:\n'),
     ('matching_override', '形 父: 算 查 值: 得 值. 法 象 形 子 如 父: 算 查 值: 得 值+1. 法 象 显 (新 子) 其 查 4.', '5\n'),
     ('named_argument_evaluation_order', '算 报 值: 显 值. 得 值. 法 算 合 左 右 为 数: 得 左*10+右. 法 显 合 右:(报 2) 左:(报 1).', '2\n1\n12\n'),
@@ -315,7 +315,7 @@ class OptionalParameterIntegrationTests(unittest.TestCase):
         result = subprocess.run([sys.executable, str(ROOT / 'ru'), 'repl'],
                                 input=commands, text=True, capture_output=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, '1\n好\n7\n')
+        self.assertEqual(result.stdout, '真\n好\n7\n')
         self.assertIn('须为数', result.stderr)
         self.assertNotIn('Traceback', result.stderr)
 
@@ -339,7 +339,7 @@ class OptionalParameterIntegrationTests(unittest.TestCase):
         self.assertEqual(cell('算 回 值: 得 值. 法')['events'][-1]['status'], 'ok')
         result = cell("显 回 空 == 空. 显 回 '好'.")
         self.assertEqual(result['events'][-1]['status'], 'ok')
-        self.assertEqual(''.join(e['text'] for e in result['events'] if e['type'] == 'output'), '1\n好\n')
+        self.assertEqual(''.join(e['text'] for e in result['events'] if e['type'] == 'output'), '真\n好\n')
         self.assertEqual(cell('回().')['events'][-1]['status'], 'error')
         self.assertEqual(cell('显 回 7.')['events'][-1]['status'], 'ok')
 

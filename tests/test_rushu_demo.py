@@ -1,6 +1,8 @@
 """The shipped notebook remains executable with the unmodified language."""
 import io
 import json
+import shutil
+import subprocess
 from pathlib import Path
 import unittest
 
@@ -20,7 +22,23 @@ class NotebookDemoTests(unittest.TestCase):
             self.assertEqual(cell['outputs'], [])
             if cell['type'] == 'code':
                 runtime.execute(parse(cell['source']), echo=True)
-        self.assertEqual(output.getvalue(), '10\n15\n25\n输入第一数：输入第二数：42\n')
+        self.assertEqual(output.getvalue(), '10\n15\n25\n20\n真\n2\n输入第一数：输入第二数：42\n')
+
+    @unittest.skipUnless(shutil.which('node'), 'Node is needed to load the welcome book')
+    def test_default_welcome_book_current_language(self):
+        root = Path(__file__).resolve().parents[1]
+        source = subprocess.check_output([
+            'node', '--input-type=module', '-e',
+            "import {welcomeBook} from './rushu/static/notebook.mjs'; "
+            "console.log(JSON.stringify(welcomeBook()));",
+        ], cwd=root, text=True)
+        book = json.loads(source)
+        output = io.StringIO()
+        runtime = Interpreter(stdout=output)
+        for cell in book['cells']:
+            if cell['type'] == 'code':
+                runtime.execute(parse(cell['source']), echo=True)
+        self.assertEqual(output.getvalue(), '你好，如书\n你好，如书\n81\n你好，如书\n真\n')
 
     def test_redefinition_preserves_old_function_value(self):
         output = io.StringIO()

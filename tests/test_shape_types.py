@@ -101,7 +101,7 @@ class ShapeTypeTests(unittest.TestCase):
                             self.assertIn('RU_GC live=0 ', result.stderr)
 
     def test_instances_factories_closures_and_typed_arrays(self):
-        self.assert_engines({'main.ru': INSTANCES}, '17\n1\n17\n21\n22\n')
+        self.assert_engines({'main.ru': INSTANCES}, '17\n真\n17\n21\n22\n')
 
     def assert_rejected_engines(self, files, diagnostic):
         """Accept static rejection or a clean runtime error in either compiler."""

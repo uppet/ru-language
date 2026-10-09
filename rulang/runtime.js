@@ -55,6 +55,9 @@ const R = (() => {
     }
   }
   class Instance { constructor(type, fields) { this.type = type; this.fields = fields; } }
+  class RuMap {
+    constructor() { this.buckets = new Map(); this.size = 0; this.version = 0; }
+  }
   class Pair { constructor(left, right) { this.left = left; this.right = right; } }
   class Module {
     constructor(source) {
@@ -75,6 +78,8 @@ const R = (() => {
   }
   function valueTypeName(value) {
     if (value === null) return '空';
+    if (typeof value === 'boolean') return '事实';
+    if (value instanceof RuMap) return '典';
     if (typeof value === 'number') return '数';
     if (typeof value === 'string') return '句';
     if (Array.isArray(value)) return '阵';
@@ -104,8 +109,7 @@ const R = (() => {
     contestTypes[kind] = builtin(name, [], kind, 'contestKind');
   builtins.values.__竞赛 = new Instance(contestTypes.helpers, dict());
 
-  // Format binary64 using 15 significant digits and round-to-even, matching
-  // Python .15g (including halfway cases, exponent spelling, and negative zero).
+  // Binary64, Python .15g rounding and exponent spelling.
   const bits = new DataView(new ArrayBuffer(8));
   const pow10 = n => 10n ** BigInt(n);
   function numberText(value) {
@@ -145,16 +149,24 @@ const R = (() => {
       if (op === 1) { out.push(v); continue; }
       if (op === 2) { active.delete(v); continue; }
       if (v === null) out.push('空');
+      else if (typeof v === 'boolean') out.push(v ? '真' : '假');
       else if (typeof v === 'number') out.push(numberText(v));
       else if (typeof v === 'string') out.push(v);
       else if (v instanceof Instance) out.push('<形 ' + v.type.name + '>');
       else if (v instanceof Type) out.push('<形 ' + v.name + '>');
       else if (v instanceof Module) out.push('<外言>');
       else if (v instanceof Fn) out.push('<' + (v.procedure ? '作' : '算') + ' ' + v.name + '>');
-      else if (v instanceof Pair || Array.isArray(v)) {
+      else if (v instanceof Pair || v instanceof RuMap || Array.isArray(v)) {
         if (active.has(v)) { out.push('<循环>'); continue; }
         active.add(v); stack.push([2, v]);
-        if (v instanceof Pair) {
+        if (v instanceof RuMap) {
+          out.push('{'); stack.push([1,'}']);
+          const entries = Array.from(v.buckets.values()).flat();
+          for (let i = entries.length - 1; i >= 0; i--) {
+            stack.push([0,entries[i][1]],[1,': '],[0,entries[i][0]]);
+            if (i) stack.push([1,', ']);
+          }
+        } else if (v instanceof Pair) {
           out.push('('); stack.push([1, ')'], [0, v.right], [1, ' 对 '], [0, v.left]);
         } else {
           out.push('['); stack.push([1, ']']);
@@ -164,21 +176,99 @@ const R = (() => {
     }
     return out.join('');
   }
-  function truth(v) {
-    return v !== null && (typeof v === 'number' ? v !== 0 :
-      (typeof v === 'string' || Array.isArray(v)) ? v.length !== 0 : true);
+  function truth(v) { return v !== null && v !== false; }
+  function keyMethod(m,value,name,arity,loc) {
+    const f = value.type.methods[name];
+    if (!(f instanceof Fn) || f.procedure || f.params.length !== arity)
+      fail(m,'典键的「'+name+'」须为 '+arity+' 个参数的算',loc);
+    return boundMethod(f,value);
   }
-  function equal(a, b) {
+  function sameInstance(m,a,b,loc) {
+    if (a.type !== b.type) return false;
+    const f = a.type.methods.同;
+    if (!f) return a === b;
+    const result = call(m,keyMethod(m,a,'同',1,loc),[[null,b]],loc);
+    if (typeof result !== 'boolean') fail(m,'「同」须返回事实',loc);
+    return result;
+  }
+  function equal(a,b,m = null,loc = null) {
     const todo = [[a,b]], visited = new Map();
     while (todo.length) {
-      const [x,y] = todo.pop(); if (x === y) continue;
-      if (x instanceof Pair && y instanceof Pair) {
-        let seen = visited.get(x); if (!seen) visited.set(x, seen = new Set());
-        if (seen.has(y)) continue; seen.add(y); todo.push([x.left,y.left], [x.right,y.right]);
+      const [x,y] = todo.pop();
+      if (x instanceof Instance && y instanceof Instance) {
+        if (!sameInstance(m,x,y,loc)) return false;
+      } else if (x === y) continue;
+      else if (x instanceof Pair && y instanceof Pair) {
+        let seen = visited.get(x); if (!seen) visited.set(x,seen = new Set());
+        if (seen.has(y)) continue; seen.add(y); todo.push([x.right,y.right],[x.left,y.left]);
       } else return false;
     }
     return true;
   }
+  /* RU_OPTIONAL_MAP_BEGIN */
+  const typeIds = new WeakMap(); let nextTypeId = 0;
+  function keyHash(m,key,loc) {
+    if (typeof key === 'boolean') return key ? 'b1' : 'b0';
+    if (typeof key === 'number' && Number.isFinite(key)) return 'n'+String(key);
+    if (typeof key === 'string') return 's'+key;
+    if (key instanceof Instance) {
+      keyMethod(m,key,'同',1,loc);
+      const result = call(m,keyMethod(m,key,'印',0,loc),[],loc);
+      if (typeof result !== 'number' || !Number.isSafeInteger(result))
+        fail(m,'「印」须返回有限安全整数',loc);
+      if (!typeIds.has(key.type)) typeIds.set(key.type,++nextTypeId);
+      return 'o'+typeIds.get(key.type)+':'+String(result);
+    }
+    fail(m,'典键须为数、句、事实或具备同与印的形',loc);
+  }
+  function mapFind(m,map,key,loc) {
+    const version = map.version, hash = keyHash(m,key,loc);
+    const unchanged = () => { if (map.version !== version) fail(m,'典键的同／印调用期间不能修改该典',loc); };
+    unchanged();
+    const bucket = map.buckets.get(hash);
+    if (bucket) for (let i = 0; i < bucket.length; i++) {
+      const found = equal(bucket[i][0],key,m,loc); unchanged();
+      if (found) return [hash,bucket,i];
+    }
+    return [hash,bucket,-1];
+  }
+  function mapPut(m,map,key,value,loc) {
+    const [hash,bucket,index] = mapFind(m,map,key,loc);
+    if (index >= 0) bucket[index][1] = value;
+    else {
+      if (bucket) bucket.push([key,value]); else map.buckets.set(hash,[[key,value]]);
+      map.size++;
+    }
+    map.version++; return map;
+  }
+  function map(m,entries,loc) {
+    const result = new RuMap();
+    for (const [key,value] of entries) { const k = key(), v = value(); mapPut(m,result,k,v,loc); }
+    return result;
+  }
+  function mapMember(m,receiver,name,args,loc) {
+    if (name === '量') { argsBind(m,name,args,[],loc); return receiver.size; }
+    if (name === '增') {
+      const a = argsBind(m,name,args,['键','值'],loc); return mapPut(m,receiver,a.键,a.值,loc);
+    }
+    if (name === '查' || name === '除') {
+      const a = argsBind(m,name,args,['键'],loc), [hash,bucket,index] = mapFind(m,receiver,a.键,loc);
+      if (name === '查') return index < 0 ? null : bucket[index][1];
+      if (index < 0) return false;
+      bucket.splice(index,1); if (!bucket.length) receiver.buckets.delete(hash);
+      receiver.size--; receiver.version++; return true;
+    }
+    if (name === '列') {
+      const a = argsBind(m,name,args,['回调'],loc), callback = a.回调;
+      if (!(callback instanceof Fn) || callback.params.length !== 2) fail(m,'典的列须接收两个参数的算或作',loc);
+      const snapshot = [];
+      for (const bucket of receiver.buckets.values()) for (const [key,value] of bucket) snapshot.push([key,value]);
+      for (const [key,value] of snapshot) call(m,callback,[[null,key],[null,value]],loc);
+      m.lastMemberProcedure = false; return null;
+    }
+    fail(m,'未知成员：'+name,loc);
+  }
+  /* RU_OPTIONAL_MAP_END */
   // Cache only a bounded number of strings. Indices count Unicode codepoints.
   const strings = new Map();
   function chars(s) {
@@ -219,9 +309,8 @@ const R = (() => {
     return value;
   }
   function typeIdentity(m,annotation,loc) {
-    // Empty parameter annotations accept every ordinary value, including null.
     if (annotation.endsWith(' 阵')) return ['array',typeIdentity(m,annotation.slice(0,-2),loc)];
-    if (['','数','句','空','阵','对','算','作'].includes(annotation)) return annotation;
+    if (['','数','句','空','阵','对','算','作','事实','典'].includes(annotation)) return annotation;
     const t = m.types[annotation] || builtinTypes[annotation];
     if (!(t instanceof Type)) fail(m,'未定义类型：'+annotation+'；类型注解须使用已声明或已尽取导入的形名',loc);
     return t;
@@ -294,6 +383,8 @@ const R = (() => {
     }
     if (typ === '') return true;
     if (typ.endsWith(' 阵')) return Array.isArray(value) && value.every(x => matches(m,x,typ.slice(0,-2)));
+    if (typ === '事实') return typeof value === 'boolean';
+    if (typ === '典') return value instanceof RuMap;
     if (typ === '数') return typeof value === 'number';
     if (typ === '句') return typeof value === 'string';
     if (typ === '空') return value === null;
@@ -403,26 +494,26 @@ const R = (() => {
     const result = Number(v); if (!Number.isFinite(result)) fail(m,'转换结果不是有限数',loc);
     return result;
   }
-  function convert(m,value,target,loc) { return target === '阵' ? [value] : target === '句' ? display(value) : number(m,value,loc); }
+  function convert(m,value,target,loc) { return target === '事实' ? truth(value) : target === '阵' ? [value] : target === '句' ? display(value) : number(m,value,loc); }
   function unary(m,op,value,loc) {
-    if (op === '非') return truth(value) ? 0 : 1;
+    if (op === '非') return !truth(value);
     if (typeof value !== 'number') fail(m,'正负号只能用于数',loc);
     return op === '+' ? value : -value;
   }
   function binary(m,op,left,right,loc) {
     if (op === '对') return new Pair(left,right);
-    if (op === '==') return equal(left,right) ? 1 : 0;
-    if (op === '!=') return equal(left,right) ? 0 : 1;
+    if (op === '==') return equal(left,right,m,loc);
+    if (op === '!=') return !equal(left,right,m,loc);
     if (op === '含') {
       if (left instanceof Instance || left instanceof Module) return member(m,left,'含',()=>[[null,right]],loc);
       m.lastMemberProcedure = false;
       if (typeof left !== 'string' || typeof right !== 'string') fail(m,'「含」需要两个句',loc);
-      return left.includes(right) ? 1 : 0;
+      return left.includes(right);
     }
     if (['<','<=','>','>='].includes(op)) {
       if (typeof left !== typeof right || !['number','string'].includes(typeof left)) fail(m,'大小比较需要两个数或两个句',loc);
       const c = typeof left === 'string' ? compareText(left,right) : left === right ? 0 : left < right ? -1 : 1;
-      return (op === '<' ? c < 0 : op === '<=' ? c <= 0 : op === '>' ? c > 0 : c >= 0) ? 1 : 0;
+      return (op === '<' ? c < 0 : op === '<=' ? c <= 0 : op === '>' ? c > 0 : c >= 0);
     }
     if (op === '+' && typeof left === 'string' && typeof right === 'string') return left + right;
     if (typeof left !== 'number' || typeof right !== 'number') fail(m,'算术运算需要两个数；「+」也可连接两个句',loc);
@@ -454,6 +545,7 @@ const R = (() => {
       }
     }
     const args = argsThunk();
+    if (receiver instanceof RuMap) return mapMember(m,receiver,name,args,loc);
     if (receiver instanceof Instance) {
       const a = contestMember(m,receiver,name,args,loc); if (a !== MISSING) return a;
       const b = ioMember(m,receiver,name,args,loc); if (b !== MISSING) return b;
@@ -467,7 +559,7 @@ const R = (() => {
       if (name === '段') { const a = argsBind(m,name,args,['始','终'],loc); return slice(m,receiver,a.始,a.终,loc); }
       if (name === '含' && typeof receiver === 'string') {
         const a = argsBind(m,name,args,['句'],loc); if (typeof a.句 !== 'string') fail(m,'「含」需要两个句',loc);
-        return receiver.includes(a.句) ? 1 : 0;
+        return receiver.includes(a.句);
       }
       if (name === '增' && Array.isArray(receiver)) { const a = argsBind(m,name,args,['值'],loc); receiver.push(a.值); return receiver; }
     }
@@ -571,8 +663,8 @@ const R = (() => {
         const p = filePath(receiver);
         if (name === '读' || name === '写') return fileIO(p,name,content,!!append);
         if (name === '在') {
-          try { return ioResult(fs.statSync(p).isFile() ? 1 : 0); }
-          catch (e) { if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return ioResult(0); throw e; }
+          try { return ioResult(fs.statSync(p).isFile()); }
+          catch (e) { if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return ioResult(false); throw e; }
         }
         const st = fs.lstatSync(p); if (!st.isFile() && !st.isSymbolicLink()) throw invalid('路径不是普通文件');
         fs.unlinkSync(p); return ioResult();
@@ -750,6 +842,6 @@ const R = (() => {
   return {NO_RETURN,Panic,RuError,Pair,Fn,Type,Instance,Module,fail,
     module: source => new Module(source), scope: (parent,kind) => new Scope(parent,kind),
     get,bind,fn,declare,type,resolve,call,member,ref,functionRef,new:construct,
-    index,slice,setIndex,setField,binary,unary,convert,number,display,truth,equal,
+    map,index,slice,setIndex,setField,binary,unary,convert,number,display,truth,equal,
     read,print,importAll,count,loopCount:count,panic,entry,finish};
 })();
