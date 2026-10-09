@@ -70,4 +70,9 @@ jobs:
       - name: Test notebook spawned workers and local API
         run: python -m unittest discover -s tests -p "test_rushu*.py" -v
       - name: Test optional parameter annotations and cross-backend parity
-        run: python -m unittest discover -s tests -p test_optional_parameters.py -v
+        env:
+          PYTHONUTF8: "1"
+          CC: gcc
+        run: |
+          gcc --version
+          python -m unittest discover -s tests -p test_optional_parameters.py -v

@@ -17,7 +17,8 @@ from rulang.interpreter import Interpreter
 from rulang.js_compiler import JSCompiler
 from rulang.modules import load_module_graph
 
-CC = next((shutil.which(c) for c in ('clang', 'gcc', 'cc') if shutil.which(c)), None)
+CC = (shutil.which(os.environ['CC']) if os.environ.get('CC') else
+      next((shutil.which(c) for c in ('clang', 'gcc', 'cc') if shutil.which(c)), None))
 NODE = shutil.which('node') or shutil.which('nodejs')
 SHAPE = '形 学生: 年龄 为 数. 象\n'
 DIAGNOSTIC = '形名「学生」不能作为普通值'

@@ -18,7 +18,8 @@ from rulang.frontend import RuError, parse, validate
 from rulang.interpreter import Interpreter
 from rulang.modules import load_module_graph
 
-CC = next((shutil.which(c) for c in ('clang', 'gcc', 'cc') if shutil.which(c)), None)
+CC = (shutil.which(os.environ['CC']) if os.environ.get('CC') else
+      next((shutil.which(c) for c in ('clang', 'gcc', 'cc') if shutil.which(c)), None))
 
 COUNTER = '''
 算 制数 起 为 数:

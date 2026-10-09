@@ -213,7 +213,8 @@ The legacy global function 读 is also in `ru-lang--builtins'.")
 (defun ru-lang--literal-header-p (tokens index)
   "Whether 算/作 at INDEX has a complete anonymous header ending in a colon.
 Parameters may omit annotations.  Require the colon so a reference
-conversion such as 算 名 为 句 remains an expression.  Comments and fullwidth punctuation are accepted."
+conversion such as 算 名 为 句 remains an expression.
+Comments and fullwidth punctuation are accepted."
   (let ((cursor (1+ index)))
     (cl-labels
         ((next-code ()
