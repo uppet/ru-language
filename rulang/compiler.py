@@ -35,7 +35,7 @@ class Compiler:
         self.indent = 0
         self.live_temps = []
         self.handlers = []
-        self.rescue_envs = []
+        self.lexical_envs = []
         self.loop_scopes = []
         self.module_ids = {path: f'ru_module_{i}' for i, path in enumerate(self.modules)}
         self.declarations = {}
@@ -140,6 +140,9 @@ class Compiler:
             elif n.kind == 'loop':
                 self.collect_expression_functions(path, d['count'], scopes, value_scopes)
                 self.collect_functions(path, d['body'], scopes, value_scopes=value_scopes)
+            elif n.kind == 'scope':
+                self.collect_functions(path, d['body'], scopes, local=True,
+                    value_scopes=value_scopes)
             elif n.kind == 'try':
                 self.collect_functions(path, d['body'], scopes, value_scopes=value_scopes)
                 self.collect_functions(path, d['rescue'], scopes, local=True,
@@ -279,14 +282,17 @@ class Compiler:
             self.live_temps.remove(name)
 
     def panic_context(self, env_name):
-        self.live_temps, self.handlers, self.rescue_envs, self.loop_scopes = [], [], [], []
+        self.live_temps, self.handlers, self.lexical_envs, self.loop_scopes = [], [], [], []
         self.base_env = env_name
         self.panic_exit = self.new('panic_exit')
         if self.can_panic:
             self.line(f'if (0) goto {self.panic_exit};')
 
     def clean_scopes(self, depth=0):
-        for env_name in reversed(self.rescue_envs[depth:]):
+        # Both statement blocks and rescue clauses own rooted lexical frames.
+        # A transfer releases only frames it actually exits; closures retain
+        # escaped frames through ordinary traced edges.
+        for env_name in reversed(self.lexical_envs[depth:]):
             self.line(f'env_free({env_name});')
 
     def panic_transfer(self):
@@ -536,12 +542,33 @@ class Compiler:
                 self.line(f'ru_panic_raise({value}, {ln}, {n.token.col});')
                 self.panic_transfer()
                 self.live_temps.remove(value)
+            elif n.kind == 'scope':
+                scope_env = self.new('scope_env')
+                self.line('{')
+                self.indent += 1
+                self.line(f'Env *{scope_env} = env_new(env, RU_SCOPE_BLOCK, {ln});')
+                self.line('{')
+                self.indent += 1
+                self.line(f'Env *env = {scope_env};')
+                self.lexical_envs.append(scope_env)
+                previous_functions, previous_values = self.functions, self.known_values
+                self.functions = {**self.functions, **self.local_functions(d['body'])}
+                self.known_values = self.known_values | self.scope_bindings(d['body'])
+                self.hoist(d['body'], function)
+                self.block(d['body'], function)
+                self.functions, self.known_values = previous_functions, previous_values
+                self.lexical_envs.pop()
+                self.line('env_free(env);')
+                self.indent -= 1
+                self.line('}')
+                self.indent -= 1
+                self.line('}')
             elif n.kind == 'try':
                 rescued, finished, rescue_env = self.new('rescue'), self.new('end_try'), self.new('rescue_env')
                 self.line('{')
                 self.indent += 1
                 self.line(f'if (0) goto {rescued};')
-                self.handlers.append((rescued, len(self.rescue_envs)))
+                self.handlers.append((rescued, len(self.lexical_envs)))
                 self.block(d['body'], function)
                 self.handlers.pop()
                 self.line(f'goto {finished};')
@@ -553,14 +580,14 @@ class Compiler:
                 self.line(f'Env *env = {rescue_env};')
                 self.line(f'env_bind(env, {cstr(d["reason"])}, ru_panic_reason, {ln});')
                 self.line('ru_panic_clear();')
-                self.rescue_envs.append(rescue_env)
+                self.lexical_envs.append(rescue_env)
                 previous_functions, previous_values = self.functions, self.known_values
                 self.functions = {**self.functions, **self.local_functions(d['rescue'])}
                 self.known_values = self.known_values | self.scope_bindings(d['rescue']) | {d['reason']}
                 self.hoist(d['rescue'], function)
                 self.block(d['rescue'], function)
                 self.functions, self.known_values = previous_functions, previous_values
-                self.rescue_envs.pop()
+                self.lexical_envs.pop()
                 self.line(f'env_free({rescue_env});')
                 self.indent -= 1
                 self.line('}')
@@ -597,7 +624,7 @@ class Compiler:
                     self.drop(value)
                     self.line(f'for (uint64_t {counter} = 0; {counter} < {count}; ++{counter}) {{')
                 self.indent += 1
-                self.loop_scopes.append(len(self.rescue_envs))
+                self.loop_scopes.append(len(self.lexical_envs))
                 self.block(d['body'], function)
                 self.loop_scopes.pop()
                 self.indent -= 1

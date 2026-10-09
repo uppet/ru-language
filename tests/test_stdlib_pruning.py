@@ -50,6 +50,15 @@ class BundledDeclarationPruningTests(unittest.TestCase):
         self.assert_names("显 ((外言 '如:竞赛') 其 大 3 4).", {'大'})
         self.assert_equivalent(PRELUDE + "显 (竞 其 小 3 4).", '3\n')
 
+    def test_scoped_import_alias_and_escaped_function_keep_dependencies(self):
+        source = "列 := []. 段: 竞 := 外言 '如:竞赛'. 算 看: 得 竞 其 小 2 3. 法 列 其 增 算 看. 落. 显 列[0]()."
+        self.assert_names(source, {'小'})
+        self.assert_equivalent(source, '2\n')
+
+    def test_scoped_module_escape_still_falls_back(self):
+        source = "列 := []. { 竞 := 外言 '如:竞赛'. 列 其 增 竞. }"
+        self.assert_names(source, ALL_NAMES)
+
     def test_import_all_and_transitive_function_dependency(self):
         source = "尽 取 外言 '如:竞赛'. 显 整除 (-7) 3."
         self.assert_names(source, {'整除', '取整'})

@@ -1190,3 +1190,86 @@
         (condition-case nil
             (progn (ru-lang-forward-list) (ru-lang-backward-list))
           (user-error nil))))))
+
+(ert-deftest ru-lang-scoped-blocks-indent-and-expression-maps ()
+  (ru-lang-test--indent
+   "段：\n落 := 2.\n｛\n表 ：= {'值': 落}.\n显 表.\n｝\n落。\n显 {}.\n({}).\n{}"
+   "段：\n    落 := 2.\n    ｛\n        表 ：= {'值': 落}.\n        显 表.\n    ｝\n落。\n显 {}.\n({}).\n{}"))
+
+(ert-deftest ru-lang-scoped-contextual-names-and-help ()
+  (ru-lang-test--buffer "段 := 1. 落 取 2. 段落 取 3. 落叶 取 4.\n段:\n落 取 落+1.\n显 文 其 段 始:0 终:2.\nf 段: {} 落: 2.\n落 ."
+    (font-lock-ensure)
+    (dolist (word '("段" "落" "段落" "落叶"))
+      (search-forward word)
+      (should-not (get-text-property (1- (point)) 'face)))
+    (search-forward "段:")
+    (should (eq (get-text-property (- (point) 2) 'face) 'font-lock-keyword-face))
+    (should (get-text-property (- (point) 2) 'help-echo))
+    (search-forward "落 取")
+    (should-not (get-text-property (- (point) 3) 'face))
+    (search-forward "其 段")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-builtin-face))
+    (should-not (get-text-property (1- (point)) 'help-echo))
+    (should (cl-every #'ru-lang--block-closed ru-lang--structures))
+    (should (= (length (cl-remove-if-not #'ru-lang--block-scoped ru-lang--structures)) 1))))
+
+(ert-deftest ru-lang-scoped-navigation-and-imenu ()
+  (dolist (source '("段: 算 内: 得 {}. 法 落.\n" "{ 算 内: 得 {}. 法 }.\n"))
+    (ru-lang-test--buffer source
+      (let ((start (point)))
+        (ru-lang-forward-list)
+        (should (looking-at "\n"))
+        (ru-lang-backward-list)
+        (should (= start (point)))
+        (search-forward "得 ")
+        (ru-lang-forward-list)
+        (should (looking-at "\\.")))
+      (should (equal (mapcar #'car (ru-lang-imenu-create-index)) '("算 内")))
+      (should (= (length (ru-lang--navigation-blocks nil)) 2))
+      (should (= (length ru-lang--structures) 3)))))
+
+(ert-deftest ru-lang-scoped-closer-requires-punctuation-dot ()
+  (dolist (source '("段: 落" "段: 落 '.'" "段: 落 取 2." "段: 落 := 2."))
+    (ru-lang-test--buffer source
+      (should-not (ru-lang--block-closed (car (ru-lang--navigation-blocks nil))))))
+  (ru-lang-test--buffer "段 # 开头\n：\n落 # 结束\n。"
+    (should (ru-lang--block-closed (car (ru-lang--navigation-blocks nil)))))
+  (ru-lang-test--buffer "试 卒 '原因'. 救 段: 显 段. 终."
+    (font-lock-ensure)
+    (search-forward "救 段")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-variable-name-face))
+    (should (= (length (ru-lang--navigation-blocks nil)) 1))))
+
+(ert-deftest ru-lang-assignment-aliases-tokenization-and-help ()
+  (ru-lang-test--buffer "段:=1. 落：=2. 表 := {'键': 1}. 表['键'] := 2. 显 ':='。 # ：=\n解. := 释."
+    (font-lock-ensure)
+    (let ((aliases (cl-remove-if-not
+                    (lambda (token) (equal (ru-lang--token-text token) ":="))
+                    (append ru-lang--tokens nil))))
+      (should (= (length aliases) 4))
+      (dolist (token aliases)
+        (should (eq (ru-lang--token-kind token) 'punct))
+        (should (eq (ru-lang--token-face token) 'font-lock-keyword-face))
+        (should (equal (get-text-property (ru-lang--token-start token) 'help-echo)
+                       ru-lang--assignment-help))))
+    (should-not (cl-find-if #'ru-lang--block-scoped ru-lang--structures)))
+  (ru-lang-test--buffer ": = ：＝"
+    (ru-lang--ensure-cache)
+    (should (equal (mapcar #'ru-lang--token-text (append ru-lang--tokens nil))
+                   '(":" "=" ":" "＝")))))
+
+(ert-deftest ru-lang-scoped-all-prefixes-and-opaque-text ()
+  (ru-lang-test--buffer "显 '段: 落. {}'. # 段: 落.\n解. { } 释."
+    (should-not (ru-lang--navigation-blocks nil)))
+  (let ((source "作 主:\n循 2 次\n段：\n落 ：= 2.\n{\n回 := 算 值: 得 {'值': 值}. 法.\n回 值: {}.\n}\n落。\n环\n为"))
+    (dotimes (end (1+ (length source)))
+      (ru-lang-test--buffer (substring source 0 end)
+        (font-lock-ensure)
+        (indent-region (point-min) (point-max))
+        (let ((once (buffer-string)))
+          (indent-region (point-min) (point-max))
+          (should (equal once (buffer-string))))
+        (ru-lang-imenu-create-index)
+        (condition-case nil
+            (progn (ru-lang-forward-list) (ru-lang-backward-list))
+          (user-error nil))))))

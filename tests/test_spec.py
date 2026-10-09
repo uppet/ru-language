@@ -39,7 +39,8 @@ class SpecificationExamples(unittest.TestCase):
         self.assertIn("`｛` → `{`", specification)
         self.assertIn("允许尾逗号", specification)
         self.assertIn("名称键求名称的当前值", specification)
-        self.assertIn("花括号只构造典表达式，不是独立作用域块", specification)
+        self.assertIn("表达式位置的花括号构造典", specification)
+        self.assertIn("裸 `{}` 是空块", specification)
         self.assertIn("`{(f 1): (g 2), 'x': 3}`", specification)
         self.assertIn("调用内 `参数名:表达式` 的冒号仍是命名实参", specification)
         self.assertNotIn("位运算、字典、异步", specification)
@@ -48,6 +49,23 @@ class SpecificationExamples(unittest.TestCase):
         validate(program)
         Compiler(program, "map_symbol_literals.ru").compile()
         JSCompiler(program, "map_symbol_literals.ru").compile()
+
+    def test_scoped_block_assignment_contract_and_example(self):
+        specification = SPECIFICATION.read_text(encoding="utf-8")
+        self.assertIn("作用域块   = '段' ':' 程序 '落' '.' | '{' 程序 '}' ['.'] ;", specification)
+        self.assertIn("赋值符     = '取' | ':=' ;", specification)
+        self.assertIn("`段` 与 `落` 也是上下文词，没有加入保留字集合", specification)
+        self.assertIn("每次实际进入块都创建新的词法子环境", specification)
+        self.assertIn("直接绑定只属于该环境", specification)
+        self.assertIn("块不引入新的函数、过程或循环边界", specification)
+        self.assertIn("`尽 取 外言` 是导入语句，仍须使用 `取`", specification)
+        self.assertIn("连续的 `：=`", specification)
+        self.assertNotIn("未把花括号当作用域块", specification)
+        source = (ROOT / "examples" / "scoped_blocks.ru").read_text(encoding="utf-8")
+        program = parse(source)
+        validate(program)
+        Compiler(program, "scoped_blocks.ru").compile()
+        JSCompiler(program, "scoped_blocks.ru").compile()
 
     def test_complete_examples_parse_and_compile_without_execution(self):
         specification = SPECIFICATION.read_text(encoding="utf-8")

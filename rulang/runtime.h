@@ -39,7 +39,7 @@ typedef struct { const char *name; size_t count; const char **names, **types; Ru
 typedef struct { RuHeap gc; RuFunction *function; Env *global, *closure; Val self; } RuCallable;
 struct RuClass { const char *name; RuClass *parent; Env *global; size_t count; const char **names, **types; size_t methods_count; RuFunction **methods; };
 typedef struct RuBinding { char *name; Val value; int reserved; struct RuBinding *next; } RuBinding;
-enum { RU_SCOPE_MODULE, RU_SCOPE_FUNCTION, RU_SCOPE_RESCUE };
+enum { RU_SCOPE_MODULE, RU_SCOPE_FUNCTION, RU_SCOPE_RESCUE, RU_SCOPE_BLOCK };
 struct Env { RuHeap gc; Env *parent; RuBinding *bindings; Env *registry_next; int managed, scope; };
 
 /* Diagnostics describe runtime values, never a hypothetical conversion. */
@@ -376,7 +376,7 @@ static void env_bind(Env *env, const char *name, Val value, int line)
     Env *target=env, *outer;
     if (!strcmp(name, "读") || (existing && existing->reserved))
         ru_fail(line, "变量名不能与函数名、形名或内置名称重名");
-    /* Rescue shadows; functions update the nearest lexical binding, not globals. */
+    /* Blocks and rescue shadow; functions update captured lexical bindings, not globals. */
     if(env->scope==RU_SCOPE_FUNCTION && !env_find_local(env,name)) {
         for(outer=env->parent;outer && outer->managed;outer=outer->parent)
             if(env_find_local(outer,name)) { target=outer; break; }

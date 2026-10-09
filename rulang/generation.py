@@ -90,8 +90,8 @@ def _generation_system_prompt():
     """Read the one authoritative package resource anew for every request.
 
     The fixed resource name cannot be selected through user input or config.
-    Optional parameter annotations, like all other syntax, are taken only
-    from that versioned resource. No language rules are copied into this module;
+    Scoped statement blocks, assignment aliases, and all other syntax are
+    taken only from that versioned resource. No language rules are copied into this module;
     missing or incompatible
     package data stops generation rather than falling back to a stale prompt.
     The digest identifies the exact raw UTF-8 bytes sent as specification text.

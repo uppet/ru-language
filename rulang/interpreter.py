@@ -213,8 +213,8 @@ class Scope:
         raise RuError(f"未定义名称：{name}", token.line, token.col, "运行错误")
 
     def bind(self, name, value):
-        # Rescue assignments remain local. Function assignments may update a
-        # captured local cell, but never rebind a module or builtin global.
+        # Block/rescue assignments remain local. Function assignments may update
+        # a captured local cell, but never rebind a module or builtin global.
         if name in self.values or self.kind != "function":
             self.values[name] = value
             return
@@ -446,6 +446,12 @@ class Interpreter:
                 continue
             if n.kind == "type":
                 self.resolve_type(self.types[d["name"]])
+            elif n.kind == "scope":
+                local = Scope(scope, "block")
+                self.hoist(d["body"], local)
+                # A lexical block is not a call boundary: enclosing control
+                # flow and REPL echo pass through unchanged.
+                self.block(d["body"], local, echo)
             elif n.kind == "bind":
                 if scope.protected(d["name"]) or d["name"] in self.types or d["name"] in BUILTIN_NAMES:
                     self.fail(n, "变量名不能与函数名、形名或内置名称重名")

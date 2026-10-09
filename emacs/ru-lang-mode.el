@@ -1,13 +1,13 @@
 ;;; ru-lang-mode.el --- Editing support for the 如 language -*- lexical-binding: t; -*-
 
-;; Version: 0.10.1
+;; Version: 0.11.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: languages
 ;; URL: https://github.com/uppet/ru-language
 
 ;;; Commentary:
 
-;; A dependency-free major mode for ru-language 0.10.x source files.  The
+;; A dependency-free major mode for ru-language 0.11.x source files.  The
 ;; lightweight lexer mirrors rulang/frontend.py; it deliberately accepts
 ;; incomplete input.  It is an editing aid, not a compiler or language server.
 ;; See README.md in this directory for loading, indentation and navigation.
@@ -103,12 +103,12 @@ the source directory, passing filenames directly without a shell."
     "外言" "尽" "卒" "试" "救" "真" "假" "典" "成"))
 (defconst ru-lang--types '("数" "句" "阵" "事实" "典" "对" "空" "件" "录" "件作成果" "算" "作"))
 (defconst ru-lang--builtins
-  '("读" "含" "位" "段" "增" "量" "囫" "囵" "读取" "显出" "错误" "__竞赛"))
-(defconst ru-lang--member-builtins '("查" "增" "量" "读" "写" "在" "除" "列" "词" "数" "行" "清")
+  '("读" "含" "位" "增" "量" "囫" "囵" "读取" "显出" "错误" "__竞赛"))
+(defconst ru-lang--member-builtins '("段" "查" "增" "量" "读" "写" "在" "除" "列" "词" "数" "行" "清")
   "I/O and contest stream members highlighted only after a member operator.
 The legacy global function 读 is also in `ru-lang--builtins'.")
 (defconst ru-lang--pairs '(("算" . "法") ("作" . "为") ("形" . "象")
-                            ("若" . "然") ("循" . "环") ("试" . "终") ("典" . "成")
+                            ("若" . "然") ("循" . "环") ("试" . "终") ("典" . "成") ("段" . "落")
                             ("(" . ")") ("[" . "]") ("{" . "}")))
 (defconst ru-lang--punctuation
   '((?。 . ".") (?： . ":") (?（ . "(") (?） . ")")
@@ -117,7 +117,7 @@ The legacy global function 读 is also in `ru-lang--builtins'.")
 (cl-defstruct (ru-lang--token (:constructor ru-lang--make-token))
   text start end kind face)
 (cl-defstruct (ru-lang--block (:constructor ru-lang--make-block))
-  kind start end name parent header closed literal)
+  kind start end name parent header closed literal scoped)
 
 (defvar-local ru-lang--font-lock-face nil)
 (defvar-local ru-lang--cache-tick nil)
@@ -195,6 +195,8 @@ The legacy global function 读 is also in `ru-lang--builtins'.")
             (forward-char)
             (while (ru-lang--name-part-p (char-after)) (forward-char))
             (setq kind 'name))
+           ((looking-at "[:：]=")
+            (forward-char 2) (setq kind 'punct value ":="))
            ((looking-at "==\\|!=\\|<=\\|>=")
             (goto-char (match-end 0)) (setq kind 'punct))
            (t (forward-char) (setq kind 'punct)
@@ -365,6 +367,11 @@ Intervening comments are ignored."
                    (definition-start (and callable-kind (not callable-type)
                                           (ru-lang--function-header-p
                                            tokens index statement-start)))
+                   (scoped (and (not binding) statement-start
+                                (or (equal text "{")
+                                    (and (equal text "段") next
+                                         (eq (ru-lang--token-kind next) 'punct)
+                                         (equal (ru-lang--token-text next) ":")))))
                    (top (car stack))
                    (close (and top (cdr (assoc (ru-lang--block-kind top)
                                               ru-lang--pairs))))
@@ -374,6 +381,10 @@ Intervening comments are ignored."
                                 ;; 终 is contextual: it is still a legal name
                                 ;; and the existing 段 named argument 终:.
                                 (or (not (equal text "终")) statement-start)
+                                (or (not (equal text "落"))
+                                    (and statement-start next
+                                         (eq (ru-lang--token-kind next) 'punct)
+                                         (equal (ru-lang--token-text next) ".")))
                                 (or (not (equal text "为"))
                                     (and (not (ru-lang--block-header top))
                                          (or statement-start
@@ -405,7 +416,8 @@ Intervening comments are ignored."
                  (closer
                   (setf (ru-lang--block-end top)
                         (if (and (not (ru-lang--block-literal top))
-                                 (not (member (ru-lang--block-kind top) '("(" "[" "{" "典")))
+                                 (or (ru-lang--block-scoped top)
+                                     (not (member (ru-lang--block-kind top) '("(" "[" "{" "典"))))
                                  next (equal (ru-lang--token-text next) "."))
                             (ru-lang--token-end next)
                           (ru-lang--token-end token))
@@ -414,9 +426,11 @@ Intervening comments are ignored."
                   ;; Literals and brackets finish expressions.  A following
                   ;; dot belongs to the containing statement, not the literal.
                   (setq statement-start
-                        (and (not (ru-lang--block-literal top))
-                             (not (member (ru-lang--block-kind top) '("(" "[" "{" "典"))))))
+                        (or (ru-lang--block-scoped top)
+                            (and (not (ru-lang--block-literal top))
+                                 (not (member (ru-lang--block-kind top) '("(" "[" "{" "典")))))))
                  ((and (assoc text ru-lang--pairs)
+                       (or (not (equal text "段")) scoped)
                        (or (not (equal text "典"))
                            (and (not (equal previous "为")) next
                                 (eq (ru-lang--token-kind next) 'punct)
@@ -431,16 +445,18 @@ Intervening comments are ignored."
                          (block (ru-lang--make-block
                                  :kind text :start (ru-lang--token-start token)
                                  :end (point-max) :name name :parent parent
-                                 :literal (or (eq definition-start 'literal) (member text '("典" "{")))
-                                 :header (member text '("算" "作" "若" "试" "典")))))
+                                 :literal (or (eq definition-start 'literal) (equal text "典")
+                                              (and (equal text "{") (not scoped)))
+                                 :scoped scoped
+                                 :header (member text '("算" "作" "形" "若" "试" "典" "段")))))
                     (push block stack)
                     (push block structures)
-                    (unless (member text '("(" "[" "{")) (push block blocks)))
-                  (setq statement-start (member text '("循" "试"))))
-                 ((or branch (and top (equal text ":")
-                                  (or (member (ru-lang--block-kind top) '("算" "作" "形" "典"))
-                                      (and (equal (ru-lang--block-kind top) "试")
-                                           (ru-lang--block-header top)))))
+                    (when (or scoped (not (member text '("(" "[" "{")))) (push block blocks)))
+                  (setq statement-start (or (and scoped (equal text "{"))
+                                            (member text '("循" "试")))))
+                 ((or branch (and top (ru-lang--block-header top) (equal text ":")
+                                  (member (ru-lang--block-kind top)
+                                          '("算" "作" "形" "典" "段" "试"))))
                   (setf (ru-lang--block-header top) nil)
                   (when (and branch (equal text "救") next
                              (eq (ru-lang--token-kind next) 'name)
@@ -455,6 +471,8 @@ Intervening comments are ignored."
                 (when (eq kind 'name)
                   (setf (ru-lang--token-face token)
                         (cond
+                         ((or (and scoped (equal text "段"))
+                              (and closer (equal text "落"))) 'font-lock-keyword-face)
                          ((and (equal text "典") (not (equal previous "为")) next
                                (equal (ru-lang--token-text next) ":")) 'font-lock-keyword-face)
                          ((and (equal text "对") top (equal (ru-lang--block-kind top) "典")) 'font-lock-keyword-face)
@@ -470,6 +488,8 @@ Intervening comments are ignored."
                               (member text ru-lang--types)) 'font-lock-type-face)
                          ((member text ru-lang--keywords) 'font-lock-keyword-face)
                          ((member text ru-lang--builtins) 'font-lock-builtin-face))))
+                (when (and (eq kind 'punct) (equal text ":="))
+                  (setf (ru-lang--token-face token) 'font-lock-keyword-face))
                 (when (eq token callable-name) (setq callable-name nil))
                 (when (and callable-kind (not callable-type)
                            (not (eq definition-start 'literal)) next
@@ -494,10 +514,10 @@ Intervening comments are ignored."
           ru-lang--cache-bounds (cons (point-min) (point-max)))))
 
 (defconst ru-lang--assignment-help
-  "取（词法规则）：函数内先更新当前局部，否则更新最近已有的非模块捕获绑定；未找到则新建当前局部，不隐式改写模块变量。直接救正文中的取写救局部；闭包共享捕获绑定。参数属于本次调用局部。此提示不判断具体名称的运行时绑定。")
+  "取（词法规则）：函数内先更新当前局部，否则更新最近已有的非模块捕获绑定；未找到则新建当前局部，不隐式改写模块变量。直接救正文中的取写救局部；直接段／花括号作用域块中的取写块局部（含其中的若、循、试正文）；闭包共享捕获绑定，可更新捕获的块局部。:= 与取完全等价。参数属于本次调用局部。此提示不判断具体名称的运行时绑定。")
 
 (defconst ru-lang--token-help
-  '(("典" . "典：键值映射。字面量 {键: 值, 键: 值}，空典 {}；也可写 典: 键 对 值. 成。支持全角｛｝和尾逗号。")
+  '(("典" . "典：键值映射。字面量 {键: 值, 键: 值}，表达式位置的空典 {}；语句位置的 {} 是作用域块。也可写 典: 键 对 值. 成。支持全角｛｝和尾逗号。")
     ("成" . "成：结束典字面量；外层语句的句点另写。")
     ("对" . "对：二元素对；在典字面量中分隔键与值。")
     ("事实" . "事实：真或假，与数不同。比较和非／且／或返回事实。为 事实 转换时仅空、假为假。")
@@ -509,9 +529,13 @@ Intervening comments are ignored."
   (remove-text-properties (point-min) (point-max) '(syntax-table nil help-echo nil))
   (seq-doseq (token ru-lang--tokens)
     (let ((start (ru-lang--token-start token)) (end (ru-lang--token-end token)))
-      (when (and (eq (ru-lang--token-kind token) 'name)
-                 (equal (ru-lang--token-text token) "取"))
+      (when (and (ru-lang--code-token-p token)
+                 (member (ru-lang--token-text token) '("取" ":=")))
         (put-text-property start end 'help-echo ru-lang--assignment-help))
+      (when (and (member (ru-lang--token-text token) '("段" "落"))
+                 (eq (ru-lang--token-face token) 'font-lock-keyword-face))
+        (put-text-property start end 'help-echo
+                           "段: … 落.：独立词法作用域，与语句位置的 { … } 等价。每次进入创建新局部环境，落后必须有句点。"))
       (when (eq (ru-lang--token-kind token) 'name)
         (when-let ((help (cdr (assoc (ru-lang--token-text token) ru-lang--token-help))))
           (put-text-property start end 'help-echo help)))

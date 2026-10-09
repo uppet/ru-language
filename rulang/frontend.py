@@ -125,6 +125,10 @@ def lex(source):
                 advance(raw)
                 continue
         pair = source[i:i+2]
+        if pair in (":=", "：="):
+            tokens.append(Token("OP", ":=", line, col))
+            advance(pair)
+            continue
         if pair in ("==", "!=", "<=", ">="):
             tokens.append(Token("OP", pair, line, col))
             advance(pair)
@@ -212,7 +216,7 @@ class Parser:
 
     def _parse(self, stops=()):
         out = []
-        while self.current.kind != "EOF" and not any(self.isv(s) for s in stops):
+        while self.current.kind != "EOF" and not any(self.isv(s) and (s != "落" or (self.peek().kind == "OP" and self.peek().value == ".")) for s in stops):
             if self.accept("."):
                 continue
             out.append(self.statement())
@@ -305,6 +309,20 @@ class Parser:
 
     def statement(self):
         t = self.current
+        # These delimiters are contextual: 段/落 remain ordinary names elsewhere,
+        # notably the established 其 段 member and bindings named 段 or 落.
+        if self.isv("段") and self.peek().kind == "OP" and self.peek().value == ":":
+            self.pop()
+            self.expect(":")
+            body = self.parse(("落",))
+            self.expect("落")
+            self.expect(".")
+            return node("scope", t, body=body)
+        if self.accept("{"):
+            body = self.parse(("}",))
+            self.expect("}")
+            self.accept(".")
+            return node("scope", t, body=body)
         if self.accept("试"):
             self.accept(":")
             body = self.parse(("救", "终"))
@@ -379,14 +397,15 @@ class Parser:
                 self.fail("「尽 取」需要「外言 '文件.ru'」", t)
             self.expect(".")
             return node("import_all", t, expr=expr)
-        if t.kind == "NAME" and self.peek().kind == "NAME" and self.peek().value == "取":
+        if t.kind == "NAME" and ((self.peek().kind == "NAME" and self.peek().value == "取") or
+                                 (self.peek().kind == "OP" and self.peek().value == ":=")):
             name = self.name().value
-            self.expect("取")
+            self.pop()  # 取 or its := statement-only alias
             expr = self.expression()
             self.expect(".")
             return node("bind", t, name=name, expr=expr)
         expr = self.expression()
-        if self.accept("取"):
+        if self.accept("取") or self.accept(":="):
             if expr.kind not in ("index", "member") or (expr.kind == "member" and expr.data["args"] and expr.data["name"] != "位"):
                 self.fail("「取」左侧须为名称、对象字段或阵元素", expr.token)
             value = self.expression()
@@ -806,7 +825,7 @@ def validate(program, existing_functions=(), existing_types=()):
             d = n.data
             if n.kind == "function":
                 if not declaration_scope:
-                    error(n, "函数／过程只能直接定义在模块、函数、方法或救的正文中")
+                    error(n, "函数／过程只能直接定义在模块、函数、方法、段或救的正文中")
                 check_function(n, method, visible_functions, bindings, method_definitions)
             elif n.kind == "type":
                 if not top:
@@ -830,6 +849,9 @@ def validate(program, existing_functions=(), existing_types=()):
                 error(n, "「完」只能出现在「作」定义内")
             elif n.kind == "bind" and (d["name"] in visible_functions or d["name"] in BUILTIN_NAMES or d["name"] in type_nodes):
                 error(n, "变量名不能与函数名、形名或内置名称重名")
+            elif n.kind == "scope":
+                walk(d["body"], depth, function, False, method, True,
+                     visible_functions, bindings)
             elif n.kind == "if":
                 expressions(d["condition"], method, visible_functions, bindings)
                 walk(d["yes"], depth, function, False, method, False, visible_functions, bindings)

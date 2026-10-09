@@ -117,6 +117,21 @@ class JSCompiler(Compiler):
                 continue
             if kind == 'type':
                 self.line(f'R.resolve(m.types[{js(d["name"])}]);')
+            elif kind == 'scope':
+                parent = self.new('scope')
+                self.line(f'const {parent}=s;')
+                self.line('{')
+                self.indent += 1
+                self.line(f'const s=R.scope({parent},"block");')
+                previous_functions, previous_values = self.functions, self.known_values
+                self.functions = {**self.functions, **self.local_functions(d['body'])}
+                self.known_values = self.known_values | self.scope_bindings(d['body'])
+                self.hoist(d['body'], function)
+                # Native braces preserve the enclosing return/break target.
+                self.block(d['body'], function)
+                self.functions, self.known_values = previous_functions, previous_values
+                self.indent -= 1
+                self.line('}')
             elif kind == 'bind':
                 self.line(f'R.bind(m,s,{js(d["name"])},{self.expr(d["expr"])},{loc});')
             elif kind == 'print':

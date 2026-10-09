@@ -199,12 +199,12 @@ test('map and fact hover help is escaped and literal-safe',()=>{
 
 
 test('symbolic maps normalize braces and preserve offsets and literal contents',()=>{
-  const source='｛“｛}”:真，\n"空":{}，｝';
+  const source='表 取 ｛“｛}”:真，\n"空":{}，｝';
   const result=analyze(source);
   assert.deepEqual(result.tokens.filter(t=>t.kind==='punct').map(t=>t.text),['{',':',',',':','{','}',',','}']);
   assert.equal(result.depth,0);
   assert.deepEqual(result.blocks.map(b=>[b.kind,b.literal,b.closed]),[['{',true,true],['{',true,true]]);
-  assert.equal(source.slice(result.blocks[0].start,result.blocks[0].end),source);
+  assert.equal(source.slice(result.blocks[0].start,result.blocks[0].end),source.slice(4));
   assert.ok(highlight(source).includes('tok-keyword'));
   assert.ok(highlight(source).includes('“｛}”'));
   assert.equal(analyze('显 "{成}". # ｛\n解. } 释.').blocks.length,0);
@@ -229,6 +229,58 @@ test('map-valued named reference calls remain calls and incomplete maps stay tol
     assert.deepEqual(result.blocks.map(b=>b.kind),['{']);
   }
   const source="表 为 典 取 {\n'回': 算 值: 得 ｛'值': 值｝. 法,\n'子': 典: 1 对 {}. 成,\n}.";
+  for(let end=0;end<=source.length;end++){
+    const prefix=source.slice(0,end),formatted=indentText(prefix);
+    assert.equal(indentText(formatted),formatted);highlight(prefix);enterEdit(prefix,prefix.length);
+  }
+});
+
+test('scoped keyword and statement brace blocks nest and preserve map expressions',()=>{
+  const source="段：\n落 取 2.\n｛\n表 := {'值': 落}.\n显 表.\n｝\n落。\n显 {}.\n({}).\n{}";
+  const result=analyze(source);
+  assert.equal(result.depth,0);
+  assert.deepEqual(result.blocks.map(b=>[b.kind,b.scoped,b.literal,b.closed]),[
+    ['段',true,false,true],['{',true,false,true],['{',false,true,true],
+    ['{',false,true,true],['(',false,false,true],['{',false,true,true],['{',true,false,true]
+  ]);
+  assert.equal(indentText(source),"段：\n    落 取 2.\n    ｛\n        表 := {'值': 落}.\n        显 表.\n    ｝\n落。\n显 {}.\n({}).\n{}");
+});
+test('段 and 落 are contextual whole names, preserve member and binding positions',()=>{
+  const source="段 取 1. 落 := 2. 段落 取 3. 落叶 取 4.\n段:\n落 取 落+1.\n显 文 其 段 始:0 终:2.\n显 落.\nf 段: {} 落: 2.\n落 .";
+  const result=analyze(source);
+  assert.equal(result.depth,0);assert.equal(result.blocks.filter(b=>b.scoped).length,1);
+  assert.equal(result.tokens.filter(t=>t.open==='段').length,1);
+  assert.equal(result.tokens.filter(t=>t.close==='段').length,1);
+  assert.equal(result.tokens.filter(t=>t.text==='段'&&t.face==='builtin').length,1);
+  for(const name of ['段落','落叶']) assert.equal(result.tokens.find(t=>t.text===name).face,null);
+  assert.equal(result.tokens.find(t=>t.text==='段').face,null);
+  assert.equal(result.tokens.find(t=>t.text==='落').face,null);
+  for(const invalid of ['段: 落',"段: 落 '.'", '段: 落 取 2.']) assert.equal(analyze(invalid).depth,1);
+  assert.equal(analyze('段 # 开头\n：\n落 # 结束\n。').depth,0);
+});
+test('scoped blocks preserve function classification and outer control flow indentation',()=>{
+  const source='作 主:\n循 2 次\n段:\n算 内:\n{\n得 {}.\n}\n法\n试\n{ 完. }\n救 原因\n{ 破. }\n终.\n落.\n环\n为';
+  const result=analyze(source);
+  assert.equal(result.depth,0);assert.ok(result.blocks.every(b=>b.closed));
+  assert.deepEqual(result.blocks.filter(b=>['算','作'].includes(b.kind)).map(b=>[b.kind,b.literal]),[['作',false],['算',false]]);
+  assert.equal(result.tokens.find(t=>t.text==='内').face,'function');
+  assert.equal(indentText(indentText(source)),indentText(source));
+});
+test('assignment aliases are whole punct tokens with conservative hover, never headers',()=>{
+  const source="段:=1. 落：=2. 表 := {'键': 1}. 表['键'] := 2. 对象 其 段 := 3. 显 ':='。 # ：=\n解. := 释.";
+  const result=analyze(source),aliases=result.tokens.filter(t=>t.text===':=');
+  assert.equal(aliases.length,5);assert.ok(aliases.every(t=>t.kind==='punct'&&t.face==='keyword'));
+  assert.equal(result.depth,0);assert.ok(result.blocks.every(b=>!b.scoped));
+  assert.deepEqual(lex(': = ：＝').map(t=>t.text),[':','=',':','＝']);
+  const html=highlight(source);assert.equal((html.match(/data-help=/g)||[]).length,5);
+  assert.ok(html.includes('写块局部'));assert.ok(html.includes(':= 与取完全等价'));
+  assert.equal(highlight("显 ':='。 # :=").includes('data-help'),false);
+});
+test('scope Enter, closing marker dedent and incomplete prefixes remain tolerant',()=>{
+  for(const source of ['段:','段：','{','｛','段:\n{']) assert.equal(enterEdit(source,source.length).text,source==='段:\n{'?'\n        ':'\n    ');
+  for(const line of ['落.','落 。','落. 显 1.','｝','}。'])assert.equal(needsAutoDedent(line),true);
+  for(const line of ['落 取 2.','落 := 2.','落叶.','落','"落."','# 落.'])assert.equal(needsAutoDedent(line),false);
+  const source="段：\n落 ：= 2.\n{\n回 := 算 值: 得 {'值': 值}. 法.\n回 值: {}.\n}\n落。";
   for(let end=0;end<=source.length;end++){
     const prefix=source.slice(0,end),formatted=indentText(prefix);
     assert.equal(indentText(formatted),formatted);highlight(prefix);enterEdit(prefix,prefix.length);
