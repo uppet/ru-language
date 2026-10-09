@@ -1308,7 +1308,7 @@ static Val ru_map_member(Val receiver,const char *name,size_t argc,const char **
 }
 static Val v_member(Val receiver,const char *name,size_t argc,const char **keys,Val *args,int line)
 {
-    const char *one[]={"值"},*position[]={"位"},*range[]={"始","终"};Val bound[2], io_result;
+    const char *one[]={"值"},*position[]={"位"},*range[]={"始","终"};Val bound[2], io_result = v_null();
 /* RU_FEATURE: map */
     if(receiver.kind==RU_MAP)return ru_map_member(receiver,name,argc,keys,args,line);
 /* RU_ELSE_FEATURE */
