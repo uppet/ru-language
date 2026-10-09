@@ -38,7 +38,7 @@ class SpecificationExamples(unittest.TestCase):
         self.assertIn("'{' [表达式 ':' 表达式", specification)
         self.assertIn("`｛` → `{`", specification)
         self.assertIn("允许尾逗号", specification)
-        self.assertIn("名称键求名称的当前值", specification)
+        self.assertIn("作为目的名称求名称的当前值", specification)
         self.assertIn("表达式位置的花括号构造典", specification)
         self.assertIn("裸 `{}` 是空块", specification)
         self.assertIn("`{(f 1): (g 2), 'x': 3}`", specification)
@@ -66,6 +66,46 @@ class SpecificationExamples(unittest.TestCase):
         validate(program)
         Compiler(program, "scoped_blocks.ru").compile()
         JSCompiler(program, "scoped_blocks.ru").compile()
+
+    def test_map_teaching_terms_preserve_named_arguments(self):
+        for name in ("README.md", "rulang/language-spec.md",
+                     "docs/maps-facts-migration.md", "emacs/README.md",
+                     "rushu/README.md"):
+            with self.subTest(document=name):
+                text = (ROOT / name).read_text(encoding="utf-8")
+                self.assertIn("目（key）", text)
+                self.assertIn("相（value）", text)
+                self.assertIn("成员命名实参仍写 `键:`、`值:`", text)
+                self.assertIn("`值` 仍是语言的通用概念", text)
+        specification = SPECIFICATION.read_text(encoding="utf-8")
+        self.assertIn("两个位置实参（目、相）", specification)
+        self.assertIn("无法区分缺失与已存空，这是本版明确选择", specification)
+        self.assertIn("`其 增 键:… 值:…`", specification)
+
+    def test_documented_numeric_and_fact_contracts(self):
+        specification = SPECIFICATION.read_text(encoding="utf-8")
+        self.assertIn("| `取整` | `值 为 数` | 向零截断后的数 |", specification)
+        self.assertIn("| `绝对` | `值 为 数` | 值的绝对值 |", specification)
+        self.assertIn("时成功返回事实假；权限等 stat", specification)
+        self.assertIn("| 5 | `为 数`、`为 句`、`为 阵`、`为 事实` |", specification)
+        contest = specification.split("### 11.7", 1)[1].split("### 11.8", 1)[0]
+        self.assertNotIn("按上述真值规则得到真或假", contest)
+        self.assertTrue(all(line.count("|") == 4 for line in contest.splitlines()
+                            if line.startswith("|")))
+
+    def test_editor_version_blocks_and_alias_tracker(self):
+        self.assertIn("编辑器同步如 0.11.0", (ROOT / "rushu/README.md").read_text(encoding="utf-8"))
+        emacs = (ROOT / "emacs/README.md").read_text(encoding="utf-8")
+        blocks = next(line for line in emacs.splitlines() if line.startswith("“代码块”包括"))
+        self.assertIn("`段: … 落.` / 语句花括号块", blocks)
+        specification = SPECIFICATION.read_text(encoding="utf-8")
+        self.assertIn("典 / 成、段 / 落及语句花括号块", specification)
+        self.assertNotIn("本规范的六类配对", specification)
+        tracker = (ROOT / "docs/language-review-tracker.md").read_text(encoding="utf-8")
+        local_alias = tracker.split("### RU-027", 1)[1].split("## 维护记录", 1)[0]
+        self.assertIn("状态：已解决（RU-001 已覆盖）", local_alias)
+        self.assertIn("历史基线", local_alias)
+        self.assertNotIn("状态：待确认", local_alias)
 
     def test_complete_examples_parse_and_compile_without_execution(self):
         specification = SPECIFICATION.read_text(encoding="utf-8")
