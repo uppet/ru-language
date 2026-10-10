@@ -294,3 +294,12 @@ test('practical array members are contextual and library functions stay ordinary
   assert.match(highlight('列 其 查 1.'), /初始浅快照/);
   assert.doesNotMatch(highlight('查 取 1.'), /初始浅快照/);
 });
+
+
+test('dictionary member hints use mu and xiang without reserving user names',()=>{
+  assert.match(highlight('表 其 查 目:1.'), /典：查 目:/);
+  assert.match(highlight('表 其 增 目:1 相:2.'), /典：增 目: 相:/);
+  assert.match(highlight('表 其 除 目:1.'), /典：除 目:/);
+  const tokens=analyze('目 取 1. 相 取 2. 值 取 3.').tokens;
+  for(const name of ['目','相','值'])assert.equal(tokens.find(t=>t.text===name).face,null);
+});

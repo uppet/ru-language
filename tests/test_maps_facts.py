@@ -30,6 +30,27 @@ class MapsFactsContract:
         self.assertNotEqual(status, 0)
         self.assertRegex(error, expected)
 
+    def test_map_named_mu_xiang_and_positional_contract(self):
+        self.output("物 取 {}. 别 取 物. 显 (物 其 增 相:7 目:'a') == 别. 显 物 其 查 目:'a'. 物 其 增 目:'a' 相:8. 显 别['a']. 物 其 增 'b' 9. 显 物 其 查 'b'. 显 物 其 除 目:'a'. 显 物 其 除 目:'a'. 显 物 其 查 目:'a'. 显 物 其 除 'b'.", '真\n7\n8\n9\n真\n假\n空\n真\n')
+
+    def test_map_named_fullwidth_and_expression_evaluation_order(self):
+        self.output("算 报 值: 显 值. 得 值. 法 物 取 ｛｝。物 其 增 相：（报 7） 目：（报 ‘心’）。显 物 其 查 目：‘心’。显 物 其 除 目：‘心’。", '7\n心\n7\n真\n')
+
+    def test_map_old_named_arguments_rejected(self):
+        for call in ("查 键:'a'", "除 键:'a'", "增 键:'a' 值:1", "增 目:'a' 值:1", "增 键:'a' 相:1", "查 相:'a'"):
+            with self.subTest(call=call):
+                self.error("物 取 {'a':1}. 物 其 " + call + '.', '参数|实参')
+
+    def test_map_named_argument_validation(self):
+        for call in ("查 目:'a' 目:'a'", "增 目:'a'", "增 相:1", "增 目:'a' 相:1 多:2"):
+            with self.subTest(call=call):
+                self.error("物 取 {}. 物 其 " + call + '.', '参数|实参|缺少')
+        with self.assertRaisesRegex(RuError, '混用'):
+            parse("物 取 {}. 物 其 增 'a' 相:1.")
+
+    def test_generic_and_user_named_parameters_unchanged(self):
+        self.output("列值 取 []. 列值 其 增 值:7. 显 列值 其 查 值:7. 形 盒: 算 查 键: 得 键. 法 算 增 键 值: 得 键+值. 法 象 盒值 取 新 盒. 显 盒值 其 查 键:8. 显 盒值 其 增 键:2 值:3. 算 自定 目 相: 得 目+相. 法 显 自定 目:4 相:5. 表 取 {'a':6}. 表 其 列 回调:(作 键 值: 显 键. 显 值. 为).", '0\n8\n5\n9\na\n6\n')
+
     def test_truth_and_type_separation(self):
         self.output("显 真. 显 假. 显 真 == 1. 显 假 == 0. 显 0 为 事实. 显 -0 为 事实. 显 '' 为 事实. 显 [] 为 事实. 显 典: 成 为 事实. 显 空 为 事实. 显 非 0. 显 0 且 ''.",
                     '真\n假\n假\n假\n真\n真\n真\n真\n真\n假\n假\n真\n')

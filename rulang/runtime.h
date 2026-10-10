@@ -1289,7 +1289,7 @@ static Val ru_map_each(Val receiver, Val callback, int line)
 }
 static Val ru_map_member(Val receiver,const char *name,size_t argc,const char **keys,Val *args,int line)
 {
-    const char *key_name[]={"键"}, *both[]={"键","值"}, *callback[]={"回调"}; Val bound[2];
+    const char *key_name[]={"目"}, *both[]={"目","相"}, *callback[]={"回调"}; Val bound[2];
     (void)receiver; (void)key_name; (void)both; (void)callback; (void)bound;
     (void)argc; (void)keys; (void)args;
 /* RU_MEMBERS: 查,除 */

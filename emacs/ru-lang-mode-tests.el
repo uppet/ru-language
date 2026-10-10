@@ -1279,3 +1279,8 @@
     (should (member name ru-lang--member-builtins)))
   (dolist (name '("拆分" "替换" "去空白" "定点" "平方根" "幂" "造源"))
     (should-not (member name ru-lang--builtins))))
+
+(ert-deftest ru-dictionary-named-parameter-help ()
+  (dolist (entry '(("查" . "典：查 目:") ("增" . "典：增 目: 相:") ("除" . "典：除 目:")))
+    (should (string-match-p (regexp-quote (cdr entry))
+                            (cdr (assoc (car entry) ru-lang--practical-member-help)))))

@@ -249,10 +249,10 @@ const R = (() => {
   function mapMember(m,receiver,name,args,loc) {
     if (name === '量') { argsBind(m,name,args,[],loc); return receiver.size; }
     if (name === '增') {
-      const a = argsBind(m,name,args,['键','值'],loc); return mapPut(m,receiver,a.键,a.值,loc);
+      const a = argsBind(m,name,args,['目','相'],loc); return mapPut(m,receiver,a.目,a.相,loc);
     }
     if (name === '查' || name === '除') {
-      const a = argsBind(m,name,args,['键'],loc), [hash,bucket,index] = mapFind(m,receiver,a.键,loc);
+      const a = argsBind(m,name,args,['目'],loc), [hash,bucket,index] = mapFind(m,receiver,a.目,loc);
       if (name === '查') return index < 0 ? null : bucket[index][1];
       if (index < 0) return false;
       bucket.splice(index,1); if (!bucket.length) receiver.buckets.delete(hash);

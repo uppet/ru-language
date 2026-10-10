@@ -909,14 +909,14 @@ class Interpreter:
         return receiver
 
     def map_member(self, n, receiver, name, args):
-        params = {"查": ["键"], "增": ["键", "值"], "除": ["键"], "列": ["回调"], "量": []}
+        params = {"查": ["目"], "增": ["目", "相"], "除": ["目"], "列": ["回调"], "量": []}
         if name not in params:
             self.fail(n, f"未知成员：{name}")
         bound = bind_arguments(name, args, params[name], lambda message: self.fail(n, message))
         if name == "量":
             return float(receiver.size)
         if name == "增":
-            return self.map_put(n, receiver, bound["键"], bound["值"])
+            return self.map_put(n, receiver, bound["目"], bound["相"])
         if name == "列":
             callback = bound["回调"]
             if not isinstance(callback, Function) or len(callback.node.data["params"]) != 2:
@@ -925,7 +925,7 @@ class Interpreter:
                 self.invoke_value(n, callback, [(None, key), (None, value)])
             self.last_member_procedure = False
             return None
-        hashed, bucket, index = self.map_find(n, receiver, bound["键"])
+        hashed, bucket, index = self.map_find(n, receiver, bound["目"])
         if name == "查":
             return None if index < 0 else bucket[index][1]
         if index < 0:

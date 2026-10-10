@@ -68,7 +68,7 @@ class SpecificationExamples(unittest.TestCase):
         Compiler(program, "scoped_blocks.ru").compile()
         JSCompiler(program, "scoped_blocks.ru").compile()
 
-    def test_map_teaching_terms_preserve_named_arguments(self):
+    def test_map_teaching_terms_match_named_arguments(self):
         for name in ("README.md", "rulang/language-spec.md",
                      "docs/maps-facts-migration.md", "emacs/README.md",
                      "rushu/README.md"):
@@ -76,12 +76,12 @@ class SpecificationExamples(unittest.TestCase):
                 text = (ROOT / name).read_text(encoding="utf-8")
                 self.assertIn("目（key）", text)
                 self.assertIn("相（value）", text)
-                self.assertIn("成员命名实参仍写 `键:`、`值:`", text)
+                self.assertIn("成员命名实参统一使用 `目:`、`相:`", text)
                 self.assertIn("`值` 仍是语言的通用概念", text)
         specification = SPECIFICATION.read_text(encoding="utf-8")
         self.assertIn("两个位置实参（目、相）", specification)
         self.assertIn("无法区分缺失与已存空，这是本版明确选择", specification)
-        self.assertIn("`其 增 键:… 值:…`", specification)
+        self.assertIn("`其 增 目:… 相:…`", specification)
 
     def test_documented_numeric_and_fact_contracts(self):
         specification = SPECIFICATION.read_text(encoding="utf-8")
