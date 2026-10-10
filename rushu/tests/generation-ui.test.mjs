@@ -6,7 +6,7 @@ import vm from 'node:vm';
 // Exercise the actual request lifecycle with fake DOM, time, and HTTP results.
 // No browser, credentials, provider calls, or artificial 30-minute waits.
 const source=readFileSync(new URL('../static/app.js',import.meta.url),'utf8');
-const lifecycle=source.slice(source.indexOf('function generationDiagnostic('),source.indexOf('function buildHistory('));
+const lifecycle=source.slice(source.indexOf('function diagnosticLocation('),source.indexOf('function buildHistory('));
 function harness({configured=true,confirm=true}={}){
   const cell={id:'cell',source:'private draft',generation:{prompt:'private intent\n如是我言',revisions:[]},outputs:[]};
   const diagnostic={textContent:''},intervals=new Map(),calls=[],statuses=[];
@@ -82,8 +82,10 @@ test('safe server errors and failed validation preserve their actual outcomes',a
   assert.match(failed.diagnostic.textContent,/TLS 证书验证失败/);
   assert.equal(failed.cell.source,'private draft');assert.equal(failed.intervals.size,0);
   const invalid=harness(),{promise:validation}=await invalid.start();
-  invalid.respond({source:'invalid source',valid:false,validation:{message:'语法错误'}});await validation;
+  invalid.respond({source:'invalid source',valid:false,validation:{message:'语法错误',line:3,col:7}});await validation;
   assert.equal(invalid.cell.source,'invalid source');
+  assert.ok(invalid.statuses.some(([,message])=>message.includes('第 3 行，第 7 列')));
+  assert.equal(invalid.calls.length,1); // Validation does not execute or retry generation.
   assert.match(invalid.diagnostic.textContent,/检查未通过，未执行/);
   assert.equal(invalid.intervals.size,0);
 });

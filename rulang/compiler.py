@@ -46,6 +46,7 @@ class Compiler:
         self.function_value_scopes = {}
         self.type_ids = {}
         self.exports = {}
+        self.value_exports = {}
         for path, body in self.modules.items():
             validate(body)
             self.declarations[path] = {n.data['name']: n for n in body if n.kind in ('function', 'type')}
@@ -177,9 +178,21 @@ class Compiler:
                 functions.update(scope)
         return functions
 
+    def _exported_values(self, path):
+        # Possible runtime bindings are separate from unconditional exports:
+        # if/loop/try bodies share the module scope, but their names may never
+        # be initialized. Keep import conflicts and missing values runtime
+        # checks rather than treating these names as definite declarations.
+        if path not in self.value_exports:
+            values = self.scope_bindings(self.modules[path])
+            self.value_exports[path] = values
+            for n in self.modules[path]:
+                if n.kind == 'import_all':
+                    values.update(self._exported_values(n.data['expr'].data['resolved']))
+        return self.value_exports[path]
+
     def _values(self, path, function=None):
-        values = self.scope_bindings(self.modules[path])
-        values.update(name for name, n in self.exports[path].items() if n.kind == 'bind')
+        values = set(self._exported_values(path))
         if function is not None:
             for scope in self.function_value_scopes[id(function)]:
                 values.update(scope)

@@ -220,7 +220,8 @@ class SourceGenerationTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertFalse(value["valid"])
         self.assertNotIn("private source", json.dumps(value["validation"]))
-        self.assertIn("line", value["validation"])
+        self.assertEqual(value["validation"]["line"], 1)
+        self.assertGreater(value["validation"]["col"], 0)
 
     def test_errors_and_secret_outputs_are_sanitized_and_release_slot(self):
         for outcome in (GenerationError("private-secret raw error"), RuntimeError("private-secret"),

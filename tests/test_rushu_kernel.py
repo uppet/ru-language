@@ -236,6 +236,19 @@ class KernelTests(unittest.TestCase):
             self.session.provide_input(waiting["request_id"], "回声")
             self.assertTrue(output(wait_for(self.session)).endswith("回声\n"))
 
+    def test_import_error_preserves_source_path_and_module_position(self):
+        with tempfile.TemporaryDirectory() as temp:
+            module = Path(temp) / "broken.ru"
+            module.write_text("显 1.\n显 未定义.", encoding="utf-8")
+            path = str(module).replace("\\", "\\\\").replace("'", "\\'")
+            result = self.run_cell(f"模 取 外言 '{path}'.")
+            error = next(e for e in result["events"] if e["type"] == "error")
+            self.assertEqual(Path(error["source_name"]), module.resolve())
+            self.assertEqual(error["line"], 2)
+            self.assertGreater(error["col"], 0)
+            self.assertEqual(result["events"][-1]["status"], "error")
+            self.assertEqual(output(self.run_cell("显 7.")), "7\n")
+
     def test_contest_read_all_waits_for_eof_and_keeps_all_input(self):
         source = (ROOT / "examples" / "contest_sum_eof.ru").read_text(encoding="utf-8")
         self.session.execute(source, "contest")

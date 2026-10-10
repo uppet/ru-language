@@ -162,6 +162,21 @@ function buildGenerationPanel(cell,view){
   // This is only a local configuration read, never a provider request.
   queueMicrotask(()=>loadProvider(view));return panel;
 }
+// Locations are local metadata, never provider response text or executable HTML.
+function diagnosticLocation(detail={},includeSource=false){
+  const parts=[];
+  if(includeSource&&typeof detail.source_name==='string'&&detail.source_name){
+    // Keep paths readable while preventing controls and bidi overrides from
+    // disguising their origin or injecting extra diagnostic lines.
+    const name=detail.source_name.slice(0,4096).replace(/[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u2028-\u202e\u2066-\u2069]/g,ch=>'\\u'+ch.charCodeAt(0).toString(16).padStart(4,'0'));
+    parts.push('来源：'+name);
+  }
+  if(Number.isSafeInteger(detail.line)&&detail.line>0){
+    const column=Number.isSafeInteger(detail.col)&&detail.col>0?'，第 '+detail.col+' 列':'';
+    parts.push('第 '+detail.line+' 行'+column);
+  }
+  return parts.join('\n');
+}
 function generationDiagnostic(request,phase=request.diagnosticPhase){
   if(generationRequest!==request)return;
   request.diagnosticPhase=phase;
@@ -215,7 +230,8 @@ async function generateCell(cell){
     serializeBook({...book,cells:book.cells.map(c=>c===cell?candidate:c)});
     cell.source=candidate.source;cell.generation=candidate.generation;cell.stale=!!(cell.execution_count||cell.outputs.length);markDirty();
     const currentView=views.get(cell.id);if(currentView){currentView.input.value=cell.source;currentView.renderEditor();}renderOutput(cell);renderHistory(cell);
-    generationStatus(cell,result.valid?'新版本已加入历史。语法／结构检查通过；未检查外言依赖，未执行。请审阅后单独运行。':`新版本已加入历史，但尚未通过语法／结构检查：${result.validation?.message||'请检查源码'}。未执行。`,!result.valid);
+    const validationPosition=diagnosticLocation(result.validation||{});
+    generationStatus(cell,result.valid?'新版本已加入历史。语法／结构检查通过；未检查外言依赖，未执行。请审阅后单独运行。':`新版本已加入历史，但尚未通过语法／结构检查：${validationPosition?validationPosition+'；':''}${result.validation?.message||'请检查源码'}。未执行。`,!result.valid);
     generationDiagnostic(request,result.valid?'生成结果已加入历史；服务端语法／结构检查通过，未执行。':'生成结果已加入历史；服务端语法／结构检查未通过，未执行。');
   }catch(error){if(generationRequest===request){generationDiagnostic(request,error.name==='AbortError'?'等待已取消，当前编辑保留。':'生成未完成：'+error.message);generationStatus(cell,error.name==='AbortError'?'等待已取消，当前编辑保留。':error.message,true);notice(error.name==='AbortError'?'已取消生成等待。':error.message,true,true);}}
   finally{clearInterval(request.elapsedTimer);if(generationRequest===request){generationRequest=null;refreshControls();}}
@@ -352,7 +368,7 @@ async function pollEvents(){if(polling){pollSoon();return;}if(!session||transiti
       if(cell.status==='running'&&cell.execution_count==null)cell.execution_count=event.execution_count;
       if(cell.execution_count!==event.execution_count)continue;
       if(event.type==='output'){appendOutput(cell,event.stream==='stderr'?'stderr':'stdout',event.text);changed.add(cell);}
-      else if(event.type==='error'){const position=event.line?`第 ${event.line} 行${event.col?'，第 '+event.col+' 列':''}\n`:'';appendOutput(cell,'error',position+event.message+'\n');changed.add(cell);}
+      else if(event.type==='error'){const position=diagnosticLocation(event,true);appendOutput(cell,'error',(position?position+'\n':'')+event.message+'\n');changed.add(cell);}
       else if(event.type==='input_request'){requestInput(cell,event.request_id);}
       else if(event.type==='done'){cell.status=event.status==='ok'?'done':'error';changed.add(cell);if(activeRun?.cellId===cell.id)finishActive(event.status==='ok');}
     }
