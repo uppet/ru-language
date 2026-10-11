@@ -1,3 +1,4 @@
+import {createSceneView,validateScene} from './scene.mjs';
 import {versionLabel} from './versions.mjs';
 import {analyze,highlight,enterEdit,indentSelection,needsAutoDedent} from './editor.mjs';
 import {welcomeBook,blankBook,newCell,parseBook,serializeBook,appendOutput,historicalBook,MAX_FILE_BYTES,MAX_CELLS,MAX_SOURCE} from './notebook.mjs';
@@ -9,6 +10,32 @@ const el=(tag,cls,text)=>{const node=document.createElement(tag);if(cls)node.cla
 const button=(text,title,handler,cls='')=>{const node=el('button',cls,text);node.type='button';node.title=title;node.setAttribute('aria-label',title);node.addEventListener('click',handler);return node;};
 let book=welcomeBook(),session=null,cursor=0,generation=1,activeRun=null,runAllActive=false,polling=false,epoch=0,dirty=true,transition=false,connected=false,lastExecutionCount=0,kernelDead=false;
 const views=new Map();
+// Live handlers are deliberately separate from portable notebook snapshots.
+const sceneViews=new Map(),scenePending=new Map();
+function stopScenes(close=false){for(const [id,record] of sceneViews){record.view.deactivate();if(close&&record.session===session&&record.epoch===epoch)api(sessionPath('/graphics'),'POST',{canvas_id:id,cell_id:record.cell.id,execution_count:record.count,expected_generation:record.generation,event:{type:'close'}}).catch(()=>{});}for(const pending of scenePending.values())pending.resolve();scenePending.clear();}
+async function closeScenesBeforeRun(id,myEpoch,myGeneration){
+  stopScenes();const path=`/sessions/${encodeURIComponent(id)}`;
+  const current=()=>id===session&&myEpoch===epoch&&myGeneration===generation;
+  let state=await api(path+'/events?after='+cursor);if(!current())throw new Error('会话已切换，本次运行已取消。');
+  if(state.graphics)await api(path+'/graphics','POST',{canvas_id:state.graphics.canvas_id,cell_id:state.cell_id,execution_count:state.execution_count,expected_generation:myGeneration,event:{type:'close'}});
+  const deadline=performance.now()+4000;
+  while(state.graphics_busy||state.graphics){if(performance.now()>deadline)throw new Error('正在结束画布回调，请稍后重试或停止会话。');await new Promise(resolve=>setTimeout(resolve,50));state=await api(path+'/events?after='+cursor);if(!current()||state.generation!==myGeneration)throw new Error('画布回调已中断并重置会话，请重新运行。');}
+}
+function clearScene(cell){for(const [id,record] of sceneViews)if(record.cell===cell){record.view.dispose();sceneViews.delete(id);const pending=scenePending.get(id);if(pending){pending.resolve();scenePending.delete(id);}}}
+function sceneOutput(cell,item){
+  const scene=validateScene(item.scene);let record=sceneViews.get(scene.canvas_id);
+  if(!record){record={cell,session,epoch,generation,count:cell.execution_count};
+    const send=async event=>{if(record.session!==session||record.epoch!==epoch||record.generation!==generation||record.count!==cell.execution_count)return;
+      if(event.type==='close'){const pending=scenePending.get(scene.canvas_id);if(pending){pending.resolve();scenePending.delete(scene.canvas_id);}await api(sessionPath('/graphics'),'POST',{canvas_id:scene.canvas_id,cell_id:cell.id,execution_count:record.count,expected_generation:record.generation,event});return;}
+      if(activeRun||transition||!connected)return;
+      let resolve,reject;const completed=new Promise((yes,no)=>{resolve=yes;reject=no;});const pending={resolve,reject};scenePending.set(scene.canvas_id,pending);
+      try{await api(sessionPath('/graphics'),'POST',{canvas_id:scene.canvas_id,cell_id:cell.id,execution_count:record.count,expected_generation:record.generation,event});pollSoon(0);await completed;}
+      catch(error){if(scenePending.get(scene.canvas_id)===pending)scenePending.delete(scene.canvas_id);throw error;}
+    };
+    record.view=createSceneView(scene,{historical:cell.historical||cell.execution_count!==lastExecutionCount,send,onError:error=>notice(error.message,true)});sceneViews.set(scene.canvas_id,record);
+  }else record.view.update(scene,cell.historical);
+  return record.view.root;
+}
 let generationRequest=null;
 let providerInfo=null;
 let token=new URLSearchParams(location.hash.slice(1)).get('token')||'';
@@ -20,7 +47,7 @@ function updateMeta() { $('#cell-count').textContent=`${book.cells.length} 格`;
 function runtimeStatus(state,label) { const node=$('#runtime-status');node.className='runtime-status '+(state==='running'||state==='waiting_input'?'running':state==='dead'?'error':'');node.querySelector('span').textContent=label||({idle:'会话就绪',running:'正在运行',waiting_input:'等待输入',dead:'会话已断开'}[state]||'连接中'); }
 function busy(){return !!activeRun||runAllActive||transition||!!generationRequest;}
 function refreshControls() {
-  $('#run-all').disabled=!connected||busy();$('#restart').disabled=!session||transition;$('#stop').disabled=!activeRun||transition;
+  $('#run-all').disabled=!connected||busy();$('#restart').disabled=!session||transition;$('#stop').disabled=(!activeRun&&![...sceneViews.values()].some(record=>record.view.live))||transition;
   $('#new-book').disabled=transition;$('#open-book').disabled=transition;
   $('#add-code').disabled=busy()||book.cells.length>=MAX_CELLS;$('#add-markdown').disabled=busy()||book.cells.length>=MAX_CELLS;$('#add-learning').disabled=busy()||book.cells.length>=MAX_CELLS;
   for(const cell of book.cells){const view=views.get(cell.id);if(!view)continue;for(const b of view.element.querySelectorAll('[data-mutates]'))b.disabled=busy();view.run.disabled=!connected||busy();if(view.input)view.input.readOnly=cell.status==='running';if(view.generate)view.generate.disabled=busy()||!!generationRequest||!token;if(view.cancelGeneration)view.cancelGeneration.hidden=generationRequest?.cell!==cell;if(view.restore)view.restore.disabled=busy()||!!generationRequest;}
@@ -30,7 +57,7 @@ async function api(path,method='GET',body) {
   try {
     const response=await fetch('/api'+path,{method,headers:{'X-Rushu-Token':token,...(method!=='GET'?{'Content-Type':'application/json'}:{})},body:method==='GET'?undefined:JSON.stringify(body??{}),signal:controller.signal,cache:'no-store',credentials:'same-origin'});
     let data;try{data=await response.json();}catch{throw new Error('服务没有返回有效响应，请检查启动终端。');}
-    if(!response.ok){const error=new Error(data.error||`请求失败（${response.status}）`);error.definite=true;throw error;}return data;
+    if(!response.ok){const error=new Error(data.error||`请求失败（${response.status}）`);error.definite=true;error.status=response.status;throw error;}return data;
   } catch(error){if(error.name==='AbortError')throw new Error('本机服务响应超时，请检查启动终端。');throw error;}finally{clearTimeout(timeout);}
 }
 function sessionPath(suffix=''){return `/sessions/${encodeURIComponent(session)}${suffix}`;}
@@ -38,7 +65,7 @@ function finishActive(success=false) { if(!activeRun)return;const run=activeRun;
 async function replaceBook(next) {
   transition=true;refreshControls();
   try {
-    const result=await api('/sessions','POST',{});const old=session;cancelGeneration(false);epoch++;finishActive(false);runAllActive=false;
+    const result=await api('/sessions','POST',{});const old=session;cancelGeneration(false);stopScenes();for(const cell of book.cells)clearScene(cell);epoch++;finishActive(false);runAllActive=false;
     session=result.id;cursor=result.cursor||0;generation=result.generation||1;lastExecutionCount=0;kernelDead=false;connected=true;book=next;
     $('#book-title').value=book.title;renderBook();runtimeStatus('idle');markDirty();
     if(old)api(`/sessions/${encodeURIComponent(old)}`,'DELETE',{}).catch(error=>notice('新会话已创建，但旧会话未能关闭：'+error.message,true,true));
@@ -273,7 +300,7 @@ function renderCell(cell) {
   kind.append(el('span','kind-icon',cell.type==='code'?'⌘':'¶'),el('span','',cell.type==='code'?'如代码':'文字'),count);
   const run=button(cell.type==='code'?'▶ 运行':'编辑',cell.type==='code'?'运行此代码格，Ctrl 或 Command + Enter':'编辑文字',()=>cell.type==='code'?runAndMove(cell,false):toggleMarkdown(cell), 'run-cell');view.run=run;
   tools.append(run);
-  if(cell.type==='code'){const clear=button('清除输出','清除这格的输出快照',()=>{cell.outputs=[];cell.execution_count=null;cell.historical=false;cell.status='idle';renderOutput(cell);markDirty();},'clear-output');clear.dataset.mutates='true';tools.append(clear);}
+  if(cell.type==='code'){const clear=button('清除输出','清除这格的输出快照',()=>{stopScenes(true);clearScene(cell);cell.outputs=[];cell.execution_count=null;cell.historical=false;cell.status='idle';renderOutput(cell);markDirty();},'clear-output');clear.dataset.mutates='true';tools.append(clear);}
   for(const [text,title,handler,cls] of [['↑','向上移动格子',()=>moveCell(cell,-1),'icon-button'],['↓','向下移动格子',()=>moveCell(cell,1),'icon-button'],['×','删除这格',()=>deleteCell(cell),'icon-button danger']]){const b=button(text,title,handler,cls);b.dataset.mutates='true';tools.append(b);}
   if(cell.type==='markdown'){const learn=button('如是我言','以这段文字生成如源码，先确认发送范围',()=>createLearning(cell));learn.dataset.mutates='true';tools.prepend(learn);}
   else if(!cell.generation){const learn=button('学习模式','把当前源码作为学习草稿，另写修改意图',()=>enableLearning(cell));learn.dataset.mutates='true';tools.prepend(learn);}
@@ -298,21 +325,21 @@ function renderBook(){views.clear();$('#cells').replaceChildren(...book.cells.ma
 function renderOutput(cell) {
   const view=views.get(cell.id);if(!view)return;
   view.element.classList.toggle('running',cell.status==='running');view.count.textContent=cell.type==='code'?(cell.status==='running'?'[ * ]':`[ ${cell.execution_count??' '} ]`):'';
-  const output=view.output,form=view.form,focused=form?.contains(document.activeElement)?document.activeElement:null,selection=focused&&focused.selectionStart!=null?[focused.selectionStart,focused.selectionEnd]:null;output.replaceChildren();output.hidden=cell.type!=='code'||(!cell.outputs.length&&cell.status!=='running'&&!cell.execution_count&&!form);
+  const output=view.output,form=view.form,focused=output.contains(document.activeElement)?document.activeElement:null,selection=focused&&focused.selectionStart!=null?[focused.selectionStart,focused.selectionEnd]:null;output.replaceChildren();output.hidden=cell.type!=='code'||(!cell.outputs.length&&cell.status!=='running'&&!cell.execution_count&&!form);
   if(output.hidden)return;
   const heading=el('div','output-heading'),left=el('span','','输出');heading.append(left);
   if(cell.historical)heading.append(el('span','history-label','历史输出 · 未在本会话执行'));
   else if(cell.stale)heading.append(el('span','history-label','源码已修改 · 输出来自上次运行'));
   else heading.append(el('span','cell-state'+(cell.status==='error'?' failed':''),cell.status==='running'?'运行中…':cell.status==='error'?'运行出错':cell.status==='done'?'已完成':''));
   output.append(heading);
-  for(const item of cell.outputs)output.append(el('pre',item.type,item.text));
+  for(const item of cell.outputs){if(item.type==='graphics'){try{output.append(sceneOutput(cell,item));}catch(error){output.append(el('pre','error',error.message));}}else output.append(el('pre',item.type,item.text));}
   if(form)output.append(form);if(focused){focused.focus({preventScroll:true});if(selection)focused.setSelectionRange(...selection);}
 }
 function addCell(type,after) {if(busy())return;if(book.cells.length>=MAX_CELLS){notice('一本如书最多 500 格。',true);return;}const cell=newCell(type==='learning'?'code':type);if(type==='learning')ensureGeneration(cell,'');if(after){book.cells.splice(book.cells.indexOf(after)+1,0,cell);}else book.cells.push(cell);renderBook();markDirty();focusCell(cell);}
 function focusCell(cell){const view=views.get(cell.id);if(!view)return;if(cell.type==='markdown')toggleMarkdown(cell,true);else (view.prompt||view.input).focus();view.element.scrollIntoView({block:'nearest',behavior:'smooth'});}
 function focusNext(cell){const next=book.cells[book.cells.indexOf(cell)+1];if(next)focusCell(next);else if(!busy())addCell('code',cell);}
 function moveCell(cell,delta){if(busy())return;const index=book.cells.indexOf(cell),next=index+delta;if(next<0||next>=book.cells.length)return;[book.cells[index],book.cells[next]]=[book.cells[next],book.cells[index]];renderBook();markDirty();focusCell(cell);}
-function deleteCell(cell){if(busy())return;if((cell.source||cell.outputs.length||cell.generation?.prompt||cell.generation?.revisions.length)&&!confirm('删除这格、输出及全部版本历史？此操作无法撤销。'))return;const index=book.cells.indexOf(cell);book.cells.splice(index,1);if(!book.cells.length)book.cells.push(newCell());renderBook();markDirty();focusCell(book.cells[Math.min(index,book.cells.length-1)]);}
+function deleteCell(cell){if(busy())return;if((cell.source||cell.outputs.length||cell.generation?.prompt||cell.generation?.revisions.length)&&!confirm('删除这格、输出及全部版本历史？此操作无法撤销。'))return;stopScenes(true);clearScene(cell);const index=book.cells.indexOf(cell);book.cells.splice(index,1);if(!book.cells.length)book.cells.push(newCell());renderBook();markDirty();focusCell(book.cells[Math.min(index,book.cells.length-1)]);}
 async function runAndMove(cell,move){if(busy()){notice('当前会话正在运行，请等待或停止后再试。');return;}const success=await runCell(cell);if(move&&success)focusNext(cell);}
 async function runCell(cell) {
   if(!connected||!session){notice('会话尚未连接。请使用启动终端显示的完整网址。',true);return false;}
@@ -326,19 +353,20 @@ async function runCell(cell) {
     }catch(error){notice(error.message,true,true);}return false;
   }
   if(cell.generation){try{checkpoint(cell);markDirty();renderHistory(cell);}catch(error){notice(error.message,true,true);return false;}}
-  const myEpoch=epoch;let resolve;const done=new Promise(r=>resolve=r),run={cellId:cell.id,resolve,epoch:myEpoch,beforeCount:lastExecutionCount};activeRun=run;
-  cell.outputs=[];cell.outputTruncated=false;cell.stale=false;cell.historical=false;cell.status='running';cell.execution_count=null;renderOutput(cell);refreshControls();runtimeStatus('running');markDirty();
+  const myEpoch=epoch,mySession=session,myGeneration=generation;let submitted=false;let resolve;const done=new Promise(r=>resolve=r),run={cellId:cell.id,resolve,epoch:myEpoch,beforeCount:lastExecutionCount};activeRun=run;
+  stopScenes();cell.outputs=[];cell.outputTruncated=false;cell.stale=false;cell.historical=false;cell.status='running';cell.execution_count=null;renderOutput(cell);refreshControls();runtimeStatus('running');markDirty();
   try{
+    await closeScenesBeforeRun(mySession,myEpoch,myGeneration);if(myEpoch!==epoch||activeRun!==run)return done;clearScene(cell);submitted=true;
     const result=await api(sessionPath('/execute'),'POST',{code:cell.source,cell_id:cell.id,expected_generation:generation});
     if(myEpoch!==epoch)return false;if(activeRun!==run)return done;
     cell.execution_count=result.execution_count;lastExecutionCount=result.execution_count;generation=result.generation;renderOutput(cell);pollSoon(0);
-  }catch(error){if(activeRun===run){if(error.definite){cell.status='error';appendOutput(cell,'error',error.message);renderOutput(cell);finishActive(false);runtimeStatus('idle');return false;}run.uncertain=true;connected=false;runtimeStatus('dead','运行状态待确认');notice(error.message+' 请求可能已经执行，正在确认运行状态。',true,true);pollSoon(0);}return done;}
+  }catch(error){if(activeRun===run){if(error.definite||!submitted){cell.status='error';appendOutput(cell,'error',error.message);renderOutput(cell);finishActive(false);runtimeStatus('idle');return false;}run.uncertain=true;connected=false;runtimeStatus('dead','运行状态待确认');notice(error.message+' 请求可能已经执行，正在确认运行状态。',true,true);pollSoon(0);}return done;}
   return done;
 }
 async function runAll(){if(busy()||!connected)return;if(book.cells.some(c=>c.generation||generationIntent(c.source)!==null))notice('全部运行会跳过学习格和意图文档。请先审阅，再单独运行生成的代码。',false,true);runAllActive=true;const myEpoch=epoch;refreshControls();for(const cell of [...book.cells]){if(myEpoch!==epoch)break;if(cell.type==='markdown'){if(views.get(cell.id)?.editing)toggleMarkdown(cell);continue;}if(cell.generation||generationIntent(cell.source)!==null)continue;if(!await runCell(cell)){if(myEpoch===epoch)notice('运行已停在这一格。请修正错误后继续。',true);break;}}runAllActive=false;refreshControls();}
 function clearInputForms(){for(const view of views.values()){if(view.form){view.form.remove();view.form=null;}}}
 async function resetSession(reason){if(!session||transition)return;if(reason==='restart'&&!confirm('重启会清空本书全部变量、函数和文件句柄，已有输出将标为历史。继续吗？'))return;
-  cancelGeneration(false);transition=true;refreshControls();epoch++;runAllActive=false;
+  cancelGeneration(false);stopScenes();transition=true;refreshControls();epoch++;runAllActive=false;
   try{const result=await api(sessionPath('/'+reason),'POST',{});finishActive(false);clearInputForms();generation=result.generation;cursor=result.cursor;lastExecutionCount=0;kernelDead=false;historicalBook(book);connected=true;for(const cell of book.cells)renderOutput(cell);runtimeStatus('idle');markDirty();notice(reason==='stop'?'已停止。会话已重置，全部变量已清空。':'会话已重启，全部变量已清空。');}
   catch(error){connected=false;finishActive(false);runtimeStatus('dead');notice(error.message+' 运行是否停止尚未确认，请检查启动终端。',true,true);}
   finally{transition=false;refreshControls();pollSoon(0);}
@@ -361,13 +389,16 @@ async function pollEvents(){if(polling){pollSoon();return;}if(!session||transiti
     const changed=new Set();
     for(const event of result.events||[]){
       if(event.seq<=cursor)continue;cursor=event.seq;
-      if(event.type==='reset'){generation=event.generation;historicalBook(book);clearInputForms();finishActive(false);book.cells.forEach(c=>changed.add(c));continue;}
+      if(event.type==='reset'){stopScenes();generation=event.generation;historicalBook(book);clearInputForms();finishActive(false);book.cells.forEach(c=>changed.add(c));continue;}
       if(event.generation!==generation)continue;
       const cell=book.cells.find(c=>c.id===event.cell_id);if(!cell)continue;
       // A poll may beat the execute response: use the authoritative event count.
       if(cell.status==='running'&&cell.execution_count==null)cell.execution_count=event.execution_count;
       if(cell.execution_count!==event.execution_count)continue;
-      if(event.type==='output'){appendOutput(cell,event.stream==='stderr'?'stderr':'stdout',event.text);changed.add(cell);}
+      if(event.type==='graphics'){
+        try{const scene=validateScene(event);const prior=cell.outputs.find(item=>item.type==='graphics');if(prior){if(prior.scene.canvas_id!==scene.canvas_id)clearScene(cell);prior.scene=scene;}else cell.outputs.push({type:'graphics',scene});changed.add(cell);}catch(error){appendOutput(cell,'error',error.message+'\n');changed.add(cell);}
+      }else if(event.type==='graphics_done'||event.type==='graphics_closed'){const pending=scenePending.get(event.canvas_id);if(pending){scenePending.delete(event.canvas_id);if(event.status==='error')pending.reject(new Error('画布回调运行出错'));else pending.resolve();}if(event.type==='graphics_closed'||event.status==='error')sceneViews.get(event.canvas_id)?.view.deactivate();
+      }else if(event.type==='output'){appendOutput(cell,event.stream==='stderr'?'stderr':'stdout',event.text);changed.add(cell);}
       else if(event.type==='error'){const position=diagnosticLocation(event,true);appendOutput(cell,'error',(position?position+'\n':'')+event.message+'\n');changed.add(cell);}
       else if(event.type==='input_request'){requestInput(cell,event.request_id);}
       else if(event.type==='done'){cell.status=event.status==='ok'?'done':'error';changed.add(cell);if(activeRun?.cellId===cell.id)finishActive(event.status==='ok');}
@@ -375,10 +406,10 @@ async function pollEvents(){if(polling){pollSoon();return;}if(!session||transiti
     cursor=Math.max(cursor,result.cursor||0);lastExecutionCount=result.execution_count;kernelDead=result.state==='dead';connected=!kernelDead;runtimeStatus(result.state);
     if(activeRun?.uncertain&&result.state==='idle'&&result.execution_count<=activeRun.beforeCount){const cell=book.cells.find(c=>c.id===activeRun.cellId);if(cell){cell.status='error';appendOutput(cell,'error','已确认本次请求未执行。请重试。\n');changed.add(cell);}finishActive(false);}
     changed.forEach(renderOutput);if(changed.size)markDirty();
-    if(result.state==='dead'){if(activeRun){const cell=book.cells.find(c=>c.id===activeRun.cellId);if(cell){cell.status='error';appendOutput(cell,'error','运行进程已退出。请重启会话。\n');renderOutput(cell);}finishActive(false);}notice('运行进程已退出，请重启会话。',true,true);}
+    if(result.state==='dead'){stopScenes();if(activeRun){const cell=book.cells.find(c=>c.id===activeRun.cellId);if(cell){cell.status='error';appendOutput(cell,'error','运行进程已退出。请重启会话。\n');renderOutput(cell);}finishActive(false);}notice('运行进程已退出，请重启会话。',true,true);}
     refreshControls();
-  }catch(error){if(id===session&&myEpoch===epoch){connected=false;runtimeStatus('dead','连接中断');refreshControls();notice(error.message+' 正在等待本机服务恢复。',true,true);}}
-  finally{polling=false;if(session&&!kernelDead)pollSoon(connected?(activeRun?150:1200):2500);}
+  }catch(error){if(id===session&&myEpoch===epoch){connected=false;stopScenes();runtimeStatus('dead','连接中断');refreshControls();notice(error.message+' 正在等待本机服务恢复。',true,true);}}
+  finally{polling=false;if(session&&!kernelDead)pollSoon(connected?(activeRun||scenePending.size?50:1200):2500);}
 }
 function saveBook(){try{let fullHistory=false;for(const cell of book.cells)if(cell.generation){try{checkpoint(cell);}catch{fullHistory=true;}renderHistory(cell);}book.title=$('#book-title').value.trim()||'未命名如书';const text=serializeBook(book),blob=new Blob([text],{type:'application/json;charset=utf-8'}),url=URL.createObjectURL(blob),link=el('a');link.href=url;link.download=book.title.replace(/[\\/:*?"<>|\x00-\x1f]/g,'_').slice(0,100)+'.rushu.json';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);dirty=false;$('#document-status').textContent='已导出保存快照';notice(fullHistory?'已下载保存当前草稿与已有历史。部分历史已满，最新编辑保留为当前草稿；请点击「另起学习格」继续记录。':'已下载如书文件。重新打开时，输出会标为历史；运行状态不会被保存。',false,fullHistory);}catch(error){notice('无法保存：'+error.message+' 请减少内容或清除部分输出后重试。',true,true);}}
 $('#book-title').addEventListener('input',()=>{book.title=$('#book-title').value;markDirty();updateMeta();});
@@ -390,7 +421,7 @@ $('#add-code').addEventListener('click',()=>addCell('code'));$('#add-markdown').
 $('#help-button').addEventListener('click',()=>$('#help-dialog').showModal());$('#close-help').addEventListener('click',()=>$('#help-dialog').close());
 $('#help-dialog').addEventListener('click',event=>{if(event.target===$('#help-dialog')){const r=event.target.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)event.target.close();}});
 document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();saveBook();}});
-window.addEventListener('pagehide',()=>{cancelGeneration(false);if(session)fetch('/api'+sessionPath(),{method:'DELETE',headers:{'X-Rushu-Token':token,'Content-Type':'application/json'},body:'{}',keepalive:true}).catch(()=>{});});
+window.addEventListener('pagehide',()=>{stopScenes();cancelGeneration(false);if(session)fetch('/api'+sessionPath(),{method:'DELETE',headers:{'X-Rushu-Token':token,'Content-Type':'application/json'},body:'{}',keepalive:true}).catch(()=>{});});
 window.addEventListener('pageshow',event=>{if(event.persisted){historicalBook(book);replaceBook(book).catch(error=>notice(error.message,true,true));}});
 window.addEventListener('beforeunload',event=>{if(dirty||activeRun||generationRequest){event.preventDefault();event.returnValue='';}});
 const keyboardHelp=el('span','sr-only','按 Tab 缩进。按 Escape 后再按 Tab 可移出编辑器。Shift 加 Enter 运行。');keyboardHelp.id='editor-keyboard-help';document.body.append(keyboardHelp);

@@ -10,19 +10,21 @@ from .frontend import Node, RuError, parse, validate, comment_marker, block_comm
 
 
 GENERATION_MARKER = "如是我言"
-STANDARD_MODULES = {"如:竞赛": "竞赛.ru", "如:文本": "文本.ru",
+STANDARD_MODULES = {"如竞": "如竞.ru", "如观": "如观.ru", "如:文本": "文本.ru",
                     "如:数学": "数学.ru", "如:随机": "随机.ru"}
 
 
 def resolve_import(requested, importer_path):
-    """Reserve 如: names for bundled libraries, never a cwd-dependent fallback."""
-    if requested.startswith("如:"):
-        filename = STANDARD_MODULES.get(requested)
-        if filename is None:
-            raise RuError("未知的标准外言：" + requested, category="模块错误")
+    """Reserve exact bundled names and 如: names, without local fallback."""
+    if requested == "如:竞赛":
+        raise RuError("标准外言「如:竞赛」已改名为「如竞」；请改用 外言 '如竞'", category="模块错误")
+    filename = STANDARD_MODULES.get(requested)
+    if filename is not None:
         return str((Path(__file__).parent / "stdlib" / filename).resolve())
+    if requested.startswith("如:"):
+        raise RuError("未知的标准外言：" + requested, category="模块错误")
     if not requested or "://" in requested:
-        raise RuError("外言只接受本地文件路径或已知的如:标准库名称", category="模块错误")
+        raise RuError("外言只接受本地文件路径或已知的标准库名称", category="模块错误")
     return str((Path(importer_path).parent / requested).resolve())
 
 

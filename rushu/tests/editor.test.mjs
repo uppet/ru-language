@@ -303,3 +303,16 @@ test('dictionary member hints use mu and xiang without reserving user names',()=
   const tokens=analyze('目 取 1. 相 取 2. 值 取 3.').tokens;
   for(const name of ['目','相','值'])assert.equal(tokens.find(t=>t.text===name).face,null);
 });
+
+// The import name is an ordinary string, never a new language keyword.
+test('renamed rujing bridge alone is built in; old and user names remain ordinary',()=>{
+  const result=analyze("竞 取 外言 '如竞'. 显 __如竞. 竞赛 取 1. 如竞 取 2. __竞赛 取 3. __如竞者 取 4.");
+  assert.equal(result.tokens.find(t=>t.text==='__如竞').face,'builtin');
+  for(const name of ['竞赛','如竞','__竞赛','__如竞者']) assert.equal(result.tokens.find(t=>t.text===name).face,null);
+});
+
+test('graphics bridge is builtin while public visualization names stay ordinary',()=>{
+  const tokens=analyze('__如观 画布 每帧 鼠标按下 如观 __如观者').tokens;
+  assert.equal(tokens.find(t=>t.text==='__如观').face,'builtin');
+  for(const name of ['画布','每帧','鼠标按下','如观','__如观者'])assert.equal(tokens.find(t=>t.text===name).face,null);
+});

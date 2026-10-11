@@ -24,8 +24,9 @@ STATIC_FILES = {"/versions.mjs": ("versions.mjs", "text/javascript; charset=utf-
                 "/style.css": ("style.css", "text/css; charset=utf-8"),
                 "/editor.mjs": ("editor.mjs", "text/javascript; charset=utf-8"),
                 "/notebook.mjs": ("notebook.mjs", "text/javascript; charset=utf-8"),
+                "/scene.mjs": ("scene.mjs", "text/javascript; charset=utf-8"),
                 "/history.mjs": ("history.mjs", "text/javascript; charset=utf-8")}
-SESSION_PATH = re.compile(r"/api/sessions/([a-f0-9]{32})(?:/(execute|events|input|stop|restart))?\Z")
+SESSION_PATH = re.compile(r"/api/sessions/([a-f0-9]{32})(?:/(execute|events|input|stop|restart|graphics))?\Z")
 
 
 class NotebookServer(ThreadingHTTPServer):
@@ -225,6 +226,10 @@ class NotebookHandler(BaseHTTPRequestHandler):
             body = self._body()
             if action == "execute":
                 result = session.execute(body.get("code"), body.get("cell_id"), body.get("expected_generation"))
+                self._respond(202, result)
+            elif action == "graphics":
+                result = session.dispatch_graphics(body.get("canvas_id"), body.get("cell_id"),
+                    body.get("execution_count"), body.get("expected_generation"), body.get("event"))
                 self._respond(202, result)
             elif action == "input":
                 result = session.provide_input(body.get("request_id"), body.get("text", ""), body.get("eof", False))

@@ -397,16 +397,16 @@ class JavaScriptParityTests(unittest.TestCase):
 
     def test_builtin_names_inside_literals_remain_plain_text(self):
         # A conservative feature scan may keep optional code for these words.
-        text = '__竞赛 件 录 件作成果 读取 显出 错误'
+        text = '__如竞 件 录 件作成果 读取 显出 错误'
         self.assert_output('显 ' + quote(text) + '.', text + '\n')
 
     def test_builtin_instances_are_per_module_but_types_are_shared(self):
         self.assert_modules({
             'main.ru': "模 取 外言 'lib.ru'. 显 (模 其 输入口) == 读取. "
                        "显 (模 其 输出口) == 显出. 显 (模 其 错误口) == 错误. "
-                       "显 (模 其 竞具) == __竞赛. 算 查 文档 为 件: 得 1. 法 显 查 (模 其 文件).",
+                       "显 (模 其 竞具) == __如竞. 算 查 文档 为 件: 得 1. 法 显 查 (模 其 文件).",
             'lib.ru': "算 输入口: 得 读取. 法 算 输出口: 得 显出. 法 "
-                      "算 错误口: 得 错误. 法 算 竞具: 得 __竞赛. 法 算 文件: 得 新 件. 法",
+                      "算 错误口: 得 错误. 法 算 竞具: 得 __如竞. 法 算 文件: 得 新 件. 法",
         }, '假\n假\n假\n假\n1\n')
 
     def test_compact_recursive_contest_program(self):

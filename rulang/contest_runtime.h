@@ -4,10 +4,10 @@
 #define RU_CONTEST_BUFFER_SIZE 65536
 static const char *ru_contest_private_names[] = {"\001text", "\001position"};
 static const char *ru_contest_private_types[] = {"句", "数"};
-static RuClass ru_contest_service_class = {"竞赛工具", NULL, NULL, 0, NULL, NULL, 0, NULL};
-static RuClass ru_contest_scanner_class = {"竞赛读流", NULL, NULL, 2,
+static RuClass ru_contest_service_class = {"如竞工具", NULL, NULL, 0, NULL, NULL, 0, NULL};
+static RuClass ru_contest_scanner_class = {"如竞读流", NULL, NULL, 2,
     ru_contest_private_names, ru_contest_private_types, 0, NULL};
-static RuClass ru_contest_writer_class = {"竞赛出流", NULL, NULL, 2,
+static RuClass ru_contest_writer_class = {"如竞出流", NULL, NULL, 2,
     ru_contest_private_names, ru_contest_private_types, 0, NULL};
 
 static Env *ru_contest_builtins(void)
@@ -21,7 +21,7 @@ static Env *ru_contest_builtins(void)
     ru_contest_service_class.global = ru_contest_scanner_class.global =
         ru_contest_writer_class.global = &env;
     service = ru_object_new(&ru_contest_service_class, 0);
-    env_declare(&env, "__竞赛", service); v_drop(service);
+    env_declare(&env, "__如竞", service); v_drop(service);
     return &env;
 }
 static Val ru_contest_span(Val text, size_t begin, size_t end, int line)

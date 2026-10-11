@@ -16,7 +16,7 @@ from .frontend import Node, RuError, parse
 from .modules import import_nodes, STANDARD_MODULES
 
 
-_BUNDLED_PATH = str((Path(__file__).parent / 'stdlib' / '竞赛.ru').resolve())
+_BUNDLED_PATH = str((Path(__file__).parent / 'stdlib' / '如竞.ru').resolve())
 _BUNDLED_PATHS = tuple(str((Path(__file__).parent / 'stdlib' / filename).resolve())
                        for filename in STANDARD_MODULES.values())
 _KNOWN_KINDS = frozenset((

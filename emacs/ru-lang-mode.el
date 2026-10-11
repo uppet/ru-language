@@ -103,7 +103,7 @@ the source directory, passing filenames directly without a shell."
     "外言" "尽" "卒" "试" "救" "真" "假" "典" "成"))
 (defconst ru-lang--types '("数" "句" "阵" "事实" "典" "对" "空" "件" "录" "件作成果" "算" "作"))
 (defconst ru-lang--builtins
-  '("读" "含" "位" "增" "量" "囫" "囵" "读取" "显出" "错误" "__竞赛" "__实用"))
+  '("读" "含" "位" "增" "量" "囫" "囵" "读取" "显出" "错误" "__如竞" "__如观" "__实用"))
 (defconst ru-lang--member-builtins '("段" "查" "增" "删" "弹" "量" "读" "写" "在" "除" "列" "词" "数" "行" "清")
   "I/O and contest stream members highlighted only after a member operator.
 The legacy global function 读 is also in `ru-lang--builtins'.")

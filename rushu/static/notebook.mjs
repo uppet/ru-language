@@ -1,3 +1,4 @@
+import {validateScene} from './scene.mjs';
 import {validateGeneration} from './history.mjs';
 /** Portable document data only. No executable JavaScript or kernel state. */
 export const FORMAT='rushu-notebook';
@@ -35,6 +36,7 @@ export function parseBook(text) {
     if(!Array.isArray(outputs)||outputs.length>2048) fail('输出数量无效。');
     let count=0;
     const safeOutputs=outputs.map(output=>{
+      if(output?.type==='graphics'){let scene;try{scene=validateScene(output.scene);}catch(error){fail(error.message);}count+=JSON.stringify(scene).length;if(count>MAX_OUTPUT)fail('保存的输出过大。');return {type:'graphics',scene:{...scene,running:false,handlers:[]}};}
       if(!output||!['stdout','stderr','error','input'].includes(output.type)||typeof output.text!=='string') fail('输出内容无效。');
       count+=output.text.length; if(count>MAX_OUTPUT) fail('保存的输出过大。');
       return {type:output.type,text:output.text};
@@ -49,13 +51,13 @@ export function parseBook(text) {
   return {title:raw.title||'未命名如书',cells:cells.length?cells:[newCell()]};
 }
 export function serializeBook(book) {
-  const text=JSON.stringify({format:FORMAT,version:1,title:book.title,updated_at:new Date().toISOString(),cells:book.cells.map(cell=>({id:cell.id,type:cell.type,source:cell.source,...(cell.generation===undefined?{}:{generation:validateGeneration(cell.generation)}),execution_count:cell.execution_count??null,outputs:cell.outputs.map(({type,text})=>({type,text}))}))},null,2)+'\n';
+  const text=JSON.stringify({format:FORMAT,version:1,title:book.title,updated_at:new Date().toISOString(),cells:book.cells.map(cell=>({id:cell.id,type:cell.type,source:cell.source,...(cell.generation===undefined?{}:{generation:validateGeneration(cell.generation)}),execution_count:cell.execution_count??null,outputs:cell.outputs.map(item=>item.type==='graphics'?{type:'graphics',scene:{...validateScene(item.scene),running:false,handlers:[]}}:{type:item.type,text:item.text})}))},null,2)+'\n';
   parseBook(text); // Validate our own export against the exact import contract.
   return text;
 }
 export function appendOutput(cell,type,text) {
   if(!text||cell.outputTruncated) return;
-  const total=cell.outputs.reduce((sum,output)=>sum+output.text.length,0);
+  const total=cell.outputs.reduce((sum,output)=>sum+(output.type==='graphics'?JSON.stringify(output.scene).length:output.text.length),0);
   const reserve=100,remaining=Math.max(0,MAX_OUTPUT-reserve-total);
   const clipped=String(text).slice(0,remaining),last=cell.outputs.at(-1);
   if(cell.outputs.length>=2047&&last?.type!==type) {

@@ -20,7 +20,7 @@ from rulang.modules import load_module_graph, resolve_import
 
 CC = (shutil.which(os.environ['CC']) if os.environ.get('CC') else
       next((shutil.which(c) for c in ('gcc', 'clang', 'cc') if shutil.which(c)), None))
-PRELUDE = "竞 取 外言 '如:竞赛'.\n"
+PRELUDE = "竞 取 外言 '如竞'.\n"
 
 
 def graph_for(source, path):
@@ -62,6 +62,7 @@ def native_run(binary, data='', force_gc=True, timeout=30):
 
 
 CASES = [
+    ('ordinary_names_after_rename', "竞赛 取 7. 如竞 取 8. __竞赛 取 9. 显 竞赛. 显 如竞. 显 __竞赛.", '7\n8\n9\n'),
     ('scanner', PRELUDE + "入 取 竞  其  扫句 '  -12 +3.5e1\\r\\n\\n末行'. 显 入  其  数. 显 入  其  数. 显 入  其  行. 显 入  其  行. 显 入  其  行. 显 入  其  行 == 空. 显 入  其  词 == 空.", '-12\n35\n\n\n末行\n真\n真\n'),
     ('mixed_delimiter', PRELUDE + "入 取 竞  其  扫句 '甲 乙\\r\\n尾\\r'. 显 入  其  词. 显 入  其  行. 显 入  其  行. 显 入  其  行 == 空.", '甲\n 乙\n尾\r\n真\n'),
     ('split_join', PRELUDE + "显 (竞  其  拆词 '  一\\t二\\n三 四  '). 显 (竞  其  拆行 '\\r\\n一\\n\\n末\\r'). 显 (竞  其  拆行 ''). 显 (竞  其  拆行 '一\\n'). 显 (竞  其  字列 '如😀é'). 显 (竞  其  合句 ['甲','乙',''] '/').", '[一, 二, 三 四]\n[, 一, , 末\r]\n[]\n[一]\n[如, 😀, e, ́]\n甲/乙/\n'),
@@ -71,7 +72,7 @@ CASES = [
     ('stable_records', PRELUDE + "形 项: 键 为 数. 名 为 句. 象 算 比 左 为 项 右 为 项: 得 左 其 键-右 其 键. 法 原 取 [(新 项 键:2 名:'甲'),(新 项 键:1 名:'乙'),(新 项 键:2 名:'丙')]. 排 取 竞 其 排序 原 (算 比). 显 排[0] 其 名. 显 排[1] 其 名. 显 排[2] 其 名. 显 原[0] 其 名.", '乙\n甲\n丙\n甲\n'),
     ('sort_panic', PRELUDE + "原 取 [3,2,1]. 算 比 左 为 数 右 为 数: 卒 '停'. 法 试 竞 其 排序 原 (算 比). 救 原因 显 原因. 终. 显 原.", '停\n[3, 2, 1]\n'),
     ('sort_snapshot', PRELUDE + "原 取 [3,2,1]. 算 比 左 为 数 右 为 数: 原[0] 取 99. 得 左-右. 法 显 (竞 其 排序 原 (算 比)). 显 原.", '[1, 2, 3]\n[99, 2, 1]\n'),
-    ('module_ref', PRELUDE + "分 取 算 竞 其 拆词. 显 (分 'a b'). 尽 取 外言 '如:竞赛'. 显 (合句 ['a','b'] ':').", '[a, b]\na:b\n'),
+    ('module_ref', PRELUDE + "分 取 算 竞 其 拆词. 显 (分 'a b'). 尽 取 外言 '如竞'. 显 (合句 ['a','b'] ':').", '[a, b]\na:b\n'),
 ]
 
 ERRORS = [
@@ -87,7 +88,7 @@ ERRORS = [
     "算 比 左 为 数 右 为 数: 得 '错'. 法 竞 其 排序 [2,1] (算 比).",
     "作 比 左 为 数 右 为 数: 显 左. 为 竞 其 排序 [2,1] (作 比).",
     "竞 其 整除 1 0.",
-    "__竞赛 取 1.",
+    "__如竞 取 1.",
 ]
 
 
@@ -130,15 +131,33 @@ class ContestLibraryTests(unittest.TestCase):
 
     def test_reserved_import_alias_and_unknown_alias(self):
         with tempfile.TemporaryDirectory() as directory:
-            fake = Path(directory).resolve()/('local.ru' if os.name == 'nt' else '如:竞赛')
+            fake = Path(directory).resolve()/('local.ru' if os.name == 'nt' else '如竞')
             fake.write_text("卒 'local collision'.", encoding='utf-8')
             main = str(Path(directory).resolve()/'main.ru')
-            self.assertNotEqual(resolve_import('如:竞赛', main), str(fake))
+            self.assertNotEqual(resolve_import('如竞', main), str(fake))
             self.assertEqual(interpreted(PRELUDE+"显 (竞 其 小 2 3).", path=main), '2\n')
             with self.assertRaisesRegex(RuError, '未知的标准外言'):
                 graph_for("外言 '如:不存在'.", main)
             # The explicit relative path is still a local file, rather than an alias.
             self.assertEqual(resolve_import('./' + fake.name, main), str(fake))
+
+    def test_renamed_module_diagnoses_old_import_in_all_frontends(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'old.ru'
+            source.write_text("外言 '如:竞赛'.", encoding='utf-8')
+            commands = [('check',), ('run',), ('build', '--target', 'c'),
+                        ('build', '--target', 'js')]
+            for command in commands:
+                with self.subTest(command=command):
+                    result = subprocess.run([sys.executable, str(ROOT / 'ru'),
+                                             command[0], str(source), *command[1:]],
+                                            capture_output=True, text=True)
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("已改名为「如竞」", result.stderr)
+
+    def test_rename_does_not_reserve_ordinary_user_names(self):
+        source = "竞赛 取 7. 如竞 取 8. __竞赛 取 9. 显 竞赛. 显 如竞. 显 __竞赛."
+        self.assertEqual(interpreted(source), '7\n8\n9\n')
 
     def test_ascii_whitespace_and_eof(self):
         source = PRELUDE+"入 取 竞 其 读入. 循 值 取 入 其 词. 若 值 == 空 则 破. 然 显 值. 环"
@@ -245,7 +264,7 @@ class ContestLibraryTests(unittest.TestCase):
         runtime = Interpreter(io.StringIO(),io.StringIO())
         runtime.execute(graph[graph.root],source_path=graph.root,modules=graph)
         exports = runtime.global_scope.values['竞'].exports()
-        self.assertNotIn('__竞赛',exports)
+        self.assertNotIn('__如竞',exports)
         self.assertEqual(set(exports),{'读入','扫句','拆词','拆行','字列','合句','排序','取整','小','大','绝对','整除','蓄出'})
 
 
@@ -297,7 +316,7 @@ class ContestLibraryTests(unittest.TestCase):
             prompt = payload['input'][0]['content'][0]['text']
             self.assertIn(specification.decode('utf-8'),prompt)
             self.assertIn(hashlib.sha256(specification).hexdigest(),prompt)
-            self.assertIn("外言 '如:竞赛'",prompt)
+            self.assertIn("外言 '如竞'",prompt)
             self.assertIn('比较',prompt)
             self.assertEqual(payload['tools'],[])
             binary,_ = compile_native(source,directory,'generated-frequency',source_path=str(output))

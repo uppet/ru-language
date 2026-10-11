@@ -14,8 +14,8 @@ from rulang.modules import load_module_graph, resolve_import
 from rulang.stdlib_pruning import prune_bundled_stdlib
 
 
-PRELUDE = "竞 取 外言 '如:竞赛'.\n"
-BUNDLED = resolve_import('如:竞赛', '/tmp/pruning-main.ru')
+PRELUDE = "竞 取 外言 '如竞'.\n"
+BUNDLED = resolve_import('如竞', '/tmp/pruning-main.ru')
 ALL_NAMES = {n.data['name'] for n in parse(Path(BUNDLED).read_text(encoding='utf-8'))}
 
 
@@ -47,25 +47,25 @@ class BundledDeclarationPruningTests(unittest.TestCase):
 
     def test_simple_module_access_and_direct_import(self):
         self.assert_names(PRELUDE + "显 (竞 其 小 3 4).", {'小'})
-        self.assert_names("显 ((外言 '如:竞赛') 其 大 3 4).", {'大'})
+        self.assert_names("显 ((外言 '如竞') 其 大 3 4).", {'大'})
         self.assert_equivalent(PRELUDE + "显 (竞 其 小 3 4).", '3\n')
 
     def test_scoped_import_alias_and_escaped_function_keep_dependencies(self):
-        source = "列 := []. 段: 竞 := 外言 '如:竞赛'. 算 看: 得 竞 其 小 2 3. 法 列 其 增 算 看. 落. 显 列[0]()."
+        source = "列 := []. 段: 竞 := 外言 '如竞'. 算 看: 得 竞 其 小 2 3. 法 列 其 增 算 看. 落. 显 列[0]()."
         self.assert_names(source, {'小'})
         self.assert_equivalent(source, '2\n')
 
     def test_scoped_module_escape_still_falls_back(self):
-        source = "列 := []. { 竞 := 外言 '如:竞赛'. 列 其 增 竞. }"
+        source = "列 := []. { 竞 := 外言 '如竞'. 列 其 增 竞. }"
         self.assert_names(source, ALL_NAMES)
 
     def test_import_all_and_transitive_function_dependency(self):
-        source = "尽 取 外言 '如:竞赛'. 显 整除 (-7) 3."
+        source = "尽 取 外言 '如竞'. 显 整除 (-7) 3."
         self.assert_names(source, {'整除', '取整'})
         self.assert_equivalent(source, '-2\n')
 
     def test_unused_import_and_unused_alias(self):
-        self.assert_names("外言 '如:竞赛'. 显 42.", set())
+        self.assert_names("外言 '如竞'. 显 42.", set())
         self.assert_names(PRELUDE + '显 42.', set())
         self.assert_equivalent(PRELUDE + '显 42.', '42\n')
 
@@ -73,7 +73,7 @@ class BundledDeclarationPruningTests(unittest.TestCase):
         member = PRELUDE + "分 取 算 竞 其 拆词. 另名 取 分. 显 (另名 'a b')."
         self.assert_names(member, {'拆词'})
         self.assert_equivalent(member, '[a, b]\n')
-        imported = "尽 取 外言 '如:竞赛'. 分 取 算 拆词. 显 (分 'a b')."
+        imported = "尽 取 外言 '如竞'. 分 取 算 拆词. 显 (分 'a b')."
         self.assert_names(imported, {'拆词'})
         self.assert_equivalent(imported, '[a, b]\n')
 
@@ -85,7 +85,7 @@ class BundledDeclarationPruningTests(unittest.TestCase):
         self.assert_equivalent(source, '3\n')
 
     def test_aliases_bound_in_functions_and_branches(self):
-        source = "算 求: 若 1 则 竞 取 外言 '如:竞赛'. 然 别名 取 竞. 得 别名 其 小 2 3. 法 显 求."
+        source = "算 求: 若 1 则 竞 取 外言 '如竞'. 然 别名 取 竞. 得 别名 其 小 2 3. 法 显 求."
         self.assert_names(source, {'小'})
         self.assert_equivalent(source, '2\n')
 
@@ -100,7 +100,7 @@ class BundledDeclarationPruningTests(unittest.TestCase):
             PRELUDE + '容 取 [竞].',
             PRELUDE + '容 取 竞 对 1.',
             PRELUDE + '算 制: 得 竞. 法',
-            "算 制: 得 外言 '如:竞赛'. 法",
+            "算 制: 得 外言 '如竞'. 法",
             PRELUDE + '算 用 值 为 件: 得 值. 法 用 竞.',
             PRELUDE + '形 盒: 值 为 件. 象 容 取 新 盒 值:竞.',
             PRELUDE + '容 取 [0]. 容[0] 取 竞.',
@@ -131,9 +131,9 @@ class BundledDeclarationPruningTests(unittest.TestCase):
 
     def test_runtime_import_all_and_protected_binding_errors_are_preserved(self):
         samples = (
-            "小 取 1. 尽 取 外言 '如:竞赛'.",
-            "尽 取 外言 '如:竞赛'. 算 用: 小 取 1. 得 0. 法 显 用.",
-            "尽 取 外言 '如:竞赛'. 显 小 1.",
+            "小 取 1. 尽 取 外言 '如竞'.",
+            "尽 取 外言 '如竞'. 算 用: 小 取 1. 得 0. 法 显 用.",
+            "尽 取 外言 '如竞'. 显 小 1.",
         )
         for source in samples:
             with self.subTest(source=source):
@@ -186,8 +186,8 @@ class BundledDeclarationPruningTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             lib = Path(directory).resolve() / 'relay.ru'
             for declaration, expression in (
-                    ("尽 取 外言 '如:竞赛'.", '模 其 小 2 3'),
-                    ("库 取 外言 '如:竞赛'.", '模 其 库 其 小 2 3')):
+                    ("尽 取 外言 '如竞'.", '模 其 小 2 3'),
+                    ("库 取 外言 '如竞'.", '模 其 库 其 小 2 3')):
                 with self.subTest(declaration=declaration):
                     lib.write_text(declaration, encoding='utf-8')
                     graph = self.graph("模 取 外言 'relay.ru'. 显 (" + expression + ').', directory)
@@ -198,7 +198,7 @@ class BundledDeclarationPruningTests(unittest.TestCase):
     def test_reexported_module_escape_falls_back(self):
         with tempfile.TemporaryDirectory() as directory:
             lib = Path(directory).resolve() / 'relay.ru'
-            lib.write_text("库 取 外言 '如:竞赛'.", encoding='utf-8')
+            lib.write_text("库 取 外言 '如竞'.", encoding='utf-8')
             for expression in ('模', '模 其 库'):
                 graph = self.graph("模 取 外言 'relay.ru'. 容 取 [" + expression + '].', directory)
                 result = prune_bundled_stdlib(graph[graph.root], graph.root, graph)
@@ -206,9 +206,9 @@ class BundledDeclarationPruningTests(unittest.TestCase):
 
     def test_same_basename_user_library_is_never_pruned(self):
         with tempfile.TemporaryDirectory() as directory:
-            lib = Path(directory).resolve() / '竞赛.ru'
+            lib = Path(directory).resolve() / '如竞.ru'
             lib.write_text(Path(BUNDLED).read_text(encoding='utf-8'), encoding='utf-8')
-            graph = self.graph("竞 取 外言 './竞赛.ru'. 显 (竞 其 小 2 3).", directory)
+            graph = self.graph("竞 取 外言 './如竞.ru'. 显 (竞 其 小 2 3).", directory)
             result = prune_bundled_stdlib(graph[graph.root], graph.root, graph)
             self.assertEqual(result, graph)
             self.assertEqual(len(result[str(lib)]), len(ALL_NAMES))

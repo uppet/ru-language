@@ -242,7 +242,7 @@ class JSCompiler(Compiler):
                 words.update(value.split())
         for feature, needed, handler in (
             ('IO', bool(words & {'件', '录', '件作成果', '读取', '显出', '错误'}), 'ioMember'),
-            ('CONTEST', '__竞赛' in words, 'contestMember'),
+            ('CONTEST', '__如竞' in words, 'contestMember'),
             ('PRACTICAL', '__实用' in words, 'practicalMember'),
         ):
             if not needed:

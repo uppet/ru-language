@@ -8,7 +8,7 @@ const locations=source.slice(source.indexOf('function diagnosticLocation('),sour
 const polling=source.slice(source.indexOf('let pollTimer;'),source.indexOf('function saveBook('));
 function harness(event){
   const cell={id:'cell',execution_count:1,outputs:[],status:'error'};
-  const context={Number,cell,session:'session',epoch:1,generation:1,cursor:0,polling:false,transition:false,
+  const context={Number,cell,scenePending:new Map(),session:'session',epoch:1,generation:1,cursor:0,polling:false,transition:false,
     book:{cells:[cell]},activeRun:null,connected:true,kernelDead:false,lastExecutionCount:1,
     api:async()=>({events:[{seq:1,generation:1,cell_id:'cell',execution_count:1,type:'error',...event}],cursor:1,state:'idle',execution_count:1}),
     appendOutput:(target,type,text)=>target.outputs.push({type,text}),renderOutput(){},markDirty(){},runtimeStatus(){},refreshControls(){},notice(){},
@@ -42,7 +42,7 @@ test('origin controls are escaped and markup stays ordinary output text',async()
   await context.pollEvents();
   assert.equal(cell.outputs[0].text,'来源：<img src=x onerror=bad()>\\u000a\\u202e模块.ru\n第 1 行，第 1 列\n错误\n');
   // The output path remains the existing text-only renderer, never innerHTML.
-  assert.ok(source.includes("for(const item of cell.outputs)output.append(el('pre',item.type,item.text));"));
+  assert.ok(source.includes("else output.append(el('pre',item.type,item.text));"));
   assert.ok(source.includes('if(text!=null)node.textContent=text'));
   assert.ok(context.diagnosticLocation({source_name:'x'.repeat(5000)},true).length<=4099);
 });

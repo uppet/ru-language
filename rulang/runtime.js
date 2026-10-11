@@ -7,7 +7,7 @@ const R = (() => {
   const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const dict = () => Object.create(null);
   const NO_RETURN = Symbol('no return'), MISSING = Symbol('missing');
-  const reserved = new Set(['读','件','录','件作成果','读取','显出','错误','__竞赛','__实用']);
+  const reserved = new Set(['读','件','录','件作成果','读取','显出','错误','__如竞','__实用']);
   class RuError extends Error {
     constructor(m, message, loc, category = '运行错误') {
       super(message); this.category = category;
@@ -105,9 +105,9 @@ const R = (() => {
     const value = new Instance(builtinTypes[kind], dict()); value.fd = fd; builtins.values[name] = value;
   }
   const contestTypes = dict();
-  for (const [kind, name] of [['helpers','竞赛工具'],['scanner','竞赛读流'],['writer','竞赛出流']])
+  for (const [kind, name] of [['helpers','如竞工具'],['scanner','如竞读流'],['writer','如竞出流']])
     contestTypes[kind] = builtin(name, [], kind, 'contestKind');
-  builtins.values.__竞赛 = new Instance(contestTypes.helpers, dict());
+  builtins.values.__如竞 = new Instance(contestTypes.helpers, dict());
 
   // Binary64, Python .15g rounding and exponent spelling.
   const bits = new DataView(new ArrayBuffer(8));

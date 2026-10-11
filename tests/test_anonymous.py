@@ -78,7 +78,7 @@ CASES = [
     ('argument_evaluation_order', '算 报 值 为 数: 显 值. 得 值. 法 回调 取 算 左 为 数 右 为 数: 得 左*10+右. 法. 显 (回调 右:(报 2) 左:(报 1)).', '2\n1\n12\n'),
     ('callee_before_arguments', '列 取 [算 值 为 数: 得 100+值. 法]. 算 改: 列[0] 取 算 值 为 数: 得 200+值. 法. 得 1. 法 显 (列[0] 改). 显 (列[0] 2).', '101\n202\n'),
     ('named_references_preserved', "算 加 值 为 数: 得 值+1. 法 作 报: 显 '好'. 为 甲 取 算 加. 乙 取 作 报. 显 (甲 4). 乙().", '5\n好\n'),
-    ('contest_sort_callback', "竞 取 外言 '如:竞赛'. 显 (竞 其 排序 [3,1,2,1] (算 左 为 数 右 为 数: 得 右-左. 法)).", '[3, 2, 1, 1]\n'),
+    ('contest_sort_callback', "竞 取 外言 '如竞'. 显 (竞 其 排序 [3,1,2,1] (算 左 为 数 右 为 数: 得 右-左. 法)).", '[3, 2, 1, 1]\n'),
 ]
 
 # Reject these even if the literal is never evaluated or invoked. In particular,
@@ -97,7 +97,7 @@ STRUCTURAL_ERRORS = [
     ('break_crosses_nested_boundary', '回 取 算: 循 1 次 内 取 作: 破. 为. 环 得 0. 法.'),
     ('self_outside_method', '回 取 算: 得 其 值. 法.'),
     ('nested_type', '回 取 算: 形 内: 象 得 0. 法.'),
-    ('nested_import_all', "回 取 算: 尽 取 外言 '如:竞赛'. 得 0. 法."),
+    ('nested_import_all', "回 取 算: 尽 取 外言 '如竞'. 得 0. 法."),
     ('conditional_named_declaration', '回 取 算: 若 1 则 算 内: 得 1. 法 然 得 0. 法.'),
     ('protected_binding', '算 已有: 得 1. 法 回 取 算: 已有 取 2. 得 0. 法.'),
 ]

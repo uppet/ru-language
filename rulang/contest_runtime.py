@@ -1,4 +1,4 @@
-"""Native primitives behind the ordinary Ru functions in ``如:竞赛``.
+"""Native primitives behind the ordinary Ru functions in ``如竞``.
 
 Scanner cursors only move forward. The opaque values are ordinary Instances,
 but their state and types are not exposed as fields or module exports. Writers
@@ -34,15 +34,15 @@ def install_contest(owner):
     global _BUILTIN_TYPES
     if _BUILTIN_TYPES is None:
         _BUILTIN_TYPES = {}
-        for kind, name in (("helpers", "竞赛工具"), ("scanner", "竞赛读流"),
-                           ("writer", "竞赛出流")):
+        for kind, name in (("helpers", "如竞工具"), ("scanner", "如竞读流"),
+                           ("writer", "如竞出流")):
             node = Node("type", Token("IDENT", name, 0, 0),
                         {"name": name, "parent": None, "fields": [], "methods": []})
             typ = RuType(_BUILTIN_OWNER, node, fields={}, methods={}, state=2)
             typ.contest_kind = kind
             _BUILTIN_TYPES[kind] = typ
     parent = Scope(owner.global_scope.parent)
-    parent.values["__竞赛"] = Instance(_BUILTIN_TYPES["helpers"], {})
+    parent.values["__如竞"] = Instance(_BUILTIN_TYPES["helpers"], {})
     owner.global_scope.parent = parent
 
 

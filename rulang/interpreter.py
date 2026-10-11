@@ -12,6 +12,7 @@ from .frontend import BUILTIN_NAMES, RuError, bind_arguments, validate
 from .io_runtime import install_io, io_member, io_new_defaults, read_stream_line, _write_stream
 from .contest_runtime import install_contest, contest_member
 from .practical_runtime import install_practical, practical_member
+from .graphics_runtime import install_graphics, graphics_member
 
 DECIMAL = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?\Z")
 
@@ -290,6 +291,7 @@ class Interpreter:
         install_io(self)
         install_contest(self)
         install_practical(self)
+        install_graphics(self)
         if sys.getrecursionlimit() < 10000:
             sys.setrecursionlimit(10000)
 
@@ -678,6 +680,7 @@ class Interpreter:
             self.modules.update(load_module_graph(path))
         child = Interpreter(self.stdin, self.stdout, self.stderr)
         child.loading, child.call_state = self.loading, self.call_state
+        child.graphics_host = self.graphics_host
         self.loading.add(path)
         try:
             child.execute(self.modules[path], source_path=path, modules=self.modules, module_cache=self.module_cache)
@@ -956,6 +959,9 @@ class Interpreter:
         self.last_member_procedure = False
         if isinstance(receiver, RuMap):
             return self.map_member(n, receiver, name, args)
+        handled, result = graphics_member(self, n, receiver, name, args)
+        if handled:
+            return result
         handled, result = practical_member(self, n, receiver, name, args)
         if handled:
             return result
