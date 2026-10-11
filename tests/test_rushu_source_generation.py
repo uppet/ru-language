@@ -181,7 +181,7 @@ class SourceGenerationTests(unittest.TestCase):
         self.assertIn("请显示数字四十二", selected)
         self.assertIn("显 1.", selected)
         self.assertNotIn("如是我言", selected)
-        self.assertEqual(provider.call_args.kwargs, {"timeout": DEFAULT_TIMEOUT})
+        self.assertEqual(provider.call_args.kwargs, {"timeout": DEFAULT_TIMEOUT, "runtime_target": "rushu"})
 
     def test_configured_timeout_reaches_provider_and_worker_wait(self):
         for timeout in (1800, 3600, .125):
@@ -194,7 +194,7 @@ class SourceGenerationTests(unittest.TestCase):
                 threads.Event.return_value = finished
                 status, value = self.request("/api/generate", {"prompt": PROMPT})
                 self.assertEqual(status, 200, value)
-                self.assertEqual(provider.call_args.kwargs, {"timeout": timeout})
+                self.assertEqual(provider.call_args.kwargs, {"timeout": timeout, "runtime_target": "rushu"})
                 wait.assert_called_once_with(timeout)
 
     def test_current_maps_and_facts_are_generated_but_not_executed(self):
@@ -275,7 +275,7 @@ class SourceGenerationTests(unittest.TestCase):
                     generation.generate_source({"prompt": PROMPT})
                 self.assertEqual(caught.exception.status, 429)
                 self.assertEqual(provider.call_count, 1)
-                self.assertEqual(provider.call_args.kwargs, {"timeout": .1})
+                self.assertEqual(provider.call_args.kwargs, {"timeout": .1, "runtime_target": "rushu"})
             finally:
                 release.set()
                 self.assertTrue(exited.wait(5))
@@ -311,6 +311,98 @@ class SourceGenerationTests(unittest.TestCase):
                 self.assertTrue(exited.wait(5))
                 self.assertTrue(generation._GENERATION_SLOT.acquire(timeout=5))
                 generation._GENERATION_SLOT.release()
+
+    def test_ruguan_real_generation_pipeline_and_explicit_host_execution(self):
+        from rulang.generation import request_response
+        from rulang.frontend import parse
+        from rulang.interpreter import Interpreter
+        from rulang.graphics_runtime import GraphicsHost
+        source = """观 取 外言 '如观'.
+数据 取 [20].
+图 取 观 其 画布 320 200.
+图 其 每帧 (作 帧:
+    图 其 背景 '#ffffff'.
+    图 其 矩形 帧 0 数据[0] 10.
+为).
+图 其 鼠标按下 (作 横 纵 键: 数据[0] 取 横. 为).
+图 其 按键 (作 键: 若 键 == 'r' 则 数据[0] 取 20. 然 为).
+"""
+        captured, replies = [], [source]
+        class Fake(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+            def do_POST(self):
+                captured.append(json.loads(self.rfile.read(int(self.headers['Content-Length']))))
+                raw = json.dumps({'status': 'completed', 'output_text': replies[0]}).encode()
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+        fake = ThreadingHTTPServer(('127.0.0.1', 0), Fake)
+        thread = threading.Thread(target=fake.serve_forever, daemon=True)
+        thread.start()
+        config = GenerationConfig(LOCAL_TEST_API_KEY, f'http://127.0.0.1:{fake.server_port}/v1')
+        try:
+            # Real HTTP request, cleaning, syntax/structure checks and API response.
+            # Generation must not create sessions, load dependencies, or execute any Ru.
+            with patch.object(generation, 'load_config', return_value=config), \
+                 patch.object(Interpreter, 'execute', side_effect=AssertionError('executed candidate')), \
+                 patch.object(GraphicsHost, '__init__', side_effect=AssertionError('opened canvas')), \
+                 patch('rulang.modules.load_module_graph', side_effect=AssertionError('loaded dependency')), \
+                 patch.object(self.server.sessions, 'create', side_effect=AssertionError('created session')):
+                for candidate, valid in ((source, True), (source.replace('为).', '法).'), False),
+                                         (source + '作 重复: 为 作 重复: 为', False),
+                                         ("模 取 外言 '/missing-module.ru'. " + source, True),
+                                         (source, True)):
+                    replies[0] = candidate
+                    status, result = self.request('/api/generate', {'prompt': '画可点击和按键的动画柱图。\n如是我言'})
+                    self.assertEqual(status, 200, result)
+                    self.assertIs(result['valid'], valid)
+                    self.assertEqual(result['source'], candidate.strip() + '\n')
+                    self.assertIn('尚未执行', result['validation']['message'])
+                    if valid:
+                        self.assertIn('未读取或检查外言依赖', result['validation']['message'])
+            self.assertEqual(len(captured), 5)
+            system = captured[0]['input'][0]['content'][0]['text']
+            self.assertIn('本次运行环境：如书 Python 代码格', system)
+            for knowledge in ('观 取 外言', '图 其 鼠标松开 回调', '图 其 松键 回调',
+                              '图 其 关闭', '图 其 文字 文 横 纵', '每帧最多 2048',
+                              '50000', '为).', '同一种事件再次注册', '不重复 `尽`'):
+                self.assertIn(knowledge, system)
+            for payload in captured:
+                self.assertEqual(payload['tools'], [])
+                self.assertEqual(payload['tool_choice'], 'none')
+                self.assertIs(payload['store'], False)
+            # Ordinary CLI sends the same complete spec with a different capability target.
+            request_response(config, '显示柱图', timeout=5)
+            cli_system = captured[-1]['input'][0]['content'][0]['text']
+            self.assertIn('本次运行环境：普通命令行', cli_system)
+            self.assertIn('不得生成依赖如观的程序', cli_system)
+            self.assertNotIn('本次运行环境：如书 Python 代码格', cli_system)
+
+            # Explicit adoption/run only after generation finishes; actual host and closures.
+            output, events = io.StringIO(), []
+            interpreter = Interpreter(stdout=output)
+            host = GraphicsHost(interpreter, events.append)
+            try:
+                for _ in range(2):
+                    host.begin_execution()
+                    interpreter.execute(parse(result['source']))
+                    host.flush()
+                    host.handle({'type': 'frame'})
+                    self.assertEqual(events[-1]['commands'][1]['width'], 20)
+                    host.handle({'type': 'mouse_down', 'x': 73, 'y': 10, 'button': 0})
+                    host.handle({'type': 'frame'})
+                    self.assertEqual(events[-1]['commands'][1]['width'], 73)
+                    host.handle({'type': 'key_down', 'key': 'r'})
+                    host.handle({'type': 'frame'})
+                    self.assertEqual(events[-1]['commands'][1]['width'], 20)
+            finally:
+                host.close()
+        finally:
+            fake.shutdown()
+            fake.server_close()
+            thread.join(5)
 
     def test_real_request_to_local_fake_preserves_spec_hash_and_caps(self):
         captured = []

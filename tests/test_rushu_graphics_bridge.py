@@ -91,7 +91,7 @@ class GraphicsBridgeTests(unittest.TestCase):
         self.assertEqual(self.session.event_text,
                          sum(self.session._event_size(event) for event in self.session.events))
         for index in range(1000):
-            self.session._append({"type": "output", "text": "a" * 2000})
+            self.session._append({"type": "output", "text": "a" * 20000})
         self.assertTrue(self.session.poll()["truncated"])
         self.assertLessEqual(self.session.event_text, MAX_EVENT_TEXT)
 

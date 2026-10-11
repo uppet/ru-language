@@ -1,7 +1,8 @@
+import {outputWindow} from './output-view.mjs';
 import {createSceneView,validateScene} from './scene.mjs';
 import {versionLabel} from './versions.mjs';
 import {analyze,highlight,enterEdit,indentSelection,needsAutoDedent} from './editor.mjs';
-import {welcomeBook,blankBook,newCell,parseBook,serializeBook,appendOutput,historicalBook,MAX_FILE_BYTES,MAX_CELLS,MAX_SOURCE} from './notebook.mjs';
+import {welcomeBook,blankBook,newCell,parseBook,serializeBook,appendOutput as appendCellOutput,retainGraphics,historicalBook,MAX_FILE_BYTES,MAX_CELLS,MAX_SOURCE} from './notebook.mjs';
 
 import {ensureGeneration,checkpoint,replaceWithRevision,restoreRevision,lineDiff,generationIntent,withGenerationMarker,prepareGenerationFromMarker} from './history.mjs';
 
@@ -10,6 +11,7 @@ const el=(tag,cls,text)=>{const node=document.createElement(tag);if(cls)node.cla
 const button=(text,title,handler,cls='')=>{const node=el('button',cls,text);node.type='button';node.title=title;node.setAttribute('aria-label',title);node.addEventListener('click',handler);return node;};
 let book=welcomeBook(),session=null,cursor=0,generation=1,activeRun=null,runAllActive=false,polling=false,epoch=0,dirty=true,transition=false,connected=false,lastExecutionCount=0,kernelDead=false;
 const views=new Map();
+function appendOutput(cell,type,text){appendCellOutput(cell,type,text,book);}
 // Live handlers are deliberately separate from portable notebook snapshots.
 const sceneViews=new Map(),scenePending=new Map();
 function stopScenes(close=false){for(const [id,record] of sceneViews){record.view.deactivate();if(close&&record.session===session&&record.epoch===epoch)api(sessionPath('/graphics'),'POST',{canvas_id:id,cell_id:record.cell.id,execution_count:record.count,expected_generation:record.generation,event:{type:'close'}}).catch(()=>{});}for(const pending of scenePending.values())pending.resolve();scenePending.clear();}
@@ -332,7 +334,12 @@ function renderOutput(cell) {
   else if(cell.stale)heading.append(el('span','history-label','源码已修改 · 输出来自上次运行'));
   else heading.append(el('span','cell-state'+(cell.status==='error'?' failed':''),cell.status==='running'?'运行中…':cell.status==='error'?'运行出错':cell.status==='done'?'已完成':''));
   output.append(heading);
-  for(const item of cell.outputs){if(item.type==='graphics'){try{output.append(sceneOutput(cell,item));}catch(error){output.append(el('pre','error',error.message));}}else output.append(el('pre',item.type,item.text));}
+  const window=outputWindow(cell.outputs,view.outputExpanded,view.outputPage||0);view.outputPage=window.page;
+  if(window.foldable){const controls=el('div','output-controls');controls.append(el('span','',`已保留 ${window.bytes.toLocaleString()} UTF-8 字节 · ${view.outputExpanded?`第 ${window.page+1}/${window.pages} 页`:'预览前 8 行 / 2,000 字符'}`));controls.append(button(view.outputExpanded?'收起输出':'展开输出','展开或收起已保留的原文',()=>{view.outputExpanded=!view.outputExpanded;view.outputPage=0;renderOutput(cell);}));if(view.outputExpanded){for(const [label,delta] of [['上一页',-1],['下一页',1]]){const nav=button(label,label,()=>{view.outputPage+=delta;renderOutput(cell);});nav.disabled=window.page+delta<0||window.page+delta>=window.pages;controls.append(nav);}}output.append(controls);}
+  for(const item of window.items){if(item.type==='graphics'){try{output.append(sceneOutput(cell,item));}catch(error){output.append(el('pre','error',error.message));}}else output.append(el('pre',item.type,item.text));}
+  // Diagnostics remain visible even when the text page containing them is folded.
+  if(window.foldable)for(const item of cell.outputs.filter(item=>item.type==='error'||item.type==='stderr'&&item.text.includes('已截断')).slice(-2))output.append(el('pre',item.type,item.text.slice(-2000)));
+
   if(form)output.append(form);if(focused){focused.focus({preventScroll:true});if(selection)focused.setSelectionRange(...selection);}
 }
 function addCell(type,after) {if(busy())return;if(book.cells.length>=MAX_CELLS){notice('一本如书最多 500 格。',true);return;}const cell=newCell(type==='learning'?'code':type);if(type==='learning')ensureGeneration(cell,'');if(after){book.cells.splice(book.cells.indexOf(after)+1,0,cell);}else book.cells.push(cell);renderBook();markDirty();focusCell(cell);}
@@ -382,21 +389,23 @@ function requestInput(cell,requestId){const view=views.get(cell.id);if(!view||vi
 }
 let pollTimer;
 function pollSoon(delay=150){clearTimeout(pollTimer);pollTimer=setTimeout(pollEvents,delay);}
-async function pollEvents(){if(polling){pollSoon();return;}if(!session||transition){pollSoon(500);return;}polling=true;const id=session,myEpoch=epoch;
+async function pollEvents(){if(polling){pollSoon();return;}if(!session||transition){pollSoon(500);return;}polling=true;const id=session,myEpoch=epoch;let more=false;
   try{
     const result=await api(`/sessions/${encodeURIComponent(id)}/events?after=${cursor}`);if(id!==session||myEpoch!==epoch)return;
-    if(result.truncated)notice('部分较早的运行输出已超过服务保留上限。当前显示可能不完整。',true,true);
     const changed=new Set();
+    if(result.truncated){notice('部分较早的运行输出已超过服务保留上限。当前显示可能不完整。',true,true);const cell=book.cells.find(c=>c.id===result.cell_id);if(cell){appendOutput(cell,'error','[会话历史超限：部分未接收的输出已丢弃；此快照可能不完整。]\n');changed.add(cell);}}
     for(const event of result.events||[]){
       if(event.seq<=cursor)continue;cursor=event.seq;
       if(event.type==='reset'){stopScenes();generation=event.generation;historicalBook(book);clearInputForms();finishActive(false);book.cells.forEach(c=>changed.add(c));continue;}
       if(event.generation!==generation)continue;
       const cell=book.cells.find(c=>c.id===event.cell_id);if(!cell)continue;
+      // A closing canvas can still emit events from the previous execution.
+      if(activeRun?.cellId===cell.id&&event.execution_count<=activeRun.beforeCount)continue;
       // A poll may beat the execute response: use the authoritative event count.
       if(cell.status==='running'&&cell.execution_count==null)cell.execution_count=event.execution_count;
       if(cell.execution_count!==event.execution_count)continue;
       if(event.type==='graphics'){
-        try{const scene=validateScene(event);const prior=cell.outputs.find(item=>item.type==='graphics');if(prior){if(prior.scene.canvas_id!==scene.canvas_id)clearScene(cell);prior.scene=scene;}else cell.outputs.push({type:'graphics',scene});changed.add(cell);}catch(error){appendOutput(cell,'error',error.message+'\n');changed.add(cell);}
+        try{const scene=validateScene(event);const prior=cell.outputs.find(item=>item.type==='graphics');if(prior){if(prior.scene.canvas_id!==scene.canvas_id)clearScene(cell);retainGraphics(cell,scene,book);}else retainGraphics(cell,scene,book);changed.add(cell);}catch(error){appendOutput(cell,'error',error.message+'\n');changed.add(cell);}
       }else if(event.type==='graphics_done'||event.type==='graphics_closed'){const pending=scenePending.get(event.canvas_id);if(pending){scenePending.delete(event.canvas_id);if(event.status==='error')pending.reject(new Error('画布回调运行出错'));else pending.resolve();}if(event.type==='graphics_closed'||event.status==='error')sceneViews.get(event.canvas_id)?.view.deactivate();
       }else if(event.type==='output'){appendOutput(cell,event.stream==='stderr'?'stderr':'stdout',event.text);changed.add(cell);}
       else if(event.type==='error'){const position=diagnosticLocation(event,true);appendOutput(cell,'error',(position?position+'\n':'')+event.message+'\n');changed.add(cell);}
@@ -407,15 +416,15 @@ async function pollEvents(){if(polling){pollSoon();return;}if(!session||transiti
     if(activeRun?.uncertain&&result.state==='idle'&&result.execution_count<=activeRun.beforeCount){const cell=book.cells.find(c=>c.id===activeRun.cellId);if(cell){cell.status='error';appendOutput(cell,'error','已确认本次请求未执行。请重试。\n');changed.add(cell);}finishActive(false);}
     changed.forEach(renderOutput);if(changed.size)markDirty();
     if(result.state==='dead'){stopScenes();if(activeRun){const cell=book.cells.find(c=>c.id===activeRun.cellId);if(cell){cell.status='error';appendOutput(cell,'error','运行进程已退出。请重启会话。\n');renderOutput(cell);}finishActive(false);}notice('运行进程已退出，请重启会话。',true,true);}
-    refreshControls();
+    refreshControls();more=!!result.more;
   }catch(error){if(id===session&&myEpoch===epoch){connected=false;stopScenes();runtimeStatus('dead','连接中断');refreshControls();notice(error.message+' 正在等待本机服务恢复。',true,true);}}
-  finally{polling=false;if(session&&!kernelDead)pollSoon(connected?(activeRun||scenePending.size?50:1200):2500);}
+  finally{polling=false;if(session&&!kernelDead)pollSoon(more?0:connected?(activeRun||scenePending.size?50:1200):2500);}
 }
 function saveBook(){try{let fullHistory=false;for(const cell of book.cells)if(cell.generation){try{checkpoint(cell);}catch{fullHistory=true;}renderHistory(cell);}book.title=$('#book-title').value.trim()||'未命名如书';const text=serializeBook(book),blob=new Blob([text],{type:'application/json;charset=utf-8'}),url=URL.createObjectURL(blob),link=el('a');link.href=url;link.download=book.title.replace(/[\\/:*?"<>|\x00-\x1f]/g,'_').slice(0,100)+'.rushu.json';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);dirty=false;$('#document-status').textContent='已导出保存快照';notice(fullHistory?'已下载保存当前草稿与已有历史。部分历史已满，最新编辑保留为当前草稿；请点击「另起学习格」继续记录。':'已下载如书文件。重新打开时，输出会标为历史；运行状态不会被保存。',false,fullHistory);}catch(error){notice('无法保存：'+error.message+' 请减少内容或清除部分输出后重试。',true,true);}}
 $('#book-title').addEventListener('input',()=>{book.title=$('#book-title').value;markDirty();updateMeta();});
 $('#new-book').addEventListener('click',async()=>{if(!confirmReplace())return;try{await replaceBook(blankBook());notice('已新建独立会话。');focusCell(book.cells[0]);}catch(error){notice(error.message,true,true);}});
 $('#open-book').addEventListener('click',()=>$('#file-picker').click());
-$('#file-picker').addEventListener('change',async event=>{const file=event.target.files?.[0];event.target.value='';if(!file)return;try{if(file.size>MAX_FILE_BYTES)throw new Error('文件太大，请打开 10 MB 以内的如书。');const next=parseBook(await file.text());if(!confirmReplace())return;await replaceBook(next);dirty=false;$('#document-status').textContent='已打开本地文件';notice('已打开。未自动执行任何代码，保存的输出仅为历史快照。',false,true);}catch(error){notice(error.message,true,true);}});
+$('#file-picker').addEventListener('change',async event=>{const file=event.target.files?.[0];event.target.value='';if(!file)return;try{if(file.size>MAX_FILE_BYTES)throw new Error('文件太大，请打开 64 MiB 以内的如书。');const next=parseBook(await file.text());if(!confirmReplace())return;await replaceBook(next);dirty=false;$('#document-status').textContent='已打开本地文件';notice('已打开。未自动执行任何代码，保存的输出仅为历史快照。',false,true);}catch(error){notice(error.message,true,true);}});
 $('#save-book').addEventListener('click',saveBook);$('#run-all').addEventListener('click',runAll);$('#stop').addEventListener('click',()=>resetSession('stop'));$('#restart').addEventListener('click',()=>resetSession('restart'));
 $('#add-code').addEventListener('click',()=>addCell('code'));$('#add-markdown').addEventListener('click',()=>addCell('markdown'));$('#add-learning').addEventListener('click',()=>addCell('learning'));
 $('#help-button').addEventListener('click',()=>$('#help-dialog').showModal());$('#close-help').addEventListener('click',()=>$('#help-dialog').close());

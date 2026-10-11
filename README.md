@@ -1,4 +1,4 @@
-# 如（ru-language）· 0.13.0 元初实现
+# 如（ru-language）· 0.13.1 元初实现
 
 0.13.0 新增 [如观交互图形](docs/ruguan-guide.md)，在如书中运行真实如回调；原竞赛库改名 [如竞](docs/contest-library.md)。
 
@@ -59,7 +59,7 @@
 
 </details>
 
-完整的实现语义以 [如语言规范 0.13.0](rulang/language-spec.md) 为准。它是学习者、工具作者与 LLM 共用的唯一规范文本；README 提供入门和操作摘要。
+完整的实现语义以 [如语言规范 0.13.1](rulang/language-spec.md) 为准。它是学习者、工具作者与 LLM 共用的唯一规范文本；README 提供入门和操作摘要。
 
 待逐项解决或确认忽略的审查事项见 [语言审查追踪](docs/language-review-tracker.md)。清单区分实现缺陷、现有设计取舍与未定提案，不替代语言规范。
 

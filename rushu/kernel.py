@@ -10,10 +10,11 @@ import threading
 
 MAX_SOURCE = 200_000
 MAX_INPUT = 65_536
-MAX_OUTPUT = 262_144
-MAX_OUTPUT_EVENTS = 1024
-MAX_EVENTS = 4096
-MAX_EVENT_TEXT = 1_048_576
+MAX_OUTPUT = 2 * 1024 * 1024  # UTF-8 bytes per execution
+MAX_OUTPUT_EVENTS = 16_384
+MAX_EVENTS = 20_000
+MAX_EVENT_TEXT = 16 * 1024 * 1024
+MAX_POLL_BYTES = 1024 * 1024
 MAX_SESSIONS = 16
 GRAPHICS_TIMEOUT = 1.0
 MAX_GRAPHICS_COMMANDS = 2048
@@ -32,30 +33,81 @@ class _Output:
 
     def __init__(self, connection, stream, budget):
         self.connection, self.stream, self.budget = connection, stream, budget
+        budget.setdefault("lock", threading.RLock())
 
     def write(self, text):
+        with self.budget["lock"]:
+            result = self._write(text)
+            # Flush a final small write even if the program then computes forever
+            # or sleeps without producing another write or protocol boundary.
+            if self.budget.get("pending") and not self.budget.get("timer"):
+                timer = threading.Timer(.05, self._timed_flush)
+                timer.daemon = True
+                self.budget["timer"] = timer
+                timer.start()
+            return result
+
+    def _timed_flush(self):
+        try:
+            self.flush(force=True)
+        except (OSError, EOFError):
+            pass
+
+    def _write(self, text):
         length = len(text)
         if not length:
             return 0
         budget = self.budget
-        remaining = MAX_OUTPUT - budget["chars"]
-        # Chunk large individual writes so no event can dominate retained history.
-        offset = 0
-        while offset < min(length, remaining) and budget["events"] < MAX_OUTPUT_EVENTS:
-            part = text[offset:min(length, remaining, offset + 8192)]
-            self.connection.send({"type": "output", "stream": self.stream, "text": part})
-            budget["chars"] += len(part)
-            budget["events"] += 1
-            offset += len(part)
-        if offset < length and not budget["truncated"]:
+        if budget["truncated"]:
+            return length
+        if budget.get("stream") != self.stream:
+            self.flush(force=True)
+        if budget["events"] >= MAX_OUTPUT_EVENTS:
             budget["truncated"] = True
             self.connection.send({"type": "output", "stream": "stderr",
-                                  "text": "\n[输出已达上限，后续输出已截断；程序仍在运行。]\n",
-                                  "truncated": True})
+                "text": f"\n[输出已截断：达到事件数量上限，保留 {budget['chars']:,} UTF-8 字节；后续输出丢弃，程序仍可运行。]\n",
+                "truncated": True})
+            return length
+        budget["stream"] = self.stream
+        # Encode bounded chunks, never duplicate an arbitrarily large write.
+        for start in range(0, length, 2048):
+            data = text[start:start + 2048].encode("utf-8", errors="replace")
+            remaining = MAX_OUTPUT - budget["chars"]
+            kept = data[:remaining].decode("utf-8", errors="ignore")
+            budget.setdefault("parts", []).append(kept)
+            size = len(kept.encode("utf-8"))
+            budget["chars"] += size
+            budget["pending"] = budget.get("pending", 0) + size
+            if (budget["pending"] >= 8192 or
+                    time.monotonic() - budget.get("last_flush", 0) >= .05):
+                self.flush(force=True)
+            if size < len(data) or budget["events"] >= MAX_OUTPUT_EVENTS:
+                self.flush(force=True)
+                budget["truncated"] = True
+                self.connection.send({"type": "output", "stream": "stderr",
+                    "text": f"\n[输出已截断：保留前 {budget['chars']:,} UTF-8 字节；后续输出丢弃，程序仍可运行。]\n",
+                    "truncated": True})
+                break
         return length
 
-    def flush(self):
-        pass
+    def flush(self, force=False):
+        with self.budget["lock"]:
+            self._flush(force)
+
+    def _flush(self, force=False):
+        budget = self.budget
+        # Language print helpers call flush after every line. Coalesce those
+        # routine calls; protocol boundaries below always force a real flush.
+        if not force and budget.get("pending", 0) < 8192 and time.monotonic() - budget.get("last_flush", 0) < .05:
+            return
+        timer = budget.pop("timer", None)
+        if timer:
+            timer.cancel()
+        if budget.get("pending"):
+            self.connection.send({"type": "output", "stream": budget["stream"],
+                                  "text": "".join(budget["parts"])})
+            budget["events"] += 1
+        budget.update(parts=[], pending=0, last_flush=time.monotonic())
 
     def isatty(self):
         return False
@@ -64,8 +116,9 @@ class _Output:
 class _Input:
     encoding = "utf-8"
 
-    def __init__(self, connection):
+    def __init__(self, connection, flush=lambda: None):
         self.connection = connection
+        self.flush = flush
         self.eof = False
         self.pending = ""
         self.graphics_callback = False
@@ -78,6 +131,7 @@ class _Input:
         if self.graphics_callback:
             raise OSError("如观回调不能请求交互输入；请先在普通代码格读取")
         if not self.pending and not self.eof:
+            self.flush()
             request_id = secrets.token_hex(12)
             self.connection.send({"type": "input_request", "request_id": request_id})
             reply = self.connection.recv()
@@ -132,10 +186,13 @@ def _worker(connection):
     from rulang.modules import reject_generation_document
 
     budget = {"chars": 0, "events": 0, "truncated": False}
-    stdin = _Input(connection)
     stdout, stderr = (_Output(connection, name, budget) for name in ("stdout", "stderr"))
+    stdin = _Input(connection, lambda: stdout.flush(force=True))
+    def send(event):
+        stdout.flush(force=True)
+        connection.send(event)
     interpreter = Interpreter(stdin, stdout, stderr=stderr)
-    host = GraphicsHost(interpreter, connection.send)
+    host = GraphicsHost(interpreter, send)
     interpreter.graphics_host = host
     try:
         while True:
@@ -145,7 +202,7 @@ def _worker(connection):
             kind = command.get("kind")
             if kind not in ("execute", "graphics"):
                 continue
-            budget.update(chars=0, events=0, truncated=False)
+            budget.update(chars=0, events=0, truncated=False, parts=[], pending=0, last_flush=0)
             stdin.reset()
             status = "ok"
             try:
@@ -163,25 +220,25 @@ def _worker(connection):
                     host.flush()
             except RuError as error:
                 status = "error"
-                connection.send({"type": "error", "category": error.category,
+                send({"type": "error", "category": error.category,
                                  "message": error.message[:16384], "line": error.line,
                                  "col": error.col,
                                  "source_name": str(getattr(error, "source_name", ""))[:4096]})
             except RecursionError:
                 status = "error"
-                connection.send({"type": "error", "category": "运行错误",
+                send({"type": "error", "category": "运行错误",
                                  "message": "调用或表达式结构过深，请拆分为较小的步骤。", "line": 1, "col": 1})
             except Exception as error:
                 status = "error"
-                connection.send({"type": "error", "category": "运行错误",
+                send({"type": "error", "category": "运行错误",
                                  "message": (type(error).__name__ + ": " + str(error))[:16384],
                                  "line": 1, "col": 1})
             if status == "error":
                 host.close()
             if kind == "graphics":
-                connection.send({"type": "graphics_done", "canvas_id": command["canvas_id"], "status": status})
+                send({"type": "graphics_done", "canvas_id": command["canvas_id"], "status": status})
             else:
-                connection.send({"type": "done", "status": status})
+                send({"type": "done", "status": status})
     except (EOFError, BrokenPipeError, OSError):
         pass
     finally:
@@ -374,7 +431,19 @@ class Session:
             if after > self.cursor:
                 raise KernelError("after 超出当前事件序号")
             result = self._snapshot()
-            result["events"] = [event.copy() for event in self.events if event["seq"] > after]
+            batch, size = [], 0
+            for event in self.events:
+                if event["seq"] <= after:
+                    continue
+                event_size = self._event_size(event)
+                if batch and size + event_size > MAX_POLL_BYTES:
+                    break
+                batch.append(event.copy())
+                size += event_size
+            result["events"] = batch
+            result["more"] = bool(batch and batch[-1]["seq"] < self.cursor)
+            # A page cursor must never skip undispatched events.
+            result["cursor"] = batch[-1]["seq"] if batch else after
             result["truncated"] = after < self.evicted_through
             return result
 

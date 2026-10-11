@@ -11,15 +11,18 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from rushu.kernel import (KernelError, MAX_INPUT, MAX_OUTPUT, MAX_OUTPUT_EVENTS,
-                          MAX_SOURCE, Session, SessionManager)
+                          MAX_SOURCE, MAX_EVENT_TEXT, Session, SessionManager)
 
 
 def wait_for(session, state="idle", timeout=10, after=0):
     deadline = time.monotonic() + timeout
+    events = []
     while time.monotonic() < deadline:
         result = session.poll(after)
-        if result["state"] == state:
-            return result
+        events.extend(result["events"])
+        after = result["cursor"]
+        if result["state"] == state and not result.get("more"):
+            return dict(result, events=events)
         if result["state"] == "dead" and state != "dead":
             raise AssertionError("Kernel died: " + repr(result))
         time.sleep(0.01)
@@ -191,25 +194,77 @@ class KernelTests(unittest.TestCase):
 
     def test_large_output_is_bounded_and_does_not_deadlock(self):
         # Repeated output exercises both live delivery and silent truncation.
-        result = self.run_cell("循 3000 次 显 '甲😀'. 环")
+        result = self.run_cell("循 100000 次 显 '甲😀'. 环")
         events = [e for e in result["events"] if e["type"] == "output"]
         self.assertLessEqual(len(events), MAX_OUTPUT_EVENTS + 1)
-        self.assertTrue(any(e.get("truncated") for e in events))
+        self.assertFalse(any(e.get("truncated") for e in events))
+        self.assertEqual(output(result), "甲😀\n" * 100000)
         self.assertEqual(result["events"][-1]["status"], "ok")
         self.assertEqual(output(self.run_cell("显 1.")), "1\n")
         result = self.run_cell("字 取 '好'. 循 20 次 字 取 字+字. 环 显 字.")
         text = output(result)
-        self.assertEqual(len(text), MAX_OUTPUT)
+        self.assertLessEqual(len(text.encode("utf-8")), MAX_OUTPUT)
+        self.assertGreater(len(text.encode("utf-8")), MAX_OUTPUT-4)
         self.assertIn("截断", output(result, "stderr"))
 
     def test_event_history_has_a_character_budget(self):
-        for _ in range(5):
-            self.run_cell("字 取 '好'. 循 18 次 字 取 字+字. 环 显 字.")
+        for _ in range(10):
+            self.run_cell("字 取 '好'. 循 20 次 字 取 字+字. 环 显 字.")
         result = self.session.poll(0)
         self.assertTrue(result["truncated"])
         self.assertLessEqual(sum(len(e.get("text", "")) + len(e.get("message", ""))
-                                 for e in result["events"]), 1_048_576)
+                                 for e in result["events"]), MAX_EVENT_TEXT)
         self.assertEqual(result["cursor"], result["events"][-1]["seq"])
+
+    def test_small_output_flushes_before_a_silent_infinite_loop(self):
+        self.session.execute("显 '仍在运行😀'. 循 环", "silent-loop")
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            result = self.session.poll()
+            if output(result) == "仍在运行😀\n":
+                break
+            time.sleep(.01)
+        else:
+            self.fail("Buffered output never flushed while computation continued")
+        self.assertEqual(result["state"], "running")
+        self.session.reset("stop")
+
+    def test_infinite_print_is_bounded_and_stoppable_after_truncation(self):
+        self.session.execute("字 取 '😀'. 循 14 次 字 取 字+字. 环 循 显 字. 环", "infinite")
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            with self.session.lock:
+                if any(e.get("truncated") for e in self.session.events):
+                    break
+            time.sleep(.01)
+        else:
+            self.fail("Infinite output did not reach its bounded cap")
+        with self.session.lock:
+            self.assertLessEqual(self.session.event_text, MAX_EVENT_TEXT)
+            retained = sum(len(e.get("text", "").encode("utf-8")) for e in self.session.events
+                           if e.get("stream") == "stdout")
+            self.assertLessEqual(retained, MAX_OUTPUT)
+            self.assertGreater(retained, MAX_OUTPUT-4)
+        self.assertEqual(self.session.snapshot()["state"], "running")
+        self.session.reset("stop")
+        self.assertEqual(output(self.run_cell("显 '重启正常'.")), "重启正常\n")
+
+    def test_poll_pages_are_bounded_without_lost_or_duplicate_unicode(self):
+        self.session.execute("字 取 '😀'. 循 18 次 字 取 字+字. 环 显 字.", "unicode")
+        deadline = time.monotonic() + 10
+        while self.session.snapshot()["state"] != "idle" and time.monotonic() < deadline:
+            time.sleep(.01)
+        cursor, events, pages = 0, [], 0
+        while True:
+            result = self.session.poll(cursor)
+            self.assertLessEqual(sum(self.session._event_size(e) for e in result["events"]), 1024*1024)
+            events.extend(result["events"]); pages += 1; cursor = result["cursor"]
+            if not result["more"]:
+                break
+        self.assertGreater(pages, 1)
+        self.assertEqual(len({e["seq"] for e in events}), len(events))
+        self.assertEqual(output({"events": events}), "😀" * (2**18) + "\n")
+        self.assertEqual(events[-1]["type"], "done")
 
     def test_input_and_source_validation(self):
         for code in (None, 4, "x" * (MAX_SOURCE + 1)):
@@ -284,7 +339,7 @@ class KernelTests(unittest.TestCase):
                 if iteration % 5 == 0:
                     result = self.run_cell("循 3000 次 显 '好'. 环")
                     self.assertEqual(result["events"][-1]["status"], "ok")
-                    self.assertTrue(any(event.get("truncated") for event in result["events"]))
+                    self.assertFalse(any(event.get("truncated") for event in result["events"]))
                 else:
                     result = self.run_cell("显 " + str(iteration) + ".")
                     self.assertEqual(output(result), str(iteration) + "\n")

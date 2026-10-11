@@ -89,3 +89,19 @@ test('safe server errors and failed validation preserve their actual outcomes',a
   assert.match(invalid.diagnostic.textContent,/检查未通过，未执行/);
   assert.equal(invalid.intervals.size,0);
 });
+
+test('repeated graphics generation keeps review history and never runs the cell',async()=>{
+  const h=harness();
+  const source="观 取 外言 '如观'. 图 取 观 其 画布 80 60. 图 其 每帧 (作 帧: 图 其 矩形 帧 0 10 10. 为).\n";
+  for (const [candidate,valid] of [[source,true],[source.replace('为).','法).'),false],[source,true]]) {
+    const {promise}=await h.start();h.respond({source:candidate,valid,validation:{message:'尚未执行。'}});await promise;
+    assert.equal(h.cell.source,candidate);
+  }
+  assert.equal(h.calls.length,3);
+  assert.ok(h.calls.every(call=>call.path==='/api/generate'));
+  assert.equal(h.cell.generation.revisions.length,3);
+  assert.equal(h.cell.generation.revisions[0].source,source);
+  assert.equal(h.cell.generation.revisions[1].source,source.replace('为).','法).'));
+  assert.equal(h.cell.outputs.length,0);
+  assert.equal(h.context.generationRequest,null);
+});

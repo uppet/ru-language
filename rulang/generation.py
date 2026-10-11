@@ -86,7 +86,7 @@ class GenerationConfig:
     model: str = field(default=DEFAULT_MODEL, repr=False)
 
 
-def _generation_system_prompt():
+def _generation_system_prompt(target="cli"):
     """Read the one authoritative package resource anew for every request.
 
     The fixed resource name cannot be selected through user input or config.
@@ -96,6 +96,12 @@ def _generation_system_prompt():
     package data stops generation rather than falling back to a stale prompt.
     The digest identifies the exact raw UTF-8 bytes sent as specification text.
     """
+    if target not in ("cli", "rushu"):
+        raise GenerationError("未知生成运行环境", "生成配置错误")
+    environment = ("本次运行环境：如书 Python 代码格。需要绘图或交互时可使用如观；创建画布与注册回调须在同一格。"
+                   if target == "rushu" else
+                   "本次运行环境：普通命令行（含 C／JavaScript 编译）。不提供如观画布宿主，不得生成依赖如观的程序；可用文本呈现结果。")
+
     try:
         with resources.files(__package__).joinpath("language-spec.md").open("rb") as stream:
             raw = stream.read(MAX_LANGUAGE_SPEC_BYTES + 1)
@@ -114,7 +120,7 @@ def _generation_system_prompt():
     if versions[0] != __version__:
         raise GenerationError("随附语言规范与当前语言版本不一致；已停止生成", "生成规范错误")
     digest = hashlib.sha256(raw).hexdigest()
-    return (SYSTEM_PROMPT + f"\n当前语言版本：{__version__}\n"
+    return (SYSTEM_PROMPT + environment + "\n" + f"\n当前语言版本：{__version__}\n"
             + f"随附规范版本：{versions[0]}\n随附规范 SHA-256：{digest}\n"
             + "以下为本次生成必须遵守的权威规范原文：\n<ru-language-spec>\n"
             + specification + "\n</ru-language-spec>\n")
@@ -246,14 +252,14 @@ class _NoRedirect(urlrequest.HTTPRedirectHandler):
         raise GenerationError("提供方返回重定向；为保护密钥已停止，未自动重试")
 
 
-def request_response(config, intent, timeout=DEFAULT_TIMEOUT, progress=None):
+def request_response(config, intent, timeout=DEFAULT_TIMEOUT, progress=None, *, runtime_target="cli"):
     """Make exactly one bounded non-streaming Responses request; never run tools."""
     endpoint = responses_url(config)
     if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or not math.isfinite(timeout) or not timeout > 0:
         raise GenerationError("超时应为有限且大于 0 的秒数", "生成配置错误")
     if config.api_key in intent:
         raise GenerationError("意图文档含有已配置密钥，已停止发送；请先移除密钥")
-    system_prompt = _generation_system_prompt()
+    system_prompt = _generation_system_prompt(runtime_target)
     if config.api_key in system_prompt:
         raise GenerationError("随附语言规范含有已配置密钥，已停止发送；请检查规范文件")
     payload = {

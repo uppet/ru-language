@@ -19,7 +19,7 @@ test('duplicate or unsafe IDs normalized and blank document remains editable',()
 test('source and cell count limits apply on import and own export',()=>{
   assert.throws(()=>parseBook(wrap([{...newCell(),source:'x'.repeat(200001)}])));
   assert.throws(()=>parseBook(wrap(Array.from({length:501},()=>newCell()))));
-  const book=blankBook();book.cells=Array.from({length:60},()=>newCell('code','x'.repeat(190000)));assert.throws(()=>serializeBook(book),/文件太大/);
+  const book=blankBook();book.cells=Array.from({length:400},()=>newCell('code','x'.repeat(190000)));assert.throws(()=>serializeBook(book),/文件太大/);
 });
 test('append merges matching streams and caps output with an explicit marker',()=>{
   const cell=newCell();appendOutput(cell,'stdout','a');appendOutput(cell,'stdout','b');assert.deepEqual(cell.outputs,[{type:'stdout',text:'ab'}]);

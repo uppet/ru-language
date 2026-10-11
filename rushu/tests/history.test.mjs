@@ -40,9 +40,9 @@ test('aggregate UTF-8 history byte budget is enforced atomically',()=>{
   const c=cell();c.generation={prompt:'p',revisions:Array.from({length:3},(_,i)=>revision(i,{source:'汉'.repeat(200000)}))};
   validateGeneration(c.generation);c.source='字'.repeat(200000);const before=structuredClone(c);assert.throws(()=>checkpoint(c),/2 MiB/);assert.deepEqual(c,before);assert.ok(MAX_HISTORY_BYTES<2400000);
 });
-test('overall book history still obeys 10 MiB import/export limit',()=>{
-  const cells=Array.from({length:6},()=>{const c=cell();c.generation={prompt:'p',revisions:Array.from({length:3},(_,i)=>revision(i,{source:'汉'.repeat(200000)}))};return c;});
-  assert.throws(()=>serializeBook({title:'big',cells}),/10 MB/);
+test('overall book history still obeys 64 MiB import/export limit',()=>{
+  const cells=Array.from({length:40},()=>{const c=cell();c.generation={prompt:'p',revisions:Array.from({length:3},(_,i)=>revision(i,{source:'汉'.repeat(200000)}))};return c;});
+  assert.throws(()=>serializeBook({title:'big',cells}),/64 MiB/);
 });
 test('diff reconstructs both sources, treats HTML as data, preserves line endings',()=>{
   for(const [before,after] of [['',''],['a\nb\n','a\nc\n'],['same','same\n'],['<img onerror=evil>\n','<script>evil</script>\n'],['a\r\nb','a\r\nx\nb'],['x\n'.repeat(99999),'y\n'.repeat(99999)]]){

@@ -82,7 +82,7 @@ def generate_source(body, timeout=DEFAULT_TIMEOUT):
             # request_response supplies the exact packaged specification/hash,
             # token cap, no-tool policy and credential-input checks.
             try:
-                generated = request_response(config, selected, timeout=timeout)
+                generated = request_response(config, selected, timeout=timeout, runtime_target="rushu")
                 if not isinstance(generated, str) or config.api_key in generated:
                     raise KernelError("提供方输出无效或含有密钥，已拒绝返回。", 502)
                 if len(generated) > MAX_SOURCE:
