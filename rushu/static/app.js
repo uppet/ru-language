@@ -1,15 +1,17 @@
+import {templates,createTemplateBook} from './templates.mjs';
 import {outputWindow} from './output-view.mjs';
 import {createSceneView,validateScene} from './scene.mjs';
 import {versionLabel} from './versions.mjs';
 import {analyze,highlight,enterEdit,indentSelection,needsAutoDedent} from './editor.mjs';
-import {welcomeBook,blankBook,newCell,parseBook,serializeBook,appendOutput as appendCellOutput,retainGraphics,historicalBook,MAX_FILE_BYTES,MAX_CELLS,MAX_SOURCE} from './notebook.mjs';
+import {newCell,parseBook,serializeBook,appendOutput as appendCellOutput,retainGraphics,historicalBook,MAX_FILE_BYTES,MAX_CELLS,MAX_SOURCE} from './notebook.mjs';
 
 import {ensureGeneration,checkpoint,replaceWithRevision,restoreRevision,lineDiff,generationIntent,withGenerationMarker,prepareGenerationFromMarker} from './history.mjs';
 
 const $=selector=>document.querySelector(selector);
 const el=(tag,cls,text)=>{const node=document.createElement(tag);if(cls)node.className=cls;if(text!=null)node.textContent=text;return node;};
 const button=(text,title,handler,cls='')=>{const node=el('button',cls,text);node.type='button';node.title=title;node.setAttribute('aria-label',title);node.addEventListener('click',handler);return node;};
-let book=welcomeBook(),session=null,cursor=0,generation=1,activeRun=null,runAllActive=false,polling=false,epoch=0,dirty=true,transition=false,connected=false,lastExecutionCount=0,kernelDead=false;
+let hasBook=false;
+let book={title:'',cells:[]},session=null,cursor=0,generation=1,activeRun=null,runAllActive=false,polling=false,epoch=0,dirty=false,transition=false,connected=false,lastExecutionCount=0,kernelDead=false;
 const views=new Map();
 function appendOutput(cell,type,text){appendCellOutput(cell,type,text,book);}
 // Live handlers are deliberately separate from portable notebook snapshots.
@@ -50,7 +52,8 @@ function runtimeStatus(state,label) { const node=$('#runtime-status');node.class
 function busy(){return !!activeRun||runAllActive||transition||!!generationRequest;}
 function refreshControls() {
   $('#run-all').disabled=!connected||busy();$('#restart').disabled=!session||transition;$('#stop').disabled=(!activeRun&&![...sceneViews.values()].some(record=>record.view.live))||transition;
-  $('#new-book').disabled=transition;$('#open-book').disabled=transition;
+  $('#new-book').disabled=transition;$('#open-book').disabled=transition;$('#save-book').disabled=!hasBook||transition;
+  for(const choice of document.querySelectorAll('[data-template],.blank-shortcut'))choice.disabled=transition;
   $('#add-code').disabled=busy()||book.cells.length>=MAX_CELLS;$('#add-markdown').disabled=busy()||book.cells.length>=MAX_CELLS;$('#add-learning').disabled=busy()||book.cells.length>=MAX_CELLS;
   for(const cell of book.cells){const view=views.get(cell.id);if(!view)continue;for(const b of view.element.querySelectorAll('[data-mutates]'))b.disabled=busy();view.run.disabled=!connected||busy();if(view.input)view.input.readOnly=cell.status==='running';if(view.generate)view.generate.disabled=busy()||!!generationRequest||!token;if(view.cancelGeneration)view.cancelGeneration.hidden=generationRequest?.cell!==cell;if(view.restore)view.restore.disabled=busy()||!!generationRequest;}
 }
@@ -65,16 +68,18 @@ async function api(path,method='GET',body) {
 function sessionPath(suffix=''){return `/sessions/${encodeURIComponent(session)}${suffix}`;}
 function finishActive(success=false) { if(!activeRun)return;const run=activeRun;activeRun=null;run.resolve(success);refreshControls(); }
 async function replaceBook(next) {
+  if(transition)return false;
   transition=true;refreshControls();
   try {
-    const result=await api('/sessions','POST',{});const old=session;cancelGeneration(false);stopScenes();for(const cell of book.cells)clearScene(cell);epoch++;finishActive(false);runAllActive=false;
-    session=result.id;cursor=result.cursor||0;generation=result.generation||1;lastExecutionCount=0;kernelDead=false;connected=true;book=next;
-    $('#book-title').value=book.title;renderBook();runtimeStatus('idle');markDirty();
+    const result=token?await api('/sessions','POST',{}):{id:null};const old=session;cancelGeneration(false);stopScenes();for(const cell of book.cells)clearScene(cell);epoch++;finishActive(false);runAllActive=false;
+    session=result.id;cursor=result.cursor||0;generation=result.generation||1;lastExecutionCount=0;kernelDead=false;connected=!!result.id;book=next;hasBook=true;
+    $('#start-page').hidden=true;$('#book-workspace').hidden=false;
+    $('#book-title').value=book.title;renderBook();runtimeStatus(connected?'idle':'dead',connected?undefined:'缺少连接凭据');markDirty();
     if(old)api(`/sessions/${encodeURIComponent(old)}`,'DELETE',{}).catch(error=>notice('新会话已创建，但旧会话未能关闭：'+error.message,true,true));
-    pollSoon(0);
+    if(session)pollSoon(0);return true;
   } finally {transition=false;refreshControls();}
 }
-function confirmReplace(){return !dirty&&!activeRun||confirm((activeRun?'当前代码仍在运行，继续会结束旧会话。\n':'')+'尚未保存的内容可能丢失。要继续吗？');}
+function confirmReplace(){return !hasBook||!dirty&&!activeRun&&!generationRequest||confirm((activeRun?'当前代码仍在运行，继续会结束旧会话。\n':'')+(generationRequest?'生成仍在等待，继续会丢弃返回结果；已发送的请求无法撤回。\n':'')+'尚未保存的内容可能丢失。要继续吗？');}
 
 // Markdown is a deliberately small DOM renderer. HTML is always plain text.
 function inlineMarkdown(target,text) {
@@ -166,8 +171,27 @@ function createLearning(cell){
   if(book.cells.length>=MAX_CELLS){notice('一本如书最多 500 格。',true);return;}
   try{const next=newCell('code');ensureGeneration(next,withGenerationMarker(cell.source));book.cells.splice(book.cells.indexOf(cell)+1,0,next);renderBook();markDirty();focusCell(next);notice('已将文字作为本次意图，原文字格保留。确认发送范围后生成源码。');generateCell(next);}catch(error){notice(error.message,true,true);}
 }
-function generationStatus(cell,message,error=false){
-  const node=views.get(cell.id)?.generationStatus;if(node){node.textContent=message;node.classList.toggle('error',error);}
+function createGenerationStatus(view){
+  const node=el('p','generation-status');
+  view.generationStatusText=el('span','','生成后先审阅源码，再单独点击本格「运行」。全部运行会跳过学习格。');
+  view.generationStatusText.setAttribute('role','status');
+  const indicator=el('span','generation-activity');indicator.hidden=true;indicator.setAttribute('aria-hidden','true');
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.setAttribute('viewBox','0 0 16 16');svg.setAttribute('width','16');svg.setAttribute('height','16');svg.setAttribute('focusable','false');
+  const arc=document.createElementNS('http://www.w3.org/2000/svg','circle');
+  for(const [name,value] of Object.entries({cx:'8',cy:'8',r:'6',fill:'none',stroke:'currentColor','stroke-width':'2','stroke-linecap':'round','stroke-dasharray':'27 11'}))arc.setAttribute(name,value);
+  svg.append(arc);indicator.append(svg);node.append(view.generationStatusText,indicator);
+  view.generationActivity=indicator;return node;
+}
+function generationActivity(cell,active){
+  const indicator=views.get(cell.id)?.generationActivity;if(indicator)indicator.hidden=!active;
+}
+function generationStatus(cell,message,error=false,active=false){
+  const view=views.get(cell.id);if(!view?.generationStatus)return;
+  // Preserve both the text and SVG nodes while waiting. Only real state changes
+  // enter the live region; animation never mutates text or rebuilds the cell.
+  if(view.generationStatusText.textContent!==message)view.generationStatusText.textContent=message;
+  view.generationStatus.classList.toggle('error',error);generationActivity(cell,active);
 }
 async function loadProvider(view){
   try{
@@ -183,7 +207,7 @@ function buildGenerationPanel(cell,view){
   const controls=el('div','generation-actions'),generate=button('如是我言 · 生成','给意图补上结语并发送本格意图与当前源码，生成新版本',()=>generateCell(cell),'primary'),cancel=button('取消等待','丢弃尚未返回的生成结果，保留当前编辑',()=>cancelGeneration());
   const save=button('记下手动修改','把当前意图和源码保存为一个人工版本',()=>{try{checkpoint(cell);markDirty();renderHistory(cell);generationStatus(cell,'手动修改已记入版本历史。');}catch(error){notice(error.message,true,true);}});save.dataset.mutates='true';
   view.generate=generate;view.cancelGeneration=cancel;cancel.hidden=true;const branch=button('另起学习格','保留这格全部历史，把当前意图和草稿复制到新格继续学习',()=>{if(busy()||book.cells.length>=MAX_CELLS)return;const next=newCell('code',cell.source);ensureGeneration(next,cell.generation.prompt);book.cells.splice(book.cells.indexOf(cell)+1,0,next);renderBook();markDirty();focusCell(next);});branch.dataset.mutates='true';controls.append(generate,cancel,save,branch);
-  view.provider=el('p','generation-disclosure','正在读取服务端生成配置…');view.generationStatus=el('p','generation-status','生成后先审阅源码，再单独点击本格「运行」。全部运行会跳过学习格。');view.generationStatus.setAttribute('role','status');
+  view.provider=el('p','generation-disclosure','正在读取服务端生成配置…');view.generationStatus=createGenerationStatus(view);
   const diagnostics=el('details','generation-diagnostics generation-disclosure');
   view.generationDiagnostic=el('p','','尚未开始生成。');
   diagnostics.append(el('summary','','生成诊断'),view.generationDiagnostic,el('p','','仅显示本机可观察到的阶段和耗时；等待期间无法知道模型的 token 进度。不记录意图、源码、凭据或提供方响应原文。'));
@@ -233,7 +257,7 @@ async function generateCell(cell){
     const capacityProbe={...cell,generation:structuredClone(cell.generation)};replaceWithRevision(capacityProbe,{source:'',prompt:cell.generation.prompt,kind:'model'});serializeBook({...book,cells:book.cells.map(c=>c===cell?capacityProbe:c)});
   }catch(error){notice(error.message,true,true);return;}
   const request={cell,book:owner,epoch,prompt:cell.generation.prompt,source:cell.source,controller:new AbortController()};
-  generationRequest=request;refreshControls();generationStatus(cell,'正在生成新版本…你可以继续编辑；若内容改变，返回结果不会覆盖它。');
+  generationRequest=request;refreshControls();generationStatus(cell,'正在生成新版本…你可以继续编辑；若内容改变，返回结果不会覆盖它。',false,true);
   generationDiagnostic(request,'正在读取本机生成配置，尚未发送生成请求。');
   // The server owns the configurable generation deadline. Abort only when the
   // user cancels or changes books/sessions, never through a shorter page timer.
@@ -263,7 +287,7 @@ async function generateCell(cell){
     generationStatus(cell,result.valid?'新版本已加入历史。语法／结构检查通过；未检查外言依赖，未执行。请审阅后单独运行。':`新版本已加入历史，但尚未通过语法／结构检查：${validationPosition?validationPosition+'；':''}${result.validation?.message||'请检查源码'}。未执行。`,!result.valid);
     generationDiagnostic(request,result.valid?'生成结果已加入历史；服务端语法／结构检查通过，未执行。':'生成结果已加入历史；服务端语法／结构检查未通过，未执行。');
   }catch(error){if(generationRequest===request){generationDiagnostic(request,error.name==='AbortError'?'等待已取消，当前编辑保留。':'生成未完成：'+error.message);generationStatus(cell,error.name==='AbortError'?'等待已取消，当前编辑保留。':error.message,true);notice(error.name==='AbortError'?'已取消生成等待。':error.message,true,true);}}
-  finally{clearInterval(request.elapsedTimer);if(generationRequest===request){generationRequest=null;refreshControls();}}
+  finally{clearInterval(request.elapsedTimer);if(generationRequest===request){generationActivity(cell,false);generationRequest=null;refreshControls();}}
 }
 function buildHistory(cell,view){
   const details=el('details','generation-history'),summary=el('summary','','版本历史与变化'),body=el('div','history-body');
@@ -420,20 +444,40 @@ async function pollEvents(){if(polling){pollSoon();return;}if(!session||transiti
   }catch(error){if(id===session&&myEpoch===epoch){connected=false;stopScenes();runtimeStatus('dead','连接中断');refreshControls();notice(error.message+' 正在等待本机服务恢复。',true,true);}}
   finally{polling=false;if(session&&!kernelDead)pollSoon(more?0:connected?(activeRun||scenePending.size?50:1200):2500);}
 }
-function saveBook(){try{let fullHistory=false;for(const cell of book.cells)if(cell.generation){try{checkpoint(cell);}catch{fullHistory=true;}renderHistory(cell);}book.title=$('#book-title').value.trim()||'未命名如书';const text=serializeBook(book),blob=new Blob([text],{type:'application/json;charset=utf-8'}),url=URL.createObjectURL(blob),link=el('a');link.href=url;link.download=book.title.replace(/[\\/:*?"<>|\x00-\x1f]/g,'_').slice(0,100)+'.rushu.json';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);dirty=false;$('#document-status').textContent='已导出保存快照';notice(fullHistory?'已下载保存当前草稿与已有历史。部分历史已满，最新编辑保留为当前草稿；请点击「另起学习格」继续记录。':'已下载如书文件。重新打开时，输出会标为历史；运行状态不会被保存。',false,fullHistory);}catch(error){notice('无法保存：'+error.message+' 请减少内容或清除部分输出后重试。',true,true);}}
+function saveBook(){if(!hasBook||transition)return;try{let fullHistory=false;for(const cell of book.cells)if(cell.generation){try{checkpoint(cell);}catch{fullHistory=true;}renderHistory(cell);}book.title=$('#book-title').value.trim()||'未命名如书';const text=serializeBook(book),blob=new Blob([text],{type:'application/json;charset=utf-8'}),url=URL.createObjectURL(blob),link=el('a');link.href=url;link.download=book.title.replace(/[\\/:*?"<>|\x00-\x1f]/g,'_').slice(0,100)+'.rushu.json';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);dirty=false;$('#document-status').textContent='已导出保存快照';notice(fullHistory?'已下载保存当前草稿与已有历史。部分历史已满，最新编辑保留为当前草稿；请点击「另起学习格」继续记录。':'已下载如书文件。重新打开时，输出会标为历史；运行状态不会被保存。',false,fullHistory);}catch(error){notice('无法保存：'+error.message+' 请减少内容或清除部分输出后重试。',true,true);}}
 $('#book-title').addEventListener('input',()=>{book.title=$('#book-title').value;markDirty();updateMeta();});
-$('#new-book').addEventListener('click',async()=>{if(!confirmReplace())return;try{await replaceBook(blankBook());notice('已新建独立会话。');focusCell(book.cells[0]);}catch(error){notice(error.message,true,true);}});
+function showTemplates(){if(transition)return;$('#template-dialog').showModal();}
+async function chooseTemplate(id){
+  if(transition||!confirmReplace())return;
+  const next=createTemplateBook(id);if($('#template-dialog').open)$('#template-dialog').close();
+  try{if(await replaceBook(next)){notice('已新建如书。代码尚未运行；可先阅读，再逐格试试。');focusCell(book.cells.find(cell=>cell.type==='code')||book.cells[0]);}}
+  catch(error){notice(error.message+(hasBook?' 原书内容仍保留，可重试。':' 尚未创建如书，可重试。'),true,true);}
+}
+function renderTemplates(target){
+  for(const template of templates){
+    const choice=button('',`新建${template.title}`,()=>chooseTemplate(template.id),'template-card'+(template.id==='blank'?' template-blank':''));
+    choice.dataset.template=template.id;
+    choice.append(el('span','template-title',template.title),el('span','template-description',template.description));
+    if(template.detail)choice.append(el('span','template-detail',template.detail));
+    choice.append(el('span','template-action',template.id==='blank'?'直接开始 →':'使用模板 →'));target.append(choice);
+  }
+}
+renderTemplates($('#start-templates'));renderTemplates($('#dialog-templates'));
+$('#new-book').addEventListener('click',showTemplates);
+$('#start-blank').addEventListener('click',()=>chooseTemplate('blank'));$('#dialog-blank').addEventListener('click',()=>chooseTemplate('blank'));
+$('#close-templates').addEventListener('click',()=>$('#template-dialog').close());
+$('#template-dialog').addEventListener('click',event=>{if(event.target===$('#template-dialog')){const r=event.target.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)event.target.close();}});
 $('#open-book').addEventListener('click',()=>$('#file-picker').click());
-$('#file-picker').addEventListener('change',async event=>{const file=event.target.files?.[0];event.target.value='';if(!file)return;try{if(file.size>MAX_FILE_BYTES)throw new Error('文件太大，请打开 64 MiB 以内的如书。');const next=parseBook(await file.text());if(!confirmReplace())return;await replaceBook(next);dirty=false;$('#document-status').textContent='已打开本地文件';notice('已打开。未自动执行任何代码，保存的输出仅为历史快照。',false,true);}catch(error){notice(error.message,true,true);}});
+$('#file-picker').addEventListener('change',async event=>{const file=event.target.files?.[0];event.target.value='';if(!file)return;try{if(file.size>MAX_FILE_BYTES)throw new Error('文件太大，请打开 64 MiB 以内的如书。');const next=parseBook(await file.text());if(!confirmReplace())return;if(await replaceBook(next)){dirty=false;$('#document-status').textContent='已打开本地文件';notice('已打开。未自动执行任何代码，保存的输出仅为历史快照。',false,true);}}catch(error){notice(error.message,true,true);}});
 $('#save-book').addEventListener('click',saveBook);$('#run-all').addEventListener('click',runAll);$('#stop').addEventListener('click',()=>resetSession('stop'));$('#restart').addEventListener('click',()=>resetSession('restart'));
 $('#add-code').addEventListener('click',()=>addCell('code'));$('#add-markdown').addEventListener('click',()=>addCell('markdown'));$('#add-learning').addEventListener('click',()=>addCell('learning'));
 $('#help-button').addEventListener('click',()=>$('#help-dialog').showModal());$('#close-help').addEventListener('click',()=>$('#help-dialog').close());
 $('#help-dialog').addEventListener('click',event=>{if(event.target===$('#help-dialog')){const r=event.target.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)event.target.close();}});
 document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();saveBook();}});
 window.addEventListener('pagehide',()=>{stopScenes();cancelGeneration(false);if(session)fetch('/api'+sessionPath(),{method:'DELETE',headers:{'X-Rushu-Token':token,'Content-Type':'application/json'},body:'{}',keepalive:true}).catch(()=>{});});
-window.addEventListener('pageshow',event=>{if(event.persisted){historicalBook(book);replaceBook(book).catch(error=>notice(error.message,true,true));}});
+window.addEventListener('pageshow',event=>{if(event.persisted&&hasBook){historicalBook(book);replaceBook(book).catch(error=>notice(error.message,true,true));}});
 window.addEventListener('beforeunload',event=>{if(dirty||activeRun||generationRequest){event.preventDefault();event.returnValue='';}});
 const keyboardHelp=el('span','sr-only','按 Tab 缩进。按 Escape 后再按 Tab 可移出编辑器。Shift 加 Enter 运行。');keyboardHelp.id='editor-keyboard-help';document.body.append(keyboardHelp);
-renderBook();
+refreshControls();
 if(!token){runtimeStatus('dead','缺少连接凭据');notice('请使用启动终端显示的完整本机网址打开如书（包含 #token=…）。内容仍可编辑和保存。',true,true);}
-else{api('/versions').then(info=>{$('#versions').textContent=versionLabel(info);}).catch(()=>{$('#versions').textContent='版本读取失败';});replaceBook(book).catch(error=>{runtimeStatus('dead','连接失败');notice(error.message+' 请使用启动终端显示的完整网址。',true,true);});}
+else{api('/versions').then(info=>{$('#versions').textContent=versionLabel(info);}).catch(()=>{$('#versions').textContent='版本读取失败';});}

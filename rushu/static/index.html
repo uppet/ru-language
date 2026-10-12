@@ -13,12 +13,22 @@
   <header class="topbar">
     <a class="brand" href="#" aria-label="如书主页"><span class="brand-mark" aria-hidden="true">如</span><span>如书<small>把想法写成代码</small></span></a>
     <nav aria-label="书本操作" class="file-actions">
-      <button id="new-book" title="新建独立运行会话"><span aria-hidden="true">＋</span> 新建</button>
+      <button id="new-book" title="选择模板，新建如书"><span aria-hidden="true">＋</span> 新建</button>
       <button id="open-book"><span aria-hidden="true">↗</span> 打开</button>
       <button id="save-book" class="save-button"><span aria-hidden="true">↓</span> 保存</button>
     </nav>
   </header>
   <main>
+    <div id="notice" class="notice" role="status" hidden></div>
+    <section id="start-page" aria-labelledby="start-title">
+      <p class="page-overline">如书 · 本地计算笔记</p>
+      <h1 id="start-title">从一页空白，或一个小例子开始。</h1>
+      <p class="start-intro">选一个场景，把想法写成代码。每份模板都是可编辑、可保存的普通如书。</p>
+      <button id="start-blank" class="blank-shortcut">直接新建空白如书 →</button>
+      <div id="start-templates" class="template-grid" aria-label="新建场景模板"></div>
+      <p class="template-note">选择只新建内容，不会运行代码或发送模型请求。已有书本可从右上角「打开」。</p>
+    </section>
+    <section id="book-workspace" hidden aria-label="当前如书">
     <div class="page-overline"><span>本地计算笔记</span><span class="offline-pill"><i></i> 本机运行 · 生成可联网</span></div>
     <div class="title-row"><input id="book-title" aria-label="书名" maxlength="200" value="第一本如书"><span id="versions" class="edition" title="当前安装包与随附规范版本；不是环境自检">版本未读取</span></div>
     <p class="book-meta"><span id="document-status">尚未保存</span><span class="meta-dot">·</span><span id="cell-count"></span><span class="meta-dot">·</span><span>如语言</span></p>
@@ -35,13 +45,21 @@
       <p>代码在启动服务的账户权限下运行，件／录等接口可以读写本机文件，这不是安全沙箱。打开文件只显示内容，不会自动执行。</p>
       <p>同一本书的代码格共享变量。停止、重启、新建或打开会清空运行状态；已有输出会保留并标为历史。运行错误不会撤销此前的变量修改或文件操作。</p>
     </details>
-    <div id="notice" class="notice" role="status" hidden></div>
     <div id="cells" class="cells" aria-label="笔记格子"></div>
     <div class="add-row" aria-label="添加格子">
       <span class="add-rule"></span><button id="add-code">＋ 代码</button><button id="add-markdown">＋ 文字</button><button id="add-learning">＋ 学习</button><span class="add-rule"></span>
     </div>
+    </section>
     <footer><span>如书 <span class="footer-dot">/</span> 思考，在此发生。</span><button id="help-button">快捷键与说明 <span aria-hidden="true">?</span></button></footer>
   </main>
+  <dialog id="template-dialog" aria-labelledby="template-title" aria-describedby="template-description">
+    <button class="dialog-close" id="close-templates" aria-label="取消新建">×</button>
+    <p class="dialog-kicker">新的一本</p><h2 id="template-title">选择起始模板</h2>
+    <p id="template-description">选择只新建内容。关闭或按 Escape 返回当前书本。</p>
+    <button id="dialog-blank" class="blank-shortcut">直接新建空白如书 →</button>
+    <div id="dialog-templates" class="template-grid" aria-label="新建场景模板"></div>
+    <p class="template-note">不会自动运行代码或发送模型请求；替换未保存的书本前会再次确认。</p>
+  </dialog>
   <input id="file-picker" type="file" accept=".json,.rushu.json,application/json" hidden>
   <dialog id="help-dialog" aria-labelledby="help-title">
     <button class="dialog-close" id="close-help" aria-label="关闭说明">×</button>
