@@ -1,5 +1,6 @@
 """Real Ru callbacks and bounded declarative scenes, with no JavaScript eval."""
 import gc
+import time
 import io
 import unittest
 import sys
@@ -86,6 +87,60 @@ class GraphicsTests(unittest.TestCase):
         with self.assertRaisesRegex(RuError,'预算'): self.host.handle({'type':'frame'})
         self.assertIsNone(self.host.snapshot())
         self.assertEqual(self.interpreter.global_scope.values['保留'],7.)
+    def test_callback_limits_are_tenfold_with_other_quotas_unchanged(self):
+        from rulang import graphics_runtime as runtime
+        from rushu.kernel import GRAPHICS_TIMEOUT
+        self.assertEqual(runtime.MAX_CALLBACK_SECONDS, 1.0)
+        self.assertEqual(runtime.MAX_CALLBACK_LINES, 500000)
+        self.assertEqual(GRAPHICS_TIMEOUT, 10.0)
+        self.assertEqual(GRAPHICS_TIMEOUT / runtime.MAX_CALLBACK_SECONDS, 10)
+        self.assertEqual(runtime.MAX_GRAPHICS_MEMORY, 64 * 1024 * 1024)
+        self.assertEqual(runtime.MAX_COMMANDS, 2048)
+        self.assertEqual(runtime.MAX_FRAME_BYTES, 262144)
+
+    def test_callback_above_old_wall_budget_survives(self):
+        self.canvas('图 其 每帧 (作 帧: 图 其 线 帧 0 1 1. 为).')
+        invoke = self.interpreter.invoke_value
+        def delayed(*args):
+            time.sleep(.15)
+            return invoke(*args)
+        started = time.monotonic()
+        with patch.object(self.interpreter, 'invoke_value', side_effect=delayed):
+            self.host.handle({'type': 'frame'})
+        self.assertGreaterEqual(time.monotonic() - started, .15)
+        self.assertIsNotNone(self.host.snapshot())
+        self.assertEqual(self.events[-1]['commands'][0]['x1'], 1)
+
+    def test_new_wall_budget_still_closes_callback(self):
+        self.canvas('图 其 每帧 (作 帧: 图 其 线 0 0 1 1. 为).')
+        invoke = self.interpreter.invoke_value
+        def delayed(*args):
+            time.sleep(1.05)
+            return invoke(*args)
+        with patch.object(self.interpreter, 'invoke_value', side_effect=delayed):
+            with self.assertRaisesRegex(RuError, '1 秒或 500000 行'):
+                self.host.handle({'type': 'frame'})
+        self.assertIsNone(self.host.snapshot())
+        self.run_ru('显 42.')
+        self.assertEqual(self.output.getvalue(), '42\n')
+
+    def test_line_budget_survives_old_limit_and_stops_at_new_limit(self):
+        self.canvas('图 其 每帧 (作 帧: 图 其 线 0 0 1 1. 为).')
+        invoke = self.interpreter.invoke_value
+        def traced_work(*args):
+            # Two traced Python lines per iteration; elapsed time is isolated.
+            for _ in range(30000):
+                pass
+            return invoke(*args)
+        with patch('rulang.graphics_runtime.time.monotonic', return_value=0):
+            with patch.object(self.interpreter, 'invoke_value', side_effect=traced_work):
+                self.host.handle({'type': 'frame'})
+            self.assertIsNotNone(self.host.snapshot())
+            self.run_ru('图 其 每帧 (作 帧: 循 环. 为).')
+            with self.assertRaisesRegex(RuError, '1 秒或 500000 行'):
+                self.host.handle({'type': 'frame'})
+        self.assertIsNone(self.host.snapshot())
+
     def test_memory_limit(self):
         self.canvas('图 其 每帧 (作 帧: 图 其 线 0 0 1 1. 为).')
         with patch('rulang.graphics_runtime.MAX_GRAPHICS_MEMORY',-1):

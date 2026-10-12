@@ -10,7 +10,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from rushu.kernel import KernelError, MAX_EVENT_TEXT, Session, _Input
+from rushu.kernel import GRAPHICS_TIMEOUT, KernelError, MAX_EVENT_TEXT, Session, _Input
 from rushu.server import SESSION_PATH, STATIC_FILES, make_server
 
 
@@ -246,14 +246,34 @@ class SpawnedGraphicsBridgeTests(unittest.TestCase):
         session.execute("", "scene")
         self.wait_ready(session)
         old_pid = session.process.pid
+        started = time.monotonic()
         session.dispatch_graphics("blocking", "scene", 1, 1, {"type": "frame"})
-        result = self.wait_ready(session)
+        result = self.wait_ready(session, timeout=GRAPHICS_TIMEOUT + 8)
         self.assertEqual(result["generation"], 2)
         self.assertEqual(result["execution_count"], 0)
         self.assertNotEqual(session.process.pid, old_pid)
+        self.assertGreaterEqual(time.monotonic() - started, GRAPHICS_TIMEOUT)
+        self.assertTrue(any("超过 10 秒" in e.get("message", "") for e in result["events"]))
         self.assertIsNone(result["graphics"])
         session.execute("显 42.", "recovered", 2)
         result = self.wait_ready(session)
+        self.assertTrue(any(e.get("text") == "42\n" for e in result["events"]))
+
+
+    def test_stop_blocked_callback_before_watchdog_and_recover(self):
+        with patch("rushu.kernel._worker", _blocking_graphics_worker):
+            session = Session()
+        self.addCleanup(session.close)
+        session.execute("", "scene")
+        self.wait_ready(session)
+        session.dispatch_graphics("blocking", "scene", 1, 1, {"type": "frame"})
+        started = time.monotonic()
+        session.reset("stop")
+        self.assertLess(time.monotonic() - started, GRAPHICS_TIMEOUT)
+        self.assertIsNone(session.graphics_timer)
+        session.execute("显 42.", "recovered", 2)
+        result = self.wait_ready(session)
+        self.assertEqual(result["generation"], 2)
         self.assertTrue(any(e.get("text") == "42\n" for e in result["events"]))
 
 

@@ -17,8 +17,8 @@ from .contest_runtime import _BUILTIN_OWNER
 
 MAX_COMMANDS = 2048
 MAX_FRAME_BYTES = 262144
-MAX_CALLBACK_LINES = 50000
-MAX_CALLBACK_SECONDS = .1
+MAX_CALLBACK_LINES = 500000
+MAX_CALLBACK_SECONDS = 1.0
 MAX_GRAPHICS_MEMORY = 64 * 1024 * 1024
 _COLOR = re.compile(r"#[0-9a-fA-F]{6}\Z")
 _TYPES = None
@@ -159,7 +159,7 @@ class GraphicsHost:
         deadline, lines = time.monotonic() + MAX_CALLBACK_SECONDS, 0
         def check():
             if lines > MAX_CALLBACK_LINES or time.monotonic() > deadline:
-                self.interpreter.fail(node, "如观回调超过 100 毫秒或 50000 行执行预算；已关闭交互，请简化回调后重跑")
+                self.interpreter.fail(node, "如观回调超过 1 秒或 500000 行执行预算；已关闭交互，请简化回调后重跑")
             if tracemalloc.get_traced_memory()[0] - self.memory_start > MAX_GRAPHICS_MEMORY:
                 self.interpreter.fail(node, "如观新增内存超过 64 MiB；已关闭交互，请减少数据后重跑")
         def trace(frame, action, arg):

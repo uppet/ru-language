@@ -16,7 +16,8 @@ MAX_EVENTS = 20_000
 MAX_EVENT_TEXT = 16 * 1024 * 1024
 MAX_POLL_BYTES = 1024 * 1024
 MAX_SESSIONS = 16
-GRAPHICS_TIMEOUT = 1.0
+# Keep the hard watchdog at 10x the runtime soft callback deadline (1 second).
+GRAPHICS_TIMEOUT = 10.0
 MAX_GRAPHICS_COMMANDS = 2048
 MAX_GRAPHICS_BYTES = 262_144
 GRAPHICS_EVENTS = {"frame", "mouse_down", "mouse_up", "mouse_move", "key_down", "key_up", "close"}
@@ -458,7 +459,7 @@ class Session:
                     or token != self.graphics_token or not self.graphics_busy):
                 return
             self._append({"type": "error", "category": "图形错误",
-                          "message": "如观回调超过 1 秒，执行进程已终止并重启；会话变量和图形上下文已清空。",
+                          "message": "如观回调超过 10 秒，执行进程已终止并重启；会话变量和图形上下文已清空。",
                           "line": 1, "col": 1})
             self._append({"type": "graphics_done", "canvas_id": canvas_id, "status": "error"})
             try:
