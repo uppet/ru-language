@@ -8,6 +8,7 @@ from pathlib import Path
 from . import __version__
 from .frontend import BUILTIN_TYPES, Node, RuError, bind_arguments, validate
 from .c_runtime import ast_strings
+from .diagnostics import display_text
 
 
 def cstr(value):
@@ -656,7 +657,7 @@ class Compiler:
         self.known_values = self._values(path, fn)
         self.line(f'static Val {ident}(Env *global, Val self, int call_line, Val *args) {{')
         self.indent += 1
-        self.line(f'const char *previous_source = ru_source; ru_source = {cstr(path)};')
+        self.line(f'const char *previous_source = ru_source; ru_source = {cstr(display_text(path))};')
         self.line('(void) self; (void) args; (void) call_line;')
         self.line(f'Env *local = env_new(global, RU_SCOPE_FUNCTION, {fn.token.line}); Env *env = local;')
         self.panic_context('local')
@@ -737,7 +738,7 @@ class Compiler:
                 self.line(f'if ({ident}_state == 3) return ru_module_failure_raise(&{ident}_failure);')
             self.line(f'if ({ident}_state == 1) ru_fail(1, "循环外言");')
             self.line(f'{ident}_state = 1;')
-            self.line(f'const char *previous_source = ru_source; ru_source = {cstr(path)};')
+            self.line(f'const char *previous_source = ru_source; ru_source = {cstr(display_text(path))};')
             builtins = 'ru_practical_builtins' if '__实用' in set(ast_strings(self.modules)) else 'ru_contest_builtins'
             self.line(f'Env *global = &{ident}_env; Env *env = global; env_init(env, {builtins}());')
             self.panic_context(f'&{ident}_env')
@@ -756,7 +757,7 @@ class Compiler:
             self.line('}')
         self.line('int main(int argc, char **argv) {')
         self.indent += 1
-        self.line(f'ru_source = {cstr(self.source_name)}; ru_init();')
+        self.line(f'ru_source = {cstr(display_text(self.source_name))}; ru_init();')
         self.line(f'Val root = {self.module_ids[self.root]}_init(); (void) root; (void) argc; (void) argv;')
         if self.can_panic:
             self.line('if (ru_panicking) return ru_panic_uncaught();')

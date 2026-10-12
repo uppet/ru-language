@@ -11,11 +11,13 @@ import threading
 import time
 from . import __version__
 from .compiler import Compiler
+from .diagnostics import diagnostic, display_text
 from .frontend import Incomplete, RuError, parse, validate
 from .interpreter import Interpreter
 from .io_runtime import read_stream_line
 from .modules import load_module_graph, read_source, reject_generation_document
 from .generation import DEFAULT_TIMEOUT, generate
+from .prompts import export_prompt
 
 
 class _GenerationProgress:
@@ -85,10 +87,10 @@ class _GenerationProgress:
 def report(error, name, source=""):
     name = getattr(error, "source_name", name)
     source = getattr(error, "source_text", "") or source
-    print(f"{name}:{error.line}:{error.col}: {error.category}：{error.message}", file=sys.stderr)
-    lines = [] if getattr(error, "suppress_source", False) else source.splitlines()
+    print(diagnostic(error, name)["formatted"], file=sys.stderr)
+    lines = [] if getattr(error, "suppress_source", False) or not getattr(error, "location_known", True) else source.splitlines()
     if 0 < error.line <= len(lines):
-        print("  " + lines[error.line-1], file=sys.stderr)
+        print("  " + display_text(lines[error.line-1]), file=sys.stderr)
 
 
 def compiler_command(selected, windows=None):
@@ -252,6 +254,10 @@ def make_parser():
     p.add_argument("--target", choices=("ru", "js"), default="ru", help="保存检查后的 ru 源码（默认），或将其本地编译为 js；默认不执行")
     p.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT, help="连接／读取超时秒数，默认 1800（半小时）；须为有限正数，无固定上限，不自动重试")
     p.add_argument("--verbose", action="store_true", help="在标准错误显示真实生成阶段及耗时；等待响应时约每 10 秒更新，不显示进度百分比、密钥或通信原文")
+    for name in ("rushu-prompt", "ruguan-prompt"):
+        p = sub.add_parser(name, help="离线导出当前版本的系统提示词（含完整语言规范）")
+        p.add_argument("-o", "--output", default="-", metavar="PATH", help="UTF-8 输出文件；省略或 - 为标准输出")
+        p.add_argument("--force", action="store_true", help="原子替换已有普通文件；不可用于标准输出、符号链接或规范原文")
     return parser
 
 
@@ -262,6 +268,8 @@ def main(argv=None):
             stream.reconfigure(encoding="utf-8")
     parser = make_parser()
     args = parser.parse_args(argv)
+    if args.command in ("rushu-prompt", "ruguan-prompt") and args.force and args.output == "-":
+        parser.error("--force 需要 -o / --output 指定实际文件")
     if args.command == "generate" and args.force and args.stdout:
         parser.error("--force 不能与 --stdout 同时使用")
     if args.command == "generate" and args.run and args.stdout:
@@ -272,6 +280,14 @@ def main(argv=None):
         return repl()
     source, name = "", getattr(args, "source", getattr(args, "document", "<输入>"))
     try:
+        if args.command in ("rushu-prompt", "ruguan-prompt"):
+            result = export_prompt(args.command.removesuffix("-prompt"), args.output, force=args.force)
+            if args.output == "-":
+                if hasattr(sys.stdout, "reconfigure"):
+                    sys.stdout.reconfigure(encoding="utf-8", newline="\n")
+                sys.stdout.write(result)
+                sys.stdout.flush()
+            return 0
         if args.command == "generate":
             node = None
             if args.run and args.target == "js":
@@ -333,7 +349,9 @@ def main(argv=None):
         report(RuError("表达式或语句结构过深，请拆分为较小的步骤"), name)
         return 1
     except (OSError, UnicodeError) as error:
-        print(f"ru: 文件／编码错误：{error}", file=sys.stderr)
+        failure = RuError(str(error), category="文件／编码错误")
+        failure.location_known = False
+        report(failure, name)
         return 1
     except KeyboardInterrupt:
         print("\n已取消", file=sys.stderr)

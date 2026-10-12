@@ -108,7 +108,7 @@ static int ru_practical_member(Val receiver, const char *name, size_t argc, cons
 static void ru_fail(int line, const char *format, ...)
 {
     va_list args;
-    fprintf(stderr, "%s:%d: 运行错误：", ru_source ? ru_source : "<程序>", line);
+    fprintf(stderr, "%s:%d: error: 运行错误：", ru_source ? ru_source : "<程序>", line);
     va_start(args, format); vfprintf(stderr, format, args); va_end(args);
     fputc('\n', stderr); ru_failed=1; ru_shutdown(); exit(1);
 }
@@ -179,7 +179,7 @@ static void ru_panic_clear(void)
 }
 static int ru_panic_uncaught(void)
 {
-    fprintf(stderr, "%s:%d:%d: 未救之卒：%s\n", ru_panic_source ? ru_panic_source : "<程序>",
+    fprintf(stderr, "%s:%d:%d: error: 未救之卒：%s\n", ru_panic_source ? ru_panic_source : "<程序>",
             ru_panic_line, ru_panic_col, ru_panic_reason.s->data);
     ru_panic_clear(); ru_shutdown(); return 1;
 }

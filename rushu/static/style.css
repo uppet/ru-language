@@ -29,3 +29,13 @@
 .generation-activity svg{display:block;width:16px;height:16px;animation:generation-turn 1s linear infinite;transform-origin:center}
 @keyframes generation-turn{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.generation-activity svg{animation:none}}
+
+/* Error locations share the editor's real glyph geometry, including CJK and tabs. */
+.diagnostic-layer{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+.diagnostic-row{position:absolute;left:0;right:0;height:25px;background:#bb60440d;border-left:2px solid #bb6044}
+.diagnostic-column{position:absolute;height:2px;background:#a34f39;border-radius:1px}
+.diagnostic-line-number{color:#a34f39;font-weight:600;text-decoration:underline;text-underline-offset:3px}
+.diagnostic-jump{display:flex;font-size:11px;color:#95503c;padding:4px 7px;margin:3px 0 7px;border:1px solid #ead8d0;background:#fffaf7;text-align:left;white-space:normal}
+.diagnostic-stale{display:block;color:#8a756b;font-size:11px;margin:5px 0 8px}
+@media(forced-colors:active){.diagnostic-row{border-color:Mark}.diagnostic-column{background:Mark}.diagnostic-line-number{color:Mark}.diagnostic-jump{border-color:ButtonText}}
+.diagnostic-accessible{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}

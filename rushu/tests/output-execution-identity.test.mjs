@@ -8,7 +8,7 @@ const pollSource=source.slice(source.indexOf('let pollTimer;'),source.indexOf('f
 test('late previous callback cannot enter a new execution or finish it during canvas preflight',async()=>{
  let release;const preflight=new Promise(r=>release=r),cell={id:'cell',type:'code',source:"显 'new'.",execution_count:7,status:'done',outputs:[]};
  let events=[{type:'output',stream:'stdout',text:'OLD CALLBACK\n',seq:1,generation:1,cell_id:'cell',execution_count:7},{type:'done',status:'ok',seq:2,generation:1,cell_id:'cell',execution_count:7}],posts=0;
- const context={cell,connected:true,session:'s',activeRun:null,epoch:1,generation:1,lastExecutionCount:7,views:new Map(),scenePending:new Map(),sceneViews:new Map(),book:{cells:[cell]},cursor:0,polling:false,transition:false,kernelDead:false,
+ const context={sourceVersion:async()=>"test-hash",cell,connected:true,session:'s',activeRun:null,epoch:1,generation:1,lastExecutionCount:7,views:new Map(),scenePending:new Map(),sceneViews:new Map(),book:{cells:[cell]},cursor:0,polling:false,transition:false,kernelDead:false,
  generationIntent:()=>null,stopScenes(){},clearScene(){},renderOutput(){},refreshControls(){},runtimeStatus(){},markDirty(){},notice(){},closeScenesBeforeRun:()=>preflight,
  appendOutput:(c,type,text)=>c.outputs.push({type,text}),setTimeout:()=>1,clearTimeout(){},sessionPath:s=>s,
  finishActive(ok){const run=context.activeRun;context.activeRun=null;run?.resolve(ok);},

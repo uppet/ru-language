@@ -7,6 +7,7 @@ import time
 from multiprocessing.connection import wait
 import secrets
 import threading
+from rulang.diagnostics import SourceOrigin, diagnostic
 
 MAX_SOURCE = 200_000
 MAX_INPUT = 65_536
@@ -192,6 +193,17 @@ def _worker(connection):
     def send(event):
         stdout.flush(force=True)
         connection.send(event)
+    origin = None
+    def send_error(error, located=True):
+        error.location_known = located
+        detail = diagnostic(error, "<如书>", origin if located else None)
+        detail["message"] = detail["message"][:16384]
+        detail["formatted"] = detail["formatted"][:24576]
+        # Keep legacy numeric event positions; structured null means unknown.
+        send(dict(type="error", diagnostic=detail, line=detail["line"] or 1,
+                  col=detail["col"] or 1, **{key: detail[key] for key in
+                  ("category", "message", "source_name")}))
+
     interpreter = Interpreter(stdin, stdout, stderr=stderr)
     host = GraphicsHost(interpreter, send)
     interpreter.graphics_host = host
@@ -216,24 +228,19 @@ def _worker(connection):
                 else:
                     host.begin_execution()
                     source = command["code"]
+                    origin = SourceOrigin(**command["source_origin"])
                     reject_generation_document(source)
-                    interpreter.execute(parse(source), echo=True)
+                    interpreter.execute(parse(source, source_origin=origin), echo=True)
                     host.flush()
             except RuError as error:
                 status = "error"
-                send({"type": "error", "category": error.category,
-                                 "message": error.message[:16384], "line": error.line,
-                                 "col": error.col,
-                                 "source_name": str(getattr(error, "source_name", ""))[:4096]})
+                send_error(error)
             except RecursionError:
                 status = "error"
-                send({"type": "error", "category": "运行错误",
-                                 "message": "调用或表达式结构过深，请拆分为较小的步骤。", "line": 1, "col": 1})
+                send_error(RuError("调用或表达式结构过深，请拆分为较小的步骤。", category="运行错误"), located=False)
             except Exception as error:
                 status = "error"
-                send({"type": "error", "category": "运行错误",
-                                 "message": (type(error).__name__ + ": " + str(error))[:16384],
-                                 "line": 1, "col": 1})
+                send_error(RuError((type(error).__name__ + ": " + str(error))[:16384], category="运行错误"), located=False)
             if status == "error":
                 host.close()
             if kind == "graphics":
@@ -267,6 +274,7 @@ class Session:
         self.graphics_times = deque()
         self.graphics_frame_time = 0.0
         self.execution_count = 0
+        self.source_origin = None
         self.generation = 1
         self.state = "idle"
         self.cell_id = None
@@ -304,6 +312,12 @@ class Session:
         return len(json.dumps(event, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
 
     def _append(self, event):
+        if event.get("type") == "error" and "diagnostic" not in event:
+            from rulang.frontend import RuError
+            error = RuError(event["message"], category=event.get("category", "运行错误"))
+            error.location_known = False
+            detail = diagnostic(error, "<如书>")
+            event = dict(event, diagnostic=detail, source_name=detail["source_name"])
         self.cursor += 1
         record = dict(event, seq=self.cursor, cell_id=self.cell_id,
                       execution_count=self.execution_count, generation=self.generation)
@@ -382,6 +396,7 @@ class Session:
     def _snapshot(self):
         return {"id": self.id, "state": self.state, "execution_count": self.execution_count,
                 "generation": self.generation, "cursor": self.cursor, "cell_id": self.cell_id,
+                "source_version": self.source_origin.source_version if getattr(self, "source_origin", None) else None,
                 "request_id": self.request_id, "graphics": (dict(self.graphics) if self.graphics else None),
                 "graphics_busy": self.graphics_busy,
                 "graphics_close_pending": self.graphics_close_pending}
@@ -400,6 +415,11 @@ class Session:
             raise KernelError("代码须为文字，且不超过 200000 字符")
         if not isinstance(cell_id, str) or not 1 <= len(cell_id) <= 128:
             raise KernelError("cell_id 须为 1 至 128 字符的文字")
+        try:
+            code.encode("utf-8")
+            cell_id.encode("utf-8")
+        except UnicodeError:
+            raise KernelError("代码和 cell_id 须为有效 UTF-8 文字") from None
         if expected_generation is not None and (isinstance(expected_generation, bool)
                 or not isinstance(expected_generation, int) or expected_generation < 1):
             raise KernelError("expected_generation 须为正整数")
@@ -418,7 +438,10 @@ class Session:
             self.execution_count += 1
             self.cell_id, self.state, self.request_id = cell_id, "running", None
             try:
-                self.connection.send({"kind": "execute", "code": code})
+                self.source_origin = SourceOrigin.cell(self.id, cell_id, self.execution_count, self.generation, code)
+                self.connection.send({"kind": "execute", "code": code,
+                                      "source_origin": dict(source_name=self.source_origin.source_name,
+                                                            **self.source_origin.metadata())})
             except (OSError, BrokenPipeError):
                 self.state = "dead"
                 raise KernelError("执行进程已退出，请重启会话", 409) from None
@@ -587,6 +610,7 @@ class Session:
             self._terminate()
             self.state, self.cell_id, self.request_id = "idle", None, None
             self.execution_count = 0
+            self.source_origin = None
             self.graphics, self.graphics_busy = None, False
             self.graphics_close_pending = False
             self.graphics_times.clear()

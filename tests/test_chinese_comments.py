@@ -75,7 +75,7 @@ class ChineseComments(unittest.TestCase):
         result = subprocess.run([sys.executable, str(ROOT/'ru'), 'repl'],
                                 input='解.\n', capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 1)
-        self.assertIn('<repl>:1:1: 语法错误', result.stderr)
+        self.assertIn('<repl>:1:1: error: 语法错误', result.stderr)
 
     def test_file_diagnostic_and_all_backends(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -95,7 +95,7 @@ class ChineseComments(unittest.TestCase):
             result = subprocess.run([sys.executable, str(ROOT/'ru'), 'check', str(path)],
                                     capture_output=True, text=True, timeout=10)
             self.assertEqual(result.returncode, 1)
-            self.assertIn(':2:3: 语法错误', result.stderr)
+            self.assertIn(':2:3: error: 语法错误', result.stderr)
 
 
 if __name__ == '__main__':

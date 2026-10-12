@@ -89,7 +89,7 @@ class GenerationConfig:
     model: str = field(default=DEFAULT_MODEL, repr=False)
 
 
-def _generation_system_prompt(target="cli"):
+def generation_system_prompt(target="cli"):
     """Read the one authoritative package resource anew for every request.
 
     The fixed resource name cannot be selected through user input or config.
@@ -99,12 +99,19 @@ def _generation_system_prompt(target="cli"):
     package data stops generation rather than falling back to a stale prompt.
     The digest identifies the exact raw UTF-8 bytes sent as specification text.
     """
-    if target not in ("cli", "rushu"):
+    if target not in ("cli", "rushu", "ruguan"):
         raise GenerationError("未知生成运行环境", "生成配置错误")
     environment = ("本次运行环境：如书 Python 代码格。需要绘图或交互时可使用如观；创建画布与注册回调须在同一格。"
-                   if target == "rushu" else
+                   if target in ("rushu", "ruguan") else
                    "本次运行环境：普通命令行（含 C／JavaScript 编译）。不提供如观画布宿主，不得生成依赖如观的程序；可用文本呈现结果。")
 
+    if target == "ruguan":
+        environment += ("\n本次任务聚焦如观图形与交互。请重点阅读下方规范的「如观二维图形」及"
+                        "「文本、数学、随机与阵实用成员」章节，使用其中完整接口与示例。"
+                        "创建画布、初始化共享状态及注册回调放在同一代码格；每帧绘制完整画面。"
+                        "轨道、旋转与角度计算复用数学库，按规范处理弧度和画布坐标；"
+                        "随机场景复用独立随机源，并区分初始化采样与逐帧更新。"
+                        "全部语法、接口签名、回调参数、生命周期与预算仍以下方同一份规范为准。")
     try:
         with resources.files(__package__).joinpath("language-spec.md").open("rb") as stream:
             raw = stream.read(MAX_LANGUAGE_SPEC_BYTES + 1)
@@ -127,6 +134,11 @@ def _generation_system_prompt(target="cli"):
             + f"随附规范版本：{versions[0]}\n随附规范 SHA-256：{digest}\n"
             + "以下为本次生成必须遵守的权威规范原文：\n<ru-language-spec>\n"
             + specification + "\n</ru-language-spec>\n")
+
+
+def _generation_system_prompt(target="cli"):
+    """Compatibility wrapper; generation and exports share the public builder."""
+    return generation_system_prompt(target)
 
 
 def _json_object(items):

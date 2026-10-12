@@ -1,3 +1,4 @@
+import {sourceVersion,captureDiagnostic,currentDiagnostic,mountDiagnosticMarkers} from './diagnostics.mjs';
 import {templates,createTemplateBook} from './templates.mjs';
 import {outputWindow} from './output-view.mjs';
 import {createSceneView,validateScene} from './scene.mjs';
@@ -126,7 +127,7 @@ function buildEditor(cell,view) {
       const depth=result.lines[row].depth;
       if(depth!=null)for(let d=0;d<Math.min(depth,20);d++){const guide=el('i','guide');guide.style.left=`${d*4}ch`;guide.style.top=`${row*25}px`;fragment.append(guide);}
     }
-    guides.replaceChildren(fragment);sync();
+    guides.replaceChildren(fragment);sync();view.diagnosticMarkers?.render();
   };
   function applyEdit(edit){input.setRangeText(edit.text,edit.start,edit.end,'end');input.setSelectionRange(edit.selectionStart??edit.selection??input.selectionStart,edit.selectionEnd??edit.selection??input.selectionEnd);update();}
   function update(auto=false){
@@ -159,6 +160,7 @@ function buildEditor(cell,view) {
     if(event.key==='Enter'&&(event.shiftKey||event.ctrlKey||event.metaKey)){event.preventDefault();runAndMove(cell,event.shiftKey);return;}
     if(event.key==='Enter'&&!input.readOnly){event.preventDefault();applyEdit(enterEdit(input.value,input.selectionStart,input.selectionEnd));}
   });
+  view.diagnosticMarkers=mountDiagnosticMarkers({input,pre,layer,numbers,records:()=>activeDiagnostics(cell)});
   view.renderEditor=render;render();return shell;
 }
 // Generation is a separate, explicit network action. It never calls the kernel.
@@ -322,11 +324,11 @@ function renderHistory(cell){
 
 function renderCell(cell) {
   const element=el('section','cell '+cell.type),head=el('div','cell-head'),kind=el('div','cell-type'),count=el('span','counter'),tools=el('div','cell-tools');element.dataset.cellId=cell.id;
-  const view={element,count,input:null,renderEditor:null,output:el('div','cell-output')};views.set(cell.id,view);
+  const view={element,count,input:null,renderEditor:null,output:el('div','cell-output'),diagnosticLinks:el('div','diagnostic-links')};views.set(cell.id,view);
   kind.append(el('span','kind-icon',cell.type==='code'?'⌘':'¶'),el('span','',cell.type==='code'?'如代码':'文字'),count);
   const run=button(cell.type==='code'?'▶ 运行':'编辑',cell.type==='code'?'运行此代码格，Ctrl 或 Command + Enter':'编辑文字',()=>cell.type==='code'?runAndMove(cell,false):toggleMarkdown(cell), 'run-cell');view.run=run;
   tools.append(run);
-  if(cell.type==='code'){const clear=button('清除输出','清除这格的输出快照',()=>{stopScenes(true);clearScene(cell);cell.outputs=[];cell.execution_count=null;cell.historical=false;cell.status='idle';renderOutput(cell);markDirty();},'clear-output');clear.dataset.mutates='true';tools.append(clear);}
+  if(cell.type==='code'){const clear=button('清除输出','清除这格的输出快照',()=>{stopScenes(true);clearScene(cell);cell.outputs=[];cell.diagnostics=[];delete cell.diagnosticSnapshot;cell.execution_count=null;cell.historical=false;cell.status='idle';renderOutput(cell);markDirty();},'clear-output');clear.dataset.mutates='true';tools.append(clear);}
   for(const [text,title,handler,cls] of [['↑','向上移动格子',()=>moveCell(cell,-1),'icon-button'],['↓','向下移动格子',()=>moveCell(cell,1),'icon-button'],['×','删除这格',()=>deleteCell(cell),'icon-button danger']]){const b=button(text,title,handler,cls);b.dataset.mutates='true';tools.append(b);}
   if(cell.type==='markdown'){const learn=button('如是我言','以这段文字生成如源码，先确认发送范围',()=>createLearning(cell));learn.dataset.mutates='true';tools.prepend(learn);}
   else if(!cell.generation){const learn=button('学习模式','把当前源码作为学习草稿，另写修改意图',()=>enableLearning(cell));learn.dataset.mutates='true';tools.prepend(learn);}
@@ -347,9 +349,23 @@ function toggleMarkdown(cell,forceEdit=false) {
   input.addEventListener('keydown',event=>{if(event.key==='Enter'&&(event.ctrlKey||event.metaKey||event.shiftKey)){event.preventDefault();if(generationIntent(cell.source)!==null){createLearning(cell);return;}toggleMarkdown(cell);if(event.shiftKey)focusNext(cell);}});
   edit.append(input,el('div','markdown-hint','Markdown · Shift + Enter 完成编辑；末行「如是我言」则生成源码'));view.preview.after(edit);view.editing=edit;view.input=input;view.run.textContent='完成';input.focus();
 }
-function renderBook(){views.clear();$('#cells').replaceChildren(...book.cells.map(renderCell));updateMeta();refreshControls();}
+function renderBook(){for(const view of views.values())view.diagnosticMarkers?.dispose();views.clear();$('#cells').replaceChildren(...book.cells.map(renderCell));updateMeta();refreshControls();}
+function activeDiagnostics(cell){
+  return book.cells.flatMap(owner=>owner.diagnostics||[]).filter(record=>record.targetId===cell.id&&currentDiagnostic(cell,record)).slice(0,20);
+}
+function refreshDiagnosticMarkers(){for(const cell of book.cells){const view=views.get(cell.id);view?.diagnosticMarkers?.render();if(view?.diagnosticLinks){view.diagnosticLinks.replaceChildren();renderDiagnosticLinks(cell,view.diagnosticLinks);}}}
+function renderDiagnosticLinks(cell,output){
+  for(const record of cell.diagnostics||[]){
+    const target=book.cells.find(item=>item.id===record.targetId),current=target&&currentDiagnostic(target,record);
+    const label=`第 ${book.cells.indexOf(target)+1} 格 · 第 ${record.range.line} 行`+(record.range.col==null?'':`，第 ${record.range.col} 列`);
+    if(current){const jump=button('定位错误 · '+label,record.message+'；定位到 '+label,()=>{
+      if(currentDiagnostic(target,record))views.get(target.id)?.diagnosticMarkers?.focus(record);
+    },'diagnostic-jump');output.append(jump);}
+    else output.append(el('span','diagnostic-stale','错误来自旧版源码，重新运行后可定位。'));
+  }
+}
 function renderOutput(cell) {
-  const view=views.get(cell.id);if(!view)return;
+  const view=views.get(cell.id);if(!view)return;refreshDiagnosticMarkers();
   view.element.classList.toggle('running',cell.status==='running');view.count.textContent=cell.type==='code'?(cell.status==='running'?'[ * ]':`[ ${cell.execution_count??' '} ]`):'';
   const output=view.output,form=view.form,focused=output.contains(document.activeElement)?document.activeElement:null,selection=focused&&focused.selectionStart!=null?[focused.selectionStart,focused.selectionEnd]:null;output.replaceChildren();output.hidden=cell.type!=='code'||(!cell.outputs.length&&cell.status!=='running'&&!cell.execution_count&&!form);
   if(output.hidden)return;
@@ -357,7 +373,7 @@ function renderOutput(cell) {
   if(cell.historical)heading.append(el('span','history-label','历史输出 · 未在本会话执行'));
   else if(cell.stale)heading.append(el('span','history-label','源码已修改 · 输出来自上次运行'));
   else heading.append(el('span','cell-state'+(cell.status==='error'?' failed':''),cell.status==='running'?'运行中…':cell.status==='error'?'运行出错':cell.status==='done'?'已完成':''));
-  output.append(heading);
+  output.append(heading,view.diagnosticLinks);
   const window=outputWindow(cell.outputs,view.outputExpanded,view.outputPage||0);view.outputPage=window.page;
   if(window.foldable){const controls=el('div','output-controls');controls.append(el('span','',`已保留 ${window.bytes.toLocaleString()} UTF-8 字节 · ${view.outputExpanded?`第 ${window.page+1}/${window.pages} 页`:'预览前 8 行 / 2,000 字符'}`));controls.append(button(view.outputExpanded?'收起输出':'展开输出','展开或收起已保留的原文',()=>{view.outputExpanded=!view.outputExpanded;view.outputPage=0;renderOutput(cell);}));if(view.outputExpanded){for(const [label,delta] of [['上一页',-1],['下一页',1]]){const nav=button(label,label,()=>{view.outputPage+=delta;renderOutput(cell);});nav.disabled=window.page+delta<0||window.page+delta>=window.pages;controls.append(nav);}}output.append(controls);}
   for(const item of window.items){if(item.type==='graphics'){try{output.append(sceneOutput(cell,item));}catch(error){output.append(el('pre','error',error.message));}}else output.append(el('pre',item.type,item.text));}
@@ -385,12 +401,14 @@ async function runCell(cell) {
   }
   if(cell.generation){try{checkpoint(cell);markDirty();renderHistory(cell);}catch(error){notice(error.message,true,true);return false;}}
   const myEpoch=epoch,mySession=session,myGeneration=generation;let submitted=false;let resolve;const done=new Promise(r=>resolve=r),run={cellId:cell.id,resolve,epoch:myEpoch,beforeCount:lastExecutionCount};activeRun=run;
-  stopScenes();cell.outputs=[];cell.outputTruncated=false;cell.stale=false;cell.historical=false;cell.status='running';cell.execution_count=null;renderOutput(cell);refreshControls();runtimeStatus('running');markDirty();
+  stopScenes();cell.outputs=[];cell.diagnostics=[];delete cell.diagnosticSnapshot;cell.outputTruncated=false;cell.stale=false;cell.historical=false;cell.status='running';cell.execution_count=null;renderOutput(cell);refreshControls();runtimeStatus('running');markDirty();
   try{
+    const snapshot={source:cell.source,version:await sourceVersion(cell.source),generation:myGeneration,execution:null};
+    if(myEpoch!==epoch||activeRun!==run)return done;cell.diagnosticSnapshot=snapshot;
     await closeScenesBeforeRun(mySession,myEpoch,myGeneration);if(myEpoch!==epoch||activeRun!==run)return done;clearScene(cell);submitted=true;
-    const result=await api(sessionPath('/execute'),'POST',{code:cell.source,cell_id:cell.id,expected_generation:generation});
+    const result=await api(sessionPath('/execute'),'POST',{code:snapshot.source,cell_id:cell.id,expected_generation:generation});
     if(myEpoch!==epoch)return false;if(activeRun!==run)return done;
-    cell.execution_count=result.execution_count;lastExecutionCount=result.execution_count;generation=result.generation;renderOutput(cell);pollSoon(0);
+    cell.execution_count=result.execution_count;if(cell.diagnosticSnapshot)cell.diagnosticSnapshot.execution=result.execution_count;lastExecutionCount=result.execution_count;generation=result.generation;renderOutput(cell);pollSoon(0);
   }catch(error){if(activeRun===run){if(error.definite||!submitted){cell.status='error';appendOutput(cell,'error',error.message);renderOutput(cell);finishActive(false);runtimeStatus('idle');return false;}run.uncertain=true;connected=false;runtimeStatus('dead','运行状态待确认');notice(error.message+' 请求可能已经执行，正在确认运行状态。',true,true);pollSoon(0);}return done;}
   return done;
 }
@@ -426,13 +444,13 @@ async function pollEvents(){if(polling){pollSoon();return;}if(!session||transiti
       // A closing canvas can still emit events from the previous execution.
       if(activeRun?.cellId===cell.id&&event.execution_count<=activeRun.beforeCount)continue;
       // A poll may beat the execute response: use the authoritative event count.
-      if(cell.status==='running'&&cell.execution_count==null)cell.execution_count=event.execution_count;
+      if(cell.status==='running'&&cell.execution_count==null){cell.execution_count=event.execution_count;if(cell.diagnosticSnapshot)cell.diagnosticSnapshot.execution=event.execution_count;}
       if(cell.execution_count!==event.execution_count)continue;
       if(event.type==='graphics'){
         try{const scene=validateScene(event);const prior=cell.outputs.find(item=>item.type==='graphics');if(prior){if(prior.scene.canvas_id!==scene.canvas_id)clearScene(cell);retainGraphics(cell,scene,book);}else retainGraphics(cell,scene,book);changed.add(cell);}catch(error){appendOutput(cell,'error',error.message+'\n');changed.add(cell);}
-      }else if(event.type==='graphics_done'||event.type==='graphics_closed'){const pending=scenePending.get(event.canvas_id);if(pending){scenePending.delete(event.canvas_id);if(event.status==='error')pending.reject(new Error('画布回调运行出错'));else pending.resolve();}if(event.type==='graphics_closed'||event.status==='error')sceneViews.get(event.canvas_id)?.view.deactivate();
+      }else if(event.type==='graphics_done'||event.type==='graphics_closed'){if(event.type==='graphics_done'&&event.status==='error'){cell.status='error';changed.add(cell);}const pending=scenePending.get(event.canvas_id);if(pending){scenePending.delete(event.canvas_id);if(event.status==='error')pending.reject(new Error('画布回调运行出错'));else pending.resolve();}if(event.type==='graphics_closed'||event.status==='error')sceneViews.get(event.canvas_id)?.view.deactivate();
       }else if(event.type==='output'){appendOutput(cell,event.stream==='stderr'?'stderr':'stdout',event.text);changed.add(cell);}
-      else if(event.type==='error'){const position=diagnosticLocation(event,true);appendOutput(cell,'error',(position?position+'\n':'')+event.message+'\n');changed.add(cell);}
+      else if(event.type==='error'){const position=diagnosticLocation(event,true);const text=typeof event.diagnostic?.formatted==='string'?event.diagnostic.formatted:(position?position+'\n':'')+event.message;appendOutput(cell,'error',text+'\n');const diagnostic=captureDiagnostic(book,event);if(diagnostic){cell.diagnostics??=[];if(cell.diagnostics.length<20)cell.diagnostics.push(diagnostic);}changed.add(cell);}
       else if(event.type==='input_request'){requestInput(cell,event.request_id);}
       else if(event.type==='done'){cell.status=event.status==='ok'?'done':'error';changed.add(cell);if(activeRun?.cellId===cell.id)finishActive(event.status==='ok');}
     }

@@ -1284,3 +1284,57 @@
   (dolist (entry '(("查" . "典：查 目:") ("增" . "典：增 目: 相:") ("除" . "典：除 目:")))
     (should (string-match-p (regexp-quote (cdr entry))
                             (cdr (assoc (car entry) ru-lang--practical-member-help)))))
+
+(ert-deftest ru-lang-diagnostic-paths-and-legacy-format ()
+  (dolist (file '("C:\\中文 目录\\题目.ru" "/tmp/空 格/😀.ru" "C:/中文/题.ru"))
+    (dolist (prefix '("error: " ""))
+      (should (string-match ru-lang--diagnostic-regexp
+                            (format "%s:12:3: %s运行错误：测试" file prefix)))
+      (should (equal (match-string 1 (format "%s:12:3: %s运行错误：测试" file prefix)) file)))))
+
+(ert-deftest ru-lang-diagnostic-codepoint-navigation ()
+  ;; A TAB, Chinese BMP character, and non-BMP character each count as one.
+  (let* ((file (make-temp-file "如诊断 空格 " nil ".ru" "\t中文😀目标\n"))
+         (source-buffer (find-file-noselect file)))
+    (unwind-protect
+        (with-temp-buffer
+          (comint-mode)
+          (ru-lang--enable-run-diagnostics (point-min))
+          (insert (format "%s:1:5: error: 运行错误：定位\n" file))
+          (save-window-excursion
+            (compilation-next-error-function 1 t)
+            (with-current-buffer source-buffer
+              (should (= (point) 5))
+              (should (eq (char-after) ?目)))))
+      (when (buffer-live-p source-buffer) (kill-buffer source-buffer))
+      (delete-file file))))
+
+(ert-deftest ru-lang-diagnostic-virtual-sources-are-not-files ()
+  (with-temp-buffer
+    (comint-mode)
+    (ru-lang--enable-run-diagnostics (point-min))
+    (insert "rushu://session/1/cell/2.ru:1:1: error: 虚拟来源\n<cell>:1:1: error: 虚拟来源\n")
+    (should-error (compilation-next-error-function 1 t) :type 'user-error)))
+
+(ert-deftest ru-lang-diagnostic-keeps-comint-input-bindings ()
+  (with-temp-buffer
+    (comint-mode)
+    (ru-lang--enable-run-diagnostics (point-min))
+    (should (derived-mode-p 'comint-mode))
+    (should compilation-shell-minor-mode)
+    (should (eq (key-binding (kbd "RET")) #'comint-send-input))
+    (should (eq (key-binding (kbd "C-c C-c")) #'comint-interrupt-subjob))
+    (should (eq (key-binding (kbd "C-c C-d")) #'comint-delchar-or-maybe-eof))
+    (should-not compilation-error-screen-columns)
+    (should (= compilation-first-column 1))))
+
+(ert-deftest ru-lang-diagnostic-line-only-and-colon-paths ()
+  (dolist (file '("C:\\中文 目录\\题目.ru" "/tmp/中文:片段 文件.ru"))
+    (dolist (location '("12" "12:3"))
+      (dolist (prefix '("error: " ""))
+        (let ((diagnostic (format "%s:%s: %s运行错误：测试" file location prefix)))
+          (should (string-match ru-lang--diagnostic-regexp diagnostic))
+          (should (equal (match-string 1 diagnostic) file))
+          (should (equal (match-string 2 diagnostic) "12"))
+          (should (equal (match-string 3 diagnostic)
+                         (and (equal location "12:3") "3"))))))))

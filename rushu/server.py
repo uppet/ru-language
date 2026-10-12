@@ -19,6 +19,7 @@ from .generation import (DEFAULT_TIMEOUT, configuration, generate_source,
 
 MAX_BODY = 1_048_576
 STATIC_FILES = {
+    "/diagnostics.mjs": ("diagnostics.mjs", "text/javascript; charset=utf-8"),
     "/templates.mjs": ("templates.mjs", "text/javascript; charset=utf-8"),
     "/output-view.mjs": ("output-view.mjs", "text/javascript; charset=utf-8"),"/versions.mjs": ("versions.mjs", "text/javascript; charset=utf-8"),"/": ("index.html", "text/html; charset=utf-8"),
                 "/index.html": ("index.html", "text/html; charset=utf-8"),

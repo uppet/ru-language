@@ -174,7 +174,7 @@ class JavaScriptParityTests(unittest.TestCase):
         self.assertEqual(status, 1, (output, error))
         self.assertIn(category, error)
         self.assertTrue(any(origin + ':' in error for origin in graph), error)
-        self.assertRegex(error, r':\d+:\d+:')
+        self.assertRegex(error, r':\d+:\d+: error: ')
         self.assertNotIn('Traceback', error)
         self.assertNotIn('ReferenceError', error)
         self.assertNotIn('TypeError:', error)
@@ -230,7 +230,7 @@ class JavaScriptParityTests(unittest.TestCase):
         path, _ = compiled("显 '先'.\n卒 '原因😀'.", self.folder, 'panic_origin')
         status, output, error = node_run(path)
         self.assertEqual((status, output), (1, '先\n'))
-        self.assertIn('panic_origin.ru:2:1: 未救之卒：原因😀', error)
+        self.assertIn('panic_origin.ru:2:1: error: 未救之卒：原因😀', error)
 
     def test_assignment_checks_target_before_rhs(self):
         prefix = "算 副作用: 显 '不应执行'. 得 2. 法 "
@@ -432,7 +432,7 @@ class JavaScriptParityTests(unittest.TestCase):
         path, _ = compiled(main.read_text(encoding='utf-8'), self.folder, source_path=main)
         status, output, error = node_run(path)
         self.assertEqual((status, output), (1, '一次\n'))
-        self.assertIn(str(self.folder / 'bad.ru') + ':2:1: 未救之卒：初始化失败', error)
+        self.assertIn(str(self.folder / 'bad.ru') + ':2:1: error: 未救之卒：初始化失败', error)
 
     def test_builtin_parent_is_not_exported_by_modules(self):
         from rulang.io_runtime import IO_BUILTIN_NAMES

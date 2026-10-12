@@ -8,6 +8,7 @@ import math
 from pathlib import Path
 import re
 import sys
+from .diagnostics import at_token
 from .frontend import BUILTIN_NAMES, RuError, bind_arguments, validate
 from .io_runtime import install_io, io_member, io_new_defaults, read_stream_line, _write_stream
 from .contest_runtime import install_contest, contest_member
@@ -212,7 +213,7 @@ class Scope:
         value, _ = self.find(name)
         if value is not _MISSING:
             return value
-        raise RuError(f"未定义名称：{name}", token.line, token.col, "运行错误")
+        raise at_token(RuError(f"未定义名称：{name}", token.line, token.col, "运行错误"), token)
 
     def bind(self, name, value):
         # Block/rescue assignments remain local. Function assignments may update
@@ -256,6 +257,7 @@ class Panic(RuError):
     def __init__(self, reason, token):
         self.reason = reason
         super().__init__(reason, token.line, token.col, "未救之卒")
+        at_token(self, token)
 
 
 @dataclass(eq=False)
@@ -296,8 +298,8 @@ class Interpreter:
             sys.setrecursionlimit(10000)
 
     def fail(self, node, message):
-        error = RuError(message, node.token.line, node.token.col, "运行错误")
-        if self.source_path:
+        error = at_token(RuError(message, node.token.line, node.token.col, "运行错误"), node.token)
+        if self.source_path and not getattr(error, "source_name", None):
             error.source_name = str(self.source_path)
             error.source_text = getattr(self.modules, "sources", {}).get(str(self.source_path), "")
         raise error
@@ -1099,6 +1101,7 @@ class Interpreter:
                 return None
             caller.fail(n, f"函数「{name}」没有执行「得」")
         except RuError as error:
+            at_token(error, function.token)
             self.locate_error(error)
             raise
         finally:

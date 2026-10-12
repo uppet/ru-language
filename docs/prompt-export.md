@@ -1,0 +1,54 @@
+# 如书／如观系统提示词导出
+
+这两个子命令把当前安装版本随附的生成知识导出为 UTF-8 纯文本，供其他 LLM 使用。导出完全离线：不读取 `~/.ru-lang.json`、提供方环境变量或密钥文件，不配置提供方，不发送请求，不运行生成代码。
+
+## 命令
+
+在仓库根目录运行（已安装 `ru` 时可直接用 `ru` 代替 `python3 ru`；Windows 可用 `py -3 ru`）：
+
+```sh
+python3 ru rushu-prompt
+python3 ru ruguan-prompt
+python3 ru rushu-prompt -o rushu-system.txt
+python3 ru ruguan-prompt --output ruguan-system.txt
+python3 ru ruguan-prompt -o -
+python3 ru ruguan-prompt -o ruguan-system.txt --force
+```
+
+- 省略 `-o` 或指定 `-o -`：只向 stdout 写提示词，不夹带成功说明或进度，适合重定向与管道。诊断写 stderr。
+- `-o PATH` / `--output PATH`：写 UTF-8 文件，不限扩展名；父目录须已存在。成功时 stdout、stderr 均为空。
+- 默认拒绝任何已存在的输出路径。`--force` 明确允许替换已有普通文件，也可写新文件；不能用于 stdout。
+- 写入先在同一目录准备完整临时文件，再原子发布。写入失败不会截断旧文件；默认模式下另一进程抢先创建目标也不会被覆盖。
+- 即使用 `--force`，也不覆盖符号链接（包括失效链接）、目录、特殊文件、随附语言规范自身及其硬链接。不同进程仍应避免同时强制写同一输出路径。
+- shell 的 `>` 重定向由 shell 自己控制，可能提前截断已有文件；需要上述保护时请用 `-o PATH`。
+
+## 两种内容的区别
+
+`rushu-prompt` 与如书调用生成提供方时的 system 消息逐字相同：包括生成约束、如书 Python 代码格宿主说明，以及唯一一份完整语言规范。它适合普通如书代码、文本、算法和图形任务。
+
+`ruguan-prompt` 使用同一组装逻辑、同一完整规范与如书宿主说明，只追加一段如观聚焦指导：重点阅读图形接口、回调生命周期、数学与随机标准库，区分初始化与逐帧更新。完整如观签名、数学函数、随机源规则都直接来自规范，不维护另一套接口表，也不重复嵌入全文。它生成的图形代码仍应在如书中运行；普通 CLI、C 或 JavaScript 后端不提供如观画布宿主。
+
+两者都会在每次导出时重新读取随包发布的规范，标明语言版本、规范版本及原始规范 UTF-8 字节的 SHA-256。缺失、损坏或版本不一致会失败，不退回旧提示词。因此升级工具链后应重新导出；导出文件本身不会自动更新。
+
+## 如何交给其他 LLM
+
+1. 把导出的全文原样放进 LLM 的 `system` 消息，或支持系统指令的客户端对应字段。不要只复制规范链接或摘要。
+2. 把具体程序需求放进独立的 `user` 消息。这里无需末尾的「如是我言」标记；该标记是如书／`ru generate` 的入口，不是源码。
+3. 要求返回纯如源码；提示词已经包含这项要求。先人工审阅，再复制到如书代码格运行。画布创建与回调注册应在同一格。
+
+若客户端只有单一聊天输入框，可以把全文放在需求之前作为上下文，但它不等同于独立的 system 消息。需使用能容纳整份规范的上下文窗口，避免客户端截断。导出命令不会为外部模型配置工具、输出 token 上限或隐私选项，也不能保证外部模型遵守规范。
+
+导出内容不包含你的书本、草稿或需求。你向其他提供方提交的个人需求及代码会离开本机，请自行确认发送范围。静态检查不是执行验证；如观宿主能力也不能用 `ru check` 成功来替代。
+
+## Python 公共接口
+
+```python
+from rulang.generation import generation_system_prompt
+from rulang.prompts import export_prompt
+
+text = generation_system_prompt("rushu")  # 与如书生成请求相同
+text = export_prompt("ruguan")           # 返回文本，默认不写文件
+path = export_prompt("ruguan", "ruguan-system.txt", force=True)
+```
+
+`generation_system_prompt` 接受 `cli`、`rushu`、`ruguan`；`cli` 保持普通命令行生成的运行环境限制。`export_prompt` 只接受本次两个导出目标；`output=None` 或 `"-"` 返回字符串，实际文件路径返回发布后的 `Path`。出错抛出 `RuError`（随附规范错误可能是其 `GenerationError` 子类）。这些接口也无需提供方配置。

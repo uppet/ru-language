@@ -9,6 +9,7 @@ from pathlib import Path
 
 from . import __version__
 from .compiler import Compiler
+from .diagnostics import display_text
 from .frontend import Node, bind_arguments
 
 
@@ -219,6 +220,11 @@ class JSCompiler(Compiler):
         to the full runtime rather than guessing at JavaScript syntax.
         """
         runtime = Path(__file__).with_name('runtime.js').read_text(encoding='utf-8')
+        display_paths = {path: display_text(path) for path in self.modules
+                         if display_text(path) != path}
+        if display_paths:
+            # Keep RuError.source raw; only its editor-facing rendering is escaped.
+            runtime = runtime.replace('error.source+', '(' + js(display_paths) + '[error.source]||error.source)+')
         if self.full_runtime:
             return runtime
         words = set()

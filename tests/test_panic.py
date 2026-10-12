@@ -146,7 +146,7 @@ class PanicTests(unittest.TestCase):
             with tempfile.TemporaryDirectory() as folder:
                 result = native("显 '先'.\n卒 '原因😀'.", folder)
                 self.assertNotEqual(result.returncode, 0)
-                self.assertIn('<测试>:2:1: 未救之卒：原因😀', result.stderr)
+                self.assertIn('<测试>:2:1: error: 未救之卒：原因😀', result.stderr)
                 self.assertIn('RU_GC live=0 ', result.stderr)
 
     def test_module_calls_and_cached_failure(self):
@@ -216,7 +216,7 @@ class PanicTests(unittest.TestCase):
                 graph = load_module_graph(root)
                 result = native(uncaught, folder, 'cached_origin', modules=graph, source_path=root)
                 self.assertNotEqual(result.returncode, 0)
-                self.assertIn(f'{bad}:4:1: 未救之卒：初始化失败', result.stderr)
+                self.assertIn(f'{bad}:4:1: error: 未救之卒：初始化失败', result.stderr)
                 self.assertIn('RU_GC live=0 ', result.stderr)
 
     def test_module_origin_and_reserved_handler(self):
@@ -234,7 +234,7 @@ class PanicTests(unittest.TestCase):
             if CC:
                 result = native(source, folder, 'origin', modules=graph, source_path=root)
                 self.assertNotEqual(result.returncode, 0)
-                self.assertIn(f'{child}:2:3: 未救之卒：模块原点', result.stderr)
+                self.assertIn(f'{child}:2:3: error: 未救之卒：模块原点', result.stderr)
                 self.assertIn('RU_GC live=0 ', result.stderr)
             source = "尽 取 外言 'child.ru'. 试 卒 '坏'. 救 坏 显 坏. 终."
             root.write_text(source, encoding='utf-8')

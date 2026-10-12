@@ -2,13 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
+import {captureDiagnostic} from '../static/diagnostics.mjs';
 
 const source=readFileSync(new URL('../static/app.js',import.meta.url),'utf8');
 const locations=source.slice(source.indexOf('function diagnosticLocation('),source.indexOf('function generationDiagnostic('));
 const polling=source.slice(source.indexOf('let pollTimer;'),source.indexOf('function saveBook('));
-function harness(event){
-  const cell={id:'cell',execution_count:1,outputs:[],status:'error'};
-  const context={Number,cell,scenePending:new Map(),session:'session',epoch:1,generation:1,cursor:0,polling:false,transition:false,
+function harness(event,extra={}){
+  const cell={id:'cell',execution_count:1,outputs:[],status:'error',...extra};
+  const context={Number,captureDiagnostic,cell,scenePending:new Map(),session:'session',epoch:1,generation:1,cursor:0,polling:false,transition:false,
     book:{cells:[cell]},activeRun:null,connected:true,kernelDead:false,lastExecutionCount:1,
     api:async()=>({events:[{seq:1,generation:1,cell_id:'cell',execution_count:1,type:'error',...event}],cursor:1,state:'idle',execution_count:1}),
     appendOutput:(target,type,text)=>target.outputs.push({type,text}),renderOutput(){},markDirty(){},runtimeStatus(){},refreshControls(){},notice(){},
@@ -51,4 +52,15 @@ test('generation locations never include source metadata and reject invalid nume
   const {context}=harness({});
   assert.equal(context.diagnosticLocation({source_name:'private path',line:3,col:7}),'第 3 行，第 7 列');
   for(const line of [null,NaN,Infinity,-1,0,1.5,Number.MAX_SAFE_INTEGER+1])assert.equal(context.diagnosticLocation({line,col:1}),'');
+});
+
+
+test('actual event polling captures only the matching structured execution snapshot',async()=>{
+ const extra={source:'甲😀未定义',diagnosticSnapshot:{source:'甲😀未定义',version:'hash',generation:1,execution:1}};
+ const diagnostic={line:1,col:3,message:'错误',source:{kind:'cell',cell_id:'cell',execution_count:1,generation:1,source_version:'hash'}};
+ const {context,cell}=harness({line:1,col:3,message:'错误',diagnostic},extra);await context.pollEvents();
+ assert.equal(cell.diagnostics.length,1);assert.equal(cell.diagnostics[0].range.start,3);assert.equal(cell.diagnostics[0].range.end,4);
+ for(const late of [{execution_count:2},{generation:2}]){
+  const result=harness({line:1,col:3,message:'错误',diagnostic,...late},extra);await result.context.pollEvents();assert.equal(result.cell.diagnostics,undefined);assert.equal(result.cell.outputs.length,0);
+ }
 });

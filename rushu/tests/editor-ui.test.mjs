@@ -18,7 +18,7 @@ class Element {
 }
 function editor(text){
   const cell={source:text,outputs:[]},view={};
-  const context={analyze,highlight,enterEdit,indentSelection,needsAutoDedent,
+  const context={mountDiagnosticMarkers:()=>({render(){}}),analyze,highlight,enterEdit,indentSelection,needsAutoDedent,
     book:{cells:[cell]},MAX_SOURCE:200000,el:()=>new Element(),document:{createDocumentFragment:()=>new Element()},
     markDirty(){},renderOutput(){},notice(){},runAndMove(){},cell,view};
   vm.createContext(context);vm.runInContext(source+';buildEditor(cell,view)',context);

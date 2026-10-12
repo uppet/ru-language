@@ -1,6 +1,6 @@
-# 如（ru-language）· 0.14.0 元初实现
+# 如（ru-language）· 0.15.0 元初实现
 
-0.14.0 配套如书 0.3.2：数学库新增三角函数、圆周率与角度转换；如观减少逐行预算计量和绘图调用的重复开销，保留 1 秒／500000 Python 跟踪行、64 MiB 与 10 秒硬看门狗保护。
+0.15.0 配套如书 0.3.3：统一运行／编译错误的编辑器诊断格式，如书在可信源码位置显示错误高亮与跳转；新增 `ru rushu-prompt`、`ru ruguan-prompt`，可向终端或文件导出完整生成提示。详见 [诊断格式](docs/diagnostics.md) 与 [提示导出](docs/prompt-export.md)。
 
 0.13.2 配套如书 0.3.0：起始页可选六类场景模板，也可直接新建空白如书。模板只创建内容，不自动运行或请求模型，详见 [如书使用说明](rushu/README.md)。
 
@@ -17,6 +17,8 @@
 - **CLI**：运行 `python3 ru repl`，输入 `显 '你好，如'.`。Windows 可把 `python3` 换成 `py -3`。
 
 需要拆分文本、固定小数位、数学或洗牌时，看 [实用库指南](docs/practical-libraries.md) 与 [完整例子](examples/practical_libraries.ru)。
+
+要把当前如书／如观规范交给其他 LLM，可离线运行 `python3 ru rushu-prompt` 或 `python3 ru ruguan-prompt`；默认输出到 stdout，`-o 提示.txt` 写文件。详见 [系统提示词导出](docs/prompt-export.md)。
 
 接着做 [七个离线小练习](docs/getting-started.md)，手边保留 [调用与作用域速查](docs/calls-and-scope.md)。建议初学时统一写 `取` 和文字块 `段: … 落.`；符号别名仍然有效。
 
@@ -63,7 +65,7 @@
 
 </details>
 
-完整的实现语义以 [如语言规范 0.14.0](rulang/language-spec.md) 为准。它是学习者、工具作者与 LLM 共用的唯一规范文本；README 提供入门和操作摘要。
+完整的实现语义以 [如语言规范 0.15.0](rulang/language-spec.md) 为准。它是学习者、工具作者与 LLM 共用的唯一规范文本；README 提供入门和操作摘要。
 
 待逐项解决或确认忽略的审查事项见 [语言审查追踪](docs/language-review-tracker.md)。清单区分实现缺陷、现有设计取舍与未定提案，不替代语言规范。
 

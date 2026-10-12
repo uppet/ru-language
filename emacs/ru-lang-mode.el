@@ -18,6 +18,7 @@
 (require 'imenu)
 (require 'seq)
 (require 'comint)
+(require 'compile)
 (require 'subr-x)
 
 (defgroup ru-lang nil "Editing the 如 language." :group 'languages)
@@ -44,6 +45,24 @@ shell; do not add shell quotes.  Relative paths use the source directory."
 (defun ru-lang--run-buffer-name (file)
   "Return the output buffer name for absolute source FILE."
   (format "*Ru: %s*" file))
+
+(defconst ru-lang--diagnostic-regexp
+  "^\\(.+?\\):\\([1-9][0-9]*\\)\\(?::\\([1-9][0-9]*\\)\\)?: \\(?:error: \\)?\\(.+\\)$"
+  "Ru CLI diagnostic with a real filename and one-based codepoint column.")
+
+(defun ru-lang--enable-run-diagnostics (start)
+  "Add diagnostic navigation to Comint, starting at this run's START."
+  (compilation-shell-minor-mode 1)
+  (setq-local compilation-error-regexp-alist
+              (list (list ru-lang--diagnostic-regexp 1 2 3 2)))
+  (setq-local compilation-error-screen-columns nil)
+  (setq-local compilation-first-column 1)
+  (setq-local compilation-transform-file-match-alist
+              (copy-sequence compilation-transform-file-match-alist))
+  (cl-pushnew '("\\`rushu://" nil) compilation-transform-file-match-alist :test #'equal)
+  (cl-pushnew '("\\`<" nil) compilation-transform-file-match-alist :test #'equal)
+  (setq-local compilation-messages-start start)
+  (setq-local compilation-current-error nil))
 
 ;;;###autoload
 (defun ru-lang-run-file ()
@@ -84,6 +103,7 @@ the source directory, passing filenames directly without a shell."
       (user-error "Source file is not readable: %s" file))
     (let ((output (get-buffer-create name))
           (default-directory (file-name-directory file))
+          (run-start nil)
           (process-connection-type nil)
           (coding-system-for-read 'utf-8-unix)
           (coding-system-for-write 'utf-8-unix))
@@ -91,9 +111,12 @@ the source directory, passing filenames directly without a shell."
         (setq default-directory (file-name-directory file))
         (let ((inhibit-read-only t))
           (goto-char (point-max))
-          (insert (format "\nRunning %s\n" file))))
+          (insert (format "\nRunning %s\n" file))
+          (setq run-start (copy-marker (point)))))
       (apply #'make-comint-in-buffer "Ru" output (car command) nil
              (append (cdr command) (list "run" file)))
+      (with-current-buffer output
+        (ru-lang--enable-run-diagnostics run-start))
       (display-buffer output)
       output)))
 
@@ -781,6 +804,9 @@ C-M-n/C-M-p/C-M-u for balanced structures; C-c C-p/C-c C-n/C-c C-u
 for legacy language-block movement; M-{/M-} for paragraphs.
 C-c C-r runs the current file with `ru-lang-run-file'."
   :syntax-table ru-lang-mode-syntax-table
+  ;; Ru positions count Unicode codepoints, not visual widths or UTF-16.
+  (setq-local compilation-error-screen-columns nil)
+  (setq-local compilation-first-column 1)
   (setq-local indent-tabs-mode nil)
   (setq-local indent-line-function #'ru-lang-indent-line)
   (setq-local indent-region-function #'ru-lang-indent-region)

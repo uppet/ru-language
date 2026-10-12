@@ -2,6 +2,7 @@
 from dataclasses import dataclass
 import math
 import re
+from .diagnostics import at_token, locate
 
 
 class RuError(Exception):
@@ -183,7 +184,7 @@ class Parser:
     def fail(self, message, token=None):
         t = token or self.current
         cls = Incomplete if t.kind == "EOF" else RuError
-        raise cls(message, t.line, t.col)
+        raise at_token(cls(message, t.line, t.col), t)
 
     def expect(self, value):
         if not self.isv(value):
@@ -671,12 +672,19 @@ class Parser:
         return left
 
 
-def parse(source):
-    parser = Parser(source)
-    result = parser.parse()
-    if parser.current.kind != "EOF":
-        parser.fail("出现多余内容")
-    return result
+def parse(source, source_origin=None):
+    try:
+        parser = Parser(source)
+        if source_origin is not None:
+            for token in parser.tokens:
+                token.source_origin = source_origin
+        result = parser.parse()
+        if parser.current.kind != "EOF":
+            parser.fail("出现多余内容")
+        return result
+    except RuError as error:
+        locate(error, source_origin)
+        raise
 
 
 def bind_arguments(name, args, params, fail, optional=False):
@@ -721,7 +729,7 @@ def validate(program, existing_functions=(), existing_types=()):
         if n.kind in ("function", "type"):
             name = n.data["name"]
             if name in BUILTIN_NAMES or name in declared:
-                raise RuError(f"重复或保留的名称：{name}", n.token.line, n.token.col)
+                raise at_token(RuError(f"重复或保留的名称：{name}", n.token.line, n.token.col), n.token)
             declared.add(name)
             if n.kind == "function":
                 functions.add(name)
@@ -729,7 +737,7 @@ def validate(program, existing_functions=(), existing_types=()):
                 type_nodes[name] = n
 
     def error(n, message):
-        raise RuError(message, n.token.line, n.token.col)
+        raise at_token(RuError(message, n.token.line, n.token.col), n.token)
 
     has_imports = any(n.kind == "import_all" for n in program)
     known_types = set(type_nodes) | set(existing_types) | BUILTIN_TYPES | {"数", "句", "阵", "对", "空", "算", "作", "典", "事实"}

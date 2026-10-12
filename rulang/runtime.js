@@ -1020,7 +1020,7 @@ const R = (() => {
     return result;
   }
   function finish(error) {
-    const text = error instanceof RuError ? error.source+':'+error.line+':'+error.col+': '+error.category+'：'+error.message : '运行错误：'+String(error && error.message || error);
+    const text = error instanceof RuError ? error.source+':'+error.line+':'+error.col+': error: '+error.category+'：'+error.message : '<程序>: error: 运行错误：'+String(error && error.message || error);
     try { write(2,text+'\n'); } catch (_) {} process.exitCode = 1;
   }
   return {NO_RETURN,Panic,RuError,Pair,Fn,Type,Instance,Module,fail,
