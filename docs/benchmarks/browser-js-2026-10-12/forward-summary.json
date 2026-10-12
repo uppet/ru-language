@@ -1,0 +1,224 @@
+{
+  "status": "PASS",
+  "smokeOnly": false,
+  "host": {
+    "platform": "linux",
+    "arch": "x64",
+    "cpu": "AMD EPYC 9V74 80-Core Processor",
+    "logicalCpus": 9,
+    "loadavg": [
+      1.33,
+      1.58,
+      1.55
+    ]
+  },
+  "browser": "154.0.8037.57",
+  "sample": "2s warmup + 10s each;  same Chromium process, viewport1500x1200 DPR1, matched CSS; intervals are Canvas2D command submission completion, not physical display/compositor presentation. Ru drawCpu covers Canvas calls only; native cpuSubmit includes math + Canvas; Ru workerToSubmit is end-to-end callback latency including postMessage, not CPU time.",
+  "results": [
+    {
+      "backend": "Ru browser JS",
+      "targetFps": 20,
+      "measuredFps": 19.7668320626073,
+      "drawCpuMs": {
+        "n": 197,
+        "mean": 0.24060913703409095,
+        "p50": 0.20000000018626451,
+        "p95": 0.5,
+        "max": 2
+      },
+      "workerToSubmitMs": {
+        "n": 197,
+        "mean": 1.9827411167588331,
+        "p50": 1.800000000745058,
+        "p95": 2.7000000001862645,
+        "max": 6.199999999254942
+      },
+      "submitIntervalMs": {
+        "n": 196,
+        "mean": 50.5897959183702,
+        "p50": 50.09999999962747,
+        "p95": 53.5,
+        "max": 65.09999999962747
+      },
+      "commands": 42,
+      "canvas": {
+        "width": 1120,
+        "height": 760
+      },
+      "css": {
+        "width": 867.984375,
+        "height": 589.640625,
+        "border": "1px solid rgb(221, 221, 221)",
+        "boxSizing": "border-box",
+        "borderRadius": "4px"
+      }
+    },
+    {
+      "backend": "Ru browser JS",
+      "targetFps": 30,
+      "measuredFps": 29.250603544130804,
+      "drawCpuMs": {
+        "n": 293,
+        "mean": 0.1955631399183906,
+        "p50": 0.20000000018626451,
+        "p95": 0.30000000074505806,
+        "max": 1.599999999627471
+      },
+      "workerToSubmitMs": {
+        "n": 293,
+        "mean": 1.8406143344671755,
+        "p50": 1.7000000001862645,
+        "p95": 3.099999999627471,
+        "max": 4.599999999627471
+      },
+      "submitIntervalMs": {
+        "n": 292,
+        "mean": 34.18732876712392,
+        "p50": 33.39999999944121,
+        "p95": 45.10000000055879,
+        "max": 50.40000000037253
+      },
+      "commands": 42,
+      "canvas": {
+        "width": 1120,
+        "height": 760
+      },
+      "css": {
+        "width": 867.984375,
+        "height": 589.640625,
+        "border": "1px solid rgb(221, 221, 221)",
+        "boxSizing": "border-box",
+        "borderRadius": "4px"
+      }
+    },
+    {
+      "backend": "Ru browser JS",
+      "targetFps": 60,
+      "measuredFps": 57.57040840888816,
+      "drawCpuMs": {
+        "n": 575,
+        "mean": 0.1756521739438176,
+        "p50": 0.19999999925494194,
+        "p95": 0.2999999998137355,
+        "max": 1.7000000001862645
+      },
+      "workerToSubmitMs": {
+        "n": 575,
+        "mean": 2.569217391318601,
+        "p50": 2.3999999994412065,
+        "p95": 3.7999999998137355,
+        "max": 12.799999999813735
+      },
+      "submitIntervalMs": {
+        "n": 574,
+        "mean": 17.370034843206223,
+        "p50": 16.700000000186265,
+        "p95": 22.899999999441206,
+        "max": 33.700000000186265
+      },
+      "commands": 42,
+      "canvas": {
+        "width": 1120,
+        "height": 760
+      },
+      "css": {
+        "width": 867.984375,
+        "height": 589.640625,
+        "border": "1px solid rgb(221, 221, 221)",
+        "boxSizing": "border-box",
+        "borderRadius": "4px"
+      }
+    },
+    {
+      "backend": "Native JS same solar math",
+      "targetFps": 20,
+      "measuredFps": 20.00020100704455,
+      "cpuSubmitMs": {
+        "n": 200,
+        "mean": 0.2775000000698492,
+        "p50": 0.2999999998137355,
+        "p95": 0.40000000037252903,
+        "max": 1
+      },
+      "submitIntervalMs": {
+        "n": 199,
+        "mean": 49.99949748743906,
+        "p50": 50,
+        "p95": 50.59999999962747,
+        "max": 53.30000000074506
+      },
+      "commands": 42,
+      "canvas": {
+        "width": 1120,
+        "height": 760
+      },
+      "css": {
+        "x": 0,
+        "y": 0,
+        "width": 867.984375,
+        "height": 589.640625
+      }
+    },
+    {
+      "backend": "Native JS same solar math",
+      "targetFps": 30,
+      "measuredFps": 30.000802697061005,
+      "cpuSubmitMs": {
+        "n": 300,
+        "mean": 0.2890000000099341,
+        "p50": 0.2999999998137355,
+        "p95": 0.40000000037252903,
+        "max": 1.7999999998137355
+      },
+      "submitIntervalMs": {
+        "n": 299,
+        "mean": 33.332441471573155,
+        "p50": 33.30000000074506,
+        "p95": 33.700000000186265,
+        "max": 39.39999999944121
+      },
+      "commands": 42,
+      "canvas": {
+        "width": 1120,
+        "height": 760
+      },
+      "css": {
+        "x": 0,
+        "y": 0,
+        "width": 867.984375,
+        "height": 589.640625
+      }
+    },
+    {
+      "backend": "Native JS same solar math",
+      "targetFps": 60,
+      "measuredFps": 60.00380658539161,
+      "cpuSubmitMs": {
+        "n": 600,
+        "mean": 0.31049999999503297,
+        "p50": 0.2999999998137355,
+        "p95": 0.40000000037252903,
+        "max": 12.699999999254942
+      },
+      "submitIntervalMs": {
+        "n": 599,
+        "mean": 16.66560934891517,
+        "p50": 16.699999999254942,
+        "p95": 17.40000000037253,
+        "max": 31.699999999254942
+      },
+      "commands": 42,
+      "canvas": {
+        "width": 1120,
+        "height": 760
+      },
+      "css": {
+        "x": 0,
+        "y": 0,
+        "width": 867.984375,
+        "height": 589.640625
+      }
+    }
+  ],
+  "hoverFreezeResume": "PASS"
+}

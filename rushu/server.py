@@ -12,6 +12,7 @@ import threading
 from urllib.parse import parse_qs, urlsplit
 import webbrowser
 
+from .browser_compile import compile_request
 from .versions import version_info
 from .kernel import KernelError, SessionManager
 from .generation import (DEFAULT_TIMEOUT, configuration, generate_source,
@@ -19,6 +20,9 @@ from .generation import (DEFAULT_TIMEOUT, configuration, generate_source,
 
 MAX_BODY = 1_048_576
 STATIC_FILES = {
+    "/clipboard.mjs": ("clipboard.mjs", "text/javascript; charset=utf-8"),
+    "/js-worker.mjs": ("js-worker.mjs", "text/javascript; charset=utf-8"),
+    "/js-execution.mjs": ("js-execution.mjs", "text/javascript; charset=utf-8"),
     "/diagnostics.mjs": ("diagnostics.mjs", "text/javascript; charset=utf-8"),
     "/templates.mjs": ("templates.mjs", "text/javascript; charset=utf-8"),
     "/output-view.mjs": ("output-view.mjs", "text/javascript; charset=utf-8"),"/versions.mjs": ("versions.mjs", "text/javascript; charset=utf-8"),"/": ("index.html", "text/html; charset=utf-8"),
@@ -98,7 +102,13 @@ class NotebookHandler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Cross-Origin-Resource-Policy", "same-origin")
-        self.send_header("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'")
+        if urlsplit(self.path).path == "/js-worker.mjs":
+            # The trusted static entry imports only generated blob modules.
+            # Unlike a blob Worker, this entry has its own restrictive CSP.
+            csp = "default-src 'none'; script-src blob:; worker-src 'none'; connect-src 'none'; base-uri 'none'; object-src 'none'"
+        else:
+            csp = "default-src 'none'; script-src 'self'; worker-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'"
+        self.send_header("Content-Security-Policy", csp)
         self.send_header("Connection", "close")
         self.end_headers()
         if self.command != "HEAD":
@@ -181,6 +191,13 @@ class NotebookHandler(BaseHTTPRequestHandler):
                 if not target.is_file() or target.stat().st_size > 2 * MAX_BODY:
                     raise KernelError("文件不存在", 404)
                 self._respond(200, target.read_bytes(), mime)
+                return
+            if path == "/api/compile":
+                if parsed.query:
+                    raise KernelError("此接口不接受查询参数")
+                if self.command != "POST":
+                    raise KernelError("不支持此请求方式", 405)
+                self._respond(200, compile_request(self._body()))
                 return
             if path == "/api/versions":
                 if parsed.query:

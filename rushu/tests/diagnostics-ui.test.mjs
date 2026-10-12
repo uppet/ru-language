@@ -15,7 +15,7 @@ function harness(event,extra={}){
     appendOutput:(target,type,text)=>target.outputs.push({type,text}),renderOutput(){},markDirty(){},runtimeStatus(){},refreshControls(){},notice(){},
     setTimeout(){return 1;},clearTimeout(){},
   };
-  vm.createContext(context);vm.runInContext(locations+polling,context);
+  context.browserRun=null;vm.createContext(context);vm.runInContext(locations+polling,context);
   return {context,cell};
 }
 

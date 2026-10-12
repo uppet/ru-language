@@ -35,7 +35,7 @@ export function validateScene(value) {
     return {op:c.op,x:c.x,y:c.y,text:c.text,color:c.color,size:c.size};
   });
   if(!Array.isArray(value.handlers)||!value.handlers.every(x=>eventNames.includes(x)))throw new Error('画布交互无效。');
-  if(!Number.isInteger(value.fps)||value.fps<1||value.fps>30)throw new Error('画布帧率无效。');
+  if(!Number.isInteger(value.fps)||value.fps<1||value.fps>60)throw new Error('画布帧率无效。');
   if(typeof value.running!=='boolean')throw new Error('画布运行状态无效。');
   return {canvas_id:value.canvas_id,width:value.width,height:value.height,commands,fps:value.fps,handlers:[...new Set(value.handlers)],running:value.running};
 }
@@ -51,7 +51,7 @@ export function drawScene(canvas,value) {
   }return scene;
 }
 /** send resolves after the server's graphics_done, not merely HTTP acceptance. */
-export function createSceneView(value,{send=async()=>{},historical=false,onError=()=>{}}={}) {
+export function createSceneView(value,{send=async()=>{},historical=false,onError=()=>{},backend='python'}={}) {
   let scene=validateScene(value),disposed=false,inFlight=false,timer=null,pendingMove=null,queue=[],live=!historical,lastDispatch=0,failure='',suspended=false,retryAt=0;
   const root=document.createElement('section');root.className='scene-output';
   const canvas=document.createElement('canvas');canvas.tabIndex=0;canvas.setAttribute('aria-label','如观画布；点击或按 Tab 聚焦后可使用键盘');
@@ -64,17 +64,23 @@ export function createSceneView(value,{send=async()=>{},historical=false,onError
   const listeners=[];
   function listen(type,fn){canvas.addEventListener(type,fn);listeners.push([type,fn]);}
   function label(){status.textContent=suspended?'画面已暂存，点击重新查看':failure|| (historical?'历史画布 · 重新运行后可交互':!live?'画布已停止':scene.running?'动画运行中 · 聚焦画布可交互':scene.handlers.some(x=>x!=='frame')?'可交互 · 点击画布或按 Tab 聚焦':'静态画布');stop.hidden=!live||!scene.handlers.length;}
-  function schedule(){if(timer!==null)return;if(!live||disposed||inFlight||document.hidden)return;if(!queue.length&&!pendingMove&&!(scene.running&&scene.handlers.includes('frame')))return;timer=setTimeout(()=>{timer=null;const next=queue.shift()||pendingMove||(scene.running&&scene.handlers.includes('frame')?{type:'frame'}:null);if(next===pendingMove)pendingMove=null;if(next)dispatch(next);},Math.max(0,Math.ceil(1000/scene.fps)+2-(performance.now()-lastDispatch),retryAt-performance.now()));}
+  function cancelSchedule(){if(timer===null)return;if(backend==='javascript')cancelAnimationFrame(timer);else clearTimeout(timer);timer=null;}
+  function schedule(){if(timer!==null)return;if(!live||disposed||inFlight||document.hidden)return;if(!queue.length&&!pendingMove&&!(scene.running&&scene.handlers.includes('frame')))return;
+    const fire=()=>{timer=null;const now=performance.now();
+      if(backend==='javascript'&&now+1<Math.max(lastDispatch+1000/scene.fps,retryAt)){schedule();return;}
+      const next=queue.shift()||pendingMove||(scene.running&&scene.handlers.includes('frame')?{type:'frame'}:null);if(next===pendingMove)pendingMove=null;if(next)dispatch(next);};
+    timer=backend==='javascript'?requestAnimationFrame(fire):setTimeout(fire,Math.max(0,Math.ceil(1000/scene.fps)+2-(performance.now()-lastDispatch),retryAt-performance.now()));}
+
   async function dispatch(event){if(!live||disposed||document.hidden)return;if(inFlight){enqueue(event);return;}inFlight=true;lastDispatch=performance.now();
-    try{await send(event);}catch(error){if(error.status===429){retryAt=performance.now()+100;if(event.type==='mouse_move')pendingMove=pendingMove||event;else if(event.type!=='frame'&&queue.length<16)queue.unshift(event);}else{live=false;pendingMove=null;queue=[];failure='画布交互中断：'+error.message;onError(error);}}
+    try{await send(event);}catch(error){if(disposed||!live)return;if(error.status===429){retryAt=performance.now()+100;if(event.type==='mouse_move')pendingMove=pendingMove||event;else if(event.type!=='frame'&&queue.length<16)queue.unshift(event);}else{live=false;pendingMove=null;queue=[];failure='画布交互中断：'+error.message;onError(error);}}
     finally{inFlight=false;if(!disposed&&live)schedule();label();}}
   function enqueue(event){if(!live||disposed)return;if(event.type==='mouse_move')pendingMove=event;else if(event.type!=='frame'){if(queue.length>=16){failure='交互较快，部分输入已忽略';label();return;}queue.push(event);}if(!inFlight)schedule();}
   function pointer(type,event){if(!live||!scene.handlers.includes(type))return;if(type==='mouse_down')canvas.focus({preventScroll:true});const r=canvas.getBoundingClientRect();if(!r.width||!r.height)return;const input={type,x:Math.max(0,Math.min(scene.width,(event.clientX-r.left)*scene.width/r.width)),y:Math.max(0,Math.min(scene.height,(event.clientY-r.top)*scene.height/r.height))};if(type!=='mouse_move')input.button=event.button;enqueue(input);}
   listen('pointermove',event=>pointer('mouse_move',event));listen('pointerdown',event=>pointer('mouse_down',event));listen('pointerup',event=>pointer('mouse_up',event));
   for(const [native,type] of [['keydown','key_down'],['keyup','key_up']])listen(native,event=>{if(!live||!scene.handlers.includes(type)||event.ctrlKey||event.metaKey||event.altKey||event.key==='Tab'||event.repeat)return;if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(event.key))event.preventDefault();event.stopPropagation();enqueue({type,key:event.key.slice(0,64)});});
-  function deactivate(){live=false;clearTimeout(timer);timer=null;pendingMove=null;queue=[];label();}
+  function deactivate(){live=false;cancelSchedule();pendingMove=null;queue=[];label();}
   stop.addEventListener('click',()=>{if(!live)return;deactivate();Promise.resolve(send({type:'close'})).catch(onError);});
-  const visibility=()=>{if(document.hidden){clearTimeout(timer);timer=null;pendingMove=null;queue=[];}else schedule();};document.addEventListener('visibilitychange',visibility);
+  const visibility=()=>{if(document.hidden){cancelSchedule();pendingMove=null;queue=[];}else schedule();};document.addEventListener('visibilitychange',visibility);
   function paint(){reserveBacking(backing,scene.width*scene.height);scene=drawScene(canvas,scene);suspended=false;canvas.hidden=false;restore.hidden=true;}
   restore.addEventListener('click',()=>{if(disposed)return;paint();label();});
   function update(value,isHistorical=historical){scene=validateScene(value);historical=isHistorical;if(historical)deactivate();paint();label();schedule();}

@@ -43,17 +43,19 @@ export function parseBook(text) {
       return {type:output.type,text:output.text};
     });
     bookOutput+=count;if(bookOutput>MAX_BOOK_OUTPUT)fail('全书保存输出超过 8 MiB。');
+    const backend=cell.execution_backend;
+    if(backend!==undefined&&(!['python','browser-js'].includes(backend)||cell.type!=='code'))fail('运行方式无效。');
     let generation;
     if(Object.hasOwn(cell,'generation')) {
       if(cell.type!=='code') fail('只有代码格可以保存生成历史。');
       try { generation=validateGeneration(cell.generation); } catch(error) { fail(error.message); }
     }
-    return {...newCell(cell.type,cell.source),...(generation?{generation}:{}),id,execution_count:cell.execution_count??null,outputs:safeOutputs,historical:!!(safeOutputs.length||cell.execution_count),status:'idle'};
+    return {...newCell(cell.type,cell.source),...(generation?{generation}:{}),...(backend?{execution_backend:backend}:{}),id,execution_count:cell.execution_count??null,outputs:safeOutputs,historical:!!(safeOutputs.length||cell.execution_count),status:'idle'};
   });
   return {title:raw.title||'未命名如书',cells:cells.length?cells:[newCell()]};
 }
 export function serializeBook(book) {
-  const text=JSON.stringify({format:FORMAT,version:1,title:book.title,updated_at:new Date().toISOString(),cells:book.cells.map(cell=>({id:cell.id,type:cell.type,source:cell.source,...(cell.generation===undefined?{}:{generation:validateGeneration(cell.generation)}),execution_count:cell.execution_count??null,outputs:cell.outputs.map(item=>item.type==='graphics'?{type:'graphics',scene:{...validateScene(item.scene),running:false,handlers:[]}}:{type:item.type,text:item.text})}))},null,2)+'\n';
+  const text=JSON.stringify({format:FORMAT,version:1,title:book.title,updated_at:new Date().toISOString(),cells:book.cells.map(cell=>({id:cell.id,type:cell.type,source:cell.source,...(cell.execution_backend===undefined?{}:{execution_backend:cell.execution_backend}),...(cell.generation===undefined?{}:{generation:validateGeneration(cell.generation)}),execution_count:cell.execution_count??null,outputs:cell.outputs.map(item=>item.type==='graphics'?{type:'graphics',scene:{...validateScene(item.scene),running:false,handlers:[]}}:{type:item.type,text:item.text})}))},null,2)+'\n';
   parseBook(text); // Validate our own export against the exact import contract.
   return text;
 }

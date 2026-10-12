@@ -1,3 +1,5 @@
+import {createJSExecution} from './js-execution.mjs';
+import {copyInput} from './clipboard.mjs';
 import {sourceVersion,captureDiagnostic,currentDiagnostic,mountDiagnosticMarkers} from './diagnostics.mjs';
 import {templates,createTemplateBook} from './templates.mjs';
 import {outputWindow} from './output-view.mjs';
@@ -11,15 +13,23 @@ import {ensureGeneration,checkpoint,replaceWithRevision,restoreRevision,lineDiff
 const $=selector=>document.querySelector(selector);
 const el=(tag,cls,text)=>{const node=document.createElement(tag);if(cls)node.className=cls;if(text!=null)node.textContent=text;return node;};
 const button=(text,title,handler,cls='')=>{const node=el('button',cls,text);node.type='button';node.title=title;node.setAttribute('aria-label',title);node.addEventListener('click',handler);return node;};
+function copyButton(read,label='复制输入') {
+  const control=button(label,'复制当前完整原始输入',async()=>{
+    if(control.disabled)return;control.disabled=true;
+    try{await copyInput(read());notice('已复制完整输入。');}
+    catch(error){notice(error.message,true);}
+    finally{control.disabled=false;}
+  },'copy-input');return control;
+}
 let hasBook=false;
 let book={title:'',cells:[]},session=null,cursor=0,generation=1,activeRun=null,runAllActive=false,polling=false,epoch=0,dirty=false,transition=false,connected=false,lastExecutionCount=0,kernelDead=false;
 const views=new Map();
 function appendOutput(cell,type,text){appendCellOutput(cell,type,text,book);}
 // Live handlers are deliberately separate from portable notebook snapshots.
 const sceneViews=new Map(),scenePending=new Map();
-function stopScenes(close=false){for(const [id,record] of sceneViews){record.view.deactivate();if(close&&record.session===session&&record.epoch===epoch)api(sessionPath('/graphics'),'POST',{canvas_id:id,cell_id:record.cell.id,execution_count:record.count,expected_generation:record.generation,event:{type:'close'}}).catch(()=>{});}for(const pending of scenePending.values())pending.resolve();scenePending.clear();}
-async function closeScenesBeforeRun(id,myEpoch,myGeneration){
-  stopScenes();const path=`/sessions/${encodeURIComponent(id)}`;
+function stopScenes(close=false,preserveBrowser=false){if(!preserveBrowser)stopBrowserRun();for(const [id,record] of sceneViews){record.view.deactivate();if(close&&!record.browser&&record.session===session&&record.epoch===epoch)api(sessionPath('/graphics'),'POST',{canvas_id:id,cell_id:record.cell.id,execution_count:record.count,expected_generation:record.generation,event:{type:'close'}}).catch(()=>{});}for(const pending of scenePending.values())pending.resolve();scenePending.clear();}
+async function closeScenesBeforeRun(id,myEpoch,myGeneration,preserveBrowser=false){
+  stopScenes(false,preserveBrowser);const path=`/sessions/${encodeURIComponent(id)}`;
   const current=()=>id===session&&myEpoch===epoch&&myGeneration===generation;
   let state=await api(path+'/events?after='+cursor);if(!current())throw new Error('会话已切换，本次运行已取消。');
   if(state.graphics)await api(path+'/graphics','POST',{canvas_id:state.graphics.canvas_id,cell_id:state.cell_id,execution_count:state.execution_count,expected_generation:myGeneration,event:{type:'close'}});
@@ -29,15 +39,16 @@ async function closeScenesBeforeRun(id,myEpoch,myGeneration){
 function clearScene(cell){for(const [id,record] of sceneViews)if(record.cell===cell){record.view.dispose();sceneViews.delete(id);const pending=scenePending.get(id);if(pending){pending.resolve();scenePending.delete(id);}}}
 function sceneOutput(cell,item){
   const scene=validateScene(item.scene);let record=sceneViews.get(scene.canvas_id);
-  if(!record){record={cell,session,epoch,generation,count:cell.execution_count};
-    const send=async event=>{if(record.session!==session||record.epoch!==epoch||record.generation!==generation||record.count!==cell.execution_count)return;
+  if(record&&(record.cell!==cell||record.count!==cell.execution_count)){record.view.dispose();sceneViews.delete(scene.canvas_id);record=null;}
+  if(!record){record={cell,session,epoch,generation,count:cell.execution_count,browser:cell.runtimeBackend==='browser-js'?browserRun:null};
+    const send=async event=>{if(record.browser){if(record.browser!==browserRun||!record.browser.driver?.active)return;return record.browser.driver.send({canvas_id:scene.canvas_id,...event});}if(record.session!==session||record.epoch!==epoch||record.generation!==generation||record.count!==cell.execution_count)return;
       if(event.type==='close'){const pending=scenePending.get(scene.canvas_id);if(pending){pending.resolve();scenePending.delete(scene.canvas_id);}await api(sessionPath('/graphics'),'POST',{canvas_id:scene.canvas_id,cell_id:cell.id,execution_count:record.count,expected_generation:record.generation,event});return;}
       if(activeRun||transition||!connected)return;
       let resolve,reject;const completed=new Promise((yes,no)=>{resolve=yes;reject=no;});const pending={resolve,reject};scenePending.set(scene.canvas_id,pending);
       try{await api(sessionPath('/graphics'),'POST',{canvas_id:scene.canvas_id,cell_id:cell.id,execution_count:record.count,expected_generation:record.generation,event});pollSoon(0);await completed;}
       catch(error){if(scenePending.get(scene.canvas_id)===pending)scenePending.delete(scene.canvas_id);throw error;}
     };
-    record.view=createSceneView(scene,{historical:cell.historical||cell.execution_count!==lastExecutionCount,send,onError:error=>notice(error.message,true)});sceneViews.set(scene.canvas_id,record);
+    record.view=createSceneView(scene,{historical:cell.historical||(record.browser?record.browser!==browserRun:cell.execution_count!==lastExecutionCount),backend:record.browser?'javascript':'python',send,onError:error=>notice(error.message,true)});sceneViews.set(scene.canvas_id,record);
   }else record.view.update(scene,cell.historical);
   return record.view.root;
 }
@@ -56,7 +67,7 @@ function refreshControls() {
   $('#new-book').disabled=transition;$('#open-book').disabled=transition;$('#save-book').disabled=!hasBook||transition;
   for(const choice of document.querySelectorAll('[data-template],.blank-shortcut'))choice.disabled=transition;
   $('#add-code').disabled=busy()||book.cells.length>=MAX_CELLS;$('#add-markdown').disabled=busy()||book.cells.length>=MAX_CELLS;$('#add-learning').disabled=busy()||book.cells.length>=MAX_CELLS;
-  for(const cell of book.cells){const view=views.get(cell.id);if(!view)continue;for(const b of view.element.querySelectorAll('[data-mutates]'))b.disabled=busy();view.run.disabled=!connected||busy();if(view.input)view.input.readOnly=cell.status==='running';if(view.generate)view.generate.disabled=busy()||!!generationRequest||!token;if(view.cancelGeneration)view.cancelGeneration.hidden=generationRequest?.cell!==cell;if(view.restore)view.restore.disabled=busy()||!!generationRequest;}
+  for(const cell of book.cells){const view=views.get(cell.id);if(!view)continue;for(const b of view.element.querySelectorAll('[data-mutates]'))b.disabled=busy();view.run.disabled=(cell.execution_backend==='browser-js'?!session||!token:!connected)||busy();if(view.input)view.input.readOnly=cell.status==='running';if(view.generate)view.generate.disabled=busy()||!!generationRequest||!token;if(view.cancelGeneration)view.cancelGeneration.hidden=generationRequest?.cell!==cell;if(view.restore)view.restore.disabled=busy()||!!generationRequest;}
 }
 async function api(path,method='GET',body) {
   const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),12000);
@@ -137,6 +148,7 @@ function buildEditor(cell,view) {
         if(depth!=null){const old=line.match(/^\s*/)[0].length,wanted=depth*4;if(old!==wanted){input.setRangeText(' '.repeat(wanted),start,start+old,'preserve');input.setSelectionRange(Math.max(start,pos+wanted-old),Math.max(start,pos+wanted-old));}}
       }
     }
+    invalidateEditedBrowserCell(cell,input.value);
     if(cell.source!==input.value&&(cell.execution_count||cell.outputs.length))cell.stale=true;cell.source=input.value;markDirty();render();if(cell.stale)renderOutput(cell);
   }
   // The textarea overlays the highlighted mirror; use the mirror's real glyph
@@ -208,7 +220,7 @@ function buildGenerationPanel(cell,view){
   prompt.addEventListener('input',()=>{cell.generation.prompt=prompt.value;markDirty();});
   const controls=el('div','generation-actions'),generate=button('如是我言 · 生成','给意图补上结语并发送本格意图与当前源码，生成新版本',()=>generateCell(cell),'primary'),cancel=button('取消等待','丢弃尚未返回的生成结果，保留当前编辑',()=>cancelGeneration());
   const save=button('记下手动修改','把当前意图和源码保存为一个人工版本',()=>{try{checkpoint(cell);markDirty();renderHistory(cell);generationStatus(cell,'手动修改已记入版本历史。');}catch(error){notice(error.message,true,true);}});save.dataset.mutates='true';
-  view.generate=generate;view.cancelGeneration=cancel;cancel.hidden=true;const branch=button('另起学习格','保留这格全部历史，把当前意图和草稿复制到新格继续学习',()=>{if(busy()||book.cells.length>=MAX_CELLS)return;const next=newCell('code',cell.source);ensureGeneration(next,cell.generation.prompt);book.cells.splice(book.cells.indexOf(cell)+1,0,next);renderBook();markDirty();focusCell(next);});branch.dataset.mutates='true';controls.append(generate,cancel,save,branch);
+  view.generate=generate;view.cancelGeneration=cancel;cancel.hidden=true;const branch=button('另起学习格','保留这格全部历史，把当前意图和草稿复制到新格继续学习',()=>{if(busy()||book.cells.length>=MAX_CELLS)return;const next=newCell('code',cell.source);if(cell.execution_backend)next.execution_backend=cell.execution_backend;ensureGeneration(next,cell.generation.prompt);book.cells.splice(book.cells.indexOf(cell)+1,0,next);renderBook();markDirty();focusCell(next);});branch.dataset.mutates='true';controls.append(generate,cancel,save,branch,copyButton(()=>prompt.value,'复制意图'));
   view.provider=el('p','generation-disclosure','正在读取服务端生成配置…');view.generationStatus=createGenerationStatus(view);
   const diagnostics=el('details','generation-diagnostics generation-disclosure');
   view.generationDiagnostic=el('p','','尚未开始生成。');
@@ -258,7 +270,7 @@ async function generateCell(cell){
     checkpoint(cell);serializeBook(book);renderHistory(cell);
     const capacityProbe={...cell,generation:structuredClone(cell.generation)};replaceWithRevision(capacityProbe,{source:'',prompt:cell.generation.prompt,kind:'model'});serializeBook({...book,cells:book.cells.map(c=>c===cell?capacityProbe:c)});
   }catch(error){notice(error.message,true,true);return;}
-  const request={cell,book:owner,epoch,prompt:cell.generation.prompt,source:cell.source,controller:new AbortController()};
+  const request={cell,book:owner,epoch,prompt:cell.generation.prompt,source:cell.source,runtimeTarget:cell.execution_backend==='browser-js'?'browser-js':'python',controller:new AbortController()};
   generationRequest=request;refreshControls();generationStatus(cell,'正在生成新版本…你可以继续编辑；若内容改变，返回结果不会覆盖它。',false,true);
   generationDiagnostic(request,'正在读取本机生成配置，尚未发送生成请求。');
   // The server owns the configurable generation deadline. Abort only when the
@@ -268,11 +280,11 @@ async function generateCell(cell){
     const config=await api('/generation/config');providerInfo=config;
     if(generationRequest!==request)return;
     if(!config.configured)throw new Error(config.message+'。请在启动如书的终端配置，勿把密钥写入书本。');
-    if(!confirm(`发送给 ${config.provider_host}？\n\n仅发送本格意图（${request.prompt.length} 字符）、当前源码草稿（${request.source.length} 字符）和完整如语言规范。可能按提供方计费。\n\n生成结果只供审阅，不自动运行。`)){generationStatus(cell,'已取消发送。当前编辑和版本记录保留。');generationDiagnostic(request,'已取消确认，未发送生成请求。');return;}
+    if(!confirm(`发送给 ${config.provider_host}？\n\n目标：${request.runtimeTarget==='browser-js'?'浏览器 JS（独立会话）':'Python 会话'}。\n仅发送本格意图（${request.prompt.length} 字符）、当前源码草稿（${request.source.length} 字符）和完整如语言规范。可能按提供方计费。\n\n生成结果只供审阅，不自动运行。`)){generationStatus(cell,'已取消发送。当前编辑和版本记录保留。');generationDiagnostic(request,'已取消确认，未发送生成请求。');return;}
     request.sentAt=performance.now();
     generationDiagnostic(request,'正在请求生成并等待本机服务返回。');
     request.elapsedTimer=setInterval(()=>generationDiagnostic(request),1000);
-    const response=await fetch('/api/generate',{method:'POST',headers:{'X-Rushu-Token':token,'Content-Type':'application/json'},body:JSON.stringify({prompt:request.prompt,draft:request.source}),signal:request.controller.signal,cache:'no-store',credentials:'same-origin'});
+    const response=await fetch('/api/generate',{method:'POST',headers:{'X-Rushu-Token':token,'Content-Type':'application/json'},body:JSON.stringify({prompt:request.prompt,draft:request.source,...(request.runtimeTarget==='browser-js'?{runtime_target:'browser-js'}:{})}),signal:request.controller.signal,cache:'no-store',credentials:'same-origin'});
     generationDiagnostic(request,'已收到本机服务响应，正在读取生成结果。');
     let result;try{result=await response.json();}catch{throw new Error('本机服务返回了无法读取的生成响应；没有替换草稿。');}
     if(!response.ok)throw new Error(result.error||'生成请求失败，草稿未改变。');
@@ -283,7 +295,7 @@ async function generateCell(cell){
     replaceWithRevision(candidate,{source:result.source,prompt:request.prompt,kind:'model'});
     // Preflight the entire portable book before replacing any current edits.
     serializeBook({...book,cells:book.cells.map(c=>c===cell?candidate:c)});
-    cell.source=candidate.source;cell.generation=candidate.generation;cell.stale=!!(cell.execution_count||cell.outputs.length);markDirty();
+    invalidateEditedBrowserCell(cell,candidate.source);cell.source=candidate.source;cell.generation=candidate.generation;cell.stale=!!(cell.execution_count||cell.outputs.length);markDirty();
     const currentView=views.get(cell.id);if(currentView){currentView.input.value=cell.source;currentView.renderEditor();}renderOutput(cell);renderHistory(cell);
     const validationPosition=diagnosticLocation(result.validation||{});
     generationStatus(cell,result.valid?'新版本已加入历史。语法／结构检查通过；未检查外言依赖，未执行。请审阅后单独运行。':`新版本已加入历史，但尚未通过语法／结构检查：${validationPosition?validationPosition+'；':''}${result.validation?.message||'请检查源码'}。未执行。`,!result.valid);
@@ -308,7 +320,7 @@ function renderHistory(cell){
   const all=el('ol','revision-list');for(const r of revisions){const li=el('li');li.append(button(label(r),'查看这个版本的意图和源码',()=>{after.value=r.id;show();}));all.append(li);}if(!revisions.length)all.append(el('li','','尚无版本。生成、记下手动修改或保存书本时会记录。'));body.append(all);
   const content=el('div','history-content'),restore=button('恢复所选版本为新版本','先保存当前手动修改，再新增一个恢复版本',()=>{
     if(busy()||generationRequest||after.value==='draft')return;
-    try{const candidate={...cell,generation:structuredClone(cell.generation)};restoreRevision(candidate,after.value);serializeBook({...book,cells:book.cells.map(c=>c===cell?candidate:c)});cell.source=candidate.source;cell.generation=candidate.generation;cell.stale=!!(cell.execution_count||cell.outputs.length);view.input.value=cell.source;view.prompt.value=cell.generation.prompt;view.renderEditor();renderOutput(cell);markDirty();renderHistory(cell);generationStatus(cell,'已新增恢复版本，原历史和手动修改都保留。未执行。');}catch(error){notice(error.message,true,true);}
+    try{const candidate={...cell,generation:structuredClone(cell.generation)};restoreRevision(candidate,after.value);serializeBook({...book,cells:book.cells.map(c=>c===cell?candidate:c)});invalidateEditedBrowserCell(cell,candidate.source);cell.source=candidate.source;cell.generation=candidate.generation;cell.stale=!!(cell.execution_count||cell.outputs.length);view.input.value=cell.source;view.prompt.value=cell.generation.prompt;view.renderEditor();renderOutput(cell);markDirty();renderHistory(cell);generationStatus(cell,'已新增恢复版本，原历史和手动修改都保留。未执行。');}catch(error){notice(error.message,true,true);}
   });view.restore=restore;body.append(restore,content);
   const snapshot=id=>id==='draft'?{prompt:cell.generation.prompt,source:cell.source}:revisions.find(r=>r.id===id);
   function show(){
@@ -327,12 +339,18 @@ function renderCell(cell) {
   const view={element,count,input:null,renderEditor:null,output:el('div','cell-output'),diagnosticLinks:el('div','diagnostic-links')};views.set(cell.id,view);
   kind.append(el('span','kind-icon',cell.type==='code'?'⌘':'¶'),el('span','',cell.type==='code'?'如代码':'文字'),count);
   const run=button(cell.type==='code'?'▶ 运行':'编辑',cell.type==='code'?'运行此代码格，Ctrl 或 Command + Enter':'编辑文字',()=>cell.type==='code'?runAndMove(cell,false):toggleMarkdown(cell), 'run-cell');view.run=run;
-  tools.append(run);
+  tools.append(copyButton(()=>view.input?.value??cell.source),run);
   if(cell.type==='code'){const clear=button('清除输出','清除这格的输出快照',()=>{stopScenes(true);clearScene(cell);cell.outputs=[];cell.diagnostics=[];delete cell.diagnosticSnapshot;cell.execution_count=null;cell.historical=false;cell.status='idle';renderOutput(cell);markDirty();},'clear-output');clear.dataset.mutates='true';tools.append(clear);}
   for(const [text,title,handler,cls] of [['↑','向上移动格子',()=>moveCell(cell,-1),'icon-button'],['↓','向下移动格子',()=>moveCell(cell,1),'icon-button'],['×','删除这格',()=>deleteCell(cell),'icon-button danger']]){const b=button(text,title,handler,cls);b.dataset.mutates='true';tools.append(b);}
   if(cell.type==='markdown'){const learn=button('如是我言','以这段文字生成如源码，先确认发送范围',()=>createLearning(cell));learn.dataset.mutates='true';tools.prepend(learn);}
   else if(!cell.generation){const learn=button('学习模式','把当前源码作为学习草稿，另写修改意图',()=>enableLearning(cell));learn.dataset.mutates='true';tools.prepend(learn);}
   head.append(kind,tools);element.append(head);
+  if(cell.type==='code'){
+    const options=el('div','execution-options'),label=el('label','execution-choice'),choice=el('input'),help=el('span','execution-help','转译 JS 由浏览器执行，每次独立运行，不共享 Python 变量；浏览器无法强制 64 MiB Worker 内存上限，请只运行可信代码。');
+    choice.type='checkbox';choice.checked=cell.execution_backend==='browser-js';choice.dataset.mutates='true';help.id='execution-help-'+cell.id;choice.setAttribute('aria-describedby',help.id);
+    choice.addEventListener('change',()=>{stopBrowserRun();stopScenes(true);cell.execution_backend=choice.checked?'browser-js':'python';if(cell.outputs.length||cell.execution_count)cell.stale=true;renderOutput(cell);refreshControls();markDirty();});
+    label.append(choice,document.createTextNode('如观 JS 加速'));options.append(label,help);element.append(options);
+  }
   if(cell.generation)element.append(buildGenerationPanel(cell,view));
   if(cell.type==='code')element.append(buildEditor(cell,view));
   else {
@@ -387,9 +405,52 @@ function focusCell(cell){const view=views.get(cell.id);if(!view)return;if(cell.t
 function focusNext(cell){const next=book.cells[book.cells.indexOf(cell)+1];if(next)focusCell(next);else if(!busy())addCell('code',cell);}
 function moveCell(cell,delta){if(busy())return;const index=book.cells.indexOf(cell),next=index+delta;if(next<0||next>=book.cells.length)return;[book.cells[index],book.cells[next]]=[book.cells[next],book.cells[index]];renderBook();markDirty();focusCell(cell);}
 function deleteCell(cell){if(busy())return;if((cell.source||cell.outputs.length||cell.generation?.prompt||cell.generation?.revisions.length)&&!confirm('删除这格、输出及全部版本历史？此操作无法撤销。'))return;stopScenes(true);clearScene(cell);const index=book.cells.indexOf(cell);book.cells.splice(index,1);if(!book.cells.length)book.cells.push(newCell());renderBook();markDirty();focusCell(book.cells[Math.min(index,book.cells.length-1)]);}
+let browserRun=null,browserExecution=0;
+function invalidateEditedBrowserCell(cell,nextSource){
+  if(cell.source===nextSource||browserRun?.cell!==cell)return;
+  stopBrowserRun();cell.diagnostics=[];delete cell.diagnosticSnapshot;
+}
+function stopBrowserRun(){
+  const record=browserRun;if(!record)return;browserRun=null;record.driver?.dispose();
+  for(const scene of sceneViews.values())if(scene.browser===record)scene.view.deactivate();
+  if(record.cell.status==='running')record.cell.status='idle';
+  if(activeRun===record.run)finishActive(false);
+  renderOutput(record.cell);
+}
+async function runBrowserCell(cell){
+  stopScenes();clearScene(cell);
+  const myEpoch=epoch,mySession=session,myGeneration=generation;
+  let resolve;const done=new Promise(r=>resolve=r),run={cellId:cell.id,resolve,epoch:myEpoch,backend:'browser-js'};
+  const record={cell,run,driver:null,epoch:myEpoch,session:mySession};browserRun=record;activeRun=run;
+  const current=()=>browserRun===record&&epoch===myEpoch&&session===mySession&&book.cells.includes(cell);
+  const count=++browserExecution;cell.runtimeBackend='browser-js';cell.execution_count=count;cell.outputs=[];cell.diagnostics=[];delete cell.diagnosticSnapshot;cell.outputTruncated=false;cell.stale=false;cell.historical=false;cell.status='running';
+  renderOutput(cell);refreshControls();runtimeStatus('running','正在编译浏览器 JS');markDirty();
+  const fail=error=>{if(!current()||record.failed)return;record.failed=true;cell.status='error';appendOutput(cell,'error',(error.diagnostic?.formatted||error.message||'浏览器运行错误')+'\n');const diagnostic=captureDiagnostic(book,{type:'error',message:error.message,diagnostic:error.diagnostic});if(diagnostic&&cell.diagnostics.length<20)cell.diagnostics.push(diagnostic);record.driver?.dispose();for(const scene of sceneViews.values())if(scene.browser===record)scene.view.deactivate();renderOutput(cell);if(activeRun===run)finishActive(false);runtimeStatus('idle','浏览器运行出错');markDirty();};
+  const onEvent=event=>{
+    if(!current())return;
+    try{
+      if(event.type==='graphics'){const scene=validateScene(event);const prior=cell.outputs.find(item=>item.type==='graphics');if(prior&&prior.scene.canvas_id!==scene.canvas_id)clearScene(cell);retainGraphics(cell,scene,book);}
+      else if(event.type==='output')appendOutput(cell,event.stream==='stderr'?'stderr':'stdout',event.text);
+      else if(event.type==='error'){fail(event);return;}else if(event.type==='graphics_closed')sceneViews.get(event.canvas_id)?.view.deactivate();
+      renderOutput(cell);markDirty();
+    }catch(error){fail(error);}
+  };
+  try{
+    const source=cell.source,version=await sourceVersion(source);if(!current())return done;
+    cell.diagnosticSnapshot={source,version,generation:myGeneration,execution:count};
+    await closeScenesBeforeRun(mySession,myEpoch,myGeneration,true);if(!current())return done;
+    const compiled=await api('/compile','POST',{code:source,cell_id:cell.id,execution_count:count,generation:myGeneration});if(!current())return done;
+    if(compiled.error){onEvent({type:'error',message:compiled.error,diagnostic:compiled.diagnostic});finishActive(false);runtimeStatus('idle','浏览器编译出错');return false;}
+    if(typeof compiled.javascript!=='string')throw new Error('服务未返回浏览器 JS，未执行代码。');
+    record.driver=createJSExecution({javascript:compiled.javascript,identity:{cell_id:cell.id,execution_count:count,generation:myGeneration,token:crypto.randomUUID(),source_version:version},onEvent,onFatal:fail});
+    runtimeStatus('running','浏览器 JS 运行中');await record.driver.ready;if(!current())return done;
+    const success=cell.status!=='error';cell.status=success?'done':'error';renderOutput(cell);if(activeRun===run)finishActive(success);runtimeStatus('idle',success?'浏览器 JS 已运行':'浏览器运行出错');refreshControls();
+  }catch(error){fail(error);}
+  return done;
+}
 async function runAndMove(cell,move){if(busy()){notice('当前会话正在运行，请等待或停止后再试。');return;}const success=await runCell(cell);if(move&&success)focusNext(cell);}
 async function runCell(cell) {
-  if(!connected||!session){notice('会话尚未连接。请使用启动终端显示的完整网址。',true);return false;}
+  if((!connected&&cell.execution_backend!=='browser-js')||!session){notice('会话尚未连接。请使用启动终端显示的完整网址。',true);return false;}
   if(activeRun)return false;
   if(cell.type==='markdown'){if(generationIntent(cell.source)!==null){createLearning(cell);return false;}if(views.get(cell.id)?.editing)toggleMarkdown(cell);return true;}
   const markedIntent=generationIntent(cell.source);
@@ -400,6 +461,8 @@ async function runCell(cell) {
     }catch(error){notice(error.message,true,true);}return false;
   }
   if(cell.generation){try{checkpoint(cell);markDirty();renderHistory(cell);}catch(error){notice(error.message,true,true);return false;}}
+  if(cell.execution_backend==='browser-js')return runBrowserCell(cell);
+  cell.runtimeBackend='python';
   const myEpoch=epoch,mySession=session,myGeneration=generation;let submitted=false;let resolve;const done=new Promise(r=>resolve=r),run={cellId:cell.id,resolve,epoch:myEpoch,beforeCount:lastExecutionCount};activeRun=run;
   stopScenes();cell.outputs=[];cell.diagnostics=[];delete cell.diagnosticSnapshot;cell.outputTruncated=false;cell.stale=false;cell.historical=false;cell.status='running';cell.execution_count=null;renderOutput(cell);refreshControls();runtimeStatus('running');markDirty();
   try{
@@ -414,7 +477,7 @@ async function runCell(cell) {
 }
 async function runAll(){if(busy()||!connected)return;if(book.cells.some(c=>c.generation||generationIntent(c.source)!==null))notice('全部运行会跳过学习格和意图文档。请先审阅，再单独运行生成的代码。',false,true);runAllActive=true;const myEpoch=epoch;refreshControls();for(const cell of [...book.cells]){if(myEpoch!==epoch)break;if(cell.type==='markdown'){if(views.get(cell.id)?.editing)toggleMarkdown(cell);continue;}if(cell.generation||generationIntent(cell.source)!==null)continue;if(!await runCell(cell)){if(myEpoch===epoch)notice('运行已停在这一格。请修正错误后继续。',true);break;}}runAllActive=false;refreshControls();}
 function clearInputForms(){for(const view of views.values()){if(view.form){view.form.remove();view.form=null;}}}
-async function resetSession(reason){if(!session||transition)return;if(reason==='restart'&&!confirm('重启会清空本书全部变量、函数和文件句柄，已有输出将标为历史。继续吗？'))return;
+async function resetSession(reason){if(transition)return;if(reason==='stop'&&browserRun){stopBrowserRun();runAllActive=false;runtimeStatus(connected?'idle':'dead');markDirty();notice('已停止浏览器运行，保留当前输出。');refreshControls();return;}if(!session)return;if(reason==='restart'&&!confirm('重启会清空本书全部变量、函数和文件句柄，已有输出将标为历史。继续吗？'))return;
   cancelGeneration(false);stopScenes();transition=true;refreshControls();epoch++;runAllActive=false;
   try{const result=await api(sessionPath('/'+reason),'POST',{});finishActive(false);clearInputForms();generation=result.generation;cursor=result.cursor;lastExecutionCount=0;kernelDead=false;historicalBook(book);connected=true;for(const cell of book.cells)renderOutput(cell);runtimeStatus('idle');markDirty();notice(reason==='stop'?'已停止。会话已重置，全部变量已清空。':'会话已重启，全部变量已清空。');}
   catch(error){connected=false;finishActive(false);runtimeStatus('dead');notice(error.message+' 运行是否停止尚未确认，请检查启动终端。',true,true);}
@@ -435,12 +498,12 @@ async function pollEvents(){if(polling){pollSoon();return;}if(!session||transiti
   try{
     const result=await api(`/sessions/${encodeURIComponent(id)}/events?after=${cursor}`);if(id!==session||myEpoch!==epoch)return;
     const changed=new Set();
-    if(result.truncated){notice('部分较早的运行输出已超过服务保留上限。当前显示可能不完整。',true,true);const cell=book.cells.find(c=>c.id===result.cell_id);if(cell){appendOutput(cell,'error','[会话历史超限：部分未接收的输出已丢弃；此快照可能不完整。]\n');changed.add(cell);}}
+    if(result.truncated){notice('部分较早的运行输出已超过服务保留上限。当前显示可能不完整。',true,true);const cell=book.cells.find(c=>c.id===result.cell_id);if(cell&&cell.runtimeBackend!=='browser-js'){appendOutput(cell,'error','[会话历史超限：部分未接收的输出已丢弃；此快照可能不完整。]\n');changed.add(cell);}}
     for(const event of result.events||[]){
       if(event.seq<=cursor)continue;cursor=event.seq;
-      if(event.type==='reset'){stopScenes();generation=event.generation;historicalBook(book);clearInputForms();finishActive(false);book.cells.forEach(c=>changed.add(c));continue;}
+      if(event.type==='reset'){if(!browserRun)stopScenes();generation=event.generation;historicalBook({cells:book.cells.filter(c=>c.runtimeBackend!=='browser-js')});clearInputForms();if(activeRun?.backend!=='browser-js')finishActive(false);book.cells.forEach(c=>changed.add(c));continue;}
       if(event.generation!==generation)continue;
-      const cell=book.cells.find(c=>c.id===event.cell_id);if(!cell)continue;
+      const cell=book.cells.find(c=>c.id===event.cell_id);if(!cell||cell.runtimeBackend==='browser-js')continue;
       // A closing canvas can still emit events from the previous execution.
       if(activeRun?.cellId===cell.id&&event.execution_count<=activeRun.beforeCount)continue;
       // A poll may beat the execute response: use the authoritative event count.
@@ -454,12 +517,12 @@ async function pollEvents(){if(polling){pollSoon();return;}if(!session||transiti
       else if(event.type==='input_request'){requestInput(cell,event.request_id);}
       else if(event.type==='done'){cell.status=event.status==='ok'?'done':'error';changed.add(cell);if(activeRun?.cellId===cell.id)finishActive(event.status==='ok');}
     }
-    cursor=Math.max(cursor,result.cursor||0);lastExecutionCount=result.execution_count;kernelDead=result.state==='dead';connected=!kernelDead;runtimeStatus(result.state);
+    cursor=Math.max(cursor,result.cursor||0);lastExecutionCount=result.execution_count;kernelDead=result.state==='dead';connected=!kernelDead;if(!browserRun)runtimeStatus(result.state);
     if(activeRun?.uncertain&&result.state==='idle'&&result.execution_count<=activeRun.beforeCount){const cell=book.cells.find(c=>c.id===activeRun.cellId);if(cell){cell.status='error';appendOutput(cell,'error','已确认本次请求未执行。请重试。\n');changed.add(cell);}finishActive(false);}
     changed.forEach(renderOutput);if(changed.size)markDirty();
-    if(result.state==='dead'){stopScenes();if(activeRun){const cell=book.cells.find(c=>c.id===activeRun.cellId);if(cell){cell.status='error';appendOutput(cell,'error','运行进程已退出。请重启会话。\n');renderOutput(cell);}finishActive(false);}notice('运行进程已退出，请重启会话。',true,true);}
+    if(result.state==='dead'&&!browserRun){stopScenes();if(activeRun){const cell=book.cells.find(c=>c.id===activeRun.cellId);if(cell){cell.status='error';appendOutput(cell,'error','运行进程已退出。请重启会话。\n');renderOutput(cell);}finishActive(false);}notice('运行进程已退出，请重启会话。',true,true);}
     refreshControls();more=!!result.more;
-  }catch(error){if(id===session&&myEpoch===epoch){connected=false;stopScenes();runtimeStatus('dead','连接中断');refreshControls();notice(error.message+' 正在等待本机服务恢复。',true,true);}}
+  }catch(error){if(id===session&&myEpoch===epoch){connected=false;if(!browserRun){stopScenes();runtimeStatus('dead','连接中断');}refreshControls();notice(error.message+' 正在等待本机服务恢复。',true,true);}}
   finally{polling=false;if(session&&!kernelDead)pollSoon(more?0:connected?(activeRun||scenePending.size?50:1200):2500);}
 }
 function saveBook(){if(!hasBook||transition)return;try{let fullHistory=false;for(const cell of book.cells)if(cell.generation){try{checkpoint(cell);}catch{fullHistory=true;}renderHistory(cell);}book.title=$('#book-title').value.trim()||'未命名如书';const text=serializeBook(book),blob=new Blob([text],{type:'application/json;charset=utf-8'}),url=URL.createObjectURL(blob),link=el('a');link.href=url;link.download=book.title.replace(/[\\/:*?"<>|\x00-\x1f]/g,'_').slice(0,100)+'.rushu.json';document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);dirty=false;$('#document-status').textContent='已导出保存快照';notice(fullHistory?'已下载保存当前草稿与已有历史。部分历史已满，最新编辑保留为当前草稿；请点击「另起学习格」继续记录。':'已下载如书文件。重新打开时，输出会标为历史；运行状态不会被保存。',false,fullHistory);}catch(error){notice('无法保存：'+error.message+' 请减少内容或清除部分输出后重试。',true,true);}}

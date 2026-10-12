@@ -56,8 +56,11 @@ def _validate(source):
 
 def generate_source(body, timeout=DEFAULT_TIMEOUT):
     timeout = validate_generation_timeout(timeout)
-    if set(body) - {"prompt", "draft"}:
-        raise KernelError("生成请求只接受 prompt 与可选 draft")
+    if set(body) - {"prompt", "draft", "runtime_target"}:
+        raise KernelError("生成请求只接受 prompt、可选 draft 与 runtime_target")
+    runtime_target = body.get("runtime_target", "python")
+    if runtime_target not in ("python", "browser-js"):
+        raise KernelError("生成运行环境须为 python 或 browser-js")
     prompt, draft = body.get("prompt"), body.get("draft", "")
     for name, value in (("提示", prompt), ("草稿", draft)):
         if not isinstance(value, str):
@@ -82,7 +85,7 @@ def generate_source(body, timeout=DEFAULT_TIMEOUT):
             # request_response supplies the exact packaged specification/hash,
             # token cap, no-tool policy and credential-input checks.
             try:
-                generated = request_response(config, selected, timeout=timeout, runtime_target="rushu")
+                generated = request_response(config, selected, timeout=timeout, runtime_target="rushu-browser-js" if runtime_target == "browser-js" else "rushu")
                 if not isinstance(generated, str) or config.api_key in generated:
                     raise KernelError("提供方输出无效或含有密钥，已拒绝返回。", 502)
                 if len(generated) > MAX_SOURCE:

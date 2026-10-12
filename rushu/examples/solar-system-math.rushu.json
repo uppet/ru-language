@@ -6,7 +6,7 @@
     {
       "id": "intro",
       "type": "markdown",
-      "source": "# 太阳系 · 标准数学接口\n\n助手编写的验收示例。仅支持如书 Python 如观宿主。生成链路测试使用本地 HTTP Responses mock，不代表真实模型生成质量。",
+      "source": "# 太阳系 · 标准数学接口\n\n助手编写的验收示例。默认使用如书 Python 如观宿主；也可显式勾选 JS 加速在独立浏览器 Worker 中运行。生成链路测试使用本地 HTTP Responses mock，不代表真实模型生成质量。",
       "execution_count": null,
       "outputs": []
     },

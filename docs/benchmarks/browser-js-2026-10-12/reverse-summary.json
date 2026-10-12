@@ -1,0 +1,88 @@
+{
+  "status": "PASS",
+  "smokeOnly": false,
+  "host": {
+    "platform": "linux",
+    "arch": "x64",
+    "cpu": "AMD EPYC 9V74 80-Core Processor",
+    "logicalCpus": 9,
+    "loadavg": [
+      1.37,
+      1.41,
+      1.48
+    ]
+  },
+  "browser": "154.0.8037.57",
+  "sample": "2s warmup + 10s each;  same Chromium process, viewport1500x1200 DPR1, matched CSS; intervals are Canvas2D command submission completion, not physical display/compositor presentation. Ru drawCpu covers Canvas calls only; native cpuSubmit includes math + Canvas; Ru workerToSubmit is end-to-end callback latency including postMessage, not CPU time.",
+  "results": [
+    {
+      "backend": "Native JS same solar math",
+      "targetFps": 60,
+      "measuredFps": 60.002003405789836,
+      "cpuSubmitMs": {
+        "n": 600,
+        "mean": 0.2456666666812574,
+        "p50": 0.20000000018626451,
+        "p95": 0.39999999944120646,
+        "max": 3.5
+      },
+      "submitIntervalMs": {
+        "n": 599,
+        "mean": 16.6661101836394,
+        "p50": 16.699999999254942,
+        "p95": 16.90000000037253,
+        "max": 19.90000000037253
+      },
+      "commands": 42,
+      "canvas": {
+        "width": 1120,
+        "height": 760
+      },
+      "css": {
+        "x": 0,
+        "y": 0,
+        "width": 867.984375,
+        "height": 589.640625
+      }
+    },
+    {
+      "backend": "Ru browser JS",
+      "targetFps": 60,
+      "measuredFps": 57.85795220953094,
+      "drawCpuMs": {
+        "n": 578,
+        "mean": 0.21712802767360448,
+        "p50": 0.20000000018626451,
+        "p95": 0.40000000037252903,
+        "max": 3.900000000372529
+      },
+      "workerToSubmitMs": {
+        "n": 578,
+        "mean": 2.6427335640299536,
+        "p50": 2.5,
+        "p95": 3.5,
+        "max": 11.700000000186265
+      },
+      "submitIntervalMs": {
+        "n": 577,
+        "mean": 17.283708838821813,
+        "p50": 16.700000000186265,
+        "p95": 20.299999999813735,
+        "max": 30.600000000558794
+      },
+      "commands": 42,
+      "canvas": {
+        "width": 1120,
+        "height": 760
+      },
+      "css": {
+        "width": 867.984375,
+        "height": 589.640625,
+        "border": "1px solid rgb(221, 221, 221)",
+        "boxSizing": "border-box",
+        "borderRadius": "4px"
+      }
+    }
+  ],
+  "order": "native first, Ru second; reverse order 60fps replication"
+}

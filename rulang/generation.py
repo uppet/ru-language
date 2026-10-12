@@ -99,11 +99,22 @@ def generation_system_prompt(target="cli"):
     package data stops generation rather than falling back to a stale prompt.
     The digest identifies the exact raw UTF-8 bytes sent as specification text.
     """
-    if target not in ("cli", "rushu", "ruguan"):
+    if target not in ("cli", "rushu", "ruguan", "rushu-browser-js"):
         raise GenerationError("未知生成运行环境", "生成配置错误")
-    environment = ("本次运行环境：如书 Python 代码格。需要绘图或交互时可使用如观；创建画布与注册回调须在同一格。"
-                   if target in ("rushu", "ruguan") else
-                   "本次运行环境：普通命令行（含 C／JavaScript 编译）。不提供如观画布宿主，不得生成依赖如观的程序；可用文本呈现结果。")
+    if target == "rushu-browser-js":
+        environment = ("本次运行环境：如书显式 JS 加速代码格（browser-js）。如源码由本机编译为 JavaScript，"
+                       "在每次新建的独立浏览器 Worker 中执行；支持如观和 1～60 FPS 的帧率请求，"
+                       "实际帧率须实测。所有变量、导入、初始化与回调必须放在同一格；"
+                       "不读取或共享 Python 会话及其他 JS 格的状态。不得使用交互输入、文件、网络或命令行能力。"
+                       "浏览器无可强制的 64 MiB Worker 堆内存限制，不得宣称安全沙箱或固定性能。")
+    elif target in ("rushu", "ruguan"):
+        environment = ("本次运行环境：如书 Python 代码格（默认）。需要绘图或交互时可使用如观；"
+                       "创建画布与注册回调须在同一格。Python 图形帧率为 1～30；除非用户明确选择"
+                       "「JS 加速」，不要使用浏览器 JS 专属的 31～60 FPS，也不要假定独立 Worker 状态。"
+                       "可选 browser-js 的能力与限制见完整规范；CLI --target js 不提供如观宿主。")
+    else:
+        environment = ("本次运行环境：普通命令行（含 C／JavaScript 编译）。不提供如观画布宿主，"
+                       "不得生成依赖如观的程序；可用文本呈现结果。")
 
     if target == "ruguan":
         environment += ("\n本次任务聚焦如观图形与交互。请重点阅读下方规范的「如观二维图形」及"

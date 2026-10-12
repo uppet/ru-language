@@ -1,0 +1,13 @@
+{
+  "native-20-raw.json": "72c5e35167b2d82e16c91128037a698f2a9e4320c231655d777b8e620b0a9903",
+  "js-30-raw.json": "3cb54637b7afdbb5701b70e6d05c6f2589c2324258472056c9c7f12a308a1e44",
+  "js-20-raw.json": "34473de2204c290ab9d10b1d5bc56bffe4357f3849ee5ebcb5dad146b2dcb5e9",
+  "js-60-raw.json": "a19cbf8436f3ec9a1da79bd88f6346d25eab5f8d86bf8a8babbb933952a92db1",
+  "forward-summary.json": "3429335868c0133d70b784abd0b0f8512366b9dde2301ef82d0c101515e443aa",
+  "native-60-raw.json": "a026bcc91a30511537e21b1088e35d54878c6e4b7eb152b6e0fc641f55a5c1e6",
+  "reverse-js-60-raw.json": "a98d041bef9845d2b9fe51a91ae6baab6310fa9d06c1150ba89a284e49e6edaf",
+  "reverse-native-60-raw.json": "747a19b1056a77291fe98c16ad61a195a421fcccadc4a6eb76465639d4a1fabb",
+  "reverse-summary.json": "123f1bfc2787b6a0a93c8b5d431def55f5e188c70cf15397cd95214ff4be584f",
+  "native-30-raw.json": "5cc71ca4deb360c9d91bf25218b996a1d879c77bf4bce4adb1572f8f9098c156",
+  "source_rushu/examples/ruguan/solar-system-math.ru": "c0dceb4e68275d545e060119c211bcff7496a846e5f64322540a7c927ce66085"
+}

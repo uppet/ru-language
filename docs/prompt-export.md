@@ -26,7 +26,7 @@ python3 ru ruguan-prompt -o ruguan-system.txt --force
 
 `rushu-prompt` 与如书调用生成提供方时的 system 消息逐字相同：包括生成约束、如书 Python 代码格宿主说明，以及唯一一份完整语言规范。它适合普通如书代码、文本、算法和图形任务。
 
-`ruguan-prompt` 使用同一组装逻辑、同一完整规范与如书宿主说明，只追加一段如观聚焦指导：重点阅读图形接口、回调生命周期、数学与随机标准库，区分初始化与逐帧更新。完整如观签名、数学函数、随机源规则都直接来自规范，不维护另一套接口表，也不重复嵌入全文。它生成的图形代码仍应在如书中运行；普通 CLI、C 或 JavaScript 后端不提供如观画布宿主。
+`ruguan-prompt` 使用同一组装逻辑、同一完整规范与如书宿主说明，只追加一段如观聚焦指导：重点阅读图形接口、回调生命周期、数学与随机标准库，区分初始化与逐帧更新。完整如观签名、数学函数、随机源规则都直接来自规范，不维护另一套接口表，也不重复嵌入全文。它生成的图形代码仍应在如书中运行；普通 CLI、C 或 Node.js JavaScript 后端不提供如观画布宿主；如书显式 browser-js 是单独的浏览器目标。默认导出仍以 Python 为目标，并带完整规范中的两种宿主能力区别。
 
 两者都会在每次导出时重新读取随包发布的规范，标明语言版本、规范版本及原始规范 UTF-8 字节的 SHA-256。缺失、损坏或版本不一致会失败，不退回旧提示词。因此升级工具链后应重新导出；导出文件本身不会自动更新。
 
@@ -51,4 +51,4 @@ text = export_prompt("ruguan")           # 返回文本，默认不写文件
 path = export_prompt("ruguan", "ruguan-system.txt", force=True)
 ```
 
-`generation_system_prompt` 接受 `cli`、`rushu`、`ruguan`；`cli` 保持普通命令行生成的运行环境限制。`export_prompt` 只接受本次两个导出目标；`output=None` 或 `"-"` 返回字符串，实际文件路径返回发布后的 `Path`。出错抛出 `RuError`（随附规范错误可能是其 `GenerationError` 子类）。这些接口也无需提供方配置。
+`generation_system_prompt` 接受 `cli`、`rushu`、`ruguan`、`rushu-browser-js`；最后一项用于如书显式 JS 加速的生成请求，说明独立状态、1～60 FPS 请求及没有 Worker 64 MiB 硬内存配额。`cli` 保持普通命令行生成的运行环境限制。`export_prompt` 只接受本次两个导出目标；`output=None` 或 `"-"` 返回字符串，实际文件路径返回发布后的 `Path`。出错抛出 `RuError`（随附规范错误可能是其 `GenerationError` 子类）。这些接口也无需提供方配置。

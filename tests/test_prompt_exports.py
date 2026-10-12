@@ -45,6 +45,18 @@ class PromptExportTests(unittest.TestCase):
         self.assertNotEqual(export_prompt("rushu"), export_prompt("ruguan"))
         self.assertIn("本次任务聚焦如观", export_prompt("ruguan"))
 
+    def test_browser_and_default_python_targets_are_distinct(self):
+        browser = generation_system_prompt("rushu-browser-js")
+        python = generation_system_prompt("rushu")
+        cli = generation_system_prompt("cli")
+        self.assertIn("独立浏览器 Worker", browser)
+        self.assertIn("1～60 FPS", browser)
+        self.assertIn("不读取或共享 Python 会话", browser)
+        self.assertIn("无可强制的 64 MiB", browser)
+        self.assertIn("Python 代码格（默认）", python)
+        self.assertIn("不要使用浏览器 JS 专属", python)
+        self.assertIn("不得生成依赖如观", cli)
+
     def test_export_never_loads_config_or_network(self):
         with patch("rulang.generation.load_config", side_effect=AssertionError("config read")), \
              patch("rulang.generation.urlrequest.build_opener", side_effect=AssertionError("network")), \

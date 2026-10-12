@@ -1,3 +1,12 @@
+## 0.16.0 · 2026-10-12 · 如书独立浏览器 JS 执行
+
+- 如书 0.4.0 的代码格新增显式「JS 加速」和「复制输入」；旧书本／新格仍默认 Python，保存时记录格子的执行选择
+- 新增专用 browser-js 编译入口、无 Node I/O 的 ES module 运行时、如观宿主、专用 Worker 与单飞事件调度；每次独立运行，不共享 Python 或其他 JS 格状态
+- 如观 browser-js 支持 1～60 FPS 请求并用 requestAnimationFrame 调度；Python 仍为 1～30，实际绘制速度须实测；CLI Node.js／C 如观拒绝规则不变
+- 停止、重跑、换书和重启失效旧 Worker；结构化诊断保留本格源码来源；保存和打开的图形仅为静态快照
+- 生成提示与完整规范区分默认 Python、显式 browser-js 和 CLI Node.js；新增自然数学太阳系 JS 示例书
+- Worker 超时、消息／输出／队列上限属于保护措施，不是安全沙箱。没有浏览器 Worker 64 MiB 硬内存配额；不是如自研机器码 JIT，不凭 API 可用宣称原生 Canvas 等速
+
 ## 0.15.0 · 2026-10-12 · 统一诊断与提示导出
 
 - CLI、解释器及生成的 C／JavaScript 程序使用 `file:line[:column]: error:` 标准标题；保留中文错误类别、源码位置及 stdout／stderr 语义。C 普通运行错误保持真实行号，不虚构列。

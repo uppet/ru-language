@@ -12,7 +12,7 @@ function harness(overrides={},cellOverrides={},activeRun=null){
     api:async()=>({events:[{seq:1,generation:1,cell_id:'cell',execution_count:2,type:'graphics_done',canvas_id:'canvas',status:'error',...overrides}],cursor:1,state:'idle',execution_count:2}),
     renderOutput(){effects.rendered++;},markDirty(){},runtimeStatus(){},refreshControls(){},notice(){},stopScenes(){},setTimeout(){return 1;},clearTimeout(){},
   };
-  vm.createContext(context);vm.runInContext(polling,context);return {context,cell,effects};
+  context.browserRun=null;vm.createContext(context);vm.runInContext(polling,context);return {context,cell,effects};
 }
 test('matching callback failure marks the cell failed, renders it and stops its canvas',async()=>{
  const {context,cell,effects}=harness();await context.pollEvents();

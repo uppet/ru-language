@@ -21,7 +21,7 @@ function editor(text){
   const context={mountDiagnosticMarkers:()=>({render(){}}),analyze,highlight,enterEdit,indentSelection,needsAutoDedent,
     book:{cells:[cell]},MAX_SOURCE:200000,el:()=>new Element(),document:{createDocumentFragment:()=>new Element()},
     markDirty(){},renderOutput(){},notice(){},runAndMove(){},cell,view};
-  vm.createContext(context);vm.runInContext(source+';buildEditor(cell,view)',context);
+  context.invalidateEditedBrowserCell=()=>{};vm.createContext(context);vm.runInContext(source+';buildEditor(cell,view)',context);
   const input=view.input;input.setSelectionRange(text.length,text.length);
   return {cell,input,press(key){input.handlers.keydown({key,preventDefault(){}});},
     type(text){input.setRangeText(text,input.selectionStart,input.selectionEnd);input.handlers.input();}};

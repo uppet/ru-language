@@ -19,13 +19,15 @@ def cstr(value):
 
 
 class Compiler:
+    supports_browser_graphics = False
+
     def __init__(self, program, source_name='<源码>', modules=None, full_runtime=False):
         self.full_runtime = full_runtime
         from .modules import import_nodes, load_module_graph
         if modules is None and any(import_nodes(program)):
             modules = load_module_graph(source_name, program)
         for node in import_nodes(modules or program):
-            if node.data.get("path") == "如观" or Path(node.data.get("resolved", "")).resolve() == (Path(__file__).parent / "stdlib" / "如观.ru").resolve():
+            if not self.supports_browser_graphics and (node.data.get("path") == "如观" or Path(node.data.get("resolved", "")).resolve() == (Path(__file__).parent / "stdlib" / "如观.ru").resolve()):
                 raise RuError("如观图形仅支持如书 Python 会话；C／JavaScript 编译后端尚不支持", node.token.line, node.token.col, "能力错误")
         self.source_name = str(source_name)
         self.root = str(Path(source_name).resolve()) if modules else self.source_name

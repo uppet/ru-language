@@ -47,3 +47,16 @@ test('hidden documents clear pending events and disposal cancels scheduled work'
   view.canvas.emit('pointermove',{clientX:20,clientY:40,button:-1});await wait(60);assert.equal(calls,0);
   view.dispose();document.hidden=false;await wait(60);assert.equal(calls,0);assert.equal(backingStorePixels(),0);
 });
+
+test('JavaScript animation uses RAF, supports 60 fps, and retains one flight',async t=>{
+  setup(t);const previousRAF=globalThis.requestAnimationFrame,previousCancel=globalThis.cancelAnimationFrame,previousPerformance=globalThis.performance;
+  let now=1000,next=0,calls=0,resolve;const callbacks=new Map();
+  globalThis.performance={now:()=>now};globalThis.requestAnimationFrame=fn=>{callbacks.set(++next,fn);return next;};globalThis.cancelAnimationFrame=id=>callbacks.delete(id);
+  t.after(()=>{globalThis.requestAnimationFrame=previousRAF;globalThis.cancelAnimationFrame=previousCancel;globalThis.performance=previousPerformance;});
+  const s={...scene(),fps:60,running:true,handlers:['frame']};
+  const view=createSceneView(s,{backend:'javascript',send:()=>{calls++;return new Promise(done=>resolve=done);}});
+  function frame(){now+=1000/60;const list=[...callbacks.values()];callbacks.clear();for(const fn of list)fn(now);}
+  frame();assert.equal(calls,1);assert.equal(callbacks.size,0);for(let i=0;i<10;i++)frame();assert.equal(calls,1);
+  resolve();await Promise.resolve();await Promise.resolve();assert.equal(callbacks.size,1);frame();assert.equal(calls,2);
+  resolve();await Promise.resolve();await Promise.resolve();view.dispose();assert.equal(callbacks.size,0);frame();assert.equal(calls,2);
+});

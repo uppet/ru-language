@@ -183,6 +183,20 @@ class SourceGenerationTests(unittest.TestCase):
         self.assertNotIn("如是我言", selected)
         self.assertEqual(provider.call_args.kwargs, {"timeout": DEFAULT_TIMEOUT, "runtime_target": "rushu"})
 
+    def test_explicit_browser_target_reaches_provider_without_execution(self):
+        for target, expected in (("python", "rushu"), ("browser-js", "rushu-browser-js")):
+            with self.subTest(target=target), \
+                 patch.object(generation, "request_response", return_value="显 42.") as provider, \
+                 patch.object(self.server.sessions, "create", side_effect=AssertionError("executed")):
+                status, value = self.request("/api/generate", {"prompt": PROMPT, "runtime_target": target})
+                self.assertEqual(status, 200, value)
+                self.assertEqual(provider.call_args.kwargs["runtime_target"], expected)
+        with patch.object(generation, "request_response") as provider:
+            for target in (None, "js", "cli", [], {}, True):
+                status, value = self.request("/api/generate", {"prompt": PROMPT, "runtime_target": target})
+                self.assertEqual(status, 400, value)
+            provider.assert_not_called()
+
     def test_configured_timeout_reaches_provider_and_worker_wait(self):
         for timeout in (1800, 3600, .125):
             self.server.generation_timeout = timeout

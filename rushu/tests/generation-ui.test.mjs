@@ -32,7 +32,7 @@ function harness({configured=true,confirm=true}={}){
     setInterval:(callback,delay)=>{assert.equal(delay,1000);const id=nextTimer++;intervals.set(id,callback);return id;},
     clearInterval:id=>intervals.delete(id),
   };
-  vm.createContext(context);vm.runInContext(statusUI+lifecycle,context);
+  context.invalidateEditedBrowserCell=()=>{};vm.createContext(context);vm.runInContext(statusUI+lifecycle,context);
   const view=context.views.get(cell.id);view.generationStatus=context.createGenerationStatus(view);
   const setStatus=context.generationStatus;context.generationStatus=(...args)=>{statuses.push(args);setStatus(...args);};
   return {cell,diagnostic,intervals,calls,statuses,context,
