@@ -1,8 +1,10 @@
 """Explicit browser compilation, host semantics and authenticated transport."""
 import hashlib
 import http.client
+import importlib.util
 import json
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
+import re
 import shutil
 import subprocess
 import sys
@@ -12,6 +14,7 @@ import unittest
 from unittest.mock import patch
 
 from rulang.browser_compiler import BrowserJSCompiler, compile_browser
+from rulang.diagnostics import SourceOrigin
 from rulang.frontend import RuError, parse
 from rulang.js_compiler import JSCompiler
 from rushu.browser_compile import compile_request
@@ -27,6 +30,68 @@ def request(code, **extra):
 
 
 class BrowserCompilerTests(unittest.TestCase):
+    @unittest.skipUnless(NODE, 'Node required')
+    def test_windows_root_is_collected_once_and_runs_as_esm(self):
+        # Model Windows resolving a slash-rooted synthetic filename to a drive
+        # path even when this regression runs on a POSIX CI host. Load an
+        # isolated compiler module so its ROOT initialization is tested too.
+        from rulang import browser_compiler
+        windows_root = PureWindowsPath('C:/__rushu_browser__/root.ru')
+        slash_root = str(Path('/__rushu_browser__/root.ru'))
+        resolve = Path.resolve
+
+        def windows_resolve(path, *args, **kwargs):
+            if str(path) in (slash_root, str(windows_root)):
+                return windows_root
+            return resolve(path, *args, **kwargs)
+
+        spec = importlib.util.spec_from_file_location(
+            'rulang._browser_compiler_windows_test', browser_compiler.__file__)
+        isolated = importlib.util.module_from_spec(spec)
+        code = """数学 取 外言 '如:数学'.
+再取 取 外言 '如:数学'.
+随机 取 外言 '如:随机'.
+算 制 起 为 数:
+    算 加 步 为 数: 得 起 + 步. 法
+    得 算 值 为 数: 得 加 值. 法.
+法
+回调 取 制 40.
+显 回调 2.
+显 数学 其 正弦 0.
+显 再取 其 余弦 0.
+"""
+        with patch.object(Path, 'resolve', windows_resolve):
+            spec.loader.exec_module(isolated)
+            self.assertEqual(isolated.ROOT, str(windows_root))
+            graph = isolated.browser_graph(code)
+            compiler = isolated.BrowserJSCompiler(graph[isolated.ROOT], isolated.ROOT, modules=graph)
+            self.assertEqual(list(compiler.modules), list(graph))
+            identities = [id(fn) for _, fn in compiler.all_functions]
+            self.assertEqual(len(identities), len(set(identities)))
+            javascript = compiler.compile()
+            origin = SourceOrigin('rushu-js://independent/7/test/3.ru', 'cell', 'test', 3, 7, 'test-hash')
+            error_javascript = isolated.compile_browser('显 1.\n显 1 / 0.', origin)
+        symbols = re.findall(r'^function (ru_function_\d+)\(', javascript, re.M)
+        self.assertEqual(len(symbols), len(set(symbols)))
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            (target/'program.mjs').write_text(javascript, encoding='utf-8')
+            (target/'error.mjs').write_text(error_javascript, encoding='utf-8')
+            (target/'run.mjs').write_text(
+                "import create from './program.mjs';import fail from './error.mjs';"
+                "const events=[];create({emit:e=>events.push(e)});"
+                "try{fail({emit:()=>{}});}catch(error){events.push({diagnostic:error.diagnostic});}"
+                "console.log(JSON.stringify(events));", encoding='utf-8')
+            proc = subprocess.run([NODE, str(target/'run.mjs')],
+                capture_output=True, text=True, timeout=10)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        events = json.loads(proc.stdout)
+        self.assertEqual(''.join(e.get('text', '') for e in events), '42\n0\n1\n')
+        detail = events[-1]['diagnostic']
+        self.assertEqual(detail['source_name'], origin.source_name)
+        self.assertEqual(detail['source'], origin.metadata())
+        self.assertEqual(detail['line'], 2)
+
     def test_module_boundary_before_any_file_read(self):
         for code in ("库 取 外言 '/etc/passwd'.", "若 不实 则 库 取 外言 '../private.ru'. 然"):
             with self.subTest(code=code), patch.object(Path, 'read_text', side_effect=AssertionError('must not read')):

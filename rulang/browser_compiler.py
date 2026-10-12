@@ -11,7 +11,10 @@ from .frontend import RuError, parse, validate
 from .js_compiler import JSCompiler, js
 from .modules import ModuleGraph, STANDARD_MODULES, import_nodes, reject_generation_document
 
-ROOT = '/__rushu_browser__/root.ru'
+# ModuleGraph keys must have the same canonical form as Compiler.root. On
+# Windows an absolute slash path gains a drive and native separators when
+# resolved; keeping the slash spelling would collect the same root AST twice.
+ROOT = str(Path('/__rushu_browser__/root.ru').resolve())
 ALLOWED_MODULES = frozenset(STANDARD_MODULES)
 FORBIDDEN_NAMES = frozenset({'读', '件', '录', '件作成果', '读取', '显出', '错误'})
 MAX_NODES = 20000
