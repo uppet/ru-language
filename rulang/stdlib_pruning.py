@@ -72,8 +72,10 @@ def _shape(value):
 def _trusted_declarations(statements, path=_BUNDLED_PATH):
     # A client can supply its own AST at any path; a trusted path alone does not
     # prove that those declarations are the shipped library. Refuse substitutes
-    # and future library versions with observable top-level initialization.
-    if not statements or any(n.kind != 'function' for n in statements):
+    # and future library versions with observable top-level initialization. A numeric
+    # literal binding is pure and may be treated like a named declaration.
+    if not statements or any(not (n.kind == 'function' or
+            (n.kind == 'bind' and n.data['expr'].kind == 'number')) for n in statements):
         return False
     try:
         bundled = parse(Path(path).read_text(encoding='utf-8-sig'))

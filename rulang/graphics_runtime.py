@@ -11,6 +11,7 @@ import secrets
 import sys
 import time
 import tracemalloc
+from types import MappingProxyType
 
 from .frontend import Node, Token, RuError, bind_arguments
 from .contest_runtime import _BUILTIN_OWNER
@@ -28,6 +29,12 @@ EVENT_PARAMS = {"frame": ("每帧", ["帧"]), "mouse_down": ("鼠标按下", ["�
                 "key_down": ("按键", ["键"]), "key_up": ("松键", ["键"])}
 CALLBACK_NAMES = {name: kind for kind, (name, _) in EVENT_PARAMS.items()}
 
+
+CANVAS_PARAMS = MappingProxyType({"背景": ("色",), "填色": ("色",), "描边": ("色",), "线宽": ("粗",), "字号": ("大小",),
+              "矩形": ("横", "纵", "宽", "高"), "椭圆": ("横", "纵", "宽", "高"),
+              "线": ("横一", "纵一", "横二", "纵二"), "文字": ("文", "横", "纵"),
+              "帧率": ("率",), "停": (), "继续": (), "关闭": (), "宽": (), "高": (), "帧": (),
+              **{key: ("回调",) for key in CALLBACK_NAMES}})
 
 def install_graphics(owner):
     from .interpreter import Instance, RuType, Scope
@@ -157,16 +164,22 @@ class GraphicsHost:
         previous_bytes = canvas.command_bytes
         canvas.commands, canvas.command_bytes = [], 2
         deadline, lines = time.monotonic() + MAX_CALLBACK_SECONDS, 0
+        remaining = 128
         def check():
-            if lines > MAX_CALLBACK_LINES or time.monotonic() > deadline:
+            if lines + (128 - remaining) > MAX_CALLBACK_LINES or time.monotonic() > deadline:
                 self.interpreter.fail(node, "如观回调超过 1 秒或 500000 行执行预算；已关闭交互，请简化回调后重跑")
             if tracemalloc.get_traced_memory()[0] - self.memory_start > MAX_GRAPHICS_MEMORY:
                 self.interpreter.fail(node, "如观新增内存超过 64 MiB；已关闭交互，请减少数据后重跑")
         def trace(frame, action, arg):
-            nonlocal lines
+            nonlocal lines, remaining
             if action == "line":
-                lines += 1
-                if lines % 128 == 0:
+                # Keep the exact line budget and 128-line check cadence, but
+                # use cached small integers between checks. This avoids one
+                # allocation per traced line while tracemalloc is active.
+                remaining -= 1
+                if remaining == 0:
+                    lines += 128
+                    remaining = 128
                     check()
             return trace
         old_trace = sys.gettrace()
@@ -232,11 +245,7 @@ def graphics_member(owner, n, receiver, name, args):
     canvas = receiver.graphics_canvas
     if canvas.closed or canvas.host.canvas is not canvas:
         fail("如观画布已关闭；运行新代码格、停止或重启会话后，请重新创建画布")
-    params = {"背景": ["色"], "填色": ["色"], "描边": ["色"], "线宽": ["粗"], "字号": ["大小"],
-              "矩形": ["横", "纵", "宽", "高"], "椭圆": ["横", "纵", "宽", "高"],
-              "线": ["横一", "纵一", "横二", "纵二"], "文字": ["文", "横", "纵"],
-              "帧率": ["率"], "停": [], "继续": [], "关闭": [], "宽": [], "高": [], "帧": []}
-    params.update({key: ["回调"] for key in CALLBACK_NAMES})
+    params = CANVAS_PARAMS
     if name not in params:
         fail("未知如观画布成员：" + name)
     bound = bind_arguments(name, args, params[name], fail)

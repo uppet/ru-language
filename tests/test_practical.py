@@ -134,7 +134,7 @@ class PracticalLibraryTests(unittest.TestCase):
         self._target_errors('js')
 
     def test_exports_and_protection(self):
-        for module, expected in [('文本', {'拆分','替换','去空白','定点'}), ('数学', {'取整','小','大','绝对','整除','平方根','幂','向下取整','向上取整','四舍五入'}), ('随机', {'造源'})]:
+        for module, expected in [('文本', {'拆分','替换','去空白','定点'}), ('数学', {'取整','小','大','绝对','整除','平方根','幂','向下取整','向上取整','四舍五入','圆周率','正弦','余弦','角度转弧度','弧度转角度','方向角'}), ('随机', {'造源'})]:
             graph = load_module_graph(ROOT/'rulang'/'stdlib'/(module+'.ru'))
             runtime = Interpreter(io.StringIO(''),io.StringIO())
             runtime.execute(graph[graph.root], source_path=graph.root, modules=graph)

@@ -206,7 +206,7 @@ class IndependentNumericOracleTests(unittest.TestCase):
                     self.assertEqual(fixed_text(value, places), decimal_oracle(value, places))
 
     def test_math_signed_zero_and_extreme_finite_values(self):
-        for name in ['平方根', '向下取整', '向上取整', '四舍五入']:
+        for name in ['平方根', '向下取整', '向上取整', '四舍五入', '正弦', '角度转弧度', '弧度转角度']:
             result = self.invoke(name, -0.0)
             self.assertEqual(result, 0)
             self.assertEqual(math.copysign(1, result), -1)
@@ -218,9 +218,14 @@ class IndependentNumericOracleTests(unittest.TestCase):
 
     def test_non_numbers_and_nonfinite_numbers_are_rejected(self):
         for value in [False, True, 1, '1', None, [], math.inf, -math.inf, math.nan]:
-            for name in ['平方根', '向下取整', '向上取整', '四舍五入']:
+            for name in ['平方根', '向下取整', '向上取整', '四舍五入', '正弦', '角度转弧度', '弧度转角度']:
                 with self.subTest(name=name, value=value), self.assertRaises(RuError):
                     self.invoke(name, value)
+            with self.subTest(name='余弦', value=value), self.assertRaises(RuError):
+                self.invoke('余弦', value)
+            for args in [(value, 0.0), (0.0, value)]:
+                with self.subTest(name='方向角', args=args), self.assertRaises(RuError):
+                    self.invoke('方向角', *args)
             with self.subTest(name='定点', value=value), self.assertRaises(RuError):
                 self.invoke('定点', value, 2.0)
 

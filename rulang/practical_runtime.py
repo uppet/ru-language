@@ -58,6 +58,8 @@ def fixed_text(value, places):
     return ("-" if math.copysign(1.0, value) < 0 else "") + text
 
 _PARAMS = {
+    "正弦": ["弧度"], "余弦": ["弧度"], "角度转弧度": ["角度"],
+    "弧度转角度": ["弧度"], "方向角": ["纵", "横"],
     "拆分": ["文", "隔"], "替换": ["文", "旧", "新文"], "去空白": ["文"],
     "定点": ["值", "位数"], "平方根": ["值"], "幂": ["底数", "指数"],
     "向下取整": ["值"], "向上取整": ["值"], "四舍五入": ["值"], "造源": ["种子"],
@@ -125,7 +127,20 @@ def practical_member(owner, n, receiver, name, args):
         value = number(bound["值"], "值")
         places = integer(bound["位数"], "位数", 0, 15)
         return True, fixed_text(value, places)
-    if name == "幂":
+    if name == "方向角":
+        result = math.atan2(number(bound["纵"], "纵"), number(bound["横"], "横"))
+    elif name in ("正弦", "余弦", "角度转弧度", "弧度转角度"):
+        label = "角度" if name == "角度转弧度" else "弧度"
+        value = number(bound[label], label)
+        if name == "正弦":
+            result = math.sin(value)
+        elif name == "余弦":
+            result = math.cos(value)
+        elif name == "角度转弧度":
+            result = value * (math.pi / 180.0)
+        else:
+            result = value * (180.0 / math.pi)
+    elif name == "幂":
         base, exponent = number(bound["底数"], "底数"), number(bound["指数"], "指数")
         if base < 0 and exponent != math.trunc(exponent):
             fail("负底数的指数须为整数")

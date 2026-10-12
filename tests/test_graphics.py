@@ -141,6 +141,53 @@ class GraphicsTests(unittest.TestCase):
                 self.host.handle({'type': 'frame'})
         self.assertIsNone(self.host.snapshot())
 
+    def test_exact_trace_counter_boundaries_and_check_cadence(self):
+        # Supply exact line events without tracing unittest/mock infrastructure.
+        # Production sys.settrace still covers all Python frames unchanged.
+        for count in (0, 127, 128, 129, 499999, 500000, 500001, 500096):
+            with self.subTest(count=count):
+                self.canvas('图 其 每帧 (作 帧: 为).')
+                traces = []
+                seen = 0
+                def invoke(*args):
+                    nonlocal seen
+                    trace = traces[0]
+                    for seen in range(1, count + 1):
+                        trace(None, 'line', None)
+                with patch('rulang.graphics_runtime.sys.settrace', side_effect=traces.append), \
+                     patch('rulang.graphics_runtime.time.monotonic', return_value=0), \
+                     patch.object(self.interpreter, 'invoke_value', side_effect=invoke):
+                    if count <= 500000:
+                        self.host.handle({'type': 'frame'})
+                        self.assertIsNotNone(self.host.canvas)
+                    else:
+                        with self.assertRaisesRegex(RuError, '500000 行'):
+                            self.host.handle({'type': 'frame'})
+                        self.assertIsNone(self.host.canvas)
+                self.assertEqual(seen, count)
+                self.assertEqual(len(traces), 2)  # install and restore on both paths
+        # The previous implementation checks at multiples of 128, so the first
+        # in-callback failure is 500096; final check catches shorter overruns.
+        self.canvas('图 其 每帧 (作 帧: 为).')
+        traces = []
+        seen = 0
+        def invoke(*args):
+            nonlocal seen
+            for seen in range(1, 500200):
+                traces[0](None, 'line', None)
+        with patch('rulang.graphics_runtime.sys.settrace', side_effect=traces.append), \
+             patch('rulang.graphics_runtime.time.monotonic', return_value=0), \
+             patch.object(self.interpreter, 'invoke_value', side_effect=invoke):
+            with self.assertRaisesRegex(RuError, '500000 行'):
+                self.host.handle({'type': 'frame'})
+        self.assertEqual(seen, 500096)
+
+    def test_canvas_parameter_schema_is_immutable(self):
+        from rulang.graphics_runtime import CANVAS_PARAMS
+        with self.assertRaises(TypeError):
+            CANVAS_PARAMS['文字'] = ('横',)
+        self.assertTrue(all(isinstance(params, tuple) for params in CANVAS_PARAMS.values()))
+
     def test_memory_limit(self):
         self.canvas('图 其 每帧 (作 帧: 图 其 线 0 0 1 1. 为).')
         with patch('rulang.graphics_runtime.MAX_GRAPHICS_MEMORY',-1):

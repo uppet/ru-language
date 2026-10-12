@@ -206,6 +206,32 @@ static Val ru_practical_fixed(Val value, Val decimals, int line)
     out = ru_string_alloc(at, line); memcpy(out.s->data, buffer, at);
     return out;
 }
+static Val ru_practical_sin(Val value, int line)
+{
+    double n = ru_practical_number(value, "弧度", line);
+    return ru_finite(sin(n), line);
+}
+static Val ru_practical_cos(Val value, int line)
+{
+    double n = ru_practical_number(value, "弧度", line);
+    return ru_finite(cos(n), line);
+}
+static Val ru_practical_radians(Val value, int line)
+{
+    double n = ru_practical_number(value, "角度", line);
+    return ru_finite(n * (3.141592653589793 / 180.0), line);
+}
+static Val ru_practical_degrees(Val value, int line)
+{
+    double n = ru_practical_number(value, "弧度", line);
+    return ru_finite(n * (180.0 / 3.141592653589793), line);
+}
+static Val ru_practical_atan2(Val vertical, Val horizontal, int line)
+{
+    double y = ru_practical_number(vertical, "纵", line);
+    double x = ru_practical_number(horizontal, "横", line);
+    return ru_finite(atan2(y, x), line);
+}
 static Val ru_practical_sqrt(Val value, int line)
 {
     double n = ru_practical_number(value, "值", line);
@@ -332,6 +358,41 @@ static int ru_practical_member(Val receiver, const char *name, size_t argc, cons
         if (!strcmp(name, "定点")) {
             ru_bind(name, 2, fixed_names, argc, keys, args, bound, line);
             *out = ru_practical_fixed(bound[0], bound[1], line); return 1;
+        }
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 正弦 */
+        if (!strcmp(name, "正弦")) {
+            const char *names[] = {"弧度"};
+            ru_bind(name, 1, names, argc, keys, args, bound, line);
+            *out = ru_practical_sin(bound[0], line); return 1;
+        }
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 余弦 */
+        if (!strcmp(name, "余弦")) {
+            const char *names[] = {"弧度"};
+            ru_bind(name, 1, names, argc, keys, args, bound, line);
+            *out = ru_practical_cos(bound[0], line); return 1;
+        }
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 角度转弧度 */
+        if (!strcmp(name, "角度转弧度")) {
+            const char *names[] = {"角度"};
+            ru_bind(name, 1, names, argc, keys, args, bound, line);
+            *out = ru_practical_radians(bound[0], line); return 1;
+        }
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 弧度转角度 */
+        if (!strcmp(name, "弧度转角度")) {
+            const char *names[] = {"弧度"};
+            ru_bind(name, 1, names, argc, keys, args, bound, line);
+            *out = ru_practical_degrees(bound[0], line); return 1;
+        }
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 方向角 */
+        if (!strcmp(name, "方向角")) {
+            const char *names[] = {"纵", "横"};
+            ru_bind(name, 2, names, argc, keys, args, bound, line);
+            *out = ru_practical_atan2(bound[0], bound[1], line); return 1;
         }
 /* RU_END_MEMBERS */
 /* RU_MEMBERS: 平方根 */

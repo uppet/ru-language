@@ -1317,7 +1317,7 @@ static Val v_member(Val receiver,const char *name,size_t argc,const char **keys,
 /* RU_MEMBERS: 读入,扫句,拆词,拆行,字列,合句,排序,取整,蓄出,词,数,行,写,清 */
     if (ru_contest_member(receiver, name, argc, keys, args, line, &io_result)) return io_result;
 /* RU_END_MEMBERS */
-/* RU_MEMBERS: 拆分,替换,去空白,定点,平方根,幂,向下取整,向上取整,四舍五入,造源,整数,洗牌 */
+/* RU_MEMBERS: 拆分,替换,去空白,定点,平方根,幂,向下取整,向上取整,四舍五入,正弦,余弦,角度转弧度,弧度转角度,方向角,造源,整数,洗牌 */
     if (ru_practical_member(receiver, name, argc, keys, args, line, &io_result)) return io_result;
 /* RU_END_MEMBERS */
 /* RU_MEMBERS: 读,写,在,除,列 */

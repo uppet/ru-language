@@ -857,6 +857,8 @@ const R = (() => {
     practicalTypes[kind] = builtin(name,[],kind,'practicalKind');
   builtins.values.__实用 = new Instance(practicalTypes.helpers,dict());
   const practicalParams = {
+    '正弦':['弧度'],'余弦':['弧度'],'角度转弧度':['角度'],
+    '弧度转角度':['弧度'],'方向角':['纵','横'],
     '拆分':['文','隔'],'替换':['文','旧','新文'],'去空白':['文'],
     '定点':['值','位数'],'平方根':['值'],'幂':['底数','指数'],
     '向下取整':['值'],'向上取整':['值'],'四舍五入':['值'],'造源':['种子'],
@@ -957,7 +959,16 @@ const R = (() => {
       return fixedText(value,places);
     }
     let result;
-    if (name === '幂') {
+    if (name === '方向角') {
+      result = Math.atan2(practicalNumber(m,b.纵,'纵',loc),practicalNumber(m,b.横,'横',loc));
+    } else if (['正弦','余弦','角度转弧度','弧度转角度'].includes(name)) {
+      const label = name === '角度转弧度' ? '角度' : '弧度';
+      const value = practicalNumber(m,b[label],label,loc);
+      if (name === '正弦') result = Math.sin(value);
+      else if (name === '余弦') result = Math.cos(value);
+      else if (name === '角度转弧度') result = value * (Math.PI / 180);
+      else result = value * (180 / Math.PI);
+    } else if (name === '幂') {
       const base = practicalNumber(m,b.底数,'底数',loc), exponent = practicalNumber(m,b.指数,'指数',loc);
       if (base < 0 && !Number.isInteger(exponent)) fail(m,'负底数的指数须为整数',loc);
       if (base === 0 && exponent < 0) fail(m,'零的指数不能为负数',loc);
