@@ -15,24 +15,45 @@ function reserveBacking(entry,pixels){
 }
 export function backingStorePixels(){return backingPixels;}
 const finite=value=>typeof value==='number'&&Number.isFinite(value)&&Math.abs(value)<=100000;
+const identity=[1,0,0,1,0,0];
+function matrix(value){if(!Array.isArray(value)||value.length!==6||!Array.from(value).every(finite))throw new Error('画布变换无效。');return value.slice();}
+function drawingState(c){
+  const state={};
+  if(Object.hasOwn(c,'transform'))state.transform=matrix(c.transform);
+  if(Object.hasOwn(c,'clips')){
+    if(!Array.isArray(c.clips)||c.clips.length>32)throw new Error('画布裁剪无效。');
+    state.clips=Array.from(c.clips,clip=>{
+      if(!clip||typeof clip!=='object'||!['x','y','width','height'].every(key=>finite(clip[key]))||clip.width<0||clip.height<0)throw new Error('画布裁剪无效。');
+      return {x:clip.x,y:clip.y,width:clip.width,height:clip.height,transform:matrix(clip.transform)};
+    });
+  }
+  return state;
+}
 export function validateScene(value) {
   if(!value||typeof value!=='object'||typeof value.canvas_id!=='string'||!/^[\w-]{1,128}$/.test(value.canvas_id))throw new Error('画布标识无效。');
   if(!Number.isInteger(value.width)||!Number.isInteger(value.height)||value.width<1||value.height<1||value.width>2048||value.height>2048)throw new Error('画布尺寸无效（最大 2048 × 2048）。');
   if(!Array.isArray(value.commands)||value.commands.length>MAX_COMMANDS)throw new Error('画布指令过多。');
   if(new TextEncoder().encode(JSON.stringify(value)).length>MAX_FRAME_BYTES)throw new Error('画布帧过大。');
-  const commands=value.commands.map(command=>{
+  const commands=Array.from(value.commands,command=>{
     if(!command||typeof command!=='object')throw new Error('画布指令无效。');
-    const c=command,names={background:[],line:['x1','y1','x2','y2','width'],rect:['x','y','width','height','stroke_width'],ellipse:['x','y','width','height','stroke_width'],text:['x','y','size']};
+    const c=command,names={background:[],line:['x1','y1','x2','y2','width'],rect:['x','y','width','height','stroke_width'],ellipse:['x','y','width','height','stroke_width'],text:['x','y','size'],polygon:['stroke_width']};
     if(!Object.hasOwn(names,c.op)||!names[c.op].every(key=>finite(c[key])))throw new Error('画布坐标无效。');
+    const state=drawingState(c);
+    if(c.op==='polygon'){
+      if(!Array.isArray(c.points)||c.points.length<3||c.points.length>256)throw new Error('画布多边形无效。');
+      const points=Array.from(c.points,point=>{if(!Array.isArray(point)||point.length!==2||!Array.from(point).every(finite))throw new Error('画布多边形坐标无效。');return point.slice();});
+      if(c.stroke_width<1||c.stroke_width>256||![c.fill,c.stroke].every(x=>x===''||color(x)))throw new Error('图形尺寸或颜色无效。');
+      return {op:c.op,points,fill:c.fill,stroke:c.stroke,stroke_width:c.stroke_width,...state};
+    }
     if(c.op==='rect'||c.op==='ellipse'){
       if(c.width<0||c.height<0||c.stroke_width<1||c.stroke_width>256||![c.fill,c.stroke].every(x=>x===''||color(x)))throw new Error('图形尺寸或颜色无效。');
-      return {op:c.op,x:c.x,y:c.y,width:c.width,height:c.height,fill:c.fill,stroke:c.stroke,stroke_width:c.stroke_width};
+      return {op:c.op,x:c.x,y:c.y,width:c.width,height:c.height,fill:c.fill,stroke:c.stroke,stroke_width:c.stroke_width,...state};
     }
     if(!(c.color===''&&c.op!=='background')&&!color(c.color))throw new Error('画布颜色无效。');
     if(c.op==='background')return {op:c.op,color:c.color};
-    if(c.op==='line'){if(c.width<=0||c.width>256)throw new Error('画布线宽无效。');return {op:c.op,x1:c.x1,y1:c.y1,x2:c.x2,y2:c.y2,color:c.color,width:c.width};}
+    if(c.op==='line'){if(c.width<=0||c.width>256)throw new Error('画布线宽无效。');return {op:c.op,x1:c.x1,y1:c.y1,x2:c.x2,y2:c.y2,color:c.color,width:c.width,...state};}
     if(typeof c.text!=='string'||codePoints(c.text)>4096||c.size<=0||c.size>256)throw new Error('画布文字无效。');
-    return {op:c.op,x:c.x,y:c.y,text:c.text,color:c.color,size:c.size};
+    return {op:c.op,x:c.x,y:c.y,text:c.text,color:c.color,size:c.size,...state};
   });
   if(!Array.isArray(value.handlers)||!value.handlers.every(x=>eventNames.includes(x)))throw new Error('画布交互无效。');
   if(!Number.isInteger(value.fps)||value.fps<1||value.fps>60)throw new Error('画布帧率无效。');
@@ -43,11 +64,25 @@ export function drawScene(canvas,value) {
   const scene=validateScene(value);canvas.width=scene.width;canvas.height=scene.height;
   const ctx=canvas.getContext('2d');if(!ctx)throw new Error('浏览器不支持二维画布。');
   for(const c of scene.commands){
-    if(c.op==='background'){ctx.fillStyle=c.color;ctx.fillRect(0,0,scene.width,scene.height);}
-    else if(c.op==='text'){if(!c.color)continue;ctx.fillStyle=c.color;ctx.font=`${c.size}px sans-serif`;ctx.textBaseline='top';ctx.fillText(c.text,c.x,c.y);}
-    else {ctx.beginPath();if(c.op==='line'){if(!c.color)continue;ctx.moveTo(c.x1,c.y1);ctx.lineTo(c.x2,c.y2);ctx.strokeStyle=c.color;ctx.lineWidth=c.width;ctx.stroke();}
-      else {if(c.op==='rect')ctx.rect(c.x,c.y,c.width,c.height);else ctx.ellipse(c.x+c.width/2,c.y+c.height/2,c.width/2,c.height/2,0,0,Math.PI*2);
-        if(c.fill){ctx.fillStyle=c.fill;ctx.fill();}if(c.stroke&&c.stroke_width>0){ctx.strokeStyle=c.stroke;ctx.lineWidth=c.stroke_width;ctx.stroke();}}}
+    // Canvas resizing above resets state. Legacy commands need no new context APIs.
+    const hasState=c.op!=='background'&&(c.transform||c.clips?.length);
+    const scoped=hasState||(typeof ctx.save==='function'&&typeof ctx.restore==='function');
+    if(scoped)ctx.save();
+    try{
+      if(hasState){
+        for(const clip of c.clips||[]){ctx.setTransform(...clip.transform);ctx.beginPath();ctx.rect(clip.x,clip.y,clip.width,clip.height);ctx.clip();}
+        ctx.setTransform(...(c.transform||identity));
+      }
+      if(c.op==='background'){ctx.fillStyle=c.color;ctx.fillRect(0,0,scene.width,scene.height);}
+      else if(c.op==='text'){if(!c.color)continue;ctx.fillStyle=c.color;ctx.font=`${c.size}px sans-serif`;ctx.textBaseline='top';ctx.fillText(c.text,c.x,c.y);}
+      else {ctx.beginPath();if(c.op==='line'){if(!c.color)continue;ctx.moveTo(c.x1,c.y1);ctx.lineTo(c.x2,c.y2);ctx.strokeStyle=c.color;ctx.lineWidth=c.width;ctx.stroke();}
+        else {
+          if(c.op==='rect')ctx.rect(c.x,c.y,c.width,c.height);
+          else if(c.op==='polygon'){ctx.moveTo(...c.points[0]);for(const point of c.points.slice(1))ctx.lineTo(...point);ctx.closePath();}
+          else ctx.ellipse(c.x+c.width/2,c.y+c.height/2,c.width/2,c.height/2,0,0,Math.PI*2);
+          if(c.fill){ctx.fillStyle=c.fill;ctx.fill();}if(c.stroke&&c.stroke_width>0){ctx.strokeStyle=c.stroke;ctx.lineWidth=c.stroke_width;ctx.stroke();}}
+      }
+    }finally{if(scoped)ctx.restore();}
   }return scene;
 }
 /** send resolves after the server's graphics_done, not merely HTTP acceptance. */

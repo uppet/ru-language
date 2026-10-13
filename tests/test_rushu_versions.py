@@ -16,6 +16,10 @@ from rushu.versions import version_info
 
 
 class VersionTests(unittest.TestCase):
+    def test_graphics_upgrade_versions(self):
+        self.assertEqual(ru_version, "0.19.0")
+        self.assertEqual(rushu_version, "0.8.0")
+
     def test_installed_versions(self):
         info = version_info()
         self.assertEqual(info, {'ru': ru_version, 'rushu': rushu_version, 'specification': ru_version})

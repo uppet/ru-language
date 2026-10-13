@@ -353,3 +353,10 @@ test('array and dictionary traversal help distinguishes positional callbacks',()
       assert.doesNotMatch(highlight(source), /内置阵：|内置典：/);
   }
 });
+
+test('graphics upgrade names are contextual members, not keywords',()=>{
+  for(const word of '三角形 多边形 平移 旋转 缩放 保存 恢复 变换 重置变换 裁剪 取消裁剪'.split(' ')) {
+    assert.equal(analyze(`图 其 ${word}.`).tokens.find(t=>t.text===word).face,'builtin');
+    assert.equal(analyze(`${word} 取 1.`).tokens.find(t=>t.text===word).face,null);
+  }
+});

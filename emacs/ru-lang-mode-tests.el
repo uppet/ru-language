@@ -1368,3 +1368,9 @@
     (should (assoc name ru-lang--practical-member-help)))
   (should (string-match-p "先于:二参算" (cdr (assoc "排序" ru-lang--practical-member-help))))
   (should (string-match-p "不接受作" (cdr (assoc "另成" ru-lang--practical-member-help)))))
+
+(ert-deftest ru-graphics-upgrade-contextual-members ()
+  (dolist (name '("三角形" "多边形" "平移" "旋转" "缩放" "保存" "恢复" "变换" "重置变换" "裁剪" "取消裁剪"))
+    (should (member name ru-lang--member-builtins))
+    (should-not (member name ru-lang--keywords))
+    (should-not (member name ru-lang--builtins))))

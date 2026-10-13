@@ -16,6 +16,9 @@ from types import MappingProxyType
 from .frontend import Node, Token, RuError, bind_arguments
 from .contest_runtime import _BUILTIN_OWNER
 
+MAX_SAVE_DEPTH = 64
+MAX_CLIPS = 32
+IDENTITY = (1, 0, 0, 1, 0, 0)
 MAX_COMMANDS = 2048
 MAX_FRAME_BYTES = 262144
 MAX_CALLBACK_LINES = 500000
@@ -33,6 +36,10 @@ CALLBACK_NAMES = {name: kind for kind, (name, _) in EVENT_PARAMS.items()}
 CANVAS_PARAMS = MappingProxyType({"背景": ("色",), "填色": ("色",), "描边": ("色",), "线宽": ("粗",), "字号": ("大小",),
               "矩形": ("横", "纵", "宽", "高"), "椭圆": ("横", "纵", "宽", "高"),
               "线": ("横一", "纵一", "横二", "纵二"), "文字": ("文", "横", "纵"),
+              "三角形": ("横一", "纵一", "横二", "纵二", "横三", "纵三"), "多边形": ("点阵",),
+              "平移": ("横", "纵"), "旋转": ("弧度",), "缩放": ("横倍率", "纵倍率"),
+              "保存": (), "恢复": (), "变换": ("a", "b", "c", "d", "e", "f"), "重置变换": (),
+              "裁剪": ("横", "纵", "宽", "高"), "取消裁剪": (),
               "帧率": ("率",), "停": (), "继续": (), "关闭": (), "宽": (), "高": (), "帧": (),
               **{key: ("回调",) for key in CALLBACK_NAMES}})
 
@@ -65,6 +72,23 @@ class Canvas:
         self.fps, self.frame = 30, 0
         self.running, self.closed = False, False
         self.dirty = True
+        self.reset_geometry()
+
+    def reset_geometry(self):
+        self.transform, self.clips, self.stack = IDENTITY, (), []
+
+    def check_balanced(self):
+        if self.stack:
+            self.host.close()
+            raise RuError("如观保存与恢复须成对；尚有未恢复的状态，已关闭交互", category="运行错误")
+
+    def compose(self, matrix, fail):
+        a, b, c, d, e, f = self.transform
+        g, h, i, j, k, l = matrix
+        result = (a*g+c*h, b*g+d*h, a*i+c*j, b*i+d*j, a*k+c*l+e, b*k+d*l+f)
+        if any(not math.isfinite(value) or abs(value) > 100000 for value in result):
+            fail("如观累积变换须为绝对值不超过 100000 的有限数")
+        self.transform = result
 
     def close(self):
         if self.closed:
@@ -72,11 +96,17 @@ class Canvas:
         self.closed, self.running = True, False
         self.callbacks.clear()
         self.commands.clear()
+        self.reset_geometry()
         self.host.emit({"type": "graphics_closed", "canvas_id": self.id})
         if self.host.canvas is self:
             self.host.canvas = None
 
     def command(self, command, fail):
+        if command["op"] != "background":
+            if self.transform != IDENTITY:
+                command["transform"] = list(self.transform)
+            if self.clips:
+                command["clips"] = [dict(clip, transform=list(clip["transform"])) for clip in self.clips]
         size = len(json.dumps(command, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) + 1
         if len(self.commands) >= MAX_COMMANDS or self.command_bytes + size > MAX_FRAME_BYTES - 1024:
             fail("如观每帧最多 2048 个绘制命令、256 KiB 数据；请减少图形或文字")
@@ -132,6 +162,8 @@ class GraphicsHost:
 
     def flush(self):
         canvas = self.canvas
+        if canvas:
+            canvas.check_balanced()
         if canvas and canvas.dirty:
             event = dict(self.snapshot(), type="graphics", commands=list(canvas.commands))
             self.emit(event)
@@ -160,6 +192,7 @@ class GraphicsHost:
             values = [event["key"]]
         # Frames are complete scenes. Input callbacks can change style/data;
         # if they draw, their drawing replaces the previous scene as well.
+        canvas.reset_geometry()
         previous = canvas.commands
         previous_bytes = canvas.command_bytes
         canvas.commands, canvas.command_bytes = [], 2
@@ -196,17 +229,29 @@ class GraphicsHost:
                 resource.setrlimit(resource.RLIMIT_AS, (ceiling, old_limit[1]))
         except (ImportError, OSError, ValueError):
             old_limit = None
+        callback_error = False
         try:
             sys.settrace(trace)
             self.interpreter.invoke_value(node, fn, [(None, value) for value in values])
             check()
+            if self.canvas:
+                self.canvas.check_balanced()
         except BaseException:
+            callback_error = True
             self.close()
             raise
         finally:
             sys.settrace(old_trace)
             if old_limit is not None:
-                resource.setrlimit(resource.RLIMIT_AS, old_limit)
+                try:
+                    resource.setrlimit(resource.RLIMIT_AS, old_limit)
+                except (OSError, ValueError):
+                    # Some hosts permit lowering a soft limit but reject raising
+                    # it again. Keep the protective ceiling, never hide the
+                    # original callback error, and report an actionable failure.
+                    self.close()
+                    if not callback_error:
+                        self.interpreter.fail(node, "如观无法恢复系统内存上限；保护性限制仍生效，已关闭交互，请重启会话")
         if self.canvas is canvas:
             if not canvas.commands and kind != "frame":
                 canvas.commands, canvas.command_bytes = previous, previous_bytes
@@ -261,6 +306,8 @@ def graphics_member(owner, n, receiver, name, args):
     elif name in ("宽", "高", "帧"):
         return True, float({"宽": canvas.width, "高": canvas.height, "帧": canvas.frame}[name])
     elif name == "关闭":
+        # Explicit close is cleanup and may discard an unfinished saved state.
+        canvas.stack.clear()
         canvas.host.flush()
         canvas.host.close()
     elif name in ("停", "继续"):
@@ -271,10 +318,60 @@ def graphics_member(owner, n, receiver, name, args):
         setattr(canvas, "fill" if name == "填色" else "stroke", color(bound["色"], True))
     elif name in ("线宽", "字号"):
         setattr(canvas, "line_width" if name == "线宽" else "text_size", number(next(iter(bound.values())), name, 1, 256))
+    elif name == "保存":
+        if len(canvas.stack) >= MAX_SAVE_DEPTH:
+            fail("如观最多保存 64 层状态")
+        canvas.stack.append((canvas.fill, canvas.stroke, canvas.line_width, canvas.text_size,
+                             canvas.transform, canvas.clips))
+    elif name == "恢复":
+        if not canvas.stack:
+            fail("如观恢复没有对应的保存")
+        (canvas.fill, canvas.stroke, canvas.line_width, canvas.text_size,
+         canvas.transform, canvas.clips) = canvas.stack.pop()
+    elif name == "重置变换":
+        canvas.transform = IDENTITY
+    elif name == "取消裁剪":
+        canvas.clips = ()
+    elif name in ("平移", "旋转", "缩放", "变换"):
+        values = [number(bound[key], key) for key in params[name]]
+        if name == "平移":
+            matrix = (1, 0, 0, 1, *values)
+        elif name == "旋转":
+            cosine, sine = math.cos(values[0]), math.sin(values[0])
+            matrix = (cosine, sine, -sine, cosine, 0, 0)
+        elif name == "缩放":
+            matrix = (values[0], 0, 0, values[1], 0, 0)
+        else:
+            matrix = values
+        canvas.compose(matrix, fail)
+    elif name == "裁剪":
+        if len(canvas.clips) >= MAX_CLIPS:
+            fail("如观最多叠加 32 个裁剪区域")
+        clip = {"x": number(bound["横"], "横"), "y": number(bound["纵"], "纵"),
+                "width": number(bound["宽"], "宽", 0), "height": number(bound["高"], "高", 0),
+                "transform": canvas.transform}
+        canvas.clips += (clip,)
+    elif name in ("三角形", "多边形"):
+        if name == "三角形":
+            values = [number(bound[key], key) for key in params[name]]
+            points = [values[index:index+2] for index in range(0, 6, 2)]
+        else:
+            source = bound["点阵"]
+            if not isinstance(source, list) or not 3 <= len(source) <= 256:
+                fail("多边形点阵须为包含 3 至 256 个点的阵")
+            points = []
+            for point in source:
+                if not isinstance(point, list) or len(point) != 2:
+                    fail("多边形每个点须为恰含两个坐标的阵")
+                points.append([number(point[0], "横坐标"), number(point[1], "纵坐标")])
+        canvas.command({"op": "polygon", "points": points, "fill": canvas.fill,
+                        "stroke": canvas.stroke, "stroke_width": canvas.line_width}, fail)
     elif name == "背景":
-        # A new background makes preceding drawing invisible; release it.
+        background = color(bound["色"])
+        # A new background makes preceding drawing invisible; release it only
+        # after validation so a caught argument error cannot erase the scene.
         canvas.commands, canvas.command_bytes = [], 2
-        canvas.command({"op": "background", "color": color(bound["色"])}, fail)
+        canvas.command({"op": "background", "color": background}, fail)
     elif name in ("矩形", "椭圆"):
         x, y = number(bound["横"], "横"), number(bound["纵"], "纵")
         width, height = number(bound["宽"], "宽", 0), number(bound["高"], "高", 0)

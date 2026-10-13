@@ -78,6 +78,23 @@ class PromptExportTests(unittest.TestCase):
         self.assertNotEqual(export_prompt("rushu"), export_prompt("ruguan"))
         self.assertIn("本次任务聚焦如观", export_prompt("ruguan"))
 
+    def test_graphics_upgrade_contract_is_shared_by_both_exports_and_backends(self):
+        raw = (ROOT / "rulang/language-spec.md").read_bytes()
+        for target in ("rushu", "ruguan"):
+            for backend in ("python", "browser-js"):
+                with self.subTest(target=target, backend=backend):
+                    prompt = export_prompt(target, runtime_target=backend)
+                    self.assertEqual(prompt.count(raw.decode()), 1)
+                    self.assertIn(hashlib.sha256(raw).hexdigest(), prompt)
+                    for member in ("三角形 横一 纵一 横二 纵二 横三 纵三", "多边形 点阵",
+                                   "平移 横 纵", "旋转 弧度", "缩放 横倍率 纵倍率",
+                                   "图 其 保存", "图 其 恢复", "变换 a b c d e f",
+                                   "重置变换", "裁剪 横 纵 宽 高", "取消裁剪"):
+                        self.assertIn(member, prompt)
+                    for contract in ("右乘", "nonzero", "3～256", "64 层", "32 个",
+                                     "256 KiB", "画布坐标", "不会自动恢复", "保存栈必须配平"):
+                        self.assertIn(contract, prompt)
+
     def test_all_generation_targets_share_canonical_standard_imports(self):
         raw = (ROOT / "rulang/language-spec.md").read_text(encoding="utf-8")
         for target in ("cli", "rushu", "ruguan", "rushu-browser-js", "ruguan-browser-js"):

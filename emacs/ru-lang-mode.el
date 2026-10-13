@@ -127,8 +127,8 @@ the source directory, passing filenames directly without a shell."
 (defconst ru-lang--types '("数" "句" "阵" "事实" "典" "对" "空" "件" "录" "件作成果" "算" "作"))
 (defconst ru-lang--builtins
   '("读" "含" "位" "增" "量" "囫" "囵" "读取" "显出" "错误" "__如竞" "__如观" "__实用"))
-(defconst ru-lang--member-builtins '("段" "查" "增" "删" "弹" "排序" "另成" "逐位" "逐目" "量" "读" "写" "在" "除" "列" "词" "数" "行" "清")
-  "I/O and contest stream members highlighted only after a member operator.
+(defconst ru-lang--member-builtins '("段" "查" "增" "删" "弹" "排序" "另成" "逐位" "逐目" "量" "读" "写" "在" "除" "列" "词" "数" "行" "清" "三角形" "多边形" "平移" "旋转" "缩放" "保存" "恢复" "变换" "重置变换" "裁剪" "取消裁剪")
+  "I/O, collection and graphics members highlighted only after a member operator.
 The legacy global function 读 is also in `ru-lang--builtins'.")
 (defconst ru-lang--pairs '(("算" . "法") ("作" . "为") ("形" . "象")
                             ("若" . "然") ("循" . "环") ("试" . "终") ("典" . "成") ("段" . "落")

@@ -1,6 +1,6 @@
-# 如（ru-language）· 0.18.2 元初实现
+# 如（ru-language）· 0.19.0 元初实现
 
-0.18.2 配套如书 0.7.1（`wip` 开发中，尚未发布到 `main`）：生成默认不再发送固定输出 token 上限，可显式配置预算，并补充用量、无可见文本与未完成响应的[生成诊断](docs/generation-diagnostics.md)。先看 [安装、更新与执行目标](docs/stable-entry.md)及[本轮验证记录](docs/generation-token-budget-validation.md)。
+0.19.0 配套如书 0.8.0（`wip` 开发中，尚未发布到 `main`）：新增[原生三角形、多边形、仿射变换与矩形裁剪](docs/ruguan-guide.md)，Python 与 browser-js 共用接口。另保留生成诊断改进：生成默认不再发送固定输出 token 上限，可显式配置预算，并补充用量、无可见文本与未完成响应的[生成诊断](docs/generation-diagnostics.md)。先看 [安装、更新与执行目标](docs/stable-entry.md)及[本轮验证记录](docs/generation-token-budget-validation.md)。
 
 0.18.0 配套如书 0.6.0：新增阵排序、另成与逐位，典遍历由列改为逐目。详见 [新阵与遍历指南](docs/array-sort-map.md)。
 
@@ -73,7 +73,7 @@
 
 </details>
 
-完整的实现语义以 [如语言规范 0.18.2](rulang/language-spec.md) 为准。它是学习者、工具作者与 LLM 共用的唯一规范文本；README 提供入门和操作摘要。
+完整的实现语义以 [如语言规范 0.19.0](rulang/language-spec.md) 为准。它是学习者、工具作者与 LLM 共用的唯一规范文本；README 提供入门和操作摘要。
 
 待逐项解决或确认忽略的审查事项见 [语言审查追踪](docs/language-review-tracker.md)。清单区分实现缺陷、现有设计取舍与未定提案，不替代语言规范。
 
@@ -101,7 +101,7 @@ python3 ru --version
 python3 ru repl
 ```
 
-`main` 是稳定使用入口，`wip` 用于后续开发；本工作树为如 0.18.2／如书 0.7.1，尚未发布到 `main`。已有仓库的安全更新步骤及执行目标对照见 [安装与更新](docs/stable-entry.md)，不需要强制重置或覆盖自己的书本。
+`main` 是稳定使用入口，`wip` 用于后续开发；本工作树为如 0.19.0／如书 0.8.0，尚未发布到 `main`。已有仓库的安全更新步骤及执行目标对照见 [安装与更新](docs/stable-entry.md)，不需要强制重置或覆盖自己的书本。
 
 REPL 中输入：
 

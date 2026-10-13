@@ -344,7 +344,7 @@ class Session:
         if (not isinstance(commands, list) or len(commands) > MAX_GRAPHICS_COMMANDS
                 or self._event_size(event) > MAX_GRAPHICS_BYTES
                 or any(not isinstance(command, dict) or command.get("op") not in
-                       {"rect", "ellipse", "line", "text", "background"} for command in commands)):
+                       {"rect", "ellipse", "line", "text", "background", "polygon"} for command in commands)):
             raise ValueError("invalid graphics payload")
         self.graphics = {key: event.get(key) for key in
                          ("canvas_id", "width", "height", "fps", "running", "handlers")}
