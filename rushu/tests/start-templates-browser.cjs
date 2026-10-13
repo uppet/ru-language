@@ -55,7 +55,7 @@ const out=process.env.RUSHU_QA_DIR||path.join(os.tmpdir(),'rushu-start-template-
   await select('basics');await page.locator('#run-all').click();await controlsReady();assert((await page.locator('.cell-output').allTextContents()).join('\n').includes('你好，如书'));assert((await page.locator('.cell-output').allTextContents()).join('\n').includes('今天开始写如言'));await save('basics-run');
   await select('text');await page.locator('#run-all').click();await controlsReady();assert((await page.locator('.cell-output').allTextContents()).join('\n').includes('小明喜欢梨'));await save('text-run');
   await select('contest');await page.locator('#run-all').click();await controlsReady();assert((await page.locator('.cell-output').allTextContents()).join('\n').includes('8'));await save('contest-run');results.push('basic, text, contest examples execute with expected output');
-  await select('graphics');await page.locator('.cell.code .run-cell').click();await controlsReady();const canvas=page.locator('.cell-output canvas');await canvas.waitFor();
+  await select('graphics');await page.locator('.cell.code .cell-head .run-cell').click();await controlsReady();const canvas=page.locator('.cell-output canvas');await canvas.waitFor();
   const pixel=async(x,y)=>canvas.evaluate((c,{x,y})=>[...c.getContext('2d').getImageData(x,y,1,1).data],{x,y});assert.deepEqual(await pixel(180,100),[70,119,255,255]);
   await canvas.click({position:{x:70,y:60}});await page.waitForFunction(()=>{const c=document.querySelector('.cell-output canvas');const p=c.getContext('2d').getImageData(70,60,1,1).data;return p[0]===70&&p[1]===119;});
   await page.keyboard.press('r');await page.waitForFunction(()=>{const c=document.querySelector('.cell-output canvas');const p=c.getContext('2d').getImageData(70,60,1,1).data;return p[0]===244&&p[1]===246;});
@@ -63,7 +63,7 @@ const out=process.env.RUSHU_QA_DIR||path.join(os.tmpdir(),'rushu-start-template-
   const oldSessionPath=new URL(requests.filter(r=>r.url.includes('/events?')).at(-1).url).pathname.replace(/\/events$/,'');
   await page.locator('#new-book').click();await page.locator('#dialog-blank').click();await controlsReady();
   assert(requests.some(r=>r.method==='DELETE'&&new URL(r.url).pathname===oldSessionPath));
-  const mixed=page.locator('.cell.code');await mixed.locator('textarea').fill("显 '图前'. 观 取 外言 '如观'. 图 取 观 其 画布 160 120. 图 其 背景 '#ff0000'. 循 40 次 显 '图后中文😀'. 环");await mixed.locator('.run-cell').click();await controlsReady();
+  const mixed=page.locator('.cell.code');await mixed.locator('textarea').fill("显 '图前'. 观 取 外言 '如:观'. 图 取 观 其 画布 160 120. 图 其 背景 '#ff0000'. 循 40 次 显 '图后中文😀'. 环");await mixed.locator('.cell-head .run-cell').click();await controlsReady();
   assert((await mixed.locator('.output-controls').innerText()).includes('预览前 8 行'));
   const mixedPixel=()=>mixed.locator('canvas').evaluate(c=>[...c.getContext('2d').getImageData(150,110,1,1).data]);assert.deepEqual(await mixedPixel(),[255,0,0,255]);
   await mixed.getByRole('button',{name:'展开或收起已保留的原文'}).click();assert.deepEqual(await mixedPixel(),[255,0,0,255]);await mixed.getByRole('button',{name:'展开或收起已保留的原文'}).click();assert.deepEqual(await mixedPixel(),[255,0,0,255]);

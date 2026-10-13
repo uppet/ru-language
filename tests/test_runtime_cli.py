@@ -29,7 +29,7 @@ class RuntimeBuildCLI(unittest.TestCase):
         self.addCleanup(directory.cleanup)
         self.root = Path(directory.name).resolve()
         self.source = self.root / 'main.ru'
-        self.source.write_text("尽 取 外言 '如竞'. 显 小 3 4.\n", encoding='utf-8')
+        self.source.write_text("尽 取 外言 '如:竞'. 显 小 3 4.\n", encoding='utf-8')
 
     def cli(self, *args):
         return subprocess.run([sys.executable, ROOT / 'ru', *args],
@@ -111,7 +111,7 @@ class RuntimeBuildCLI(unittest.TestCase):
             self.assertEqual((result.returncode, result.stdout, result.stderr), (0, '3\n', ''))
 
     def test_both_modes_reject_original_declaration_conflicts_before_publish(self):
-        self.source.write_text("尽 取 外言 '如竞'. 算 小: 得 1. 法 显 42.", encoding='utf-8')
+        self.source.write_text("尽 取 外言 '如:竞'. 算 小: 得 1. 法 显 42.", encoding='utf-8')
         errors = []
         for target in ('c', 'js'):
             for full in (False, True):

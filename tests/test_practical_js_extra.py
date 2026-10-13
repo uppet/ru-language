@@ -90,7 +90,7 @@ class PracticalJavaScriptTests(unittest.TestCase):
             if math.isfinite(value):
                 values.append(value)
         source = PRELUDE + """
-竞 取 外言 '如竞'. 入 取 竞 其 读入.
+竞 取 外言 '如:竞'. 入 取 竞 其 读入.
 循 值 取 入 其 数. 若 值 == 空 则 破. 然
     位数 取 入 其 数. 显 文 其 定点 值 位数.
 环

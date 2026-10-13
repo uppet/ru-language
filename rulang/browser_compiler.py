@@ -9,7 +9,7 @@ import re
 from .c_runtime import walk_nodes
 from .frontend import RuError, parse, validate
 from .js_compiler import JSCompiler, js
-from .modules import ModuleGraph, STANDARD_MODULES, import_nodes, reject_generation_document
+from .modules import ModuleGraph, STANDARD_MODULES, import_nodes, reject_generation_document, reject_renamed_import
 
 # ModuleGraph keys must have the same canonical form as Compiler.root. On
 # Windows an absolute slash path gains a drive and native separators when
@@ -39,6 +39,12 @@ def browser_graph(code):
                 raise error
         for n in import_nodes(program):
             requested = n.data['path']
+            try:
+                reject_renamed_import(requested)
+            except RuError as error:
+                error.line, error.col = n.token.line, n.token.col
+                error.source_name = path
+                raise
             if requested not in ALLOWED_MODULES:
                 error = RuError('浏览器 JS 模式只允许内置标准外言，不读取本地文件：' + requested, n.token.line, n.token.col, '能力错误')
                 error.source_name = path

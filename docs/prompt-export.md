@@ -52,3 +52,7 @@ path = export_prompt("ruguan", "ruguan-system.txt", force=True)
 ```
 
 `generation_system_prompt` 接受 `cli`、`rushu`、`ruguan`、`rushu-browser-js`；最后一项用于如书显式 JS 加速的生成请求，说明独立状态、1～60 FPS 请求及没有 Worker 64 MiB 硬内存配额。`cli` 保持普通命令行生成的运行环境限制。`export_prompt` 只接受本次两个导出目标；`output=None` 或 `"-"` 返回字符串，实际文件路径返回发布后的 `Path`。出错抛出 `RuError`（随附规范错误可能是其 `GenerationError` 子类）。这些接口也无需提供方配置。
+
+## 标准模块名
+
+导出与真实请求使用同一份当前规范：如观导入 `如:观`，如竞导入 `如:竞`。旧导入名仅用于解释迁移错误，不是可用别名。已有书本不会自动改写或执行；请参见 [标准模块导入迁移](standard-module-imports-migration.md)。导出仍默认面向如书 Python，browser-js 仍由代码格「JS 加速」复选框显式选择。

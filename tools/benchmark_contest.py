@@ -23,7 +23,7 @@ sys.path.insert(0, str(ROOT))
 from rulang.compiler import Compiler
 from rulang.modules import load_module_graph
 
-TOKEN_SOURCE = """竞 取 外言 '如竞'.
+TOKEN_SOURCE = """竞 取 外言 '如:竞'.
 入 取 竞 其 读入.
 和 取 0. 数量 取 0.
 循
@@ -33,7 +33,7 @@ TOKEN_SOURCE = """竞 取 外言 '如竞'.
 环
 显 和. 显 数量.
 """
-LINE_SOURCE = """竞 取 外言 '如竞'.
+LINE_SOURCE = """竞 取 外言 '如:竞'.
 入 取 竞 其 读入. 出 取 竞 其 蓄出. 数量 取 0.
 循
     文 取 入 其 行.
@@ -45,7 +45,7 @@ LINE_SOURCE = """竞 取 外言 '如竞'.
 """
 
 
-SORT_SOURCE = """竞 取 外言 '如竞'.
+SORT_SOURCE = """竞 取 外言 '如:竞'.
 算 造比较 方向 为 数:
     算 比 左 为 数 右 为 数: 得 (左-右)*方向. 法
     得 算 比.

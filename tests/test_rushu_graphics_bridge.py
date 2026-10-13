@@ -188,7 +188,7 @@ class SpawnedGraphicsBridgeTests(unittest.TestCase):
     def test_actual_ru_callback_lifecycle_and_session_state(self):
         session = Session()
         self.addCleanup(session.close)
-        session.execute("观 取 外言 '如观'. 布 取 观 其 画布 400 300. 值 取 7. "
+        session.execute("观 取 外言 '如:观'. 布 取 观 其 画布 400 300. 值 取 7. "
                         "作 绘 帧: 布 其 背景 '#ffffff'. 布 其 矩形 帧 20 30 40. 为 "
                         "布 其 每帧 作 绘.", "scene")
         result = self.wait_ready(session)
@@ -212,7 +212,7 @@ class SpawnedGraphicsBridgeTests(unittest.TestCase):
     def test_close_racing_real_callback(self):
         session = Session()
         self.addCleanup(session.close)
-        session.execute("观 取 外言 '如观'. 布 取 观 其 画布 10 10. "
+        session.execute("观 取 外言 '如:观'. 布 取 观 其 画布 10 10. "
                         "作 绘 帧: 布 其 矩形 帧 1 2 3. 为 布 其 每帧 作 绘.", "scene")
         canvas = self.wait_ready(session)["graphics"]["canvas_id"]
         # Hold ingestion so close deterministically races an in-flight callback.
@@ -229,7 +229,7 @@ class SpawnedGraphicsBridgeTests(unittest.TestCase):
     def test_callback_input_cannot_block_session(self):
         session = Session()
         self.addCleanup(session.close)
-        session.execute("观 取 外言 '如观'. 布 取 观 其 画布 10 10. "
+        session.execute("观 取 外言 '如:观'. 布 取 观 其 画布 10 10. "
                         "作 绘 帧: 显 读. 为 布 其 每帧 作 绘.", "scene")
         canvas = self.wait_ready(session)["graphics"]["canvas_id"]
         session.dispatch_graphics(canvas, "scene", 1, 1, {"type": "frame"})
@@ -315,7 +315,7 @@ class GraphicsHTTPTests(unittest.TestCase):
         status, result = self.request("/api/sessions", {})
         self.assertEqual(status, 201)
         identifier = result["id"]
-        code = ("观 取 外言 '如观'. 布 取 观 其 画布 20 20. "
+        code = ("观 取 外言 '如:观'. 布 取 观 其 画布 20 20. "
                 "作 点击 横 纵 键: 布 其 矩形 横 纵 2 3. 为 布 其 鼠标按下 作 点击.")
         self.assertEqual(self.request(f"/api/sessions/{identifier}/execute",
                                      {"code": code, "cell_id": "scene"})[0], 202)

@@ -100,7 +100,7 @@ test('safe server errors and failed validation preserve their actual outcomes',a
 
 test('repeated graphics generation keeps review history and never runs the cell',async()=>{
   const h=harness();
-  const source="观 取 外言 '如观'. 图 取 观 其 画布 80 60. 图 其 每帧 (作 帧: 图 其 矩形 帧 0 10 10. 为).\n";
+  const source="观 取 外言 '如:观'. 图 取 观 其 画布 80 60. 图 其 每帧 (作 帧: 图 其 矩形 帧 0 10 10. 为).\n";
   for (const [candidate,valid] of [[source,true],[source.replace('为).','法).'),false],[source,true]]) {
     const {promise}=await h.start();h.respond({source:candidate,valid,validation:{message:'尚未执行。'}});await promise;
     assert.equal(h.cell.source,candidate);

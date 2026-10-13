@@ -306,7 +306,7 @@ test('dictionary member hints use mu and xiang without reserving user names',()=
 
 // The import name is an ordinary string, never a new language keyword.
 test('renamed rujing bridge alone is built in; old and user names remain ordinary',()=>{
-  const result=analyze("竞 取 外言 '如竞'. 显 __如竞. 竞赛 取 1. 如竞 取 2. __竞赛 取 3. __如竞者 取 4.");
+  const result=analyze("竞 取 外言 '如:竞'. 显 __如竞. 竞赛 取 1. 如竞 取 2. __竞赛 取 3. __如竞者 取 4.");
   assert.equal(result.tokens.find(t=>t.text==='__如竞').face,'builtin');
   for(const name of ['竞赛','如竞','__竞赛','__如竞者']) assert.equal(result.tokens.find(t=>t.text===name).face,null);
 });
@@ -315,4 +315,17 @@ test('graphics bridge is builtin while public visualization names stay ordinary'
   const tokens=analyze('__如观 画布 每帧 鼠标按下 如观 __如观者').tokens;
   assert.equal(tokens.find(t=>t.text==='__如观').face,'builtin');
   for(const name of ['画布','每帧','鼠标按下','如观','__如观者'])assert.equal(tokens.find(t=>t.text===name).face,null);
+});
+
+test('canonical module imports keep colons inside opaque strings',()=>{
+  for(const module of ['如:竞','如:观']) for(const [open,close] of [["'","'"],['"','"'],['‘','’'],['“','”']]) {
+    const source=`模块 取 外言 ${open}${module}${close}.\n显 '完成'.`;
+    const result=analyze(source), literal=`${open}${module}${close}`;
+    assert.equal(result.tokens.find(t=>t.text===literal).kind,'string');
+    assert.ok(highlight(source).includes('tok-string'));
+    assert.ok(highlight(source).includes(module));
+    assert.equal(result.tokens.filter(t=>t.text===':').length,0);
+    assert.equal(result.blocks.length,0);
+    assert.equal(indentText(source),source);
+  }
 });

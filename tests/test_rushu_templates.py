@@ -68,6 +68,20 @@ console.log(JSON.stringify(Object.fromEntries(templates.map(t=>[t.id,createTempl
         finally:
             host.close()
 
+    def test_templates_use_canonical_imports_and_keep_product_titles(self):
+        for book in self.books.values():
+            for cell in book['cells']:
+                if cell['type'] == 'code':
+                    self.assertNotIn("外言 '如观'", cell['source'])
+                    self.assertNotIn("外言 '如竞'", cell['source'])
+        self.assertTrue(any("外言 '如:竞'" in c['source']
+                            for c in self.books['contest']['cells']))
+        self.assertTrue(any("外言 '如:观'" in c['source']
+                            for c in self.books['graphics']['cells']))
+        templates = (ROOT / 'rushu/static/templates.mjs').read_text(encoding='utf-8')
+        self.assertIn("title:'如竞题解'", templates)
+        self.assertIn("title:'如观互动'", templates)
+
     def test_basics_repeat_in_one_session(self):
         self.execute_twice('basics', '你好，如书\n今天开始写如言\n')
 

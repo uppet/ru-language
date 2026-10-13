@@ -10,14 +10,23 @@ from .frontend import Node, RuError, parse, validate, comment_marker, block_comm
 
 
 GENERATION_MARKER = "如是我言"
-STANDARD_MODULES = {"如竞": "如竞.ru", "如观": "如观.ru", "如:文本": "文本.ru",
+STANDARD_MODULES = {"如:竞": "如竞.ru", "如:观": "如观.ru", "如:文本": "文本.ru",
                     "如:数学": "数学.ru", "如:随机": "随机.ru"}
 
 
+RENAMED_MODULES = {"如竞": "如:竞", "如观": "如:观", "如:竞赛": "如:竞"}
+
+
+def reject_renamed_import(requested):
+    """Diagnose retired bare names before any local resolution or file read."""
+    replacement = RENAMED_MODULES.get(requested)
+    if replacement is not None:
+        raise RuError(f"标准外言「{requested}」已改名为「{replacement}」；请改用 外言 '{replacement}'", category="模块错误")
+
+
 def resolve_import(requested, importer_path):
-    """Reserve exact bundled names and 如: names, without local fallback."""
-    if requested == "如:竞赛":
-        raise RuError("标准外言「如:竞赛」已改名为「如竞」；请改用 外言 '如竞'", category="模块错误")
+    """Reserve exact bundled/retired names and 如: names, without local fallback."""
+    reject_renamed_import(requested)
     filename = STANDARD_MODULES.get(requested)
     if filename is not None:
         return str((Path(__file__).parent / "stdlib" / filename).resolve())

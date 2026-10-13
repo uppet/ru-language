@@ -27,7 +27,7 @@ class GraphicsTests(unittest.TestCase):
         self.interpreter.execute(parse(source))
         self.host.flush()
     def canvas(self, code=''):
-        self.run_ru("观 取 外言 '如观'. 图 取 观 其 画布 320 200. " + code)
+        self.run_ru("观 取 外言 '如:观'. 图 取 观 其 画布 320 200. " + code)
     def test_static_commands_and_null_style(self):
         self.canvas("图 其 背景 '#FFFFFF'. 图 其 填色 空. 图 其 描边 '#AA11CC'. 图 其 线宽 3. 图 其 矩形 1 2 30 40. 图 其 填色 '#000000'. 图 其 字号 24. 图 其 文字 '你好<script>' 5 6. 图 其 线 1 2 3 4.")
         commands = self.events[-1]['commands']
@@ -213,7 +213,7 @@ class GraphicsTests(unittest.TestCase):
         self.run_ru('显 42.')
         self.assertEqual(self.output.getvalue(),'42\n')
     def test_cli_and_compilers_explicitly_reject(self):
-        source="尽 取 外言 '如观'. 图 取 画布 20 20."
+        source="尽 取 外言 '如:观'. 图 取 画布 20 20."
         with self.assertRaisesRegex(RuError,'仅在如书'): Interpreter().execute(parse(source))
         for cls in (Compiler,JSCompiler):
             with self.assertRaisesRegex(RuError,'如书 Python'): cls(parse(source)).compile()
@@ -303,7 +303,7 @@ class GraphicsTests(unittest.TestCase):
             graph = load_module_graph(main)
             for compiler in (Compiler, JSCompiler):
                 self.assertTrue(compiler(graph[graph.root], str(main), modules=graph).compile())
-            (root / 'wrapper.ru').write_text("观 取 外言 '如观'.", encoding='utf-8')
+            (root / 'wrapper.ru').write_text("观 取 外言 '如:观'.", encoding='utf-8')
             main.write_text("外 取 外言 './wrapper.ru'.", encoding='utf-8')
             graph = load_module_graph(main)
             for compiler in (Compiler, JSCompiler):

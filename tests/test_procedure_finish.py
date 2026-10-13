@@ -163,7 +163,7 @@ class ProcedureFinishTests(unittest.TestCase):
                 self.assertEqual(javascript.node_run(path), (0, expected, ''))
 
     def test_finish_does_not_disable_bundled_pruning(self):
-        source = "竞 取 外言 '如竞'. 作 停: 显 (竞 其 小 3 4). 完. 为 停."
+        source = "竞 取 外言 '如:竞'. 作 停: 显 (竞 其 小 3 4). 完. 为 停."
         graph = load_module_graph('/finish-pruning.ru', parse(source))
         result = prune_bundled_stdlib(graph[graph.root], graph.root, graph)
         library = next(path for path in result if path != graph.root)

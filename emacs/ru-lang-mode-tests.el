@@ -669,7 +669,7 @@
         (ru-lang-end-of-defun)))))
 
 (ert-deftest ru-lang-contest-stream-members-and-bridge-faces ()
-  (ru-lang-test--buffer "尽 取 外言 '如竞'.\n入 取 读入.\n出 取 蓄出.\n显 入 其 词.\n显 入@数.\n显 入 其 # 成员之前的注释\n行.\n出 其 写 内容:'甲'.\n出@行 值:42.\n出 其 清.\n显 __如竞.\n"
+  (ru-lang-test--buffer "尽 取 外言 '如:竞'.\n入 取 读入.\n出 取 蓄出.\n显 入 其 词.\n显 入@数.\n显 入 其 # 成员之前的注释\n行.\n出 其 写 内容:'甲'.\n出@行 值:42.\n出 其 清.\n显 __如竞.\n"
     (font-lock-ensure)
     (dolist (text '("词." "数." "行." "写 内容" "行 值" "清." "__如竞"))
       (goto-char (point-min)) (search-forward text)
@@ -697,11 +697,11 @@
 
 (ert-deftest ru-lang-contest-qualified-references-and-indent ()
   (ru-lang-test--indent
-   "竞 取 外言 '如竞'.\n算 造比较 方向 为 数:\n算 比较 左 为 数 右 为 数:\n得 (左-右)*方向.\n法\n得 算 比较.\n法\n排 取 算 竞 其 排序.\n入 取 竞 其 读入.\n出 取 竞 其 蓄出.\n循\n值 取 入 其 数.\n若 值 == 空 则 破. 然\n出 其 行 值.\n环\n出 其 清.\n"
-   "竞 取 外言 '如竞'.\n算 造比较 方向 为 数:\n    算 比较 左 为 数 右 为 数:\n        得 (左-右)*方向.\n    法\n    得 算 比较.\n法\n排 取 算 竞 其 排序.\n入 取 竞 其 读入.\n出 取 竞 其 蓄出.\n循\n    值 取 入 其 数.\n    若 值 == 空 则 破. 然\n    出 其 行 值.\n环\n出 其 清.\n"))
+   "竞 取 外言 '如:竞'.\n算 造比较 方向 为 数:\n算 比较 左 为 数 右 为 数:\n得 (左-右)*方向.\n法\n得 算 比较.\n法\n排 取 算 竞 其 排序.\n入 取 竞 其 读入.\n出 取 竞 其 蓄出.\n循\n值 取 入 其 数.\n若 值 == 空 则 破. 然\n出 其 行 值.\n环\n出 其 清.\n"
+   "竞 取 外言 '如:竞'.\n算 造比较 方向 为 数:\n    算 比较 左 为 数 右 为 数:\n        得 (左-右)*方向.\n    法\n    得 算 比较.\n法\n排 取 算 竞 其 排序.\n入 取 竞 其 读入.\n出 取 竞 其 蓄出.\n循\n    值 取 入 其 数.\n    若 值 == 空 则 破. 然\n    出 其 行 值.\n环\n出 其 清.\n"))
 
 (ert-deftest ru-lang-contest-all-editing-prefixes ()
-  (let ((source "尽 取 外言 '如竞'.\n算 工厂 方向 为 数:\n算 比较 左 为 数 右 为 数: 得 (左-右)*方向. 法\n得 算 比较.\n法\n入 取 读入.\n出 取 蓄出.\n循\n词值 取 入 其 词.\n若 词值 == 空 则 破. 然\n出 其 行 词值.\n环\n出 其 清.\n"))
+  (let ((source "尽 取 外言 '如:竞'.\n算 工厂 方向 为 数:\n算 比较 左 为 数 右 为 数: 得 (左-右)*方向. 法\n得 算 比较.\n法\n入 取 读入.\n出 取 蓄出.\n循\n词值 取 入 其 词.\n若 词值 == 空 则 破. 然\n出 其 行 词值.\n环\n出 其 清.\n"))
     (dotimes (end (1+ (length source)))
       (ru-lang-test--buffer (substring source 0 end)
         (font-lock-ensure)
@@ -1338,3 +1338,24 @@
           (should (equal (match-string 2 diagnostic) "12"))
           (should (equal (match-string 3 diagnostic)
                          (and (equal location "12:3") "3"))))))))
+
+(ert-deftest ru-lang-canonical-module-imports-stay-strings ()
+  (dolist (module '("如:竞" "如:观"))
+    (dolist (quotes '(("'" . "'") ("\"" . "\"") ("‘" . "’") ("“" . "”")))
+      (let ((literal (concat (car quotes) module (cdr quotes))))
+        (ru-lang-test--buffer (concat "模块 取 外言 " literal ".\n显 '完成'.")
+          (font-lock-ensure)
+          (search-forward "外言")
+          (let ((help (get-text-property (1- (point)) 'help-echo)))
+            (should (string-match-p "如:竞" help))
+            (should (string-match-p "如:观" help))
+            (should (string-match-p "无兼容别名" help)))
+          (search-forward ":")
+          (should (eq (get-text-property (1- (point)) 'face) 'font-lock-string-face))
+          (ru-lang--ensure-cache)
+          (should (seq-find (lambda (token)
+                              (and (eq (ru-lang--token-kind token) 'string)
+                                   (equal (ru-lang--token-text token) literal)))
+                            ru-lang--tokens))
+          (should-not (seq-find (lambda (token) (equal (ru-lang--token-text token) ":"))
+                               ru-lang--tokens)))))))

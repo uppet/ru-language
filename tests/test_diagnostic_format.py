@@ -81,7 +81,7 @@ class DiagnosticTests(unittest.TestCase):
         code = '作 绘 帧:\n 显 1/0.\n为'
         origin = SourceOrigin.cell('s', 'callback-definition', 1, 1, code)
         interpreter.execute(parse(code, origin))
-        setup = "观 取 外言 '如观'. 布 取 观 其 画布 400 300. 布 其 每帧 作 绘."
+        setup = "观 取 外言 '如:观'. 布 取 观 其 画布 400 300. 布 其 每帧 作 绘."
         interpreter.execute(parse(setup, SourceOrigin.cell('s', 'canvas', 2, 1, setup)))
         with self.assertRaises(RuError) as caught:
             host.handle({'type': 'frame'})

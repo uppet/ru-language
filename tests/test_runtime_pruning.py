@@ -241,7 +241,7 @@ class RuntimeGenerationTests(unittest.TestCase):
                 self.assertIn('static RuClass ru_io_file_class', generate(source))
 
     def test_compilation_does_not_mutate_graph_or_write_artifacts(self):
-        source = "尽 取 外言 '如竞'. 显 小 2 3."
+        source = "尽 取 外言 '如:竞'. 显 小 2 3."
         with tempfile.TemporaryDirectory() as directory:
             graph = load_module_graph(str(Path(directory).resolve() / 'main.ru'), parse(source))
             before = copy.deepcopy(graph)
@@ -305,8 +305,8 @@ class RuntimeParityTests(unittest.TestCase):
             ('contains_operator', "显 '甲乙' 其 含 '乙'. 形 盒: 算 含 句 为 句: 得 句. 法 象 显 (新 盒) 其 含 '好'.", '真\n好\n'),
             ('try_without_panic', "试 显 '正常'. 救 原因 显 '不应执行'. 终. 显 '之后'.", '正常\n之后\n'),
             ('nested_panic', "试 试 卒 '内'. 救 内因 显 内因. 卒 内因+'外'. 终. 救 外因 显 外因. 终. 显 '后'.", '内\n内外\n后\n'),
-            ('contest_sort_panic', "竞 取 外言 '如竞'. 原 取 [3,2,1]. 算 比 左 为 数 右 为 数: 卒 '停'. 法 试 竞 其 排序 原 (算 比). 救 原因 显 原因. 终. 显 原.", '停\n[3, 2, 1]\n'),
-            ('contest_sort_closure', "竞 取 外言 '如竞'. 算 制 方向 为 数: 算 比 左 为 数 右 为 数: 得 (左-右)*方向. 法 得 算 比. 法 显 (竞 其 排序 [3,1,2,1] (制 (-1))).", '[3, 2, 1, 1]\n'),
+            ('contest_sort_panic', "竞 取 外言 '如:竞'. 原 取 [3,2,1]. 算 比 左 为 数 右 为 数: 卒 '停'. 法 试 竞 其 排序 原 (算 比). 救 原因 显 原因. 终. 显 原.", '停\n[3, 2, 1]\n'),
+            ('contest_sort_closure', "竞 取 外言 '如:竞'. 算 制 方向 为 数: 算 比 左 为 数 右 为 数: 得 (左-右)*方向. 法 得 算 比. 法 显 (竞 其 排序 [3,1,2,1] (制 (-1))).", '[3, 2, 1, 1]\n'),
         ]
         for name, source, expected in cases:
             with self.subTest(name=name):
@@ -332,7 +332,7 @@ class RuntimeParityTests(unittest.TestCase):
     def test_user_module_side_effects_reexports_and_unused_function_survive(self):
         with tempfile.TemporaryDirectory() as directory:
             module = Path(directory).resolve() / 'helper.ru'
-            module.write_text("显 '初始化'. 尽 取 外言 '如竞'. 算 不用: 得 99. 法", encoding='utf-8')
+            module.write_text("显 '初始化'. 尽 取 外言 '如:竞'. 算 不用: 得 99. 法", encoding='utf-8')
             source = "模 取 外言 'helper.ru'. 显 模 其 小 2 3. 再 取 外言 'helper.ru'. 显 再 其 不用."
             graph = load_module_graph(str(Path(directory).resolve() / 'main.ru'), parse(source))
             # Loading is compile-time; neither generated executable may need
@@ -345,7 +345,7 @@ class RuntimeParityTests(unittest.TestCase):
             '显 1/0.',
             '显 [1][4].',
             "显 '此前'. 卒 '未捕获'.",
-            "竞 取 外言 '如竞'. 入 取 竞 其 扫句 '1abc'. 显 入 其 数.",
+            "竞 取 外言 '如:竞'. 入 取 竞 其 扫句 '1abc'. 显 入 其 数.",
             "算 加 值 为 数: 得 值. 法 回调 取 算 加. 回调 '错'.",
             '显 __如竞 其 量.',
         ]

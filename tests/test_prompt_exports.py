@@ -45,6 +45,18 @@ class PromptExportTests(unittest.TestCase):
         self.assertNotEqual(export_prompt("rushu"), export_prompt("ruguan"))
         self.assertIn("本次任务聚焦如观", export_prompt("ruguan"))
 
+    def test_all_generation_targets_share_canonical_standard_imports(self):
+        raw = (ROOT / "rulang/language-spec.md").read_text(encoding="utf-8")
+        for target in ("cli", "rushu", "ruguan", "rushu-browser-js"):
+            with self.subTest(target=target):
+                prompt = generation_system_prompt(target)
+                self.assertEqual(prompt.count(raw), 1)
+                self.assertIn("外言 '如:观'", prompt)
+                self.assertIn("外言 '如:竞'", prompt)
+                self.assertNotIn("外言 '如观'", prompt)
+                self.assertNotIn("外言 '如竞'", prompt)
+                self.assertIn("不保留兼容别名", prompt)
+
     def test_browser_and_default_python_targets_are_distinct(self):
         browser = generation_system_prompt("rushu-browser-js")
         python = generation_system_prompt("rushu")

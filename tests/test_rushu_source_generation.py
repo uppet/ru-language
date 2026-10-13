@@ -331,7 +331,7 @@ class SourceGenerationTests(unittest.TestCase):
         from rulang.frontend import parse
         from rulang.interpreter import Interpreter
         from rulang.graphics_runtime import GraphicsHost
-        source = """观 取 外言 '如观'.
+        source = """观 取 外言 '如:观'.
 数据 取 [20].
 图 取 观 其 画布 320 200.
 图 其 每帧 (作 帧:

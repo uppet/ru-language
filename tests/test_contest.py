@@ -20,7 +20,7 @@ from rulang.modules import load_module_graph, resolve_import
 
 CC = (shutil.which(os.environ['CC']) if os.environ.get('CC') else
       next((shutil.which(c) for c in ('gcc', 'clang', 'cc') if shutil.which(c)), None))
-PRELUDE = "竞 取 外言 '如竞'.\n"
+PRELUDE = "竞 取 外言 '如:竞'.\n"
 
 
 def graph_for(source, path):
@@ -72,7 +72,7 @@ CASES = [
     ('stable_records', PRELUDE + "形 项: 键 为 数. 名 为 句. 象 算 比 左 为 项 右 为 项: 得 左 其 键-右 其 键. 法 原 取 [(新 项 键:2 名:'甲'),(新 项 键:1 名:'乙'),(新 项 键:2 名:'丙')]. 排 取 竞 其 排序 原 (算 比). 显 排[0] 其 名. 显 排[1] 其 名. 显 排[2] 其 名. 显 原[0] 其 名.", '乙\n甲\n丙\n甲\n'),
     ('sort_panic', PRELUDE + "原 取 [3,2,1]. 算 比 左 为 数 右 为 数: 卒 '停'. 法 试 竞 其 排序 原 (算 比). 救 原因 显 原因. 终. 显 原.", '停\n[3, 2, 1]\n'),
     ('sort_snapshot', PRELUDE + "原 取 [3,2,1]. 算 比 左 为 数 右 为 数: 原[0] 取 99. 得 左-右. 法 显 (竞 其 排序 原 (算 比)). 显 原.", '[1, 2, 3]\n[99, 2, 1]\n'),
-    ('module_ref', PRELUDE + "分 取 算 竞 其 拆词. 显 (分 'a b'). 尽 取 外言 '如竞'. 显 (合句 ['a','b'] ':').", '[a, b]\na:b\n'),
+    ('module_ref', PRELUDE + "分 取 算 竞 其 拆词. 显 (分 'a b'). 尽 取 外言 '如:竞'. 显 (合句 ['a','b'] ':').", '[a, b]\na:b\n'),
 ]
 
 ERRORS = [
@@ -134,7 +134,7 @@ class ContestLibraryTests(unittest.TestCase):
             fake = Path(directory).resolve()/('local.ru' if os.name == 'nt' else '如竞')
             fake.write_text("卒 'local collision'.", encoding='utf-8')
             main = str(Path(directory).resolve()/'main.ru')
-            self.assertNotEqual(resolve_import('如竞', main), str(fake))
+            self.assertNotEqual(resolve_import('如:竞', main), str(fake))
             self.assertEqual(interpreted(PRELUDE+"显 (竞 其 小 2 3).", path=main), '2\n')
             with self.assertRaisesRegex(RuError, '未知的标准外言'):
                 graph_for("外言 '如:不存在'.", main)
@@ -153,7 +153,7 @@ class ContestLibraryTests(unittest.TestCase):
                                              command[0], str(source), *command[1:]],
                                             capture_output=True, text=True)
                     self.assertNotEqual(result.returncode, 0)
-                    self.assertIn("已改名为「如竞」", result.stderr)
+                    self.assertIn("已改名为「如:竞」", result.stderr)
 
     def test_rename_does_not_reserve_ordinary_user_names(self):
         source = "竞赛 取 7. 如竞 取 8. __竞赛 取 9. 显 竞赛. 显 如竞. 显 __竞赛."
@@ -316,7 +316,7 @@ class ContestLibraryTests(unittest.TestCase):
             prompt = payload['input'][0]['content'][0]['text']
             self.assertIn(specification.decode('utf-8'),prompt)
             self.assertIn(hashlib.sha256(specification).hexdigest(),prompt)
-            self.assertIn("外言 '如竞'",prompt)
+            self.assertIn("外言 '如:竞'",prompt)
             self.assertIn('比较',prompt)
             self.assertEqual(payload['tools'],[])
             binary,_ = compile_native(source,directory,'generated-frequency',source_path=str(output))

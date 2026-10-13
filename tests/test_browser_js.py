@@ -101,7 +101,7 @@ class BrowserCompilerTests(unittest.TestCase):
 
     def test_default_cli_still_rejects_graphics(self):
         with self.assertRaisesRegex(RuError, '仅支持如书 Python'):
-            JSCompiler(parse("观 取 外言 '如观'."), '<test>')
+            JSCompiler(parse("观 取 外言 '如:观'."), '<test>')
 
     def test_browser_constructor_requires_safe_graph(self):
         with self.assertRaises(ValueError):
@@ -137,7 +137,7 @@ class BrowserCompilerTests(unittest.TestCase):
             slots.release.assert_not_called()
 
     def test_no_node_or_evaluator_in_output(self):
-        result=request("观 取 外言 '如观'.\n数库 取 外言 '如:数学'.\n随机 取 外言 '如:随机'.\n显 数库 其 正弦 0.")
+        result=request("观 取 外言 '如:观'.\n数库 取 外言 '如:数学'.\n随机 取 外言 '如:随机'.\n显 数库 其 正弦 0.")
         self.assertNotRegex(result['javascript'], r'\brequire\s*\(|\bprocess\.|\bBuffer\.|\bfs\.|\beval\s*\(|new Function')
         self.assertTrue(result['javascript'].startswith('export default function'))
 
@@ -187,7 +187,7 @@ class BrowserCompilerTests(unittest.TestCase):
                 self.assertEqual(''.join(e.get('text','') for e in events),native.stdout)
 
     def test_canvas_ids_unique_across_runtime_instances(self):
-        events=self.run_js("观 取 外言 '如观'. 图 取 观 其 画布 100 100.","create({emit:e=>events.push(e)});")
+        events=self.run_js("观 取 外言 '如:观'. 图 取 观 其 画布 100 100.","create({emit:e=>events.push(e)});")
         self.assertNotEqual(events[0]['canvas_id'],events[1]['canvas_id'])
 
     def test_formatted_errors_escape_controls(self):
@@ -201,7 +201,7 @@ class BrowserCompilerTests(unittest.TestCase):
         self.assertEqual(detail['source']['cell_id'],'格/一')
 
     def test_callback_error_identity(self):
-        code="观 取 外言 '如观'.\n图 取 观 其 画布 100 100.\n图 其 每帧 (作 帧: 显 1 / 0. 为)."
+        code="观 取 外言 '如:观'.\n图 取 观 其 画布 100 100.\n图 其 每帧 (作 帧: 显 1 / 0. 为)."
         events=self.run_js(code,"runtime.dispatch({canvas_id:events.at(-1).canvas_id,event:{type:'frame'}});")
         self.assertEqual(events[-2]['type'],'graphics_closed')
         self.assertEqual(events[-1]['diagnostic']['line'],3)
@@ -213,19 +213,19 @@ class BrowserCompilerTests(unittest.TestCase):
         self.assertEqual(events[-1]['diagnostic']['line'],2)
 
     def test_empty_frame_clears_previous(self):
-        code="观 取 外言 '如观'. 图 取 观 其 画布 100 100. 图 其 背景 '#112233'. 图 其 每帧 (作 帧: 完. 为)."
+        code="观 取 外言 '如:观'. 图 取 观 其 画布 100 100. 图 其 背景 '#112233'. 图 其 每帧 (作 帧: 完. 为)."
         events=self.run_js(code,"runtime.dispatch({canvas_id:events.at(-1).canvas_id,event:{type:'frame'}});")
         self.assertEqual(len(events[0]['commands']),1)
         self.assertEqual(events[-1]['commands'],[])
 
     def test_command_budget_closes_canvas(self):
-        code="观 取 外言 '如观'. 图 取 观 其 画布 100 100. 图 其 每帧 (作 帧: 循 2049 次 图 其 矩形 0 0 1 1. 环 为)."
+        code="观 取 外言 '如:观'. 图 取 观 其 画布 100 100. 图 其 每帧 (作 帧: 循 2049 次 图 其 矩形 0 0 1 1. 环 为)."
         events=self.run_js(code,"runtime.dispatch({canvas_id:events.at(-1).canvas_id,event:{type:'frame'}});")
         self.assertIn('2048',events[-1]['message']);self.assertEqual(events[-2]['type'],'graphics_closed')
 
     def test_invalid_fps_and_prototype_not_exposed(self):
         for suffix in ('图 其 帧率 61.', '显 图 其 constructor.', '显 图 其 __proto__.'):
-            events=self.run_js("观 取 外言 '如观'. 图 取 观 其 画布 100 100. "+suffix)
+            events=self.run_js("观 取 外言 '如:观'. 图 取 观 其 画布 100 100. "+suffix)
             self.assertEqual(events[-1]['type'],'error')
 
 
