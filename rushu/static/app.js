@@ -67,7 +67,7 @@ function refreshControls() {
   $('#new-book').disabled=transition;$('#open-book').disabled=transition;$('#save-book').disabled=!hasBook||transition;
   for(const choice of document.querySelectorAll('[data-template],.blank-shortcut'))choice.disabled=transition;
   $('#add-code').disabled=busy()||book.cells.length>=MAX_CELLS;$('#add-markdown').disabled=busy()||book.cells.length>=MAX_CELLS;$('#add-learning').disabled=busy()||book.cells.length>=MAX_CELLS;
-  for(const cell of book.cells){const view=views.get(cell.id);if(!view)continue;for(const b of view.element.querySelectorAll('[data-mutates]'))b.disabled=busy();view.run.disabled=(cell.execution_backend==='browser-js'?!session||!token:!connected)||busy();if(view.input)view.input.readOnly=cell.status==='running';if(view.generate)view.generate.disabled=busy()||!!generationRequest||!token;if(view.cancelGeneration)view.cancelGeneration.hidden=generationRequest?.cell!==cell;if(view.restore)view.restore.disabled=busy()||!!generationRequest;}
+  for(const cell of book.cells){const view=views.get(cell.id);if(!view)continue;for(const b of view.element.querySelectorAll('[data-mutates]'))b.disabled=busy();for(const run of view.runs)run.disabled=(cell.execution_backend==='browser-js'?!session||!token:!connected)||busy();for(const stop of view.stops)stop.disabled=transition||!(activeRun?.cellId===cell.id||[...sceneViews.values()].some(record=>record.cell===cell&&record.view.live));for(const choice of view.backendChoices)choice.checked=cell.execution_backend==='browser-js';if(view.input)view.input.readOnly=cell.status==='running';if(view.generate)view.generate.disabled=busy()||!!generationRequest||!token;if(view.cancelGeneration)view.cancelGeneration.hidden=generationRequest?.cell!==cell;if(view.restore)view.restore.disabled=busy()||!!generationRequest;}
 }
 async function api(path,method='GET',body) {
   const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),12000);
@@ -334,25 +334,50 @@ function renderHistory(cell){
   before.addEventListener('change',show);after.addEventListener('change',show);show();
 }
 
+// Both toolbars use the cell model and the same execution actions; renderBook replaces
+// their view-owned references together, without document-level event listeners.
+function appendExecutionControls(cell,view,tools,position) {
+  const stop=button('■ 停止','停止当前运行；Python 会重置会话并清空变量，JS 保留当前输出',()=>{
+    if(!stop.disabled)resetSession('stop');
+  },'stop-cell');view.stops.push(stop);
+  const option=el('span','execution-option'),label=el('label','execution-choice'),choice=el('input'),help=el('span','execution-help','转译 JS 由浏览器独立 Worker 执行，每次独立运行，不共享 Python 变量；浏览器无法强制 64 MiB Worker 内存上限，请只运行可信代码。');
+  choice.type='checkbox';choice.checked=cell.execution_backend==='browser-js';choice.dataset.mutates='true';help.id='execution-help-'+cell.id+'-'+position;help.setAttribute('role','tooltip');choice.setAttribute('aria-describedby',help.id);
+  choice.addEventListener('change',()=>{
+    if(busy()){refreshControls();return;}
+    stopBrowserRun();stopScenes(true);cell.execution_backend=choice.checked?'browser-js':'python';if(cell.outputs.length||cell.execution_count)cell.stale=true;renderOutput(cell);refreshControls();markDirty();
+  });
+  // Anchor to this checkbox even after flex wrapping, but keep the text inside
+  // the toolbar's width. Touching edges let pointer users enter the tooltip.
+  function placeHelp(){
+    help.style.setProperty('--tooltip-left',option.offsetLeft+'px');
+    help.style.top=position==='top'?(option.offsetTop+option.offsetHeight)+'px':'auto';
+    help.style.bottom=position==='bottom'?(tools.clientHeight-option.offsetTop)+'px':'auto';
+  }
+  option.addEventListener('mouseenter',placeHelp);option.addEventListener('focusin',placeHelp);
+  option.addEventListener('keydown',event=>{if(event.key==='Escape'){option.dataset.dismissed='true';}});
+  option.addEventListener('mouseleave',()=>{delete option.dataset.dismissed;});
+  option.addEventListener('focusout',()=>{delete option.dataset.dismissed;});
+  view.backendChoices.push(choice);label.append(choice,document.createTextNode('JS 加速'));option.append(label,help);tools.append(stop,option);
+}
+
 function renderCell(cell) {
   const element=el('section','cell '+cell.type),head=el('div','cell-head'),kind=el('div','cell-type'),count=el('span','counter'),tools=el('div','cell-tools');element.dataset.cellId=cell.id;
-  const view={element,count,input:null,renderEditor:null,output:el('div','cell-output'),diagnosticLinks:el('div','diagnostic-links')};views.set(cell.id,view);
+  const view={element,count,input:null,renderEditor:null,output:el('div','cell-output'),diagnosticLinks:el('div','diagnostic-links'),runs:[],stops:[],backendChoices:[]};views.set(cell.id,view);
   kind.append(el('span','kind-icon',cell.type==='code'?'⌘':'¶'),el('span','',cell.type==='code'?'如代码':'文字'),count);
-  const run=button(cell.type==='code'?'▶ 运行':'编辑',cell.type==='code'?'运行此代码格，Ctrl 或 Command + Enter':'编辑文字',()=>cell.type==='code'?runAndMove(cell,false):toggleMarkdown(cell), 'run-cell');view.run=run;
+  const run=button(cell.type==='code'?'▶ 运行':'编辑',cell.type==='code'?'运行此代码格，Ctrl 或 Command + Enter':'编辑文字',()=>cell.type==='code'?runAndMove(cell,false):toggleMarkdown(cell), 'run-cell');view.run=run;view.runs.push(run);
   tools.append(copyButton(()=>view.input?.value??cell.source),run);
+  if(cell.type==='code')appendExecutionControls(cell,view,tools,'top');
   if(cell.type==='code'){const clear=button('清除输出','清除这格的输出快照',()=>{stopScenes(true);clearScene(cell);cell.outputs=[];cell.diagnostics=[];delete cell.diagnosticSnapshot;cell.execution_count=null;cell.historical=false;cell.status='idle';renderOutput(cell);markDirty();},'clear-output');clear.dataset.mutates='true';tools.append(clear);}
   for(const [text,title,handler,cls] of [['↑','向上移动格子',()=>moveCell(cell,-1),'icon-button'],['↓','向下移动格子',()=>moveCell(cell,1),'icon-button'],['×','删除这格',()=>deleteCell(cell),'icon-button danger']]){const b=button(text,title,handler,cls);b.dataset.mutates='true';tools.append(b);}
   if(cell.type==='markdown'){const learn=button('如是我言','以这段文字生成如源码，先确认发送范围',()=>createLearning(cell));learn.dataset.mutates='true';tools.prepend(learn);}
   else if(!cell.generation){const learn=button('学习模式','把当前源码作为学习草稿，另写修改意图',()=>enableLearning(cell));learn.dataset.mutates='true';tools.prepend(learn);}
   head.append(kind,tools);element.append(head);
-  if(cell.type==='code'){
-    const options=el('div','execution-options'),label=el('label','execution-choice'),choice=el('input'),help=el('span','execution-help','转译 JS 由浏览器执行，每次独立运行，不共享 Python 变量；浏览器无法强制 64 MiB Worker 内存上限，请只运行可信代码。');
-    choice.type='checkbox';choice.checked=cell.execution_backend==='browser-js';choice.dataset.mutates='true';help.id='execution-help-'+cell.id;choice.setAttribute('aria-describedby',help.id);
-    choice.addEventListener('change',()=>{stopBrowserRun();stopScenes(true);cell.execution_backend=choice.checked?'browser-js':'python';if(cell.outputs.length||cell.execution_count)cell.stale=true;renderOutput(cell);refreshControls();markDirty();});
-    label.append(choice,document.createTextNode('如观 JS 加速'));options.append(label,help);element.append(options);
-  }
   if(cell.generation)element.append(buildGenerationPanel(cell,view));
-  if(cell.type==='code')element.append(buildEditor(cell,view));
+  if(cell.type==='code'){
+    element.append(buildEditor(cell,view));
+    const footer=el('div','cell-tools cell-footer'),run=button('▶ 运行','运行此代码格，Ctrl 或 Command + Enter',()=>runAndMove(cell,false),'run-cell');
+    footer.setAttribute('aria-label','代码末尾运行操作');view.runs.push(run);footer.append(copyButton(()=>view.input?.value??cell.source),run);appendExecutionControls(cell,view,footer,'bottom');element.append(footer);
+  }
   else {
     const preview=el('div','markdown-view');preview.tabIndex=0;preview.setAttribute('aria-label','文字内容，按 Enter 编辑');renderMarkdown(preview,cell.source);
     preview.addEventListener('dblclick',()=>toggleMarkdown(cell,true));preview.addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();toggleMarkdown(cell,true);}});view.preview=preview;element.append(preview);

@@ -40,8 +40,15 @@
 @media(forced-colors:active){.diagnostic-row{border-color:Mark}.diagnostic-column{background:Mark}.diagnostic-line-number{color:Mark}.diagnostic-jump{border-color:ButtonText}}
 .diagnostic-accessible{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 
-.execution-options{display:flex;flex-wrap:wrap;align-items:center;gap:8px 16px;padding:10px 18px;border-bottom:1px solid var(--line,#ddd)}
-.execution-choice{display:inline-flex;align-items:center;gap:6px;font-weight:600;white-space:nowrap}
-.execution-choice input{width:auto;margin:0;accent-color:var(--accent,#47745d)}
-.execution-help{flex:1 1 320px;font-size:12px;line-height:1.6;color:var(--muted,#666)}
+/* Compact execution controls stay in the action row and wrap on narrow screens. */
+.cell-head{height:auto;min-height:42px;gap:6px;flex-wrap:wrap;padding-top:6px;padding-bottom:6px}
+.cell-tools{position:relative;flex-wrap:wrap;min-width:0}
+.cell-footer{padding:8px 17px;border-top:1px solid var(--line);background:#fafcf8}
+.execution-option{display:inline-flex;align-items:center;min-height:27px}
+.execution-choice{display:inline-flex;align-items:center;gap:6px;padding:4px 7px;font-size:11px;font-weight:600;white-space:nowrap;cursor:pointer}
+.execution-choice input{width:auto;margin:0;accent-color:var(--green)}
+.execution-help{position:absolute;z-index:10;top:100%;left:clamp(0px,var(--tooltip-left,0px),max(0px,calc(100% - 320px)));width:min(320px,100%);padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface);box-shadow:0 3px 12px #263c3520;font-size:12px;line-height:1.6;color:var(--ink);visibility:hidden;opacity:0;pointer-events:none}
+.execution-option:hover .execution-help,.execution-option:focus-within .execution-help{visibility:visible;opacity:1;pointer-events:auto}
+.execution-option[data-dismissed] .execution-help{visibility:hidden;opacity:0;pointer-events:none}
+.cell-footer .execution-help{top:auto;bottom:calc(100% - 8px)}
 .copy-input{white-space:nowrap}

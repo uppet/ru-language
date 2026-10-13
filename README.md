@@ -1,6 +1,6 @@
-# 如（ru-language）· 0.16.1 元初实现
+# 如（ru-language）· 0.16.2 元初实现
 
-0.16.1 配套如书 0.4.1：代码格默认使用 Python；可显式勾选「JS 加速」，在独立浏览器 Worker 中执行编译后的如程序与如观回调。[修复 Windows 路径规范化导致的 JS 函数重复声明](docs/rushu-0.4.1-validation.md)；保留复制代码输入按钮。浏览器 JS 的状态、能力与保护边界见 [浏览器 JS 执行](docs/browser-js.md)；CLI `--target js` 仍是 Node.js 目标，不提供如观宿主。本轮完整回归、真实浏览器及同机场景性能见 [验证记录](docs/rushu-0.4.0-validation.md)。
+0.16.2 配套如书 0.4.2：代码格默认使用 Python；可显式勾选「JS 加速」，在独立浏览器 Worker 中执行编译后的如程序与如观回调。代码输入末尾也可运行／停止；JS 加速与按钮同行，保护边界说明可用鼠标悬停或键盘聚焦查看。保留 [Windows JS 函数重复声明修复](docs/rushu-0.4.1-validation.md)及复制输入按钮。本轮验证见 [0.4.2 验证记录](docs/rushu-0.4.2-validation.md)。浏览器 JS 的状态、能力与保护边界见 [浏览器 JS 执行](docs/browser-js.md)；CLI `--target js` 仍是 Node.js 目标，不提供如观宿主。本轮完整回归、真实浏览器及同机场景性能见 [验证记录](docs/rushu-0.4.0-validation.md)。
 
 0.13.2 配套如书 0.3.0：起始页可选六类场景模板，也可直接新建空白如书。模板只创建内容，不自动运行或请求模型，详见 [如书使用说明](rushu/README.md)。
 
@@ -65,7 +65,7 @@
 
 </details>
 
-完整的实现语义以 [如语言规范 0.16.1](rulang/language-spec.md) 为准。它是学习者、工具作者与 LLM 共用的唯一规范文本；README 提供入门和操作摘要。
+完整的实现语义以 [如语言规范 0.16.2](rulang/language-spec.md) 为准。它是学习者、工具作者与 LLM 共用的唯一规范文本；README 提供入门和操作摘要。
 
 待逐项解决或确认忽略的审查事项见 [语言审查追踪](docs/language-review-tracker.md)。清单区分实现缺陷、现有设计取舍与未定提案，不替代语言规范。
 
