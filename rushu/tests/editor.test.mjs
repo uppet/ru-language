@@ -329,3 +329,27 @@ test('canonical module imports keep colons inside opaque strings',()=>{
     assert.equal(indentText(source),source);
   }
 });
+
+
+test('array sorting and transformation help stays contextual',()=>{
+  for(const name of ['排序','另成']) {
+    const source=`列 其 ${name}.`;
+    assert.equal(analyze(source).tokens.find(t=>t.text===name).face,'builtin');
+    assert.match(highlight(source), /新阵|新浅复制阵/);
+    for(const text of [`${name} 取 1.`, `# 其 ${name}.`, `'其 ${name}.'`, `批. 其 ${name}.`, `解. 其 ${name}. 释.`])
+      assert.doesNotMatch(highlight(text), /内置阵：/);
+  }
+  assert.match(highlight('列 其 排序.'), /先于:二参算/);
+  assert.match(highlight('列 其 另成 算法:回调.'), /不接受作/);
+});
+
+
+test('array and dictionary traversal help distinguishes positional callbacks',()=>{
+  assert.match(highlight('列 其 逐位 回调:遍历.'), /位、值/);
+  assert.match(highlight('表 其 逐目 回调:遍历.'), /目、相/);
+  for(const name of ['逐位','逐目']) {
+    assert.equal(analyze(`列 其 ${name}.`).tokens.find(t=>t.text===name).face,'builtin');
+    for(const source of [`${name} 取 1.`, `# 其 ${name}.`, `'其 ${name}.'`, `批. 其 ${name}.`, `解. 其 ${name}. 释.`])
+      assert.doesNotMatch(highlight(source), /内置阵：|内置典：/);
+  }
+});

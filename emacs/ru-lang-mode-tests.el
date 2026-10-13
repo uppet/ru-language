@@ -1359,3 +1359,12 @@
                             ru-lang--tokens))
           (should-not (seq-find (lambda (token) (equal (ru-lang--token-text token) ":"))
                                ru-lang--tokens)))))))
+
+
+(ert-deftest ru-array-sort-map-contextual-help ()
+  (dolist (name '("排序" "另成" "逐位" "逐目"))
+    (should (member name ru-lang--member-builtins))
+    (should-not (member name ru-lang--builtins))
+    (should (assoc name ru-lang--practical-member-help)))
+  (should (string-match-p "先于:二参算" (cdr (assoc "排序" ru-lang--practical-member-help))))
+  (should (string-match-p "不接受作" (cdr (assoc "另成" ru-lang--practical-member-help)))))

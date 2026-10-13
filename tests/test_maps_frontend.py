@@ -69,5 +69,5 @@ class MapsFactsFrontend(unittest.TestCase):
         interpreter.execute(parse('表 取 典: 成.'), echo=True)
         interpreter.execute(parse("表 其 增 '甲' 假."), echo=True)
         interpreter.execute(parse("表 其 查 '甲'."), echo=True)
-        interpreter.execute(parse("表 其 列 作 键 值: 完. 为."), echo=True)
+        interpreter.execute(parse("表 其 逐目 作 键 值: 完. 为."), echo=True)
         self.assertEqual(output.getvalue(), '{甲: 假}\n假\n空\n')

@@ -928,7 +928,9 @@ class Interpreter:
         return receiver
 
     def map_member(self, n, receiver, name, args):
-        params = {"查": ["目"], "增": ["目", "相"], "除": ["目"], "列": ["回调"], "量": []}
+        params = {"查": ["目"], "增": ["目", "相"], "除": ["目"], "逐目": ["回调"], "量": []}
+        if name == "列":
+            self.fail(n, "典的「列」已改名为「逐目」；请改用「其 逐目」")
         if name not in params:
             self.fail(n, f"未知成员：{name}")
         bound = bind_arguments(name, args, params[name], lambda message: self.fail(n, message))
@@ -936,10 +938,10 @@ class Interpreter:
             return float(receiver.size)
         if name == "增":
             return self.map_put(n, receiver, bound["目"], bound["相"])
-        if name == "列":
+        if name == "逐目":
             callback = bound["回调"]
             if not isinstance(callback, Function) or len(callback.node.data["params"]) != 2:
-                self.fail(n, "典的列回调须为接受两个参数的算或作")
+                self.fail(n, "典的逐目回调须为接受两个参数的算或作")
             for key, value in receiver.snapshot():
                 self.invoke_value(n, callback, [(None, key), (None, value)])
             self.last_member_procedure = False
@@ -969,6 +971,75 @@ class Interpreter:
         if not math.isfinite(result):
             self.fail(n, "转换结果不是有限数")
         return result
+
+    def array_algorithm(self, n, value, name, arity):
+        if (not isinstance(value, Function) or value.node.data["procedure"]
+                or len(value.node.data["params"]) != arity):
+            self.fail(n, f"「{name}」须为接受 {arity} 个参数的算")
+        return value
+
+    def array_transform(self, n, receiver, name, args):
+        fail = lambda message: self.fail(n, message)
+        parameter = "算法" if name == "另成" else "先于"
+        bound = bind_arguments(name, args, [parameter], fail, optional=name == "排序")
+        # Snapshot the outer array only; contained mutable values retain identity.
+        snapshot = list(receiver)
+        if name == "另成":
+            algorithm = self.array_algorithm(n, bound[parameter], parameter, 1)
+            result = [self.invoke_value(n, algorithm, [(None, value)]) for value in snapshot]
+            self.last_member_procedure = False
+            return result
+
+        comparator = None
+        if parameter in bound:
+            comparator = self.array_algorithm(n, bound[parameter], parameter, 2)
+        elif snapshot:
+            first = snapshot[0]
+            if isinstance(first, float):
+                valid = all(isinstance(value, float) and math.isfinite(value) for value in snapshot)
+            elif isinstance(first, str):
+                valid = all(isinstance(value, str) for value in snapshot)
+            elif isinstance(first, Instance):
+                valid = all(isinstance(value, Instance) and value.type is first.type for value in snapshot)
+                if valid:
+                    self.special_method(n, first, "先于", 1)
+            else:
+                valid = False
+            if not valid:
+                self.fail(n, "默认排序须为同类有限数、句或同一形且具有「先于」算的实例")
+
+        def before(left, right):
+            if comparator is not None:
+                value = self.invoke_value(n, comparator, [(None, left), (None, right)])
+            elif isinstance(left, Instance):
+                value = self.invoke_value(n, self.special_method(n, left, "先于", 1), [(None, right)])
+            else:
+                return left < right
+            if not isinstance(value, bool):
+                self.fail(n, "「先于」须返回事实")
+            return value
+
+        # Bottom-up stable merge: ties keep their original order without 同.
+        width = 1
+        while width < len(snapshot):
+            merged = []
+            for start in range(0, len(snapshot), width * 2):
+                middle = min(start + width, len(snapshot))
+                end = min(start + width * 2, len(snapshot))
+                left, right = start, middle
+                while left < middle and right < end:
+                    if before(snapshot[right], snapshot[left]):
+                        merged.append(snapshot[right])
+                        right += 1
+                    else:
+                        merged.append(snapshot[left])
+                        left += 1
+                merged.extend(snapshot[left:middle])
+                merged.extend(snapshot[right:end])
+            snapshot = merged
+            width *= 2
+        self.last_member_procedure = False
+        return snapshot
 
     def member(self, n, receiver, name, args):
         fail = lambda message: self.fail(n, message)
@@ -1023,6 +1094,17 @@ class Interpreter:
                 if not isinstance(bound["句"], str):
                     self.fail(n, "「含」需要两个句")
                 return bound["句"] in receiver
+            if isinstance(receiver, list) and name == "逐位":
+                bound = bind_arguments(name, args, ["回调"], fail)
+                callback = bound["回调"]
+                if not isinstance(callback, Function) or len(callback.node.data["params"]) != 2:
+                    self.fail(n, "阵的逐位回调须为接受两个参数的算或作")
+                for index, value in enumerate(receiver[:]):
+                    self.invoke_value(n, callback, [(None, float(index)), (None, value)])
+                self.last_member_procedure = False
+                return None
+            if isinstance(receiver, list) and name in ("排序", "另成"):
+                return self.array_transform(n, receiver, name, args)
             if isinstance(receiver, list) and name in ("删", "弹", "查"):
                 parameters = {"删": ["位"], "弹": [], "查": ["值"]}[name]
                 bound = bind_arguments(name, args, parameters, fail)

@@ -39,7 +39,8 @@ BUILTIN_NAMES = BUILTIN_TYPES | {"读", "读取", "显出", "错误", "__如竞"
 
 
 MEMBER_PARAMS = {"含": ["句"], "位": ["位"], "段": ["始", "终"], "增": ["值"],
-                 "量": [], "囫": [], "囵": [], "删": ["位"], "弹": [], "查": ["值"]}
+                 "量": [], "囫": [], "囵": [], "删": ["位"], "弹": [], "查": ["值"],
+                 "排序": ["先于"], "另成": ["算法"], "逐位": ["回调"]}
 
 KEYWORDS = set("显 取 为 得 完 破 若 则 另 然 循 次 环 算 作 法 其 且 或 非 空 真 假 典 成 对 形 象 如 新 外言 尽 试 救 卒".split())
 NUMBER = re.compile(r"(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
@@ -691,7 +692,7 @@ def bind_arguments(name, args, params, fail, optional=False):
     """Match both call styles without changing source evaluation order.
 
     Values can be AST expressions (compiler) or evaluated values (interpreter).
-    `optional` is only used for the built-in input prompt.
+    `optional` permits an omitted built-in argument (读／排序).
     """
     positional = any(key is None for key, _ in args)
     if positional:

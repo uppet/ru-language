@@ -264,6 +264,10 @@ class JSCompiler(Compiler):
                              runtime, count=1, flags=re.S)
         runtime = re.sub(r'/\* RU_DETAIL \*/(.*?)/\* RU_END_DETAIL \*/',
                          lambda match: match[1] if has_diagnostics else '', runtime)
+        if not words.intersection({'排序', '另成', '逐位'}):
+            for section in ('ARRAY_ALGORITHM', 'ARRAY_ALGORITHM_DISPATCH'):
+                runtime = re.sub(r'/\* RU_OPTIONAL_' + section + r'_BEGIN \*/.*?/\* RU_OPTIONAL_' + section + r'_END \*/',
+                                 '', runtime, count=1, flags=re.S)
         if not words.intersection({'删', '弹', '查'}):
             runtime = re.sub(r'/\* RU_OPTIONAL_ARRAY_EDIT_BEGIN \*/.*?/\* RU_OPTIONAL_ARRAY_EDIT_END \*/',
                              '', runtime, count=1, flags=re.S)

@@ -1279,7 +1279,7 @@ static Val ru_map_get(Val receiver, Val key, int remove, int line)
 static Val ru_map_each(Val receiver, Val callback, int line)
 {
     RuMap *map=(RuMap *)receiver.heap; Val snapshot; RuArray *array; size_t i,at=0; const char *keys[]={NULL,NULL};
-    if(callback.kind!=RU_FUNCTION || ((RuCallable *)callback.heap)->function->count!=2)ru_fail(line,"典的列需要接收键和值两个参数的算或作");
+    if(callback.kind!=RU_FUNCTION || ((RuCallable *)callback.heap)->function->count!=2)ru_fail(line,"典的逐目回调须为接受两个参数的算或作");
     snapshot=v_array(0,NULL,line);array=(RuArray *)snapshot.heap;
     if(map->len>SIZE_MAX/sizeof(Val)/2)ru_fail(line,"典过大");
     free(array->items);array->items=(Val *)ru_alloc(map->len*2*sizeof(Val),line);array->len=array->capacity=map->len*2;
@@ -1299,13 +1299,126 @@ static Val ru_map_member(Val receiver,const char *name,size_t argc,const char **
     if(!strcmp(name,"增")){ru_bind(name,2,both,argc,keys,args,bound,line);return v_map_put(receiver,bound[0],bound[1],line);}
 /* RU_END_MEMBERS */
 /* RU_MEMBERS: 列 */
-    if(!strcmp(name,"列")){ru_bind(name,1,callback,argc,keys,args,bound,line);return ru_map_each(receiver,bound[0],line);}
+    if(!strcmp(name,"列"))ru_fail(line,"典的「列」已改名为「逐目」；请改用「其 逐目」");
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 逐目 */
+    if(!strcmp(name,"逐目")){ru_bind(name,1,callback,argc,keys,args,bound,line);return ru_map_each(receiver,bound[0],line);}
 /* RU_END_MEMBERS */
 /* RU_MEMBERS: 量 */
     if(!strcmp(name,"量")){if(argc)ru_fail(line,"量不接收实参");return v_num((double)((RuMap *)receiver.heap)->len);}
 /* RU_END_MEMBERS */
     ru_fail(line,"未知典成员：%s",name);return v_null();
 }
+/* RU_MEMBERS: 排序,另成,逐位 */
+/* Callbacks are validated even for empty inputs, without invoking them. */
+static void ru_array_algorithm(Val callback, size_t count, const char *name, int line)
+{
+    if(callback.kind!=RU_FUNCTION || ((RuCallable *)callback.heap)->function->procedure ||
+       ((RuCallable *)callback.heap)->function->count!=count)
+        ru_fail(line,"阵的「%s」需要接收 %zu 个参数的算",name,count);
+}
+static void ru_array_sort_validate(RuArray *array, int line)
+{
+    size_t i; Val first;
+    if(!array->len) return;
+    first=array->items[0];
+    for(i=0;i<array->len;++i) {
+        Val item=array->items[i];
+        if(item.kind!=first.kind) ru_fail(line,"阵的排序不支持混合类型");
+        if(item.kind==RU_NUM) {
+            if(!isfinite(item.n)) ru_fail(line,"阵的排序需要有限数");
+        } else if(item.kind==RU_STR) {
+            /* Valid UTF-8 bytes have the same lexical order as scalar values. */
+        } else if(item.kind==RU_OBJECT) {
+            Env *owner=NULL; RuFunction *fn;
+            if(((RuObject *)item.heap)->klass!=((RuObject *)first.heap)->klass)
+                ru_fail(line,"阵的排序需要同一种形");
+            fn=ru_protocol(item,"先于",&owner);
+            if(!fn || fn->procedure || fn->count!=1)
+                ru_fail(line,"阵的排序需要形定义接收一个参数的算「先于」");
+        } else ru_fail(line,"阵的排序不支持%s",v_type_name(item));
+    }
+}
+static int ru_array_before(Val a, Val b, Val comparator, int line)
+{
+    Val result; int before;
+    if(comparator.kind!=RU_NULL) {
+        const char *keys[]={NULL,NULL}; Val args[]={a,b};
+        result=v_call(comparator,2,keys,args,line);
+    } else if(a.kind==RU_NUM) return a.n<b.n;
+    else if(a.kind==RU_STR) return strcmp(a.s->data,b.s->data)<0;
+    else {
+        Env *owner=NULL; RuFunction *fn=ru_protocol(a,"先于",&owner);
+        const char *keys[]={NULL}; Val callable=v_function(fn,owner,a);
+        result=v_call(callable,1,keys,&b,line); v_drop(callable);
+    }
+    if(ru_panicking) {v_drop(result);return 0;}
+    if(result.kind!=RU_FACT) ru_fail(line,"「先于」须返回事实，实际收到%s",v_type_name(result));
+    before=result.n!=0; v_drop(result); return before;
+}
+static Val v_array_sort(Val receiver, Val comparator, int line)
+{
+    RuArray *array, *from, *to; Val left,right; size_t count,width;
+    if(receiver.kind!=RU_ARRAY) ru_fail(line,"排序需要阵");
+    array=(RuArray *)receiver.heap;
+    if(comparator.kind==RU_NULL) ru_array_sort_validate(array,line);
+    count=array->len; left=v_array(count,array->items,line);
+    if(count<2) return left;
+    /* Both buffers root every element while callbacks mutate the source or GC.
+     * Select right only when strictly before left, retaining stable ties. */
+    right=v_array(count,((RuArray *)left.heap)->items,line);
+    from=(RuArray *)left.heap; to=(RuArray *)right.heap;
+    for(width=1;width<count;width=width>count/2?count:width*2) {
+        size_t begin=0;
+        while(begin<count) {
+            size_t middle=begin+(width<count-begin?width:count-begin);
+            size_t end=middle+(width<count-middle?width:count-middle);
+            size_t a=begin,b=middle,out=begin;
+            while(a<middle && b<end) {
+                int before=ru_array_before(from->items[b],from->items[a],comparator,line);
+                if(ru_panicking) {v_drop(left);v_drop(right);return v_null();}
+                to->items[out++]=before?from->items[b++]:from->items[a++];
+            }
+            while(a<middle) to->items[out++]=from->items[a++];
+            while(b<end) to->items[out++]=from->items[b++];
+            begin=end;
+        }
+        {RuArray *swap=from;from=to;to=swap;}
+    }
+    if(from==(RuArray *)left.heap) {v_drop(right);return left;}
+    v_drop(left);return right;
+}
+static Val v_array_transform(Val receiver, Val callback, int line)
+{
+    Val snapshot,out; RuArray *array,*result; size_t i; const char *keys[]={NULL};
+    if(receiver.kind!=RU_ARRAY) ru_fail(line,"另成需要阵");
+    ru_array_algorithm(callback,1,"另成",line);
+    array=(RuArray *)receiver.heap;
+    snapshot=v_array(array->len,array->items,line); array=(RuArray *)snapshot.heap;
+    out=v_array(array->len,array->items,line); result=(RuArray *)out.heap;
+    for(i=0;i<array->len;++i) {
+        Val value=v_call(callback,1,keys,array->items+i,line);
+        if(ru_panicking) {v_drop(value);v_drop(snapshot);v_drop(out);return v_null();}
+        result->items[i]=value; v_drop(value);
+    }
+    v_drop(snapshot);return out;
+}
+static Val v_array_each(Val receiver, Val callback, int line)
+{
+    Val snapshot; RuArray *array; size_t i; const char *keys[]={NULL,NULL};
+    if(receiver.kind!=RU_ARRAY) ru_fail(line,"逐位需要阵");
+    if(callback.kind!=RU_FUNCTION || ((RuCallable *)callback.heap)->function->count!=2)
+        ru_fail(line,"阵的逐位回调须为接受两个参数的算或作");
+    array=(RuArray *)receiver.heap;
+    snapshot=v_array(array->len,array->items,line); array=(RuArray *)snapshot.heap;
+    for(i=0;i<array->len;++i) {
+        Val args[]={v_num((double)i),array->items[i]};
+        Val result=v_call(callback,2,keys,args,line);v_drop(result);
+        if(ru_panicking) break;
+    }
+    v_drop(snapshot);return v_null();
+}
+/* RU_END_MEMBERS */
 static Val v_member(Val receiver,const char *name,size_t argc,const char **keys,Val *args,int line)
 {
     const char *one[]={"值"},*position[]={"位"},*range[]={"始","终"};Val bound[2], io_result = v_null();
@@ -1365,6 +1478,27 @@ static Val v_member(Val receiver,const char *name,size_t argc,const char **keys,
 /* RU_END_MEMBERS */
 /* RU_MEMBERS: 弹 */
     if(!strcmp(name,"弹")){ru_bind(name,0,NULL,argc,keys,args,bound,line);return v_array_pop(receiver,line);}
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 排序 */
+    if(!strcmp(name,"排序")) {
+        const char *before[]={"先于"}; Val comparator=v_null();
+        if(argc) {ru_bind(name,1,before,argc,keys,args,bound,line);comparator=bound[0];ru_array_algorithm(comparator,2,"排序",line);}
+        return v_array_sort(receiver,comparator,line);
+    }
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 逐位 */
+    if(!strcmp(name,"逐位")) {
+        const char *callback[]={"回调"};
+        ru_bind(name,1,callback,argc,keys,args,bound,line);
+        return v_array_each(receiver,bound[0],line);
+    }
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 另成 */
+    if(!strcmp(name,"另成")) {
+        const char *algorithm[]={"算法"};
+        ru_bind(name,1,algorithm,argc,keys,args,bound,line);
+        return v_array_transform(receiver,bound[0],line);
+    }
 /* RU_END_MEMBERS */
 /* RU_MEMBERS: 查 */
     if(!strcmp(name,"查")){ru_bind(name,1,one,argc,keys,args,bound,line);return v_array_find(receiver,bound[0],line);}

@@ -91,6 +91,7 @@ class BrowserJSCompiler(JSCompiler):
 
     def runtime(self):
         runtime = super().runtime()
+        runtime = runtime.replace('/* RU_ARRAY_TICK */', 'browserTick(m,loc);')
         runtime = runtime.replace("  const fs = require('fs'), path = require('path');\n  const {TextDecoder} = require('util');\n", '')
         # Remove actual host I/O, not just its exported names.
         start = runtime.index('  let input = Buffer.alloc(0)')

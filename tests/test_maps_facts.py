@@ -49,7 +49,7 @@ class MapsFactsContract:
             parse("物 取 {}. 物 其 增 'a' 相:1.")
 
     def test_generic_and_user_named_parameters_unchanged(self):
-        self.output("列值 取 []. 列值 其 增 值:7. 显 列值 其 查 值:7. 形 盒: 算 查 键: 得 键. 法 算 增 键 值: 得 键+值. 法 象 盒值 取 新 盒. 显 盒值 其 查 键:8. 显 盒值 其 增 键:2 值:3. 算 自定 目 相: 得 目+相. 法 显 自定 目:4 相:5. 表 取 {'a':6}. 表 其 列 回调:(作 键 值: 显 键. 显 值. 为).", '0\n8\n5\n9\na\n6\n')
+        self.output("列值 取 []. 列值 其 增 值:7. 显 列值 其 查 值:7. 形 盒: 算 查 键: 得 键. 法 算 增 键 值: 得 键+值. 法 象 盒值 取 新 盒. 显 盒值 其 查 键:8. 显 盒值 其 增 键:2 值:3. 算 自定 目 相: 得 目+相. 法 显 自定 目:4 相:5. 表 取 {'a':6}. 表 其 逐目 回调:(作 键 值: 显 键. 显 值. 为).", '0\n8\n5\n9\na\n6\n')
 
     def test_truth_and_type_separation(self):
         self.output("显 真. 显 假. 显 真 == 1. 显 假 == 0. 显 0 为 事实. 显 -0 为 事实. 显 '' 为 事实. 显 [] 为 事实. 显 典: 成 为 事实. 显 空 为 事实. 显 非 0. 显 0 且 ''.",
@@ -68,10 +68,10 @@ class MapsFactsContract:
         self.output("形 键形: 值 为 数. 算 同 另一: 得 其 值 == 另一 其 值. 法 算 印: 得 0. 法 象 甲 取 新 键形 值:1. 乙 取 新 键形 值:1. 丙 取 新 键形 值:2. 显 甲 == 乙. 显 甲 != 乙. 物 取 典: 甲 对 9. 丙 对 7. 成. 显 物 其 查 乙. 显 物 其 查 丙. 物 其 增 乙 8. 显 物 其 查 甲.", '真\n假\n9\n7\n8\n')
 
     def test_snapshot_captures_values_and_finish_only_callback(self):
-        self.output("算 试列: 总 取 0. 物 取 典: 'a' 对 1. 'b' 对 2. 成. 物 其 列 回调:(作 键 值: 总 取 总+值. 物 其 除 'b'. 物 其 增 'c' 3. 完. 为). 得 总. 法 显 试列.", '3\n')
+        self.output("算 试列: 总 取 0. 物 取 典: 'a' 对 1. 'b' 对 2. 成. 物 其 逐目 回调:(作 键 值: 总 取 总+值. 物 其 除 'b'. 物 其 增 'c' 3. 完. 为). 得 总. 法 显 试列.", '3\n')
 
     def test_snapshot_function_closure_and_panic(self):
-        self.output("算 求: 总 取 0. 物 取 典: 'a' 对 1. 'b' 对 2. 成. 物 其 列 算 键 值: 总 取 总+值. 得 99. 法. 得 总. 法 显 求. 试 物 取 典: 1 对 2. 成. 物 其 列 作 键 值: 卒 '停止'. 为. 救 原因 显 原因. 终.", '3\n停止\n')
+        self.output("算 求: 总 取 0. 物 取 典: 'a' 对 1. 'b' 对 2. 成. 物 其 逐目 算 键 值: 总 取 总+值. 得 99. 法. 得 总. 法 显 求. 试 物 取 典: 1 对 2. 成. 物 其 逐目 作 键 值: 卒 '停止'. 为. 救 原因 显 原因. 终.", '3\n停止\n')
 
     def test_cycle_display(self):
         self.output("物 取 典: 成. 物 其 增 'self' 物. 显 物.", '{self: <循环>}\n')
@@ -122,7 +122,7 @@ class MapsFactsContract:
         self.output("物 取 典: '空' 对 空. '假' 对 假. 成. 显 物 其 查 '空'. 显 物 其 查 '缺'. 显 物 其 查 '假'. 显 物 其 除 '空'. 显 物 其 除 '缺'.", '空\n空\n假\n真\n假\n')
 
     def test_snapshot_is_shallow_and_recursive_enumeration(self):
-        self.output("算 求: 总 取 0. 列值 取 [1]. 物 取 典: 1 对 列值. 2 对 列值. 成. 物 其 列 作 键 值: 值[0] 取 值[0]+1. 总 取 总+值[0]. 物 其 列 作 内键 内值: 总 取 总+1. 为. 为. 得 总. 法 显 求.", '9\n')
+        self.output("算 求: 总 取 0. 列值 取 [1]. 物 取 典: 1 对 列值. 2 对 列值. 成. 物 其 逐目 作 键 值: 值[0] 取 值[0]+1. 总 取 总+值[0]. 物 其 逐目 作 内键 内值: 总 取 总+1. 为. 为. 得 总. 法 显 求.", '9\n')
 
     def test_short_circuit_and_predicates_are_facts(self):
         self.output("显 假 且 (1/0). 显 真 或 (1/0). 显 空 且 (1/0). 显 [] 或 (1/0). 算 回 值 为 事实: 得 值. 法 显 回 (1 < 2). 显 回 ('abc' 其 含 'b'). 显 回 (1 != 2).", '假\n真\n假\n真\n真\n真\n真\n')
@@ -142,7 +142,7 @@ class MapsFactsContract:
         self.assertEqual(out, '值已求\n')
 
     def test_map_argument_and_callback_validation(self):
-        for source in ("物 取 典: 成. 物 其 查.", "物 取 典: 成. 物 其 增 错:1 值:2.", "物 取 典: 成. 物 其 列 1.", "物 取 典: 成. 物 其 列 算 键: 得 键. 法.", "物 取 典: 成. 物 其 查 1 2."):
+        for source in ("物 取 典: 成. 物 其 查.", "物 取 典: 成. 物 其 增 错:1 值:2.", "物 取 典: 成. 物 其 逐目 1.", "物 取 典: 成. 物 其 逐目 算 键: 得 键. 法.", "物 取 典: 成. 物 其 查 1 2."):
             with self.subTest(source=source):
                 status, _, _ = self.run_source(source)
                 self.assertNotEqual(status, 0)
@@ -201,7 +201,7 @@ class MapsFactsContract:
         算 遍历:
             总 取 0.
             物 取 典: 1 对 [10]. 2 对 [20]. 成.
-            物 其 列 作 键 值:
+            物 其 逐目 作 键 值:
                 物 其 除 1. 物 其 除 2.
                 循 10 次 废 取 制. 环
                 总 取 总+值[0].
@@ -209,7 +209,7 @@ class MapsFactsContract:
             得 总.
         法
         显 遍历.
-        试 表 其 列 作 键 值: 废 取 制. 卒 '跳出'. 为. 救 原因 显 原因. 终.
+        试 表 其 逐目 作 键 值: 废 取 制. 卒 '跳出'. 为. 救 原因 显 原因. 终.
         显 (表 其 查 '回')()."""
         with patch.dict(os.environ, {'RU_GC_THRESHOLD':'1'}):
             self.output(source, '7\n真\n30\n跳出\n7\n')

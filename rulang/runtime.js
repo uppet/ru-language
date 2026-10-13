@@ -258,12 +258,16 @@ const R = (() => {
       bucket.splice(index,1); if (!bucket.length) receiver.buckets.delete(hash);
       receiver.size--; receiver.version++; return true;
     }
-    if (name === '列') {
+    if (name === '列') fail(m,'典的「列」已改名为「逐目」；请改用「其 逐目」',loc);
+    if (name === '逐目') {
       const a = argsBind(m,name,args,['回调'],loc), callback = a.回调;
-      if (!(callback instanceof Fn) || callback.params.length !== 2) fail(m,'典的列须接收两个参数的算或作',loc);
+      if (!(callback instanceof Fn) || callback.params.length !== 2) fail(m,'典的逐目回调须为接受两个参数的算或作',loc);
       const snapshot = [];
       for (const bucket of receiver.buckets.values()) for (const [key,value] of bucket) snapshot.push([key,value]);
-      for (const [key,value] of snapshot) call(m,callback,[[null,key],[null,value]],loc);
+      for (const [key,value] of snapshot) {
+        /* RU_ARRAY_TICK */
+        call(m,callback,[[null,key],[null,value]],loc);
+      }
       m.lastMemberProcedure = false; return null;
     }
     fail(m,'未知成员：'+name,loc);
@@ -542,6 +546,81 @@ const R = (() => {
     const v = op === '+' ? left+right : op === '-' ? left-right : op === '*' ? left*right : op === '/' ? left/right : left%right;
     if (!Number.isFinite(v)) fail(m,'运算结果不是有限数',loc); return v;
   }
+  /* RU_OPTIONAL_ARRAY_ALGORITHM_BEGIN */
+  function arrayAlgorithm(m,receiver,name,args,loc) {
+    const a = argsBind(m,name,args,[name === '排序' ? '先于' : name === '逐位' ? '回调' : '算法'],loc,name === '排序');
+    const snapshot = receiver.slice();
+    const check = (f,count,label) => {
+      if (!(f instanceof Fn) || f.procedure || f.params.length !== count)
+        fail(m,label+'须为接受 '+count+' 个参数的算',loc);
+      return f;
+    };
+    if (name === '逐位') {
+      const callback = a.回调;
+      if (!(callback instanceof Fn) || callback.params.length !== 2)
+        fail(m,'阵的逐位回调须为接受两个参数的算或作',loc);
+      for (let i = 0; i < snapshot.length; i++) {
+        /* RU_ARRAY_TICK */
+        call(m,callback,[[null,i],[null,snapshot[i]]],loc);
+      }
+      m.lastMemberProcedure = false; return null;
+    }
+    if (name === '另成') {
+      const callback = check(a.算法,1,'「算法」'), result = [];
+      for (const value of snapshot) {
+        /* RU_ARRAY_TICK */
+        result.push(call(m,callback,[[null,value]],loc));
+      }
+      m.lastMemberProcedure = false; return result;
+    }
+    let before;
+    const fact = value => {
+      if (typeof value !== 'boolean') fail(m,'「先于」须返回事实',loc);
+      return value;
+    };
+    if (own(a,'先于')) {
+      const callback = check(a.先于,2,'「先于」');
+      before = (left,right) => fact(call(m,callback,[[null,left],[null,right]],loc));
+    } else if (!snapshot.length) return snapshot;
+    else {
+      const first = snapshot[0];
+      if (typeof first === 'number') {
+        if (snapshot.some(value => typeof value !== 'number' || !Number.isFinite(value)))
+          fail(m,'默认排序须为同类有限数、句或同一形且具有「先于」算的实例',loc);
+        before = (left,right) => left < right;
+      } else if (typeof first === 'string') {
+        if (snapshot.some(value => typeof value !== 'string'))
+          fail(m,'默认排序须为同类有限数、句或同一形且具有「先于」算的实例',loc);
+        before = (left,right) => compareText(left,right) < 0;
+      } else if (first instanceof Instance) {
+        for (const value of snapshot) {
+          if (!(value instanceof Instance) || value.type !== first.type)
+            fail(m,'默认排序须为同类有限数、句或同一形且具有「先于」算的实例',loc);
+          check(value.type.methods.先于,1,'形的「先于」');
+        }
+        before = (left,right) => fact(call(m,boundMethod(left.type.methods.先于,left),[[null,right]],loc));
+      } else fail(m,'默认排序须为同类有限数、句或同一形且具有「先于」算的实例',loc);
+    }
+    // Stable iterative mergesort: ask only whether the right precedes the
+    // left, so equivalent elements keep their input order. Both buffers hold
+    // the original references, even if a callback changes the input array.
+    let source = snapshot, target = new Array(snapshot.length);
+    for (let width = 1; width < snapshot.length; width *= 2) {
+      for (let start = 0; start < snapshot.length; start += 2*width) {
+        const mid = Math.min(start+width,snapshot.length), end = Math.min(start+2*width,snapshot.length);
+        let left = start, right = mid, out = start;
+        while (left < mid && right < end) {
+          /* RU_ARRAY_TICK */
+          target[out++] = before(source[right],source[left]) ? source[right++] : source[left++];
+        }
+        while (left < mid) target[out++] = source[left++];
+        while (right < end) target[out++] = source[right++];
+      }
+      [source,target] = [target,source];
+    }
+    m.lastMemberProcedure = false; return source;
+  }
+  /* RU_OPTIONAL_ARRAY_ALGORITHM_END */
   function member(m,receiver,name,argsThunk,loc) {
     m.lastMemberProcedure = false;
     // Capture methods and callable fields before argument side effects.
@@ -585,6 +664,9 @@ const R = (() => {
         const a = argsBind(m,name,args,['句'],loc); if (typeof a.句 !== 'string') fail(m,'「含」需要两个句',loc);
         return receiver.includes(a.句);
       }
+      /* RU_OPTIONAL_ARRAY_ALGORITHM_DISPATCH_BEGIN */
+      if (Array.isArray(receiver) && (name === '排序' || name === '另成' || name === '逐位')) return arrayAlgorithm(m,receiver,name,args,loc);
+      /* RU_OPTIONAL_ARRAY_ALGORITHM_DISPATCH_END */
       /* RU_OPTIONAL_ARRAY_EDIT_BEGIN */
       if (Array.isArray(receiver) && ['删','弹','查'].includes(name)) {
         const a = argsBind(m,name,args,name === '删' ? ['位'] : name === '查' ? ['值'] : [],loc);

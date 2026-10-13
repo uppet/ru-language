@@ -55,7 +55,7 @@ class SymbolMapContract:
 甲 取 新 键形 值:1 标签:'原'. 乙 取 新 键形 值:1 标签:'新'.
 表 取 {甲: 2, 乙: 3}.
 显 表 其 量. 显 表[乙].
-表 其 列 作 键 值: 显 键 其 标签. 显 值. 为.
+表 其 逐目 作 键 值: 显 键 其 标签. 显 值. 为.
 """, '1\n3\n原\n3\n')
 
     def test_closure_constructor_and_shared_value(self):

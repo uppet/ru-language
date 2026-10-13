@@ -57,6 +57,27 @@ class PromptExportTests(unittest.TestCase):
                 self.assertNotIn("外言 '如竞'", prompt)
                 self.assertIn("不保留兼容别名", prompt)
 
+    def test_generation_targets_include_collection_interfaces(self):
+        for target in ("cli", "rushu", "ruguan", "rushu-browser-js"):
+            with self.subTest(target=target):
+                prompt = generation_system_prompt(target)
+                for name in ("排序", "先于", "另成", "逐位", "逐目"):
+                    self.assertIn(name, prompt)
+                self.assertNotIn("逐得", prompt)
+
+    def test_all_generation_targets_teach_array_sort_and_transform(self):
+        for target in ("cli", "rushu", "ruguan", "rushu-browser-js"):
+            with self.subTest(target=target):
+                prompt = generation_system_prompt(target)
+                for term in ("阵 其 排序", "阵 其 另成 算法:回调", "恰有两个参数的算",
+                             "恰有一个参数的算", "精确的事实", "Unicode 码点",
+                             "同一个形身份", "不深复制", "不筛选、不展开",
+                             "不接受 `作`", "旧 `排序 列 比较` 接口不变",
+                             "阵 其 逐位 回调:", "典 其 逐目 回调:", "目录的 `其 列` 不变",
+                             "不能用 `破` 跳出回调外的遍历", "忽略回调返回值，包括假与空"):
+                    self.assertIn(term, prompt)
+
+
     def test_browser_and_default_python_targets_are_distinct(self):
         browser = generation_system_prompt("rushu-browser-js")
         python = generation_system_prompt("rushu")
