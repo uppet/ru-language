@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 from urllib import error as urlerror
 
-from rulang.generation import GenerationConfig, GenerationError, generation_diagnostic, request_response
+from rulang.generation import GenerationConfig, GenerationError, GenerationSummary, generation_diagnostic, request_response
 from test_generation import MockResponses, response_for
 
 
@@ -59,10 +59,16 @@ class TransportDiagnosticsTests(unittest.TestCase):
                       GenerationError("SECRET", code="http", status="SECRET")):
             self.assertNotIn("SECRET", generation_diagnostic(error))
 
-    def test_progress_reports_only_fixed_phases_after_transport_returns(self):
+    def test_progress_reports_fixed_phases_and_allowlisted_summaries(self):
         stages = []
         with MockResponses(response_for("显 1/0.")) as server:
             from rulang.generation import LOCAL_TEST_API_KEY
             result = request_response(GenerationConfig(LOCAL_TEST_API_KEY, server.base), "测试", progress=stages.append)
         self.assertEqual(result, "显 1/0.")
-        self.assertEqual(stages, ["发送生成请求", "等待提供方响应", "收到提供方响应"])
+        self.assertEqual([stage for stage in stages if not isinstance(stage, GenerationSummary)],
+                         ["发送生成请求", "等待提供方响应", "收到提供方响应"])
+        summaries = [stage for stage in stages if isinstance(stage, GenerationSummary)]
+        self.assertEqual(len(summaries), 3)
+        self.assertIn("提供方默认值未知", summaries[0])
+        self.assertIn("usage", summaries[1])
+        self.assertIn("message=1", summaries[2])

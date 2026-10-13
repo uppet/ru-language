@@ -1,6 +1,6 @@
-# 如（ru-language）· 0.18.1 元初实现
+# 如（ru-language）· 0.18.2 元初实现
 
-0.18.1 配套如书 0.7.0：统一稳定版入口，生成检查区分 Python 与 browser-js，修复图形输入清理，并提供[生成诊断与模型输出](docs/generation-diagnostics.md)。先看 [安装、更新与执行目标](docs/stable-entry.md)及[本轮验证](docs/stabilization-generation-validation.md)。
+0.18.2 配套如书 0.7.1（`wip` 开发中，尚未发布到 `main`）：生成默认不再发送固定输出 token 上限，可显式配置预算，并补充用量、无可见文本与未完成响应的[生成诊断](docs/generation-diagnostics.md)。先看 [安装、更新与执行目标](docs/stable-entry.md)及[本轮验证记录](docs/generation-token-budget-validation.md)。
 
 0.18.0 配套如书 0.6.0：新增阵排序、另成与逐位，典遍历由列改为逐目。详见 [新阵与遍历指南](docs/array-sort-map.md)。
 
@@ -73,7 +73,7 @@
 
 </details>
 
-完整的实现语义以 [如语言规范 0.18.1](rulang/language-spec.md) 为准。它是学习者、工具作者与 LLM 共用的唯一规范文本；README 提供入门和操作摘要。
+完整的实现语义以 [如语言规范 0.18.2](rulang/language-spec.md) 为准。它是学习者、工具作者与 LLM 共用的唯一规范文本；README 提供入门和操作摘要。
 
 待逐项解决或确认忽略的审查事项见 [语言审查追踪](docs/language-review-tracker.md)。清单区分实现缺陷、现有设计取舍与未定提案，不替代语言规范。
 
@@ -101,7 +101,7 @@ python3 ru --version
 python3 ru repl
 ```
 
-`main` 是稳定使用入口，`wip` 用于后续开发；本版如 0.18.1／如书 0.7.0。已有仓库的安全更新步骤及执行目标对照见 [安装与更新](docs/stable-entry.md)，不需要强制重置或覆盖自己的书本。
+`main` 是稳定使用入口，`wip` 用于后续开发；本工作树为如 0.18.2／如书 0.7.1，尚未发布到 `main`。已有仓库的安全更新步骤及执行目标对照见 [安装与更新](docs/stable-entry.md)，不需要强制重置或覆盖自己的书本。
 
 REPL 中输入：
 
@@ -704,8 +704,8 @@ python3 ru build examples/entry.ru -o bin/entry
 
 - `api-key` 普通字符串是字面密钥；以 `@file:` 开头则读取文件内容，例如 `"api-key": "@file:~/.config/ru/api-key"`
 - `{"file":"路径"}` 也是文件引用，仅支持 `file` 一个成员。文件引用支持 `~`，相对路径以配置文件所在目录为基准
-- JSON 也接受 `api_key` / `base_url` 别名，但同一字段不能同时写两种拼法
-- 环境变量优先于 JSON：`RU_LLM_API_KEY`（始终为字面值）优先于 `RU_LLM_API_KEY_FILE`（始终为文件路径）；另有 `RU_LLM_BASE_URL`、`RU_LLM_MODEL`
+- JSON 也接受 `api_key` / `base_url` 别名；可选 `max-output-tokens`（别名 `max_output_tokens`）必须是正整数，同一字段不能同时写两种拼法
+- 环境变量优先于 JSON：`RU_LLM_API_KEY`（始终为字面值）优先于 `RU_LLM_API_KEY_FILE`（始终为文件路径）；另有 `RU_LLM_BASE_URL`、`RU_LLM_MODEL`、`RU_LLM_MAX_OUTPUT_TOKENS`
 - 环境的密钥文件相对路径也以配置文件目录为基准；`RU_LANG_CONFIG` 的相对路径以工作目录为基准
 - 未配置提供方 / 模型时，当前默认是上例指定的 BigModel API 根地址和 `glm-5.3-flash`。密钥没有默认值，缺失时不联网
 
@@ -719,6 +719,19 @@ python3 ru generate examples/wish.md -o examples/wish.generated.ru
 ```
 
 `base-url` 是 API 根地址，不要附加 `/responses`；实现会请求 `POST /responses`。不自动改成 Chat Completions，不自动替换提供方地址或模型。普通远程地址必须 HTTPS，禁止含 URL 用户信息、查询参数或片段；重定向会停止，不会把认证头转发到另一地址。
+
+### 输出 token 预算与超时
+
+默认不发送 `max_output_tokens`，由提供方／模型采用自己的默认值；省略不表示无限，实际默认上限可能未知。需要显式预算时可任选以下入口（数字仅作配置示例，不保证提供方支持该值）：
+
+- JSON：在配置对象中加 `"max-output-tokens": 32768`，或使用 `"max_output_tokens": 32768`，不要同时写两种拼法
+- 环境变量：`export RU_LLM_MAX_OUTPUT_TOKENS=32768`
+- 单次 CLI：`python3 ru generate intent.md -o draft.ru --max-output-tokens 32768 --verbose`
+- 如书启动：`python3 -m rushu --max-output-tokens 32768`
+
+预算优先级为 CLI／如书启动参数 > 环境变量 > JSON > 省略。显式值须为 1 至 2147483647 的整数；环境变量／CLI 参数仅接受最多 10 位 ASCII 十进制数字，不接受空格、正负号或科学计数法。0、负数、小数和布尔值不是有效预算。JSON 使用整数数值，不使用字符串或 `null` 代表省略；不想设置时删除该字段。提供方仍可能拒绝超出模型能力的值。
+
+`--timeout`／如书 `--generation-timeout` 只控制等待秒数，不控制 token。增加等待时间不会解决已返回的 `incomplete`／`max_output_tokens`；应参考诊断中的预算与提供方用量，再决定是否调整预算或缩小需求、手动重新生成。重新生成可能再次计费，不会自动重试。
 
 ### 保存、审阅与运行
 
@@ -743,9 +756,9 @@ python3 ru build draft.ru --target js -o dist/draft.js
 node dist/draft.js
 ```
 
-- `--verbose` 在 stderr 汇报读取、发送、等待、检查等真实阶段及累计耗时，等待时定期更新；非流式请求无法报告模型 token 进度或百分比。与 `--stdout` 同用时，标准输出仍只含检查后的源码；与 `--run` 同用时，标准输出为程序输出。通讯失败区分 TLS 证书、TLS 连接、HTTP 状态、超时、连接失败和响应中断；不会记录密钥、认证头或原始请求／响应正文。
+- `--verbose` 在 stderr 汇报读取、发送、等待、检查等真实阶段及累计耗时，等待时定期更新；还说明本次是否发送输出预算、提供方实际返回的数值 usage（包括返回时的 `reasoning_tokens`）、`output` 项类型摘要及是否存在可见助手文本。缺失的用量不编造为零；非流式请求无法报告模型 token 进度或百分比。与 `--stdout` 同用时，标准输出仍只含检查后的源码；与 `--run` 同用时，标准输出为程序输出。通讯失败区分 TLS 证书、TLS 连接、HTTP 状态、超时、连接失败和响应中断；不会记录密钥、认证头或原始请求／响应正文。
 - 单次非流式 Responses 请求，无自动重试。默认连接／读取超时 1800 秒（半小时），可用 `--timeout 秒数` 覆盖（如 3600）；接受有限正数，无固定 300 秒上限；超时或取消后服务端可能已计费
-- 不启用模型工具，忽略 reasoning 内容，只提取完成的 assistant 文本；工具调用、拒绝、错误、空输出、未完成 / 取消响应都不会执行或保存
+- 不启用模型工具，忽略 reasoning 正文，只提取完成的 assistant 文本；工具调用、拒绝、错误、空输出、未完成 / 取消响应都不会执行或保存。`incomplete` 的 `max_output_tokens` 与 `content_filter` 分别给出预算耗尽和内容过滤诊断，不一律归因于权限或额度；如书可保留已经返回的可见部分文本供诊断，不把它加入源码草稿或模型版本。数值 `reasoning_tokens` 不是隐藏推理内容
 - 接受纯源码，或恰好一段完整的 Markdown / Org 如代码围栏；混合说明、多段或残缺围栏拒绝
 - 输出先通过 lexer / parser、结构及显式调用检查，包括已有本地外言依赖。检查阶段不会执行源码或导入模块的顶层语句；这不是静态证明或安全审计
 - 默认 `--target ru` 保存新的 `.ru`，默认 `原名.generated.ru`；`--target js` 保存新的 `.js` / `.cjs`，默认 `原名.generated.js`。父目录须已存在；默认拒绝覆盖已有输出。`--force` 仅允许替换普通输出文件，仍拒绝意图本身、与意图或依赖同 inode 的文件、符号链接、目录与特殊文件。完整内容验证并同步后原子发布，不自动创建目录

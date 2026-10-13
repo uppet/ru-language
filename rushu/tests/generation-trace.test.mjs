@@ -98,3 +98,14 @@ test('download is explicit and retains at most one revocable artifact across pan
     releaseTraceDownload(two);assert.deepEqual(revoked,['blob:0','blob:1']);
   }finally{releaseTraceDownload();globalThis.document=oldDocument;URL.createObjectURL=oldCreate;URL.revokeObjectURL=oldRevoke;}
 });
+
+test('budget, usage and output summaries retain named stages without opaque fields',()=>{
+  const state=createTraceState('budget');
+  const stages=['request_budget','response_usage','output_summary'];
+  mergeTrace(state,trace('budget',stages.map((stage,index)=>event(index+1,stage,{detail:index===0?'未发送 max_output_tokens；提供方默认值未知。':index===1?'reasoning_tokens=16384':'reasoning=1；未返回可识别助手文本。',reasoning:{text:'PRIVATE_REASONING'}}))));
+  assert.deepEqual(state.events.map(entry=>entry.stage),stages);
+  const exported=traceExport(state);
+  assert.ok(exported.includes('reasoning_tokens=16384'));
+  assert.equal(exported.includes('PRIVATE_REASONING'),false);
+  assert.equal(state.events.some(entry=>entry.stage==='model_text'),false);
+});

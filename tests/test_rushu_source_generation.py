@@ -55,7 +55,7 @@ class GenerationTimeoutOptionsTests(unittest.TestCase):
                 create.return_value.url = "http://127.0.0.1:1234/#token=test"
                 create.return_value.serve_forever.side_effect = KeyboardInterrupt
                 self.assertEqual(main(["--no-browser", *options]), 0)
-                create.assert_called_once_with(0, generation_timeout=expected)
+                create.assert_called_once_with(0, generation_timeout=expected, max_output_tokens=None)
                 create.return_value.server_close.assert_called_once_with()
 
     def test_startup_rejects_nonpositive_and_nonfinite_timeout(self):
@@ -498,7 +498,7 @@ class SourceGenerationTests(unittest.TestCase):
             path, authorization, payload = captured[0]
             self.assertEqual(path, "/v1/responses")
             self.assertEqual(authorization, "Bearer " + LOCAL_TEST_API_KEY)
-            self.assertEqual(payload["max_output_tokens"], 16384)
+            self.assertNotIn("max_output_tokens", payload)
             self.assertEqual(payload["tools"], [])
             self.assertEqual(payload["tool_choice"], "none")
             self.assertIs(payload["store"], False)

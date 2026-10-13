@@ -16,12 +16,12 @@ from .frontend import Incomplete, RuError, parse, validate
 from .interpreter import Interpreter
 from .io_runtime import read_stream_line
 from .modules import load_module_graph, read_source, reject_generation_document
-from .generation import DEFAULT_TIMEOUT, generate
+from .generation import DEFAULT_TIMEOUT, GenerationSummary, generate, max_output_tokens_argument
 from .prompts import export_prompt
 
 
 class _GenerationProgress:
-    """Only fixed local stages and elapsed times may enter verbose output."""
+    """Fixed stages and locally allowlisted, redacted summaries on stderr."""
     INTERVAL = 10.0
     STAGES = frozenset((
         "读取意图文档", "检查生成配置", "发送生成请求", "等待提供方响应",
@@ -63,7 +63,7 @@ class _GenerationProgress:
     def stage(self, stage):
         # Defense in depth: never display provider text, config, or a URL even
         # if a future caller accidentally passes it as a progress message.
-        if not self.enabled or not isinstance(stage, str) or stage not in self.STAGES:
+        if not self.enabled or not isinstance(stage, str) or (stage not in self.STAGES and not isinstance(stage, GenerationSummary)):
             return
         with self.lock:
             if self.stopped.is_set():
@@ -253,6 +253,7 @@ def make_parser():
     p.add_argument("--run", action="store_true", help="生成、检查并保存成功后立即运行；ru 使用解释器，js 使用 Node.js；不能与 --stdout 同用")
     p.add_argument("--target", choices=("ru", "js"), default="ru", help="保存检查后的 ru 源码（默认），或将其本地编译为 js；默认不执行")
     p.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT, help="连接／读取超时秒数，默认 1800（半小时）；须为有限正数，无固定上限，不自动重试")
+    p.add_argument("--max-output-tokens", type=max_output_tokens_argument, help="显式输出 token 正整数预算；优先于环境与配置，默认省略并使用提供方未知默认值")
     p.add_argument("--verbose", action="store_true", help="在标准错误显示真实生成阶段及耗时；等待响应时约每 10 秒更新，不显示进度百分比、密钥或通信原文")
     for name in ("rushu-prompt", "ruguan-prompt"):
         p = sub.add_parser(name, help="离线导出当前版本的系统提示词（含完整语言规范）")
@@ -298,7 +299,8 @@ def main(argv=None):
             with _GenerationProgress(args.verbose) as progress:
                 result = generate(args.document, args.output, args.timeout, target=args.target,
                                   stdout=args.stdout, progress=progress.stage if args.verbose else None,
-                                  **({"force": True} if args.force else {}))
+                                  **({"force": True} if args.force else {}),
+                                  **({"max_output_tokens": args.max_output_tokens} if args.max_output_tokens is not None else {}))
             if args.stdout:
                 sys.stdout.write(result)
                 print("已生成并检查；未执行，请先审阅源码。", file=sys.stderr)

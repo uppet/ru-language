@@ -1,3 +1,11 @@
+# 0.18.2／如书 0.7.1（开发中，尚未发布到 main）
+
+- 移除生成请求固定的 16,384 输出 token 上限；默认省略 `max_output_tokens`，由提供方／模型决定默认限制，不表示无限预算。
+- 支持 JSON `max-output-tokens`／`max_output_tokens`、`RU_LLM_MAX_OUTPUT_TOKENS`，以及 CLI 生成／如书启动的 `--max-output-tokens` 正整数配置；优先级为 CLI／启动参数 > 环境变量 > JSON > 省略。超时秒数仍单独配置。
+- CLI `--verbose` 与如书诊断补充请求预算、提供方实际数值 usage（含返回时的 `reasoning_tokens`）、输出项类型摘要及无可见助手文本说明；不记录隐藏推理正文或原始响应。
+- `incomplete` 的 `max_output_tokens`／`content_filter` 给出专用诊断，不笼统归因于账号权限或额度；已返回的可见部分文本仅供如书诊断，不写入源码或模型版本，不保存或执行未完成产物，不自动重试。
+- 同步包版本、唯一语言规范与配置／诊断文档；不改变语言运行语义。验证范围与尚未完成的检查见 [本轮验证记录](docs/generation-token-budget-validation.md)，不以模拟提供方测试宣称真实付费模型验证通过。
+
 # 0.18.1（2026-10-13）
 
 - 如书 0.7.0：显式 browser-js 生成结果复用浏览器编译器做目标能力预检；禁止的终端／文件能力、非内置外言及编译错误在执行前返回检查失败。只编译不执行，保留生成源码供审阅修改；Python 默认检查范围不变。

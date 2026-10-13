@@ -15,6 +15,7 @@ import webbrowser
 from .browser_compile import compile_request
 from .versions import version_info
 from rulang.generation_trace import TraceStore
+from rulang.generation import validate_max_output_tokens, max_output_tokens_argument
 from .kernel import KernelError, SessionManager
 from .generation import (DEFAULT_TIMEOUT, configuration, generate_source,
                          validate_generation_timeout)
@@ -43,8 +44,9 @@ class NotebookServer(ThreadingHTTPServer):
     allow_reuse_address = False
 
     def __init__(self, port=0, token=None, static_dir=None,
-                 generation_timeout=DEFAULT_TIMEOUT):
+                 generation_timeout=DEFAULT_TIMEOUT, max_output_tokens=None):
         self.generation_timeout = validate_generation_timeout(generation_timeout)
+        self.max_output_tokens = validate_max_output_tokens(max_output_tokens) if max_output_tokens is not None else None
         self.token = token if token is not None else secrets.token_urlsafe(32)
         if not isinstance(self.token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{16,256}", self.token):
             raise ValueError("token must be 16-256 URL-safe ASCII characters")
@@ -234,9 +236,9 @@ class NotebookHandler(BaseHTTPRequestHandler):
                 if parsed.query:
                     raise KernelError("此接口不接受查询参数")
                 if path == "/api/generation/config" and self.command == "GET":
-                    self._respond(200, configuration())
+                    self._respond(200, configuration(self.server.max_output_tokens))
                 elif path == "/api/generate" and self.command == "POST":
-                    self._respond(200, generate_source(self._body(), timeout=self.server.generation_timeout, trace_store=self.server.generation_traces))
+                    self._respond(200, generate_source(self._body(), timeout=self.server.generation_timeout, trace_store=self.server.generation_traces, max_output_tokens=self.server.max_output_tokens))
                 else:
                     raise KernelError("不支持此请求方式", 405)
                 return
@@ -292,9 +294,9 @@ class NotebookHandler(BaseHTTPRequestHandler):
     do_GET = do_HEAD = do_POST = do_DELETE = do_PUT = do_PATCH = do_OPTIONS = _dispatch
 
 
-def make_server(port=0, token=None, static_dir=None, generation_timeout=DEFAULT_TIMEOUT):
+def make_server(port=0, token=None, static_dir=None, generation_timeout=DEFAULT_TIMEOUT, max_output_tokens=None):
     return NotebookServer(port=port, token=token, static_dir=static_dir,
-                          generation_timeout=generation_timeout)
+                          generation_timeout=generation_timeout, max_output_tokens=max_output_tokens)
 
 
 def main(argv=None):
@@ -307,6 +309,7 @@ def main(argv=None):
     parser.add_argument("--no-browser", action="store_true", help="仅打印地址，不自动打开浏览器")
     parser.add_argument("--generation-timeout", type=float, default=DEFAULT_TIMEOUT,
                         help=f"生成请求超时秒数，须为有限正数，默认 {DEFAULT_TIMEOUT:g} 秒")
+    parser.add_argument("--max-output-tokens", type=max_output_tokens_argument, help="生成输出 token 正整数预算；覆盖环境与配置，默认省略")
     args = parser.parse_args(argv)
     if not 0 <= args.port <= 65535:
         parser.error("端口须在 0 至 65535 之间")
@@ -315,7 +318,7 @@ def main(argv=None):
     except ValueError as error:
         parser.error(str(error))
     try:
-        server = make_server(args.port, generation_timeout=args.generation_timeout)
+        server = make_server(args.port, generation_timeout=args.generation_timeout, max_output_tokens=args.max_output_tokens)
     except OSError as error:
         parser.exit(1, "无法启动本机服务：" + str(error) + "\n")
     print("如书 · 请用此完整链接打开：\n" + server.url, flush=True)

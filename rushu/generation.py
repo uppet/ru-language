@@ -8,7 +8,7 @@ from rulang.browser_compiler import compile_browser
 from rulang.frontend import RuError, parse, validate
 from rulang.generation import (DEFAULT_TIMEOUT, GenerationError,
                                clean_generated_source, generation_diagnostic,
-                               load_config, request_response)
+                               load_config, request_response, validate_max_output_tokens)
 from rulang.modules import generation_intent
 
 from .kernel import KernelError, MAX_SOURCE
@@ -17,6 +17,7 @@ from .kernel import KernelError, MAX_SOURCE
 # this lock after a client disconnect or response deadline until the paid call
 # actually finishes. Browser cancellation cannot start a duplicate paid request.
 _GENERATION_SLOT = threading.Lock()
+BUDGET_HELP = "输出 token 预算配置无效；须为 1 至 2147483647 的正整数，提供方可能有更低上限；未发送请求。"
 CONFIG_HELP = "请在启动如书前配置 RU_LLM_API_KEY 或 RU_LLM_API_KEY_FILE，或 ~/.ru-lang.json 的 api-key，并检查提供方配置。"
 
 
@@ -32,11 +33,13 @@ def _host(config):
     return "已配置提供方" if config.api_key in host else host
 
 
-def configuration():
+def configuration(max_output_tokens=None):
     try:
-        config = load_config()
+        config = load_config(**({"max_output_tokens": max_output_tokens} if max_output_tokens is not None else {}))
         return {"configured": True, "provider_host": _host(config),
                 "message": "仅在明确点击生成后发送所选提示与草稿。"}
+    except GenerationError as error:
+        return {"configured": False, "provider_host": None, "message": BUDGET_HELP if error.code == "max_output_tokens_config" else CONFIG_HELP}
     except Exception:
         # Configuration may include secrets in URLs, models, filenames or keys.
         return {"configured": False, "provider_host": None, "message": CONFIG_HELP}
@@ -77,7 +80,7 @@ def _validate(source, runtime_target="python"):
         return {"valid": False, "message": "生成源码结构过深，无法完成检查；尚未执行。"}
 
 
-def generate_source(body, timeout=DEFAULT_TIMEOUT, trace_store=None):
+def generate_source(body, timeout=DEFAULT_TIMEOUT, trace_store=None, max_output_tokens=None):
     trace = None
     identifier = body.get("generation_id")
     if identifier is not None:
@@ -92,7 +95,7 @@ def generate_source(body, timeout=DEFAULT_TIMEOUT, trace_store=None):
             except ValueError:
                 raise KernelError("生成日志编号已使用或日志容量已满，请使用新编号并稍后重试。", 409) from None
     try:
-        value = _generate_source(body, timeout, trace)
+        value = _generate_source(body, timeout, trace, max_output_tokens)
         if trace:
             trace.emit("final_success" if value["valid"] else "final_failure",
                        "生成与目标检查完成；尚未执行。" if value["valid"] else "目标检查失败；保留文本供检查，尚未执行。")
@@ -105,8 +108,13 @@ def generate_source(body, timeout=DEFAULT_TIMEOUT, trace_store=None):
         raise
 
 
-def _generate_source(body, timeout=DEFAULT_TIMEOUT, trace=None):
+def _generate_source(body, timeout=DEFAULT_TIMEOUT, trace=None, max_output_tokens=None):
     timeout = validate_generation_timeout(timeout)
+    if max_output_tokens is not None:
+        try:
+            validate_max_output_tokens(max_output_tokens)
+        except GenerationError:
+            raise KernelError(BUDGET_HELP, 503) from None
     if set(body) - {"prompt", "draft", "runtime_target", "generation_id"}:
         raise KernelError("生成请求只接受 prompt、可选 draft 与 runtime_target")
     runtime_target = body.get("runtime_target", "python")
@@ -129,7 +137,9 @@ def _generate_source(body, timeout=DEFAULT_TIMEOUT, trace=None):
     def work():
         try:
             try:
-                config = load_config()
+                config = load_config(**({"max_output_tokens": max_output_tokens} if max_output_tokens is not None else {}))
+            except GenerationError as error:
+                raise KernelError(BUDGET_HELP if error.code == "max_output_tokens_config" else CONFIG_HELP, 503) from None
             except Exception:
                 raise KernelError(CONFIG_HELP, 503) from None
             if trace:

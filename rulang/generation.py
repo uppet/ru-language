@@ -47,6 +47,10 @@ SYSTEM_PROMPT = """你把用户的意图文档转换为「如」语言当前版�
 """
 
 
+class GenerationSummary(str):
+    """A locally authored, allowlisted and redacted progress summary."""
+
+
 class GenerationError(RuError):
     """A diagnostic that is safe to display without source or config contents."""
     def __init__(self, message, category="生成错误", line=1, col=1, *, code=None, status=None):
@@ -67,6 +71,14 @@ def generation_diagnostic(error):
         "response_interrupted": "Responses 响应传输中断；没有完整生成结果。",
         "response_unicode": "提供方响应或生成文本包含无效 Unicode；无法提取完整源码。",
         "timeout_range": "当前系统无法使用该超时数值；请设置较小的有限正数。",
+        "incomplete_max_output_tokens": "提供方响应不完整：达到输出 token 上限（max_output_tokens）；可调整输出预算或缩小单次需求，增加等待时间不会提高 token 上限。",
+        "incomplete_content_filter": "提供方响应不完整：content_filter（内容过滤）。",
+        "incomplete": "提供方响应不完整；未提供可识别的具体原因。",
+        "response_failed": "提供方 Responses 状态为 failed（失败）。",
+        "response_cancelled": "提供方 Responses 状态为 cancelled（已取消）。",
+        "response_pending": "提供方 Responses 尚未完成（queued 或 in_progress）。",
+        "response_status": "提供方 Responses 未返回可识别的完成状态。",
+        "response_no_text": "提供方未返回可识别的非空助手文本；不能据此判断隐藏推理或 token 使用情况。",
     }
     if error.code == "http":
         status = error.status
@@ -88,6 +100,28 @@ class GenerationConfig:
     api_key: str = field(repr=False)
     base_url: str = field(default=DEFAULT_BASE_URL, repr=False)
     model: str = field(default=DEFAULT_MODEL, repr=False)
+    max_output_tokens: int | None = field(default=None, repr=False)
+
+
+def validate_max_output_tokens(value):
+    """An explicit budget is a positive bounded integer, never a bool/float."""
+    if type(value) is not int or not 1 <= value <= 2147483647:
+        raise GenerationError("输出 token 预算须为 1 至 2147483647 的整数；提供方可能有更低上限", "生成配置错误", code="max_output_tokens_config")
+    return value
+
+
+def parse_max_output_tokens(value):
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9]{1,10}", value):
+        raise GenerationError("输出 token 预算须为 ASCII 十进制正整数", "生成配置错误", code="max_output_tokens_config")
+    return validate_max_output_tokens(int(value))
+
+
+def max_output_tokens_argument(value):
+    import argparse
+    try:
+        return parse_max_output_tokens(value)
+    except GenerationError as error:
+        raise argparse.ArgumentTypeError(error.message) from None
 
 
 def generation_system_prompt(target="cli"):
@@ -195,7 +229,7 @@ def _key_file(reference, directory):
         raise GenerationError("无法读取 API 密钥文件", "生成配置错误") from None
 
 
-def load_config(environ=None):
+def load_config(environ=None, max_output_tokens=None):
     """Load config only for explicit generation. Env keys win over file keys.
 
     RU_LLM_API_KEY is always a literal, RU_LLM_API_KEY_FILE always a filename.
@@ -238,7 +272,15 @@ def load_config(environ=None):
         model = env.get("RU_LLM_MODEL", config.get("model", DEFAULT_MODEL))
         if not isinstance(model, str) or not model.strip() or len(model) > 256 or any(ord(c) < 32 for c in model):
             raise GenerationError("模型名称必须是非空短文本", "生成配置错误")
-        result = GenerationConfig(key, base, model)
+        if max_output_tokens is not None:
+            budget = validate_max_output_tokens(max_output_tokens)
+        elif "RU_LLM_MAX_OUTPUT_TOKENS" in env:
+            budget = parse_max_output_tokens(env["RU_LLM_MAX_OUTPUT_TOKENS"])
+        elif "max-output-tokens" in config or "max_output_tokens" in config:
+            budget = validate_max_output_tokens(_config_value(config, "max-output-tokens", "max_output_tokens"))
+        else:
+            budget = None
+        result = GenerationConfig(key, base, model, budget)
         responses_url(result)
         return result
     except GenerationError:
@@ -292,6 +334,20 @@ def request_response(config, intent, timeout=DEFAULT_TIMEOUT, progress=None, *, 
     system_prompt = _generation_system_prompt(runtime_target)
     if config.api_key in system_prompt:
         raise GenerationError("随附语言规范含有已配置密钥，已停止发送；请检查规范文件")
+    budget = config.max_output_tokens
+    if budget is not None:
+        validate_max_output_tokens(budget)
+    # CLI summaries use the same secret redactor as notebook diagnostics.
+    from .generation_trace import GenerationTrace
+    diagnostic_trace = GenerationTrace("request")
+    diagnostic_trace.protect(config.api_key)
+    def report(stage, detail):
+        if trace:
+            trace.emit(stage, detail)
+        if progress:
+            progress(GenerationSummary(diagnostic_trace.redact(detail)))
+    report("request_budget", "请求输出预算：max_output_tokens=" + str(budget) if budget is not None
+           else "请求输出预算：未发送 max_output_tokens；提供方默认值未知，并非无限。")
     payload = {
         "model": config.model,
         "input": [
@@ -300,10 +356,11 @@ def request_response(config, intent, timeout=DEFAULT_TIMEOUT, progress=None, *, 
         ],
         "stream": False,
         "store": False,
-        "max_output_tokens": 16384,
         "tools": [],
         "tool_choice": "none",
     }
+    if budget is not None:
+        payload["max_output_tokens"] = budget
     try:
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         request = urlrequest.Request(endpoint, data=data, method="POST", headers={
@@ -342,6 +399,9 @@ def request_response(config, intent, timeout=DEFAULT_TIMEOUT, progress=None, *, 
             raise GenerationError("提供方未返回有效 JSON 响应；未保存或执行") from None
         if trace:
             trace.emit("response_parse", "已解析 JSON；继续检查 Responses 结构。")
+        for stage, detail in response_metadata(result):
+            report(stage, detail)
+        if trace:
             _trace_response(trace, result)
         return extract_output_text(result)
     except GenerationError as error:
@@ -404,17 +464,7 @@ def _trace_error(trace, response):
             trace.emit("provider_error", "提供方返回的错误字段（已脱敏）", "\n".join(fields))
 
 
-def _trace_response(trace, response):
-    if not isinstance(response, dict):
-        return
-    _trace_error(trace, response)
-    status = response.get("status")
-    if status in ("completed", "incomplete", "failed", "cancelled", "queued", "in_progress"):
-        trace.emit("response_status", "Responses 状态：" + status)
-    if response.get("incomplete_details") is not None or status == "incomplete":
-        details = response.get("incomplete_details")
-        reason = details.get("reason") if isinstance(details, dict) else None
-        trace.emit("incomplete", "提供方响应不完整" + ("：" + reason if reason in ("max_output_tokens", "content_filter") else "。"))
+def _visible_response_parts(response):
     fragments, refusals = [], []
     output = response.get("output")
     if isinstance(output, list):
@@ -433,6 +483,52 @@ def _trace_response(trace, response):
                     refusals.append(part["refusal"])
     if not fragments and isinstance(response.get("output_text"), str):
         fragments.append(response["output_text"])
+    return fragments, refusals
+
+
+def response_metadata(response):
+    """Only fixed labels and safe integer counts; never provider text/reasoning."""
+    if not isinstance(response, dict):
+        return []
+    fields = []
+    usage = response.get("usage")
+    if isinstance(usage, dict):
+        for name in ("input_tokens", "output_tokens", "total_tokens"):
+            value = usage.get(name)
+            if type(value) is int and 0 <= value <= 9007199254740991:
+                fields.append(name + "=" + str(value))
+        for container, name in (("input_tokens_details", "cached_tokens"), ("output_tokens_details", "reasoning_tokens")):
+            details = usage.get(container)
+            value = details.get(name) if isinstance(details, dict) else None
+            if type(value) is int and 0 <= value <= 9007199254740991:
+                fields.append(name + "=" + str(value))
+    usage_detail = "提供方 usage：" + (", ".join(fields) if fields else "未提供可识别的安全数值计数。")
+    counts = {}
+    output = response.get("output")
+    if isinstance(output, list):
+        for item in output:
+            kind = item.get("type") if isinstance(item, dict) else None
+            kind = kind if isinstance(kind, str) and kind in ("message", "reasoning", "function_call", "web_search_call", "file_search_call", "computer_call", "image_generation_call", "code_interpreter_call", "mcp_call") else "other"
+            counts[kind] = counts.get(kind, 0) + 1
+    summary = ", ".join(name + "=" + str(counts[name]) for name in sorted(counts)) or "无可识别输出项"
+    fragments, _ = _visible_response_parts(response)
+    visible = any(text.strip() for text in fragments)
+    return [("response_usage", usage_detail), ("output_summary", "输出项类型：" + summary + "；" +
+             ("已返回可识别助手文本。" if visible else "未返回可识别的非空助手文本；不能据此判断隐藏推理或 token 使用情况。"))]
+
+
+def _trace_response(trace, response):
+    if not isinstance(response, dict):
+        return
+    _trace_error(trace, response)
+    status = response.get("status")
+    if status in ("completed", "incomplete", "failed", "cancelled", "queued", "in_progress"):
+        trace.emit("response_status", "Responses 状态：" + status)
+    if response.get("incomplete_details") is not None or status == "incomplete":
+        details = response.get("incomplete_details")
+        reason = details.get("reason") if isinstance(details, dict) else None
+        trace.emit("incomplete", "提供方响应不完整" + ("：" + reason if reason in ("max_output_tokens", "content_filter") else "。"))
+    fragments, refusals = _visible_response_parts(response)
     if fragments:
         trace.emit("model_text", "提供方实际返回的助手文本（已脱敏；尚未提取或检查）", "".join(fragments))
     if refusals:
@@ -441,10 +537,20 @@ def _trace_response(trace, response):
 
 def extract_output_text(response):
     """Read text messages, not reasoning or tool items, from Responses JSON."""
-    if not isinstance(response, dict) or response.get("error") is not None or response.get("incomplete_details") is not None:
-        raise GenerationError("提供方返回错误或不完整响应；未保存或执行")
-    if response.get("status") != "completed":
-        raise GenerationError("提供方响应尚未完成或已取消／失败；未保存或执行")
+    if not isinstance(response, dict):
+        raise GenerationError("提供方响应结构无效；未保存或执行")
+    status = response.get("status")
+    if response.get("incomplete_details") is not None or status == "incomplete":
+        details = response.get("incomplete_details")
+        reason = details.get("reason") if isinstance(details, dict) else None
+        code = "incomplete_" + reason if reason in ("max_output_tokens", "content_filter") else "incomplete"
+        raise _communication_error(code)
+    if status != "completed":
+        code = ("response_" + status if status in ("failed", "cancelled") else
+                "response_pending" if status in ("queued", "in_progress") else "response_status")
+        raise _communication_error(code)
+    if response.get("error") is not None:
+        raise GenerationError("提供方返回错误响应；未保存或执行")
     if "object" in response and response["object"] != "response":
         raise GenerationError("提供方返回的不是 Responses 对象")
     output = response.get("output", [])
@@ -473,7 +579,7 @@ def extract_output_text(response):
     # Validate every structured item first so that it cannot hide a tool call.
     text = "".join(fragments) if fragments else response.get("output_text")
     if not isinstance(text, str) or not text.strip():
-        raise GenerationError("提供方没有返回非空源码文本")
+        raise _communication_error("response_no_text")
     try:
         encoded = text.encode("utf-8")
     except UnicodeError:
@@ -542,7 +648,7 @@ def _replaceable_destination(path, protected_paths, protected_identities, target
         raise GenerationError("不能覆盖意图文档或本地依赖的硬链接；请为生成产物选择其他路径")
 
 
-def generate(document, output=None, timeout=DEFAULT_TIMEOUT, environ=None, target="ru", stdout=False, progress=None, force=False):
+def generate(document, output=None, timeout=DEFAULT_TIMEOUT, environ=None, target="ru", stdout=False, progress=None, force=False, max_output_tokens=None):
     """Generate Ru, statically check, and atomically publish Ru or JavaScript.
 
     Existing regular artifacts are replaced only with force=True, after all
@@ -584,7 +690,7 @@ def generate(document, output=None, timeout=DEFAULT_TIMEOUT, environ=None, targe
                 _unused_destination(destination, document, target)
         if progress:
             progress("检查生成配置")
-        config = load_config(environ)
+        config = load_config(environ, **({"max_output_tokens": max_output_tokens} if max_output_tokens is not None else {}))
         if config.api_key in str(destination):
             raise GenerationError("输出路径含有已配置密钥，已停止生成")
         generated = request_response(config, intent, timeout, **({"progress": progress} if progress else {}))

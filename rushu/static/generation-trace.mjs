@@ -2,7 +2,7 @@ import {copyInput} from './clipboard.mjs';
 
 // Deliberately independent of notebook data, history, and browser storage.
 export const TRACE_LIMITS=Object.freeze({events:64,text:1048576,total:2097152});
-const labels={preparation:'准备请求',request_sent:'发起 API 请求',waiting:'等待提供方（非流式）',http_response:'HTTP 响应',response_parse:'解析响应',response_validation:'响应格式检查',model_text:'模型实际返回文本',refusal:'模型拒绝',incomplete:'响应不完整',source_extraction:'提取如源码',extracted_source:'提取的如源码',target_validation:'目标检查（未执行）',provider_error:'提供方错误',response_status:'响应状态',final_success:'生成完成',final_failure:'生成失败'};
+const labels={request_budget:'请求输出预算',response_usage:'提供方 token 用量',output_summary:'输出项摘要',preparation:'准备请求',request_sent:'发起 API 请求',waiting:'等待提供方（非流式）',http_response:'HTTP 响应',response_parse:'解析响应',response_validation:'响应格式检查',model_text:'模型实际返回文本',refusal:'模型拒绝',incomplete:'响应不完整',source_extraction:'提取如源码',extracted_source:'提取的如源码',target_validation:'目标检查（未执行）',provider_error:'提供方错误',response_status:'响应状态',final_success:'生成完成',final_failure:'生成失败'};
 export function redactTraceText(value,limit=TRACE_LIMITS.text){
   return String(value??'').slice(0,limit)
     .replace(/https?:\/\/[^\s<>"']+/gi,url=>{try{const u=new URL(url);return u.protocol+'//'+u.hostname+(u.port?':'+u.port:'')+'/[地址已脱敏]';}catch{return '[地址已脱敏]';}})
