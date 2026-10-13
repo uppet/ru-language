@@ -65,6 +65,7 @@ def generation_diagnostic(error):
         "timeout": "Responses 请求连接或读取超时；可以增加生成等待秒数。",
         "connection": "Responses 请求连接失败；请检查网络与提供方地址。",
         "response_interrupted": "Responses 响应传输中断；没有完整生成结果。",
+        "response_unicode": "提供方响应或生成文本包含无效 Unicode；无法提取完整源码。",
         "timeout_range": "当前系统无法使用该超时数值；请设置较小的有限正数。",
     }
     if error.code == "http":
@@ -99,9 +100,9 @@ def generation_system_prompt(target="cli"):
     package data stops generation rather than falling back to a stale prompt.
     The digest identifies the exact raw UTF-8 bytes sent as specification text.
     """
-    if target not in ("cli", "rushu", "ruguan", "rushu-browser-js"):
+    if target not in ("cli", "rushu", "ruguan", "rushu-browser-js", "ruguan-browser-js"):
         raise GenerationError("未知生成运行环境", "生成配置错误")
-    if target == "rushu-browser-js":
+    if target in ("rushu-browser-js", "ruguan-browser-js"):
         environment = ("本次运行环境：如书显式 JS 加速代码格（browser-js）。如源码由本机编译为 JavaScript，"
                        "在每次新建的独立浏览器 Worker 中执行；支持如观和 1～60 FPS 的帧率请求，"
                        "实际帧率须实测。所有变量、导入、初始化与回调必须放在同一格；"
@@ -116,7 +117,7 @@ def generation_system_prompt(target="cli"):
         environment = ("本次运行环境：普通命令行（含 C／JavaScript 编译）。不提供如观画布宿主，"
                        "不得生成依赖如观的程序；可用文本呈现结果。")
 
-    if target == "ruguan":
+    if target in ("ruguan", "ruguan-browser-js"):
         environment += ("\n本次任务聚焦如观图形与交互。请重点阅读下方规范的「如观二维图形」及"
                         "「文本、数学、随机与阵实用成员」章节，使用其中完整接口与示例。"
                         "创建画布、初始化共享状态及注册回调放在同一代码格；每帧绘制完整画面。"
@@ -278,8 +279,11 @@ class _NoRedirect(urlrequest.HTTPRedirectHandler):
         raise GenerationError("提供方返回重定向；为保护密钥已停止，未自动重试")
 
 
-def request_response(config, intent, timeout=DEFAULT_TIMEOUT, progress=None, *, runtime_target="cli"):
+def request_response(config, intent, timeout=DEFAULT_TIMEOUT, progress=None, *, runtime_target="cli", trace=None):
     """Make exactly one bounded non-streaming Responses request; never run tools."""
+    if trace:
+        trace.protect(config.api_key)
+        trace.emit("preparation", "准备非流式 Responses 请求；不记录请求正文、配置或隐藏推理。")
     endpoint = responses_url(config)
     if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or not math.isfinite(timeout) or not timeout > 0:
         raise GenerationError("超时应为有限且大于 0 的秒数", "生成配置错误")
@@ -315,7 +319,12 @@ def request_response(config, intent, timeout=DEFAULT_TIMEOUT, progress=None, *, 
         if progress:
             progress("发送生成请求")
             progress("等待提供方响应")
+        if trace:
+            trace.emit("request_sent", "开始一次 HTTP POST 请求；未启用自动重试。")
+            trace.emit("waiting", "等待完整非流式响应；此阶段没有可见的逐词输出。")
         with opener.open(request, timeout=timeout) as response:
+            if trace:
+                _trace_http(trace, response.status, response.headers)
             if response.status != 200:
                 raise _communication_error("http", response.status)
             raw = response.read(MAX_RESPONSE_BYTES + 1)
@@ -325,15 +334,32 @@ def request_response(config, intent, timeout=DEFAULT_TIMEOUT, progress=None, *, 
             raise GenerationError("提供方响应超过大小上限；未保存或执行")
         try:
             result = json.loads(raw.decode("utf-8"), object_pairs_hook=_json_object, parse_constant=_invalid_constant)
-        except (ValueError, UnicodeError, RecursionError):
+        except UnicodeError:
+            raise GenerationError("提供方响应不是有效 UTF-8；未保存或执行", code="response_unicode") from None
+        except (ValueError, RecursionError):
+            if trace:
+                trace.emit("response_parse", "响应不是有效 UTF-8 JSON；不保留不透明原始正文。")
             raise GenerationError("提供方未返回有效 JSON 响应；未保存或执行") from None
+        if trace:
+            trace.emit("response_parse", "已解析 JSON；继续检查 Responses 结构。")
+            _trace_response(trace, result)
         return extract_output_text(result)
-    except GenerationError:
+    except GenerationError as error:
+        if trace:
+            trace.emit("response_validation", str(error))
         raise
     except urlerror.HTTPError as exc:
         status = exc.code if isinstance(exc.code, int) else 0
+        if trace:
+            _trace_http(trace, status, exc.headers)
+            try:
+                raw_error = exc.read(65537)
+                if len(raw_error) <= 65536:
+                    _trace_error(trace, json.loads(raw_error.decode("utf-8")))
+            except (ValueError, UnicodeError, OSError, RecursionError, http.client.HTTPException):
+                trace.emit("response_parse", "HTTP 错误正文无法安全解析；未记录原始正文。")
         exc.close()
-        # Never expose response bodies, URL, headers, reason or exception repr.
+        # Exception text remains fixed; optional trace has allowlisted fields only.
         raise _communication_error("http", status) from None
     except ssl.SSLCertVerificationError:
         raise _communication_error("tls_certificate") from None
@@ -355,6 +381,62 @@ def request_response(config, intent, timeout=DEFAULT_TIMEOUT, progress=None, *, 
     except (OSError, ValueError, UnicodeError):
         raise _communication_error("connection") from None
 
+
+
+
+def _trace_http(trace, status, headers):
+    detail = "HTTP " + (str(status) if isinstance(status, int) else "未知状态")
+    # Never copy arbitrary headers, URLs or provider reason phrases.
+    request_id = headers.get("x-request-id", "") if headers else ""
+    if isinstance(request_id, str) and re.fullmatch(r"[A-Za-z0-9_-]{1,128}", request_id):
+        detail += "; request_id=" + request_id
+    trace.emit("http_response", detail)
+
+
+def _trace_error(trace, response):
+    if not isinstance(response, dict):
+        return
+    error = response.get("error")
+    if isinstance(error, dict):
+        fields = [name + ": " + error[name] for name in ("type", "code", "message")
+                  if isinstance(error.get(name), str)]
+        if fields:
+            trace.emit("provider_error", "提供方返回的错误字段（已脱敏）", "\n".join(fields))
+
+
+def _trace_response(trace, response):
+    if not isinstance(response, dict):
+        return
+    _trace_error(trace, response)
+    status = response.get("status")
+    if status in ("completed", "incomplete", "failed", "cancelled", "queued", "in_progress"):
+        trace.emit("response_status", "Responses 状态：" + status)
+    if response.get("incomplete_details") is not None or status == "incomplete":
+        details = response.get("incomplete_details")
+        reason = details.get("reason") if isinstance(details, dict) else None
+        trace.emit("incomplete", "提供方响应不完整" + ("：" + reason if reason in ("max_output_tokens", "content_filter") else "。"))
+    fragments, refusals = [], []
+    output = response.get("output")
+    if isinstance(output, list):
+        for item in output:
+            if not isinstance(item, dict) or item.get("type") != "message" or item.get("role") != "assistant":
+                continue
+            content = item.get("content")
+            if not isinstance(content, list):
+                continue
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
+                if part.get("type") == "output_text" and isinstance(part.get("text"), str):
+                    fragments.append(part["text"])
+                elif part.get("type") == "refusal" and isinstance(part.get("refusal"), str):
+                    refusals.append(part["refusal"])
+    if not fragments and isinstance(response.get("output_text"), str):
+        fragments.append(response["output_text"])
+    if fragments:
+        trace.emit("model_text", "提供方实际返回的助手文本（已脱敏；尚未提取或检查）", "".join(fragments))
+    if refusals:
+        trace.emit("refusal", "提供方实际返回的拒绝说明（已脱敏）", "\n".join(refusals))
 
 
 def extract_output_text(response):
@@ -392,7 +474,11 @@ def extract_output_text(response):
     text = "".join(fragments) if fragments else response.get("output_text")
     if not isinstance(text, str) or not text.strip():
         raise GenerationError("提供方没有返回非空源码文本")
-    if len(text.encode("utf-8")) > MAX_DOCUMENT_BYTES:
+    try:
+        encoded = text.encode("utf-8")
+    except UnicodeError:
+        raise GenerationError("提供方生成文本包含无效 Unicode；未保存或执行", code="response_unicode") from None
+    if len(encoded) > MAX_DOCUMENT_BYTES:
         raise GenerationError("生成源码超过大小上限")
     return text
 

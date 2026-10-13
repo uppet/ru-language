@@ -1,4 +1,6 @@
-# 如（ru-language）· 0.18.0 元初实现
+# 如（ru-language）· 0.18.1 元初实现
+
+0.18.1 配套如书 0.7.0：统一稳定版入口，生成检查区分 Python 与 browser-js，修复图形输入清理，并提供[生成诊断与模型输出](docs/generation-diagnostics.md)。先看 [安装、更新与执行目标](docs/stable-entry.md)及[本轮验证](docs/stabilization-generation-validation.md)。
 
 0.18.0 配套如书 0.6.0：新增阵排序、另成与逐位，典遍历由列改为逐目。详见 [新阵与遍历指南](docs/array-sort-map.md)。
 
@@ -17,14 +19,14 @@
 第一次使用，先选一种入口：
 
 - **如书**：在仓库根目录运行 `python3 -m rushu`，打开终端给出的完整本机地址，在代码格中运行。普通编辑与执行可离线使用。
-- **VS Code**：打开仓库文件夹，新建 UTF-8 的 `first.ru`；在集成终端运行 `python3 ru run first.ru`。这是普通文本编辑与 CLI 的组合，不要求或承诺专用扩展。
+- **VS Code**：打开仓库文件夹，新建 UTF-8 的 `first.ru`；在集成终端运行 `python3 ru run first.ru`。可选 [如言 VS Code 扩展 0.7.0](https://github.com/uppet/ru-vscode)，扩展不包含解释器；图形代码仍放到如书运行。
 - **CLI**：运行 `python3 ru repl`，输入 `显 '你好，如'.`。Windows 可把 `python3` 换成 `py -3`。
 
 需要拆分文本、固定小数位、数学或洗牌时，看 [实用库指南](docs/practical-libraries.md) 与 [完整例子](examples/practical_libraries.ru)。
 
 阵可用 `其 排序` 返回稳定排序的新阵，用 `其 另成 算法:…` 逐项计算并收集为新阵。阵用 `逐位 回调:` 按（位、值）遍历，典用 `逐目 回调:` 按（目、相）遍历；旧典列须改名，目录列不变。排序与另成返回新阵，操作本身不改原阵；四个接口均采用浅快照并保留元素引用，回调的修改仍生效。自然数、形的先于协议、降序与创建新对象见 [排序与另成](docs/array-sort-map.md) 和 [完整例子](examples/array_sort_map.ru)。
 
-要把当前如书／如观规范交给其他 LLM，可离线运行 `python3 ru rushu-prompt` 或 `python3 ru ruguan-prompt`；默认输出到 stdout，`-o 提示.txt` 写文件。详见 [系统提示词导出](docs/prompt-export.md)。
+要把当前如书／如观规范交给其他 LLM，可离线运行 `python3 ru rushu-prompt` 或 `python3 ru ruguan-prompt`；默认面向 Python 并输出到 stdout，`-o 提示.txt` 写文件；浏览器 JS 代码格请加 `--target browser-js`。详见 [系统提示词导出](docs/prompt-export.md)。
 
 接着做 [七个离线小练习](docs/getting-started.md)，手边保留 [调用与作用域速查](docs/calls-and-scope.md)。建议初学时统一写 `取` 和文字块 `段: … 落.`；符号别名仍然有效。
 
@@ -71,7 +73,7 @@
 
 </details>
 
-完整的实现语义以 [如语言规范 0.18.0](rulang/language-spec.md) 为准。它是学习者、工具作者与 LLM 共用的唯一规范文本；README 提供入门和操作摘要。
+完整的实现语义以 [如语言规范 0.18.1](rulang/language-spec.md) 为准。它是学习者、工具作者与 LLM 共用的唯一规范文本；README 提供入门和操作摘要。
 
 待逐项解决或确认忽略的审查事项见 [语言审查追踪](docs/language-review-tracker.md)。清单区分实现缺陷、现有设计取舍与未定提案，不替代语言规范。
 
@@ -93,11 +95,13 @@ python3 -m rushu
 Linux / WSL，克隆私有仓库（需要有访问权限）并进入项目目录：
 
 ```sh
-git clone https://github.com/uppet/ru-language.git
+git clone --branch main https://github.com/uppet/ru-language.git
 cd ru-language
 python3 ru --version
 python3 ru repl
 ```
+
+`main` 是稳定使用入口，`wip` 用于后续开发；本版如 0.18.1／如书 0.7.0。已有仓库的安全更新步骤及执行目标对照见 [安装与更新](docs/stable-entry.md)，不需要强制重置或覆盖自己的书本。
 
 REPL 中输入：
 

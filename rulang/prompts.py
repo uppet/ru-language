@@ -32,7 +32,7 @@ def _check_destination(destination, force):
         raise _error("不能覆盖随附语言规范的硬链接；请选择其他输出路径")
 
 
-def export_prompt(target="rushu", output=None, *, force=False):
+def export_prompt(target="rushu", output=None, *, force=False, runtime_target="python"):
     """Return prompt text for None/'-', otherwise atomically write a UTF-8 file.
 
     rushu is exactly the notebook generation system prompt; ruguan adds a
@@ -42,10 +42,12 @@ def export_prompt(target="rushu", output=None, *, force=False):
     """
     if target not in ("rushu", "ruguan"):
         raise _error("提示导出目标须为 rushu 或 ruguan")
+    if runtime_target not in ("python", "browser-js"):
+        raise _error("提示运行环境须为 python 或 browser-js")
     stdout = output is None or str(output) == "-"
     if stdout and force:
         raise _error("--force 需要指定实际输出文件")
-    text = generation_system_prompt(target)
+    text = generation_system_prompt(target if runtime_target == "python" else target + "-browser-js")
     if stdout:
         return text
     temporary = None

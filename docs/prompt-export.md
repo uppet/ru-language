@@ -9,12 +9,15 @@
 ```sh
 python3 ru rushu-prompt
 python3 ru ruguan-prompt
+python3 ru rushu-prompt --target python
+python3 ru ruguan-prompt --target browser-js -o ruguan-browser-system.txt
 python3 ru rushu-prompt -o rushu-system.txt
 python3 ru ruguan-prompt --output ruguan-system.txt
 python3 ru ruguan-prompt -o -
 python3 ru ruguan-prompt -o ruguan-system.txt --force
 ```
 
+- `--target python|browser-js`：选择如书执行宿主，默认 `python`。两个导出命令都支持；这不是 CLI 构建／生成的 Node.js `--target js`。
 - 省略 `-o` 或指定 `-o -`：只向 stdout 写提示词，不夹带成功说明或进度，适合重定向与管道。诊断写 stderr。
 - `-o PATH` / `--output PATH`：写 UTF-8 文件，不限扩展名；父目录须已存在。成功时 stdout、stderr 均为空。
 - 默认拒绝任何已存在的输出路径。`--force` 明确允许替换已有普通文件，也可写新文件；不能用于 stdout。
@@ -24,9 +27,9 @@ python3 ru ruguan-prompt -o ruguan-system.txt --force
 
 ## 两种内容的区别
 
-`rushu-prompt` 与如书调用生成提供方时的 system 消息逐字相同：包括生成约束、如书 Python 代码格宿主说明，以及唯一一份完整语言规范。它适合普通如书代码、文本、算法和图形任务。
+`rushu-prompt` 与如书对应执行方式调用生成提供方时的 system 消息逐字相同：包括生成约束、所选 Python 或 browser-js 代码格宿主说明，以及唯一一份完整语言规范。它适合普通如书代码、文本、算法和图形任务。
 
-`ruguan-prompt` 使用同一组装逻辑、同一完整规范与如书宿主说明，只追加一段如观聚焦指导：重点阅读图形接口、回调生命周期、数学与随机标准库，区分初始化与逐帧更新。完整如观签名、数学函数、随机源规则都直接来自规范，不维护另一套接口表，也不重复嵌入全文。它生成的图形代码仍应在如书中运行；普通 CLI、C 或 Node.js JavaScript 后端不提供如观画布宿主；如书显式 browser-js 是单独的浏览器目标。默认导出仍以 Python 为目标，并带完整规范中的两种宿主能力区别。
+`ruguan-prompt` 使用同一组装逻辑、同一完整规范与如书宿主说明，只追加一段如观聚焦指导：重点阅读图形接口、回调生命周期、数学与随机标准库，区分初始化与逐帧更新。完整如观签名、数学函数、随机源规则都直接来自规范，不维护另一套接口表，也不重复嵌入全文。它生成的图形代码仍应在如书中运行；普通 CLI、C 或 Node.js JavaScript 后端不提供如观画布宿主；如书显式 browser-js 是单独的浏览器目标。默认导出仍以 Python 为目标；`--target browser-js` 明确选择独立浏览器 Worker 的宿主说明，并保留如观聚焦指导。
 
 两者都会在每次导出时重新读取随包发布的规范，标明语言版本、规范版本及原始规范 UTF-8 字节的 SHA-256。缺失、损坏或版本不一致会失败，不退回旧提示词。因此升级工具链后应重新导出；导出文件本身不会自动更新。
 
@@ -34,7 +37,7 @@ python3 ru ruguan-prompt -o ruguan-system.txt --force
 
 1. 把导出的全文原样放进 LLM 的 `system` 消息，或支持系统指令的客户端对应字段。不要只复制规范链接或摘要。
 2. 把具体程序需求放进独立的 `user` 消息。这里无需末尾的「如是我言」标记；该标记是如书／`ru generate` 的入口，不是源码。
-3. 要求返回纯如源码；提示词已经包含这项要求。先人工审阅，再复制到如书代码格运行。画布创建与回调注册应在同一格。
+3. 要求返回纯如源码；提示词已经包含这项要求。先人工审阅，再复制到与导出目标一致的如书代码格运行。Python 格共享本书会话；browser-js 格每次独立，须把导入、数据初始化、画布与回调放在同一格。导出提示词不会自动切换代码格执行方式。
 
 若客户端只有单一聊天输入框，可以把全文放在需求之前作为上下文，但它不等同于独立的 system 消息。需使用能容纳整份规范的上下文窗口，避免客户端截断。导出命令不会为外部模型配置工具、输出 token 上限或隐私选项，也不能保证外部模型遵守规范。
 
@@ -48,11 +51,12 @@ from rulang.prompts import export_prompt
 
 text = generation_system_prompt("rushu")  # 与如书生成请求相同
 text = export_prompt("ruguan")           # 返回文本，默认不写文件
+text = export_prompt("ruguan", runtime_target="browser-js")
 path = export_prompt("ruguan", "ruguan-system.txt", force=True)
 ```
 
-`generation_system_prompt` 接受 `cli`、`rushu`、`ruguan`、`rushu-browser-js`；最后一项用于如书显式 JS 加速的生成请求，说明独立状态、1～60 FPS 请求及没有 Worker 64 MiB 硬内存配额。`cli` 保持普通命令行生成的运行环境限制。`export_prompt` 只接受本次两个导出目标；`output=None` 或 `"-"` 返回字符串，实际文件路径返回发布后的 `Path`。出错抛出 `RuError`（随附规范错误可能是其 `GenerationError` 子类）。这些接口也无需提供方配置。
+`generation_system_prompt` 接受 `cli`、`rushu`、`ruguan`、`rushu-browser-js`、`ruguan-browser-js`；后两项用于显式浏览器 JS 目标（后者追加如观聚焦指导），说明独立状态、1～60 FPS 请求及没有 Worker 64 MiB 硬内存配额。`cli` 保持普通命令行生成的运行环境限制。`export_prompt` 的首个参数只接受 `rushu`／`ruguan`，`runtime_target` 接受 `python`／`browser-js`（默认 `python`）；`output=None` 或 `"-"` 返回字符串，实际文件路径返回发布后的 `Path`。出错抛出 `RuError`（随附规范错误可能是其 `GenerationError` 子类）。这些接口也无需提供方配置。
 
 ## 标准模块名
 
-导出与真实请求使用同一份当前规范：如观导入 `如:观`，如竞导入 `如:竞`。旧导入名仅用于解释迁移错误，不是可用别名。已有书本不会自动改写或执行；请参见 [标准模块导入迁移](standard-module-imports-migration.md)。导出仍默认面向如书 Python，browser-js 仍由代码格「JS 加速」复选框显式选择。
+导出与真实请求使用同一份当前规范：如观导入 `如:观`，如竞导入 `如:竞`。旧导入名仅用于解释迁移错误，不是可用别名。已有书本不会自动改写或执行；请参见 [标准模块导入迁移](standard-module-imports-migration.md)。导出默认面向如书 Python；用于 browser-js 时给导出命令加 `--target browser-js`，并在代码格中显式勾选「JS 加速」。如书的 browser-js 生成结果会经过浏览器能力／编译检查，Python 生成只做语法／结构检查；两者均不自动运行，外部 LLM 的返回也不会被导出命令自动检查。

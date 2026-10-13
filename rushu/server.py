@@ -14,12 +14,14 @@ import webbrowser
 
 from .browser_compile import compile_request
 from .versions import version_info
+from rulang.generation_trace import TraceStore
 from .kernel import KernelError, SessionManager
 from .generation import (DEFAULT_TIMEOUT, configuration, generate_source,
                          validate_generation_timeout)
 
 MAX_BODY = 1_048_576
 STATIC_FILES = {
+    "/generation-trace.mjs": ("generation-trace.mjs", "text/javascript; charset=utf-8"),
     "/clipboard.mjs": ("clipboard.mjs", "text/javascript; charset=utf-8"),
     "/js-worker.mjs": ("js-worker.mjs", "text/javascript; charset=utf-8"),
     "/js-execution.mjs": ("js-execution.mjs", "text/javascript; charset=utf-8"),
@@ -48,6 +50,7 @@ class NotebookServer(ThreadingHTTPServer):
             raise ValueError("token must be 16-256 URL-safe ASCII characters")
         self.static_dir = (Path(static_dir) if static_dir else Path(__file__).parent / "static").resolve()
         self.sessions = SessionManager()
+        self.generation_traces = TraceStore()
         self._request_slots = threading.BoundedSemaphore(64)
         super().__init__(("127.0.0.1", port), NotebookHandler)
         self.host = "127.0.0.1:" + str(self.server_address[1])
@@ -206,13 +209,34 @@ class NotebookHandler(BaseHTTPRequestHandler):
                     raise KernelError("不支持此请求方式", 405)
                 self._respond(200, version_info())
                 return
+            trace_match = re.fullmatch(r"/api/generation/trace/([a-f0-9]{32})", path)
+            if trace_match:
+                identifier = trace_match.group(1)
+                if self.command == "GET":
+                    query = parse_qs(parsed.query, keep_blank_values=True)
+                    if set(query) - {"after"} or len(query.get("after", ["0"])) != 1:
+                        raise KernelError("无效日志查询")
+                    after = query.get("after", ["0"])[0]
+                    if not re.fullmatch(r"[0-9]{1,10}", after):
+                        raise KernelError("after 须为非负整数")
+                    trace = self.server.generation_traces.get(identifier)
+                    if trace is None:
+                        raise KernelError("日志尚未创建、已清除或已过期。", 404)
+                    self._respond(200, trace.snapshot(int(after)))
+                elif self.command == "DELETE" and not parsed.query:
+                    self._body()
+                    self.server.generation_traces.delete(identifier)
+                    self._respond(200, {"deleted": True})
+                else:
+                    raise KernelError("不支持此请求方式", 405)
+                return
             if path in ("/api/generation/config", "/api/generate"):
                 if parsed.query:
                     raise KernelError("此接口不接受查询参数")
                 if path == "/api/generation/config" and self.command == "GET":
                     self._respond(200, configuration())
                 elif path == "/api/generate" and self.command == "POST":
-                    self._respond(200, generate_source(self._body(), timeout=self.server.generation_timeout))
+                    self._respond(200, generate_source(self._body(), timeout=self.server.generation_timeout, trace_store=self.server.generation_traces))
                 else:
                     raise KernelError("不支持此请求方式", 405)
                 return
@@ -259,7 +283,7 @@ class NotebookHandler(BaseHTTPRequestHandler):
             else:
                 raise KernelError("接口不存在", 404)
         except KernelError as error:
-            self._respond(error.status, {"error": str(error)})
+            self._respond(error.status, {"error": str(error), **({"trace": error.trace} if hasattr(error, "trace") else {})})
         except (BrokenPipeError, ConnectionResetError, TimeoutError):
             self.close_connection = True
         except (OSError, ValueError, RecursionError):

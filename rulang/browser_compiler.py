@@ -28,8 +28,12 @@ def browser_graph(code):
     def visit(path, source):
         if path in graph:
             return
-        program = parse(source)
-        validate(program)
+        try:
+            program = parse(source)
+            validate(program)
+        except RuError as error:
+            error.source_name = path
+            raise
         graph[path] = program
         graph.sources[path] = source
         for n in walk_nodes(program):

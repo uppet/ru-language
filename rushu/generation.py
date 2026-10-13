@@ -1,8 +1,10 @@
 """Explicit notebook generation, isolated from sessions and filesystem imports."""
 import math
+import re
 import threading
 from urllib.parse import urlsplit
 
+from rulang.browser_compiler import compile_browser
 from rulang.frontend import RuError, parse, validate
 from rulang.generation import (DEFAULT_TIMEOUT, GenerationError,
                                clean_generated_source, generation_diagnostic,
@@ -40,23 +42,72 @@ def configuration():
         return {"configured": False, "provider_host": None, "message": CONFIG_HELP}
 
 
-def _validate(source):
+def _validate(source, runtime_target="python"):
     try:
         program = parse(source)
         if not program:
             return {"valid": False, "message": "生成源码没有可检查的语句；尚未执行。"}
         validate(program)
+        if runtime_target == "browser-js":
+            # Compile and discard: reuse every browser graph/capability/lowering
+            # check without starting a runtime or reading external imports.
+            compile_browser(source)
+            return {"valid": True, "message": "已通过浏览器 JS 编译与能力检查；仅检查内置标准外言，尚未执行。"}
         return {"valid": True, "message": "已通过语法与结构检查；未读取或检查外言依赖，尚未执行。"}
     except RuError as error:
-        return {"valid": False, "message": "生成源码未通过语法或结构检查；尚未执行。",
-                "line": error.line, "col": error.col}
+        # Never echo arbitrary source text, import paths or exception details.
+        # Locations in bundled modules must not masquerade as generated source.
+        from rulang.browser_compiler import ROOT
+        in_source = getattr(error, "source_name", ROOT) == ROOT
+        browser = runtime_target == "browser-js"
+        message = "生成源码未通过语法或结构检查；尚未执行。"
+        if browser:
+            message = {
+                "能力错误": "生成源码使用浏览器 JS 不支持的能力或超过编译上限；请修改源码或选择 Python，尚未执行。",
+                "模块错误": "生成源码的外言不符合浏览器 JS 导入规则；请检查标准外言名称，尚未执行。",
+                "编译错误": "生成源码未通过浏览器 JS 编译检查；请检查定义与调用，尚未执行。",
+            }.get(error.category, "生成源码未通过浏览器 JS 语法或结构检查；尚未执行。")
+        return {"valid": False,
+                "message": message,
+                "category": error.category if error.category in ("语法错误", "结构错误", "能力错误", "模块错误", "编译错误") else "源码检查错误",
+                "source": "generated" if in_source else "bundled-module",
+                "line": error.line if in_source else None,
+                "col": error.col if in_source else None}
     except RecursionError:
         return {"valid": False, "message": "生成源码结构过深，无法完成检查；尚未执行。"}
 
 
-def generate_source(body, timeout=DEFAULT_TIMEOUT):
+def generate_source(body, timeout=DEFAULT_TIMEOUT, trace_store=None):
+    trace = None
+    identifier = body.get("generation_id")
+    if identifier is not None:
+        if not isinstance(identifier, str) or not re.fullmatch(r"[a-f0-9]{32}", identifier):
+            raise KernelError("generation_id 须为 32 位小写十六进制文本")
+        if trace_store is None:
+            from rulang.generation_trace import GenerationTrace
+            trace = GenerationTrace(identifier)
+        else:
+            try:
+                trace = trace_store.create(identifier)
+            except ValueError:
+                raise KernelError("生成日志编号已使用或日志容量已满，请使用新编号并稍后重试。", 409) from None
+    try:
+        value = _generate_source(body, timeout, trace)
+        if trace:
+            trace.emit("final_success" if value["valid"] else "final_failure",
+                       "生成与目标检查完成；尚未执行。" if value["valid"] else "目标检查失败；保留文本供检查，尚未执行。")
+            value["trace"] = trace.snapshot()
+        return value
+    except KernelError as error:
+        if trace:
+            trace.emit("final_failure", str(error))
+            error.trace = trace.snapshot()
+        raise
+
+
+def _generate_source(body, timeout=DEFAULT_TIMEOUT, trace=None):
     timeout = validate_generation_timeout(timeout)
-    if set(body) - {"prompt", "draft", "runtime_target"}:
+    if set(body) - {"prompt", "draft", "runtime_target", "generation_id"}:
         raise KernelError("生成请求只接受 prompt、可选 draft 与 runtime_target")
     runtime_target = body.get("runtime_target", "python")
     if runtime_target not in ("python", "browser-js"):
@@ -81,19 +132,36 @@ def generate_source(body, timeout=DEFAULT_TIMEOUT):
                 config = load_config()
             except Exception:
                 raise KernelError(CONFIG_HELP, 503) from None
+            if trace:
+                trace.protect(config.api_key)
+                trace.emit("preparation", "配置已读取；目标：" + runtime_target + "；只生成并检查，不执行。")
             selected = intent if not draft else intent + "\n\n以下是用户明确选择随提示发送的草稿：\n<ru-draft>\n" + draft + "\n</ru-draft>\n"
             # request_response supplies the exact packaged specification/hash,
             # token cap, no-tool policy and credential-input checks.
             try:
-                generated = request_response(config, selected, timeout=timeout, runtime_target="rushu-browser-js" if runtime_target == "browser-js" else "rushu")
+                generated = request_response(config, selected, timeout=timeout, runtime_target="rushu-browser-js" if runtime_target == "browser-js" else "rushu", **({"trace": trace} if trace else {}))
                 if not isinstance(generated, str) or config.api_key in generated:
                     raise KernelError("提供方输出无效或含有密钥，已拒绝返回。", 502)
                 if len(generated) > MAX_SOURCE:
                     raise KernelError("生成源码超过 200000 字符上限；未保存或执行。", 502)
-                source = clean_generated_source(generated)
+                if trace:
+                    trace.emit("source_extraction", "提取单段如源码；若提取失败，请查看上方提供方原始文本。")
+                try:
+                    source = clean_generated_source(generated)
+                except GenerationError as error:
+                    if trace:
+                        trace.emit("source_extraction", str(error))
+                    raise
+                if trace:
+                    trace.emit("extracted_source", "实际提取的如源码（已脱敏；尚未执行）", source)
                 if len(source) > MAX_SOURCE:
                     raise KernelError("生成源码超过 200000 字符上限；未保存或执行。", 502)
-                validation = _validate(source)
+                validation = _validate(source, runtime_target)
+                if trace:
+                    location = ""
+                    if validation.get("line") is not None:
+                        location = " 第 %s 行，第 %s 列。" % (validation["line"], validation.get("col"))
+                    trace.emit("target_validation", validation["message"] + location)
             except GenerationError as error:
                 # Only allowlisted categories are exposed, never arbitrary
                 # provider exception text, response bodies or credentials.

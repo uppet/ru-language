@@ -52,3 +52,13 @@
 .execution-option[data-dismissed] .execution-help{visibility:hidden;opacity:0;pointer-events:none}
 .cell-footer .execution-help{top:auto;bottom:calc(100% - 8px)}
 .copy-input{white-space:nowrap}
+
+/* Diagnostic content stays opt-in and bounded; never changes the busy label. */
+.generation-trace-events{max-height:28rem;overflow:auto;padding-left:1.5rem;overscroll-behavior:contain}
+.generation-trace-events>li{padding:.35rem 0;border-bottom:1px solid var(--line,#ddd)}
+.generation-trace-events p{margin:.25rem 0;white-space:pre-wrap;overflow-wrap:anywhere}
+.generation-trace-stage,.generation-trace-identity{font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.generation-trace-text{max-height:18rem;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;padding:.65rem;border:1px solid var(--line,#ddd);user-select:text}
+.generation-trace-actions{display:flex;flex-wrap:wrap;gap:.4rem}
+.generation-diagnostics summary{cursor:pointer}
+.generation-diagnostics summary:focus-visible{outline:2px solid currentColor;outline-offset:3px}

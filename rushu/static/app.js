@@ -1,3 +1,4 @@
+import {generationTraceId,createTraceState,retainTrace,releaseTraceDownload,mergeTrace,createTracePanel,startTracePolling,redactTraceText} from './generation-trace.mjs';
 import {createJSExecution} from './js-execution.mjs';
 import {copyInput} from './clipboard.mjs';
 import {sourceVersion,captureDiagnostic,currentDiagnostic,mountDiagnosticMarkers} from './diagnostics.mjs';
@@ -21,6 +22,7 @@ function copyButton(read,label='复制输入') {
     finally{control.disabled=false;}
   },'copy-input');return control;
 }
+const generationTraces=new WeakMap(),retainedGenerationTraces=[];
 let hasBook=false;
 let book={title:'',cells:[]},session=null,cursor=0,generation=1,activeRun=null,runAllActive=false,polling=false,epoch=0,dirty=false,transition=false,connected=false,lastExecutionCount=0,kernelDead=false;
 const views=new Map();
@@ -222,10 +224,10 @@ function buildGenerationPanel(cell,view){
   const save=button('记下手动修改','把当前意图和源码保存为一个人工版本',()=>{try{checkpoint(cell);markDirty();renderHistory(cell);generationStatus(cell,'手动修改已记入版本历史。');}catch(error){notice(error.message,true,true);}});save.dataset.mutates='true';
   view.generate=generate;view.cancelGeneration=cancel;cancel.hidden=true;const branch=button('另起学习格','保留这格全部历史，把当前意图和草稿复制到新格继续学习',()=>{if(busy()||book.cells.length>=MAX_CELLS)return;const next=newCell('code',cell.source);if(cell.execution_backend)next.execution_backend=cell.execution_backend;ensureGeneration(next,cell.generation.prompt);book.cells.splice(book.cells.indexOf(cell)+1,0,next);renderBook();markDirty();focusCell(next);});branch.dataset.mutates='true';controls.append(generate,cancel,save,branch,copyButton(()=>prompt.value,'复制意图'));
   view.provider=el('p','generation-disclosure','正在读取服务端生成配置…');view.generationStatus=createGenerationStatus(view);
-  const diagnostics=el('details','generation-diagnostics generation-disclosure');
-  view.generationDiagnostic=el('p','','尚未开始生成。');
-  diagnostics.append(el('summary','','生成诊断'),view.generationDiagnostic,el('p','','仅显示本机可观察到的阶段和耗时；等待期间无法知道模型的 token 进度。不记录意图、源码、凭据或提供方响应原文。'));
-  panel.append(label,prompt,controls,view.provider,view.generationStatus,diagnostics,el('div','draft-label','当前如源码草稿 · 可直接修改'));
+  if(!generationTraces.has(cell))generationTraces.set(cell,createTraceState(''));
+  const tracePanel=createTracePanel(generationTraces.get(cell),{onClear:()=>clearGenerationTrace(cell),notify:notice});
+  view.tracePanel=tracePanel;view.generationDiagnostic=tracePanel.phase;
+  panel.append(label,prompt,controls,view.provider,view.generationStatus,tracePanel.root,el('div','draft-label','当前如源码草稿 · 可直接修改'));
   // This is only a local configuration read, never a provider request.
   queueMicrotask(()=>loadProvider(view));return panel;
 }
@@ -244,17 +246,39 @@ function diagnosticLocation(detail={},includeSource=false){
   }
   return parts.join('\n');
 }
+function forgetRemoteTrace(id){if(id)api('/generation/trace/'+id,'DELETE',{}).catch(()=>{});}
+function clearGenerationTrace(cell){
+  const state=generationTraces.get(cell);if(!state)return;
+  releaseTraceDownload(state);state.cleared=true;state.events=[];state.bytes=0;state.phase='诊断已清除；本次后续记录不再显示。生成请求本身未取消。';
+  if(generationRequest?.cell===cell)generationRequest.stopTrace?.();
+  views.get(cell.id)?.tracePanel?.update();
+  api('/generation/trace/'+state.generation_id,'DELETE',{}).then(()=>notice('已清除此格的浏览器与服务端诊断记录。')).catch(()=>notice('浏览器诊断已清除；服务端记录清除未确认，将按服务端保留期限过期。',true));
+}
+function beginGenerationTrace(request){
+  const old=generationTraces.get(request.cell);if(old?.generation_id){releaseTraceDownload(old);forgetRemoteTrace(old.generation_id);old.events=[];old.bytes=0;old.cleared=true;const index=retainedGenerationTraces.indexOf(old);if(index>=0)retainedGenerationTraces.splice(index,1);}
+  request.trace=createTraceState(generationTraceId());generationTraces.set(request.cell,request.trace);
+  for(const expired of retainTrace(retainedGenerationTraces,request.trace))forgetRemoteTrace(expired.generation_id);
+  for(const existing of views.values())existing.tracePanel?.update();
+  const view=views.get(request.cell.id);
+  if(view?.tracePanel){
+    const panel=createTracePanel(request.trace,{onClear:()=>clearGenerationTrace(request.cell),notify:notice});
+    panel.root.open=view.tracePanel.root.open;view.tracePanel.root.replaceWith(panel.root);view.tracePanel=panel;view.generationDiagnostic=panel.phase;
+  }
+}
+function traceRequestCurrent(request){return generationRequest===request&&book===request.book&&epoch===request.epoch&&book.cells.includes(request.cell)&&generationTraces.get(request.cell)===request.trace;}
+function updateGenerationTrace(request,trace){if(traceRequestCurrent(request)){mergeTrace(request.trace,trace);request.trace.pollWarning=trace?'':'本机服务未返回详细过程记录。';views.get(request.cell.id)?.tracePanel?.update();}}
 function generationDiagnostic(request,phase=request.diagnosticPhase){
   if(generationRequest!==request)return;
   request.diagnosticPhase=phase;
   const node=views.get(request.cell.id)?.generationDiagnostic;if(!node)return;
   const elapsed=request.sentAt==null?'':` · 请求已用时 ${Math.max(0,Math.floor((performance.now()-request.sentAt)/1000))} 秒`;
-  node.textContent=phase+elapsed;
+  const text=redactTraceText(phase+elapsed,4096);
+  if(!request.trace?.cleared){if(request.trace)request.trace.phase=text;node.textContent=text;}
 }
 function cancelGeneration(announce=true){
   const pending=generationRequest;if(!pending)return;
   generationDiagnostic(pending,pending.sentAt==null?'已取消，未发送生成请求。':'已取消页面等待；提供方请求状态未知。');
-  clearInterval(pending.elapsedTimer);
+  clearInterval(pending.elapsedTimer);pending.stopTrace?.();forgetRemoteTrace(pending.trace?.generation_id);
   generationRequest=null;pending.controller.abort();refreshControls();
   generationStatus(pending.cell,'已取消等待，编辑内容未被替换。提供方可能仍在处理或计费；本机服务在请求结束前会拒绝新的生成。');
   if(announce)notice('已取消等待并丢弃后续结果。提供方可能仍在处理或计费，请勿连续重试。',false,true);
@@ -271,7 +295,7 @@ async function generateCell(cell){
     const capacityProbe={...cell,generation:structuredClone(cell.generation)};replaceWithRevision(capacityProbe,{source:'',prompt:cell.generation.prompt,kind:'model'});serializeBook({...book,cells:book.cells.map(c=>c===cell?capacityProbe:c)});
   }catch(error){notice(error.message,true,true);return;}
   const request={cell,book:owner,epoch,prompt:cell.generation.prompt,source:cell.source,runtimeTarget:cell.execution_backend==='browser-js'?'browser-js':'python',controller:new AbortController()};
-  generationRequest=request;refreshControls();generationStatus(cell,'正在生成新版本…你可以继续编辑；若内容改变，返回结果不会覆盖它。',false,true);
+  generationRequest=request;beginGenerationTrace(request);refreshControls();generationStatus(cell,'正在生成新版本…你可以继续编辑；若内容改变，返回结果不会覆盖它。',false,true);
   generationDiagnostic(request,'正在读取本机生成配置，尚未发送生成请求。');
   // The server owns the configurable generation deadline. Abort only when the
   // user cancels or changes books/sessions, never through a shorter page timer.
@@ -284,12 +308,15 @@ async function generateCell(cell){
     request.sentAt=performance.now();
     generationDiagnostic(request,'正在请求生成并等待本机服务返回。');
     request.elapsedTimer=setInterval(()=>generationDiagnostic(request),1000);
-    const response=await fetch('/api/generate',{method:'POST',headers:{'X-Rushu-Token':token,'Content-Type':'application/json'},body:JSON.stringify({prompt:request.prompt,draft:request.source,...(request.runtimeTarget==='browser-js'?{runtime_target:'browser-js'}:{})}),signal:request.controller.signal,cache:'no-store',credentials:'same-origin'});
+    request.stopTrace=startTracePolling({state:request.trace,read:()=>api('/generation/trace/'+request.trace.generation_id+'?after='+(request.trace.events.at(-1)?.seq||0)),isCurrent:()=>traceRequestCurrent(request),onUpdate:()=>views.get(cell.id)?.tracePanel?.update(),onError:error=>{if(error.status!==404||request.trace.events.length){request.trace.pollWarning='过程记录暂时读取失败；仍在等待生成响应，不代表提供方请求失败。';views.get(cell.id)?.tracePanel?.update();}}});
+    const response=await fetch('/api/generate',{method:'POST',headers:{'X-Rushu-Token':token,'Content-Type':'application/json'},body:JSON.stringify({generation_id:request.trace.generation_id,prompt:request.prompt,draft:request.source,...(request.runtimeTarget==='browser-js'?{runtime_target:'browser-js'}:{})}),signal:request.controller.signal,cache:'no-store',credentials:'same-origin'});
     generationDiagnostic(request,'已收到本机服务响应，正在读取生成结果。');
     let result;try{result=await response.json();}catch{throw new Error('本机服务返回了无法读取的生成响应；没有替换草稿。');}
-    if(!response.ok)throw new Error(result.error||'生成请求失败，草稿未改变。');
+    updateGenerationTrace(request,result.trace);
+    if(!response.ok)throw new Error(redactTraceText(result.error||'生成请求失败，草稿未改变。',4096));
     if(generationRequest!==request||book!==owner||epoch!==request.epoch||!book.cells.includes(cell))return;
-    if(cell.source!==request.source||cell.generation.prompt!==request.prompt){generationStatus(cell,'生成期间有新的编辑，已丢弃过期结果。当前编辑未被覆盖，请重新生成。',true);generationDiagnostic(request,'已收到结果；因编辑改变，结果已丢弃。');return;}
+    if((cell.execution_backend==='browser-js'?'browser-js':'python')!==request.runtimeTarget){generationStatus(cell,'生成期间运行目标改变，已丢弃过期结果。请按当前目标重新生成。',true);generationDiagnostic(request,'已收到结果；因运行目标改变，结果已丢弃。');forgetRemoteTrace(request.trace.generation_id);return;}
+    if(cell.source!==request.source||cell.generation.prompt!==request.prompt){generationStatus(cell,'生成期间有新的编辑，已丢弃过期结果。当前编辑未被覆盖，请重新生成。',true);generationDiagnostic(request,'已收到结果；因编辑改变，结果已丢弃。');forgetRemoteTrace(request.trace.generation_id);return;}
     if(typeof result.source!=='string'||result.source.length>MAX_SOURCE)throw new Error('生成源码超过本格上限或响应无效；草稿未替换。');
     const candidate={...cell,generation:structuredClone(cell.generation)};
     replaceWithRevision(candidate,{source:result.source,prompt:request.prompt,kind:'model'});
@@ -298,10 +325,12 @@ async function generateCell(cell){
     invalidateEditedBrowserCell(cell,candidate.source);cell.source=candidate.source;cell.generation=candidate.generation;cell.stale=!!(cell.execution_count||cell.outputs.length);markDirty();
     const currentView=views.get(cell.id);if(currentView){currentView.input.value=cell.source;currentView.renderEditor();}renderOutput(cell);renderHistory(cell);
     const validationPosition=diagnosticLocation(result.validation||{});
-    generationStatus(cell,result.valid?'新版本已加入历史。语法／结构检查通过；未检查外言依赖，未执行。请审阅后单独运行。':`新版本已加入历史，但尚未通过语法／结构检查：${validationPosition?validationPosition+'；':''}${result.validation?.message||'请检查源码'}。未执行。`,!result.valid);
-    generationDiagnostic(request,result.valid?'生成结果已加入历史；服务端语法／结构检查通过，未执行。':'生成结果已加入历史；服务端语法／结构检查未通过，未执行。');
+    const check=request.runtimeTarget==='browser-js'?'浏览器 JS 编译／能力':'语法／结构';
+    const checked=result.validation?.message||(result.valid?`${check}检查通过；未执行。`:`${check}检查未通过；未执行。`);
+    generationStatus(cell,`新版本已加入历史。${validationPosition?validationPosition+'；':''}${checked}${result.valid?'请审阅后单独运行。':''}`,!result.valid);
+    generationDiagnostic(request,`生成结果已加入历史；服务端${check}检查${result.valid?'通过':'未通过'}，未执行。`);
   }catch(error){if(generationRequest===request){generationDiagnostic(request,error.name==='AbortError'?'等待已取消，当前编辑保留。':'生成未完成：'+error.message);generationStatus(cell,error.name==='AbortError'?'等待已取消，当前编辑保留。':error.message,true);notice(error.name==='AbortError'?'已取消生成等待。':error.message,true,true);}}
-  finally{clearInterval(request.elapsedTimer);if(generationRequest===request){generationActivity(cell,false);generationRequest=null;refreshControls();}}
+  finally{clearInterval(request.elapsedTimer);request.stopTrace?.();if(generationRequest===request){generationActivity(cell,false);generationRequest=null;refreshControls();}}
 }
 function buildHistory(cell,view){
   const details=el('details','generation-history'),summary=el('summary','','版本历史与变化'),body=el('div','history-body');

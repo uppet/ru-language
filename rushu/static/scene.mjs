@@ -52,7 +52,9 @@ export function drawScene(canvas,value) {
 }
 /** send resolves after the server's graphics_done, not merely HTTP acceptance. */
 export function createSceneView(value,{send=async()=>{},historical=false,onError=()=>{},backend='python'}={}) {
-  let scene=validateScene(value),disposed=false,inFlight=false,timer=null,pendingMove=null,queue=[],live=!historical,lastDispatch=0,failure='',suspended=false,retryAt=0;
+  let scene=validateScene(value),disposed=false,inFlight=false,timer=null,pendingMove=null,queue=[],live=!historical,lastDispatch=0,failure='',suspended=false,retryAt=0,retryEvent=null,moveEpoch=0;
+  // Each held input reserves a queue slot for its release, even under overload.
+  const pointers=new Map(),keys=new Map(),MAX_INPUTS=16;
   const root=document.createElement('section');root.className='scene-output';
   const canvas=document.createElement('canvas');canvas.tabIndex=0;canvas.setAttribute('aria-label','如观画布；点击或按 Tab 聚焦后可使用键盘');
   const toolbar=document.createElement('div');toolbar.className='scene-toolbar';
@@ -62,28 +64,64 @@ export function createSceneView(value,{send=async()=>{},historical=false,onError
   toolbar.append(status,stop,restore);root.append(canvas,toolbar);
   const backing={active:()=>live&&scene.handlers.length>0,release:()=>{deactivate();suspended=true;canvas.width=0;canvas.height=0;canvas.hidden=true;restore.hidden=false;label();}};
   const listeners=[];
-  function listen(type,fn){canvas.addEventListener(type,fn);listeners.push([type,fn]);}
+  function listen(type,fn,target=canvas){if(!target?.addEventListener)return;target.addEventListener(type,fn);listeners.push([target,type,fn]);}
+  function unlisten(){for(const [target,type,fn] of listeners)target.removeEventListener(type,fn);listeners.length=0;}
   function label(){status.textContent=suspended?'画面已暂存，点击重新查看':failure|| (historical?'历史画布 · 重新运行后可交互':!live?'画布已停止':scene.running?'动画运行中 · 聚焦画布可交互':scene.handlers.some(x=>x!=='frame')?'可交互 · 点击画布或按 Tab 聚焦':'静态画布');stop.hidden=!live||!scene.handlers.length;}
   function cancelSchedule(){if(timer===null)return;if(backend==='javascript')cancelAnimationFrame(timer);else clearTimeout(timer);timer=null;}
-  function schedule(){if(timer!==null)return;if(!live||disposed||inFlight||document.hidden)return;if(!queue.length&&!pendingMove&&!(scene.running&&scene.handlers.includes('frame')))return;
+  function schedule(){if(timer!==null)return;if(!live||disposed||inFlight||document.hidden)return;if(!retryEvent&&!queue.length&&!pendingMove&&!(scene.running&&scene.handlers.includes('frame')))return;
     const fire=()=>{timer=null;const now=performance.now();
       if(backend==='javascript'&&now+1<Math.max(lastDispatch+1000/scene.fps,retryAt)){schedule();return;}
-      const next=queue.shift()||pendingMove||(scene.running&&scene.handlers.includes('frame')?{type:'frame'}:null);if(next===pendingMove)pendingMove=null;if(next)dispatch(next);};
+      const next=retryEvent||queue.shift()||pendingMove||(scene.running&&scene.handlers.includes('frame')?{type:'frame'}:null);if(next===retryEvent)retryEvent=null;if(next===pendingMove)pendingMove=null;if(next)dispatch(next);};
     timer=backend==='javascript'?requestAnimationFrame(fire):setTimeout(fire,Math.max(0,Math.ceil(1000/scene.fps)+2-(performance.now()-lastDispatch),retryAt-performance.now()));}
 
-  async function dispatch(event){if(!live||disposed||document.hidden)return;if(inFlight){enqueue(event);return;}inFlight=true;lastDispatch=performance.now();
-    try{await send(event);}catch(error){if(disposed||!live)return;if(error.status===429){retryAt=performance.now()+100;if(event.type==='mouse_move')pendingMove=pendingMove||event;else if(event.type!=='frame'&&queue.length<16)queue.unshift(event);}else{live=false;pendingMove=null;queue=[];failure='画布交互中断：'+error.message;onError(error);}}
+  async function dispatch(event){if(!live||disposed||document.hidden)return;if(inFlight)return;inFlight=true;lastDispatch=performance.now();const dispatchedMoveEpoch=moveEpoch;
+    try{await send(event);}catch(error){if(disposed||!live)return;if(error.status===429){retryAt=performance.now()+100;if(event.type!=='frame'&&(event.type!=='mouse_move'||dispatchedMoveEpoch===moveEpoch))retryEvent=event;}else{deactivate();failure='画布交互中断：'+error.message;onError(error);}}
     finally{inFlight=false;if(!disposed&&live)schedule();label();}}
-  function enqueue(event){if(!live||disposed)return;if(event.type==='mouse_move')pendingMove=event;else if(event.type!=='frame'){if(queue.length>=16){failure='交互较快，部分输入已忽略';label();return;}queue.push(event);}if(!inFlight)schedule();}
-  function pointer(type,event){if(!live||!scene.handlers.includes(type))return;if(type==='mouse_down')canvas.focus({preventScroll:true});const r=canvas.getBoundingClientRect();if(!r.width||!r.height)return;const input={type,x:Math.max(0,Math.min(scene.width,(event.clientX-r.left)*scene.width/r.width)),y:Math.max(0,Math.min(scene.height,(event.clientY-r.top)*scene.height/r.height))};if(type!=='mouse_move')input.button=event.button;enqueue(input);}
-  listen('pointermove',event=>pointer('mouse_move',event));listen('pointerdown',event=>pointer('mouse_down',event));listen('pointerup',event=>pointer('mouse_up',event));
-  for(const [native,type] of [['keydown','key_down'],['keyup','key_up']])listen(native,event=>{if(!live||!scene.handlers.includes(type)||event.ctrlKey||event.metaKey||event.altKey||event.key==='Tab'||event.repeat)return;if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(event.key))event.preventDefault();event.stopPropagation();enqueue({type,key:event.key.slice(0,64)});});
-  function deactivate(){live=false;cancelSchedule();pendingMove=null;queue=[];label();}
-  stop.addEventListener('click',()=>{if(!live)return;deactivate();Promise.resolve(send({type:'close'})).catch(onError);});
-  const visibility=()=>{if(document.hidden){cancelSchedule();pendingMove=null;queue=[];}else schedule();};document.addEventListener('visibilitychange',visibility);
+  function heldCount(){let count=keys.size;for(const buttons of pointers.values())count+=buttons.size;return count;}
+  function room(slots=1){if(queue.length+heldCount()+slots<=MAX_INPUTS)return true;failure='交互较快，部分输入已忽略';label();return false;}
+  function enqueue(event){if(!live||disposed||document.hidden)return false;if(event.type==='mouse_move')pendingMove=event;else if(event.type!=='frame'){if(!room())return false;queue.push(event);}if(!inFlight)schedule();return true;}
+  function position(event,fallback){const r=canvas.getBoundingClientRect();if(!r.width||!r.height||!Number.isFinite(event.clientX)||!Number.isFinite(event.clientY))return fallback;
+    const x=(event.clientX-r.left)*scene.width/r.width,y=(event.clientY-r.top)*scene.height/r.height;
+    return Number.isFinite(x)&&Number.isFinite(y)?{x:Math.max(0,Math.min(scene.width,x)),y:Math.max(0,Math.min(scene.height,y))}:fallback;}
+  function releasePointer(id,button,event){const buttons=pointers.get(id),held=buttons?.get(button);if(!held)return;
+    buttons.delete(button);if(!buttons.size){pointers.delete(id);try{canvas.releasePointerCapture?.(id);}catch{}}
+    if(scene.handlers.includes('mouse_up'))queue.push({type:'mouse_up',...position(event||{},held),button});schedule();}
+  function pressPointer(event,button=event.button){if(!live||disposed||document.hidden||event.isPrimary===false||!Number.isInteger(button)||button<0||button>2)return;
+    if(!scene.handlers.some(type=>type.startsWith('mouse_')))return;
+    canvas.focus({preventScroll:true});const id=event.pointerId??1;if(pointers.size&&!pointers.has(id))return;const buttons=pointers.get(id)||new Map();if(buttons.has(button))return;
+    const point=position(event);if(!point||!room(scene.handlers.includes('mouse_down')?2:1))return;
+    buttons.set(button,point);pointers.set(id,buttons);try{canvas.setPointerCapture?.(id);}catch{}
+    if(scene.handlers.includes('mouse_down'))queue.push({type:'mouse_down',...point,button});schedule();}
+  function movePointer(event){if(!live||disposed||document.hidden||event.isPrimary===false)return;const id=event.pointerId??1;if(pointers.size&&!pointers.has(id))return;const buttons=pointers.get(id);
+    if(buttons){for(const [button,held] of buttons)Object.assign(held,position(event,held));
+      // Mouse chords arrive as pointermove rather than another pointerdown/up.
+      if(event.pointerType==='mouse'&&Number.isInteger(event.buttons))for(const [button,mask] of [[0,1],[1,4],[2,2]]){
+        if(event.buttons&mask){if(!pointers.get(id)?.has(button))pressPointer(event,button);}else releasePointer(id,button,event);
+      }}
+    const point=position(event);if(point&&scene.handlers.includes('mouse_move'))enqueue({type:'mouse_move',...point});}
+  function releaseKey(id){const key=keys.get(id);if(key===undefined)return;keys.delete(id);if(scene.handlers.includes('key_up'))queue.push({type:'key_up',key});schedule();}
+  function releaseInputs(){moveEpoch++;pendingMove=null;if(retryEvent?.type==='mouse_move')retryEvent=null;for(const [id,buttons] of [...pointers])for(const button of [...buttons.keys()])releasePointer(id,button);for(const id of [...keys.keys()])releaseKey(id);}
+  listen('pointermove',movePointer);
+  listen('pointerdown',pressPointer);
+  const pointerUp=event=>{const id=event.pointerId??1;releasePointer(id,event.button,event);if(event.buttons===0)for(const button of [...(pointers.get(id)?.keys()||[])])releasePointer(id,button,event);};
+  const pointerCancel=event=>{const id=event.pointerId??1;if(!pointers.has(id))return;moveEpoch++;for(const button of [...(pointers.get(id)?.keys()||[])])releasePointer(id,button);pendingMove=null;if(retryEvent?.type==='mouse_move')retryEvent=null;};
+  listen('pointerup',pointerUp);listen('pointercancel',pointerCancel);listen('lostpointercapture',pointerCancel);
+  const win=document.defaultView||globalThis.window;
+  listen('pointerup',pointerUp,win);listen('pointercancel',pointerCancel,win);
+  listen('keydown',event=>{if(!live||disposed||document.hidden||event.ctrlKey||event.metaKey||event.altKey||event.key==='Tab'||event.repeat||event.isComposing||event.keyCode===229||event.key==='Process'||typeof event.key!=='string')return;
+    if(!scene.handlers.includes('key_down')&&!scene.handlers.includes('key_up'))return;
+    const id=event.code||event.key;if(keys.has(id))return;if(!room(scene.handlers.includes('key_down')?2:1))return;
+    const key=Array.from(event.key).slice(0,64).join('');keys.set(id,key);
+    if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(event.key))event.preventDefault();event.stopPropagation();
+    if(scene.handlers.includes('key_down'))queue.push({type:'key_down',key});schedule();});
+  const keyUp=event=>releaseKey(event.code||event.key);
+  listen('keyup',keyUp);listen('keyup',keyUp,win);listen('blur',releaseInputs);listen('blur',releaseInputs,win);
+  function deactivate(){live=false;cancelSchedule();pendingMove=null;retryEvent=null;queue=[];keys.clear();const ids=[...pointers.keys()];pointers.clear();for(const id of ids)try{canvas.releasePointerCapture?.(id);}catch{}unlisten();label();}
+  stop.addEventListener('click',()=>{if(!live)return;deactivate();Promise.resolve().then(()=>send({type:'close'})).catch(onError);});
+  const visibility=()=>{if(document.hidden){cancelSchedule();releaseInputs();}else schedule();};listen('visibilitychange',visibility,document);
   function paint(){reserveBacking(backing,scene.width*scene.height);scene=drawScene(canvas,scene);suspended=false;canvas.hidden=false;restore.hidden=true;}
   restore.addEventListener('click',()=>{if(disposed)return;paint();label();});
-  function update(value,isHistorical=historical){scene=validateScene(value);historical=isHistorical;if(historical)deactivate();paint();label();schedule();}
-  function dispose(){disposed=true;deactivate();releaseBacking(backing);for(const [type,fn] of listeners)canvas.removeEventListener(type,fn);document.removeEventListener('visibilitychange',visibility);}
+  function update(value,isHistorical=historical){if(disposed)return;const next=validateScene(value);if(next.canvas_id!==scene.canvas_id)deactivate();scene=next;historical=isHistorical;if(historical)deactivate();paint();label();schedule();}
+  function dispose(){disposed=true;deactivate();releaseBacking(backing);unlisten();}
   update(scene);return {root,canvas,update,deactivate,dispose,get live(){return live&&!disposed&&scene.handlers.length>0;}};
 }

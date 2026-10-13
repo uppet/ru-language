@@ -31,6 +31,39 @@ class PromptExportTests(unittest.TestCase):
         payload = json.loads(request.data)
         self.assertEqual(payload["input"][0]["content"][0]["text"], export_prompt("rushu"))
 
+    def test_browser_exports_match_builder_and_mock_request(self):
+        for target in ("rushu", "ruguan"):
+            text = export_prompt(target, runtime_target="browser-js")
+            self.assertEqual(text, generation_system_prompt(target + "-browser-js"))
+            self.assertIn("本次运行环境：如书显式 JS", text)
+            self.assertEqual("本次任务聚焦如观" in text, target == "ruguan")
+            raw = (ROOT / "rulang/language-spec.md").read_bytes()
+            self.assertEqual(text.count(raw.decode()), 1)
+            self.assertIn(hashlib.sha256(raw).hexdigest(), text)
+            response = io.BytesIO(json.dumps({"status": "completed", "output_text": "显 42."}).encode())
+            response.status = 200
+            with patch("rulang.generation.urlrequest.build_opener") as build:
+                build.return_value.open.return_value = response
+                request_response(GenerationConfig("test-export-dummy", "https://example.invalid/v1", "test"),
+                                 "画图", runtime_target=target + "-browser-js")
+            payload = json.loads(build.return_value.open.call_args.args[0].data)
+            self.assertEqual(payload["input"][0]["content"][0]["text"], text)
+
+    def test_cli_explicit_targets_and_invalid_target(self):
+        for command in ("rushu-prompt", "ruguan-prompt"):
+            for target in ("python", "browser-js"):
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    self.assertEqual(main([command, "--target", target]), 0)
+                self.assertEqual(stdout.getvalue(), export_prompt(command[:-7], runtime_target=target))
+                self.assertEqual(stderr.getvalue(), "")
+            with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as caught:
+                main([command, "--target", "js"])
+            self.assertEqual(caught.exception.code, 2)
+        for target in (None, [], {}, "js", True):
+            with self.assertRaises(RuError):
+                export_prompt(runtime_target=target)
+
     def test_complete_specification_once_and_current_hash(self):
         raw = (ROOT / "rulang/language-spec.md").read_bytes()
         for target in ("rushu", "ruguan"):
@@ -47,7 +80,7 @@ class PromptExportTests(unittest.TestCase):
 
     def test_all_generation_targets_share_canonical_standard_imports(self):
         raw = (ROOT / "rulang/language-spec.md").read_text(encoding="utf-8")
-        for target in ("cli", "rushu", "ruguan", "rushu-browser-js"):
+        for target in ("cli", "rushu", "ruguan", "rushu-browser-js", "ruguan-browser-js"):
             with self.subTest(target=target):
                 prompt = generation_system_prompt(target)
                 self.assertEqual(prompt.count(raw), 1)
@@ -58,7 +91,7 @@ class PromptExportTests(unittest.TestCase):
                 self.assertIn("不保留兼容别名", prompt)
 
     def test_generation_targets_include_collection_interfaces(self):
-        for target in ("cli", "rushu", "ruguan", "rushu-browser-js"):
+        for target in ("cli", "rushu", "ruguan", "rushu-browser-js", "ruguan-browser-js"):
             with self.subTest(target=target):
                 prompt = generation_system_prompt(target)
                 for name in ("排序", "先于", "另成", "逐位", "逐目"):
@@ -66,7 +99,7 @@ class PromptExportTests(unittest.TestCase):
                 self.assertNotIn("逐得", prompt)
 
     def test_all_generation_targets_teach_array_sort_and_transform(self):
-        for target in ("cli", "rushu", "ruguan", "rushu-browser-js"):
+        for target in ("cli", "rushu", "ruguan", "rushu-browser-js", "ruguan-browser-js"):
             with self.subTest(target=target):
                 prompt = generation_system_prompt(target)
                 for term in ("阵 其 排序", "阵 其 另成 算法:回调", "恰有两个参数的算",
@@ -95,7 +128,9 @@ class PromptExportTests(unittest.TestCase):
              patch("rulang.generation.urlrequest.build_opener", side_effect=AssertionError("network")), \
              patch("rulang.generation.request_response", side_effect=AssertionError("provider")):
             for target in ("rushu", "ruguan"):
-                self.assertEqual(export_prompt(target), generation_system_prompt(target))
+                for runtime in ("python", "browser-js"):
+                    expected = target if runtime == "python" else target + "-browser-js"
+                    self.assertEqual(export_prompt(target, runtime_target=runtime), generation_system_prompt(expected))
 
     def test_cli_stdout_is_exact_and_stderr_empty(self):
         for command in ("rushu-prompt", "ruguan-prompt"):

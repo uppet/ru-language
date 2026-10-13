@@ -197,6 +197,62 @@ class SourceGenerationTests(unittest.TestCase):
                 self.assertEqual(status, 400, value)
             provider.assert_not_called()
 
+    def test_browser_target_preflight_rejects_capabilities_without_execution(self):
+        cases = (("显 42.\n值 取 读.", 2),
+                 ("模 取 外言 '/private/not-read.ru'.", 1),
+                 ("模 取 外言 'https://private.example/secret'.", 1),
+                 ("模 取 外言 '如观'.", 1),
+                 ("显 不存在函数 1.", 1))
+        for code, line in cases:
+            with self.subTest(code=code), \
+                 patch.object(generation, "request_response", return_value=code), \
+                 patch("rulang.modules.load_module_graph", side_effect=AssertionError("external import")), \
+                 patch.object(self.server.sessions, "create", side_effect=AssertionError("executed")):
+                status, value = self.request("/api/generate", {"prompt": PROMPT, "runtime_target": "browser-js"})
+            self.assertEqual(status, 200, value)
+            self.assertFalse(value["valid"], value)
+            self.assertEqual(value["validation"]["line"], line)
+            self.assertGreater(value["validation"]["col"], 0)
+            self.assertEqual(value["validation"]["source"], "generated")
+            self.assertIn("尚未执行", value["validation"]["message"])
+            self.assertNotIn("private", json.dumps(value["validation"]))
+            self.assertNotIn("不存在函数", json.dumps(value["validation"], ensure_ascii=False))
+
+    def test_browser_target_preflight_accepts_stdlib_without_running(self):
+        code = "图 取 外言 '如:观'. 数学 取 外言 '如:数学'. 显 42. 循 环"
+        with patch.object(generation, "request_response", return_value=code), \
+             patch("rulang.modules.load_module_graph", side_effect=AssertionError("external import")), \
+             patch("rulang.interpreter.Interpreter.execute", side_effect=AssertionError("executed")), \
+             patch.object(self.server.sessions, "create", side_effect=AssertionError("session")):
+            status, value = self.request("/api/generate", {"prompt": PROMPT, "runtime_target": "browser-js"})
+        self.assertEqual(status, 200, value)
+        self.assertTrue(value["valid"], value)
+        self.assertIn("浏览器 JS 编译与能力检查", value["validation"]["message"])
+
+    def test_browser_bundled_parse_error_is_not_generated_source(self):
+        with patch("rulang.browser_compiler.Path.read_text", return_value="显 'unterminated"):
+            result = generation._validate("图 取 外言 '如:观'.", "browser-js")
+        self.assertFalse(result["valid"])
+        self.assertEqual(result["source"], "bundled-module")
+        self.assertIsNone(result["line"])
+        self.assertNotIn("unterminated", json.dumps(result))
+
+    def test_browser_validation_limits_and_safe_dependency_location(self):
+        with patch("rulang.browser_compiler.MAX_NODES", 0):
+            self.assertFalse(generation._validate("显 42.", "browser-js")["valid"])
+        with patch.object(generation, "compile_browser", side_effect=RecursionError):
+            self.assertIn("结构过深", generation._validate("显 42.", "browser-js")["message"])
+        from rulang.frontend import RuError
+        error = RuError("private dependency detail", 42, 7, "编译错误")
+        error.source_name = "/private/dependency.ru"
+        with patch.object(generation, "compile_browser", side_effect=error):
+            result = generation._validate("显 42.", "browser-js")
+        self.assertFalse(result["valid"])
+        self.assertEqual(result["source"], "bundled-module")
+        self.assertIsNone(result["line"])
+        self.assertIsNone(result["col"])
+        self.assertNotIn("private", json.dumps(result))
+
     def test_configured_timeout_reaches_provider_and_worker_wait(self):
         for timeout in (1800, 3600, .125):
             self.server.generation_timeout = timeout

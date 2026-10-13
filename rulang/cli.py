@@ -256,6 +256,7 @@ def make_parser():
     p.add_argument("--verbose", action="store_true", help="在标准错误显示真实生成阶段及耗时；等待响应时约每 10 秒更新，不显示进度百分比、密钥或通信原文")
     for name in ("rushu-prompt", "ruguan-prompt"):
         p = sub.add_parser(name, help="离线导出当前版本的系统提示词（含完整语言规范）")
+        p.add_argument("--target", choices=("python", "browser-js"), default="python", help="提示运行环境：默认 Python 代码格，或显式浏览器 JS 代码格")
         p.add_argument("-o", "--output", default="-", metavar="PATH", help="UTF-8 输出文件；省略或 - 为标准输出")
         p.add_argument("--force", action="store_true", help="原子替换已有普通文件；不可用于标准输出、符号链接或规范原文")
     return parser
@@ -281,7 +282,7 @@ def main(argv=None):
     source, name = "", getattr(args, "source", getattr(args, "document", "<输入>"))
     try:
         if args.command in ("rushu-prompt", "ruguan-prompt"):
-            result = export_prompt(args.command.removesuffix("-prompt"), args.output, force=args.force)
+            result = export_prompt(args.command.removesuffix("-prompt"), args.output, force=args.force, runtime_target=args.target)
             if args.output == "-":
                 if hasattr(sys.stdout, "reconfigure"):
                     sys.stdout.reconfigure(encoding="utf-8", newline="\n")
