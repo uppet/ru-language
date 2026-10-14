@@ -64,3 +64,14 @@ test('actual event polling captures only the matching structured execution snaps
   const result=harness({line:1,col:3,message:'错误',diagnostic,...late},extra);await result.context.pollEvents();assert.equal(result.cell.diagnostics,undefined);assert.equal(result.cell.outputs.length,0);
  }
 });
+
+test('budget detail stays readable and retains matching callback source highlight',async()=>{
+ const message='如观回调超过时间预算（实际约 1.0000000000000002 秒墙钟耗时，阈值 1 秒）；已关闭交互，请简化回调后重跑';
+ const code='图 其 每帧 (作 帧: 为).';
+ const extra={source:code,diagnosticSnapshot:{source:code,version:'budget-hash',generation:1,execution:1}};
+ const diagnostic={line:1,col:3,message,source_name:'rushu://s/1/cell/1.ru',source:{kind:'cell',cell_id:'cell',execution_count:1,generation:1,source_version:'budget-hash'}};
+ const {context,cell}=harness({line:1,col:3,message,diagnostic},extra);await context.pollEvents();
+ assert.equal(cell.diagnostics.length,1);assert.equal(cell.diagnostics[0].message,message);
+ assert.equal(cell.diagnostics[0].range.start,2);assert.equal(cell.diagnostics[0].range.end,3);
+ assert.ok(cell.outputs[0].text.includes(message));assert.equal(cell.outputs[0].type,'error');
+});

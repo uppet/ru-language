@@ -27,7 +27,7 @@
     c.running=running;
   }
   function browserReset(){browserSteps=0;browserOutputBytes=0;}
-  function browserTick(m,loc){if(++browserSteps>500000)fail(m,'浏览器 JS 执行超过 500000 步预算；请简化代码后重跑',loc);}
+  function browserTick(m,loc){if(++browserSteps>500000)fail(m,`浏览器 JS 执行超过 500000 步预算（实际 ${browserSteps} 步，阈值 500000 步）；请简化代码后重跑`,loc);}
   function browserOutput(m,text,loc){
     browserOutputBytes+=browserEncoder.encode(text).length;
     if(browserOutputBytes>262144)fail(m,'浏览器 JS 单次输出超过 256 KiB',loc);

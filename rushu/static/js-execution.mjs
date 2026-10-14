@@ -14,7 +14,7 @@ export function createJSExecution({javascript,identity,onEvent=()=>{},onFatal=()
   ready.catch(()=>{});
   function release(error){if(!live)return;live=false;clearTimeout(timer);timer=null;worker.onmessage=null;worker.onerror=null;worker.onmessageerror=null;worker.terminate();rejectReady(error);inFlight?.reject(error);inFlight=null;for(const item of queue)item.reject(error);queue=[];}
   function fatal(error,diagnostic=null){if(!live)return;const message=String(error?.message||error||'JavaScript 执行失败。');release(new Error(message));onFatal({type:'error',...id,message,diagnostic});}
-  function arm(ms){clearTimeout(timer);timer=setTimeout(()=>fatal(new Error('JavaScript 执行超时，已终止独立 Worker。')),ms);}
+  function arm(ms){clearTimeout(timer);timer=setTimeout(()=>fatal(new Error(`JavaScript 执行超时（达到配置的等待上限 ${ms} 毫秒），已终止独立 Worker。`)),ms);}
   function post(message){try{worker.postMessage({...message,identity:id});}catch(error){fatal(error);}}
   function pump(){if(!live||!initialized||inFlight||!queue.length)return;inFlight=queue.shift();arm(budget.callbackMs);post({type:'dispatch',serial:inFlight.serial,event:inFlight.event});}
   function receive(message){

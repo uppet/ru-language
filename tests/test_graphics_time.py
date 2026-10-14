@@ -205,13 +205,13 @@ class GraphicsTimeTests(unittest.TestCase):
         # The public elapsed sample stays zero; budget clock still advances.
         budget = iter([0., 2.])
         with patch('rulang.graphics_runtime.time.monotonic', side_effect=lambda: next(budget, 2.)):
-            with self.assertRaisesRegex(RuError, '1 秒或 500000 行'):
+            with self.assertRaisesRegex(RuError, '时间预算.*阈值 1 秒'):
                 self.host.handle({'type': 'frame'})
         self.assertIsNone(self.host.canvas)
         self.canvas(f'图 其 每帧 (作 帧: 循 若 (图 其 经过秒) > 0 则 破. 然 环 为).')
         with patch('rulang.graphics_runtime.time.monotonic', return_value=0), \
              patch('rulang.graphics_runtime.MAX_CALLBACK_LINES', 128):
-            with self.assertRaisesRegex(RuError, '500000 行'):
+            with self.assertRaisesRegex(RuError, '执行行预算.*阈值 128 行'):
                 self.host.handle({'type': 'frame'})
         self.assertIsNone(self.host.canvas)
         self.assertEqual(self.clock.calls, 4)

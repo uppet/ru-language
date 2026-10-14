@@ -31,6 +31,28 @@ test('callback hard timeout rejects flight and queue',async()=>{
   const a=run.send({canvas_id:'c',type:'frame'}),b=run.send({canvas_id:'c',type:'mouse_down'});
   await Promise.all([assert.rejects(a,/超时/),assert.rejects(b,/超时/)]);assert.equal(fatal.length,1);assert.ok(worker.terminated);
 });
+test('watchdog diagnostics identify configured wait limits without invented execution measurements',async(t)=>{
+  const armed=[];
+  t.mock.method(globalThis,'setTimeout',(callback,ms)=>{armed.push({callback,ms});return armed.length;});
+  t.mock.method(globalThis,'clearTimeout',()=>{});
+  const init=setup();
+  assert.equal(armed.at(-1).ms,5000);
+  const rejected=assert.rejects(init.run.ready,/达到配置的等待上限 5000 毫秒/);
+  armed.at(-1).callback();await rejected;
+  assert.equal(init.fatal[0].message,'JavaScript 执行超时（达到配置的等待上限 5000 毫秒），已终止独立 Worker。');
+  assert.equal(init.fatal[0].diagnostic,null);assert.equal(init.worker.terminated,true);
+  const callback=setup();callback.worker.reply({});await callback.run.ready;
+  const pending=callback.run.send({canvas_id:'c',type:'frame'});
+  assert.equal(armed.at(-1).ms,1000);
+  const callbackRejected=assert.rejects(pending,/达到配置的等待上限 1000 毫秒/);
+  armed.at(-1).callback();await callbackRejected;
+  assert.equal(callback.fatal[0].message,'JavaScript 执行超时（达到配置的等待上限 1000 毫秒），已终止独立 Worker。');
+  assert.equal(callback.worker.terminated,true);assert.equal(callback.fatal.length,1);
+  for(const result of [init,callback]){
+    assert.doesNotMatch(result.fatal[0].message,/实际|墙钟|内存|跟踪行/);
+    assert.equal(result.run.active,false);
+  }
+});
 test('structured failure preserves source diagnostics',async()=>{
   const {worker,run,fatal}=setup();const diagnostic={source:{kind:'cell',cell_id:'cell-a'},line:7,col:3,message:'未定义'};
   worker.reply({type:'failure',message:'未定义',diagnostic});await assert.rejects(run.ready,/未定义/);assert.deepEqual(fatal[0].diagnostic,diagnostic);assert.equal(fatal[0].execution_count,3);

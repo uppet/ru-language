@@ -118,7 +118,7 @@ class GraphicsTests(unittest.TestCase):
             time.sleep(1.05)
             return invoke(*args)
         with patch.object(self.interpreter, 'invoke_value', side_effect=delayed):
-            with self.assertRaisesRegex(RuError, '1 秒或 500000 行'):
+            with self.assertRaisesRegex(RuError, '时间预算.*阈值 1 秒'):
                 self.host.handle({'type': 'frame'})
         self.assertIsNone(self.host.snapshot())
         self.run_ru('显 42.')
@@ -137,7 +137,7 @@ class GraphicsTests(unittest.TestCase):
                 self.host.handle({'type': 'frame'})
             self.assertIsNotNone(self.host.snapshot())
             self.run_ru('图 其 每帧 (作 帧: 循 环. 为).')
-            with self.assertRaisesRegex(RuError, '1 秒或 500000 行'):
+            with self.assertRaisesRegex(RuError, '执行行预算.*阈值 500000 行'):
                 self.host.handle({'type': 'frame'})
         self.assertIsNone(self.host.snapshot())
 

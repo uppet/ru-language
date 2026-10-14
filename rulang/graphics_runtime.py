@@ -259,13 +259,27 @@ class GraphicsHost:
         previous = canvas.commands
         previous_bytes = canvas.command_bytes
         canvas.commands, canvas.command_bytes = [], 2
-        deadline, lines = time.monotonic() + MAX_CALLBACK_SECONDS, 0
+        started = time.monotonic()
+        deadline, lines = started + MAX_CALLBACK_SECONDS, 0
         remaining = 128
         def check():
-            if lines + (128 - remaining) > MAX_CALLBACK_LINES or time.monotonic() > deadline:
-                self.interpreter.fail(node, "如观回调超过 1 秒或 500000 行执行预算；已关闭交互，请简化回调后重跑")
-            if tracemalloc.get_traced_memory()[0] - self.memory_start > MAX_GRAPHICS_MEMORY:
-                self.interpreter.fail(node, "如观新增内存超过 64 MiB；已关闭交互，请减少数据后重跑")
+            # Preserve the original short-circuit priority and strict boundaries.
+            # A diagnostic uses the exact sample that tripped its budget; do not
+            # sample again after cleanup or round a just-over-limit value away.
+            executed_lines = lines + (128 - remaining)
+            if executed_lines > MAX_CALLBACK_LINES:
+                self.interpreter.fail(node, f"如观回调超过执行行预算（实际 {executed_lines} Python 跟踪行，阈值 {MAX_CALLBACK_LINES} 行）；已关闭交互，请简化回调后重跑")
+            sampled = time.monotonic()
+            if sampled > deadline:
+                elapsed = sampled - started
+                # Subtraction can itself round a strict deadline overrun to the
+                # limit. Explain that edge without exposing absolute host times.
+                comparison = ("；微小超限差额经浮点运算舍入"
+                              if elapsed <= MAX_CALLBACK_SECONDS else "")
+                self.interpreter.fail(node, f"如观回调超过时间预算（实际约 {elapsed!r} 秒墙钟耗时，阈值 {MAX_CALLBACK_SECONDS:g} 秒{comparison}）；已关闭交互，请简化回调后重跑")
+            allocated = tracemalloc.get_traced_memory()[0] - self.memory_start
+            if allocated > MAX_GRAPHICS_MEMORY:
+                self.interpreter.fail(node, f"如观新增内存超过分配预算（实际 {allocated} 字节，阈值 {MAX_GRAPHICS_MEMORY} 字节／{MAX_GRAPHICS_MEMORY / (1024 * 1024):g} MiB）；已关闭交互，请减少数据后重跑")
         def trace(frame, action, arg):
             nonlocal lines, remaining
             if action == "line":

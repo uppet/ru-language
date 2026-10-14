@@ -212,6 +212,29 @@ class BrowserCompilerTests(unittest.TestCase):
         self.assertIn('500000',events[-1]['message'])
         self.assertEqual(events[-1]['diagnostic']['line'],2)
 
+    def test_exact_step_budget_boundary_and_observed_count(self):
+        # One loop-statement tick plus one tick per iteration. Use the real
+        # generated counter and production threshold, with no clock claims.
+        for iterations in (499998, 499999):
+            with self.subTest(iterations=iterations):
+                self.assertEqual(self.run_js(f'循 {iterations} 次\n环'), [])
+        events = self.run_js('循 500000 次\n环')
+        error = events[-1]
+        self.assertEqual(error['message'],
+                         '浏览器 JS 执行超过 500000 步预算（实际 500001 步，阈值 500000 步）；请简化代码后重跑')
+        self.assertEqual(error['diagnostic']['line'], 1)
+        self.assertEqual(error['diagnostic']['col'], 1)
+        self.assertEqual(error['diagnostic']['source']['cell_id'], '格/一')
+        self.assertNotIn('秒', error['message'])
+        self.assertNotIn('内存', error['message'])
+
+    def test_callback_step_diagnostic_still_closes_canvas(self):
+        code = "观 取 外言 '如:观'.\n图 取 观 其 画布 100 100.\n图 其 每帧 (作 帧: 循 环 为)."
+        events = self.run_js(code, "runtime.dispatch({canvas_id:events.at(-1).canvas_id,event:{type:'frame'}});")
+        self.assertEqual(events[-2]['type'], 'graphics_closed')
+        self.assertIn('实际 500001 步，阈值 500000 步', events[-1]['message'])
+        self.assertEqual(events[-1]['diagnostic']['line'], 3)
+
     def test_empty_frame_clears_previous(self):
         code="观 取 外言 '如:观'. 图 取 观 其 画布 100 100. 图 其 背景 '#112233'. 图 其 每帧 (作 帧: 完. 为)."
         events=self.run_js(code,"runtime.dispatch({canvas_id:events.at(-1).canvas_id,event:{type:'frame'}});")
