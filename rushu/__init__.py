@@ -3,4 +3,4 @@
 Cells run trusted local code with the user's OS permissions, not in a sandbox.
 """
 
-__version__ = "0.8.1"
+__version__ = "0.8.2"

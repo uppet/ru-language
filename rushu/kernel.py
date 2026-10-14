@@ -348,10 +348,15 @@ class Session:
                 or any(not isinstance(command, dict) or command.get("op") not in
                        {"rect", "ellipse", "line", "text", "background", "polygon"} for command in commands)):
             raise ValueError("invalid graphics payload")
-        # Validate the color-only wire format before retaining a worker event.
+        # Validate color and text-enum wire fields before retaining a worker event.
         # The browser independently validates all scene fields before drawing.
         for command in commands:
             op = command["op"]
+            for key, values in (("align", ("left", "center", "right")),
+                                ("baseline", ("top", "middle", "bottom", "alphabetic"))):
+                if key in command and (op != "text" or not isinstance(command[key], str)
+                                       or command[key] not in values):
+                    raise ValueError("invalid graphics text alignment")
             keys = ("fill", "stroke") if op in ("rect", "ellipse", "polygon") else ("color",)
             for key in keys:
                 value = command.get(key)

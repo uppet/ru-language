@@ -1,6 +1,6 @@
-# 如（ru-language）· 0.19.1 元初实现
+# 如（ru-language）· 0.19.2 元初实现
 
-0.19.1 配套如书 0.8.1（`wip` 开发中，尚未发布到 `main`）：新增[透明叠色与颜色函数](docs/ruguan-guide.md)，保留六位颜色，支持 `#RRGGBBAA` 和 `观 其 颜色 红 绿 蓝 不透明度`；四个参数均为 0～255 的必需有限整数。透明背景清除旧画面，每帧完整重绘，不保留上一帧像素。提供[透明叠色示例书](rushu/examples/alpha-colors.rushu.json)，Python 与 browser-js 共用接口。0.19.0 的原生三角形、多边形、仿射变换与矩形裁剪继续可用。另保留生成诊断改进：生成默认不再发送固定输出 token 上限，可显式配置预算，并补充用量、无可见文本与未完成响应的[生成诊断](docs/generation-diagnostics.md)。先看 [安装、更新与执行目标](docs/stable-entry.md)及[本轮验证记录](docs/generation-token-budget-validation.md)。
+0.19.2 配套如书 0.8.2（`wip` 开发中，尚未发布到 `main`）：新增[文字对齐](docs/ruguan-guide.md)，支持左／中／右与上／中／下／基线锚点，默认左上，两个后端与静态历史共享语义。提供[文字对齐示例书](rushu/examples/text-alignment.rushu.json)。保留六／八位透明颜色、原生多边形、仿射变换与矩形裁剪；本批不提供文字宽度测量或真实时间接口。先看[安装、更新与执行目标](docs/stable-entry.md)及[本批验证记录](docs/ruguan-0.19.2-validation.md)。
 
 0.18.0 配套如书 0.6.0：新增阵排序、另成与逐位，典遍历由列改为逐目。详见 [新阵与遍历指南](docs/array-sort-map.md)。
 
@@ -73,7 +73,7 @@
 
 </details>
 
-完整的实现语义以 [如语言规范 0.19.1](rulang/language-spec.md) 为准。它是学习者、工具作者与 LLM 共用的唯一规范文本；README 提供入门和操作摘要。
+完整的实现语义以 [如语言规范 0.19.2](rulang/language-spec.md) 为准。它是学习者、工具作者与 LLM 共用的唯一规范文本；README 提供入门和操作摘要。
 
 待逐项解决或确认忽略的审查事项见 [语言审查追踪](docs/language-review-tracker.md)。清单区分实现缺陷、现有设计取舍与未定提案，不替代语言规范。
 
@@ -101,7 +101,7 @@ python3 ru --version
 python3 ru repl
 ```
 
-`main` 是稳定使用入口，`wip` 用于后续开发；本工作树为如 0.19.1／如书 0.8.1，尚未发布到 `main`。已有仓库的安全更新步骤及执行目标对照见 [安装与更新](docs/stable-entry.md)，不需要强制重置或覆盖自己的书本。
+`main` 是稳定使用入口，`wip` 用于后续开发；本工作树为如 0.19.2／如书 0.8.2，尚未发布到 `main`。已有仓库的安全更新步骤及执行目标对照见 [安装与更新](docs/stable-entry.md)，不需要强制重置或覆盖自己的书本。
 
 REPL 中输入：
 

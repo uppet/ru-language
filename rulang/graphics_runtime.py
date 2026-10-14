@@ -25,6 +25,8 @@ MAX_CALLBACK_LINES = 500000
 MAX_CALLBACK_SECONDS = 1.0
 MAX_GRAPHICS_MEMORY = 64 * 1024 * 1024
 _COLOR = re.compile(r"#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?\Z")
+_TEXT_ALIGNS = MappingProxyType({"左": "left", "中": "center", "右": "right"})
+_TEXT_BASELINES = MappingProxyType({"上": "top", "中": "middle", "下": "bottom", "基线": "alphabetic"})
 _TYPES = None
 EVENT_PARAMS = {"frame": ("每帧", ["帧"]), "mouse_down": ("鼠标按下", ["横", "纵", "键"]),
                 "mouse_up": ("鼠标松开", ["横", "纵", "键"]),
@@ -33,7 +35,7 @@ EVENT_PARAMS = {"frame": ("每帧", ["帧"]), "mouse_down": ("鼠标按下", ["�
 CALLBACK_NAMES = {name: kind for kind, (name, _) in EVENT_PARAMS.items()}
 
 
-CANVAS_PARAMS = MappingProxyType({"背景": ("色",), "填色": ("色",), "描边": ("色",), "线宽": ("粗",), "字号": ("大小",),
+CANVAS_PARAMS = MappingProxyType({"背景": ("色",), "填色": ("色",), "描边": ("色",), "线宽": ("粗",), "字号": ("大小",), "文字对齐": ("横向", "纵向"),
               "矩形": ("横", "纵", "宽", "高"), "椭圆": ("横", "纵", "宽", "高"),
               "线": ("横一", "纵一", "横二", "纵二"), "文字": ("文", "横", "纵"),
               "三角形": ("横一", "纵一", "横二", "纵二", "横三", "纵三"), "多边形": ("点阵",),
@@ -69,6 +71,7 @@ class Canvas:
         self.command_bytes = 2
         self.fill, self.stroke = "#4677ff", "#202530"
         self.line_width, self.text_size = 1, 16
+        self.text_align, self.text_baseline = "left", "top"
         self.fps, self.frame = 30, 0
         self.running, self.closed = False, False
         self.dirty = True
@@ -324,16 +327,25 @@ def graphics_member(owner, n, receiver, name, args):
         setattr(canvas, "fill" if name == "填色" else "stroke", color(bound["色"], True))
     elif name in ("线宽", "字号"):
         setattr(canvas, "line_width" if name == "线宽" else "text_size", number(next(iter(bound.values())), name, 1, 256))
+    elif name == "文字对齐":
+        horizontal, vertical = bound["横向"], bound["纵向"]
+        if not isinstance(horizontal, str) or horizontal not in _TEXT_ALIGNS:
+            fail("文字对齐横向须为 '左'、'中' 或 '右' 的句")
+        if not isinstance(vertical, str) or vertical not in _TEXT_BASELINES:
+            fail("文字对齐纵向须为 '上'、'中'、'下' 或 '基线' 的句")
+        # Validate both arguments before changing either persistent style.
+        canvas.text_align, canvas.text_baseline = _TEXT_ALIGNS[horizontal], _TEXT_BASELINES[vertical]
     elif name == "保存":
         if len(canvas.stack) >= MAX_SAVE_DEPTH:
             fail("如观最多保存 64 层状态")
         canvas.stack.append((canvas.fill, canvas.stroke, canvas.line_width, canvas.text_size,
+                             canvas.text_align, canvas.text_baseline,
                              canvas.transform, canvas.clips))
     elif name == "恢复":
         if not canvas.stack:
             fail("如观恢复没有对应的保存")
         (canvas.fill, canvas.stroke, canvas.line_width, canvas.text_size,
-         canvas.transform, canvas.clips) = canvas.stack.pop()
+         canvas.text_align, canvas.text_baseline, canvas.transform, canvas.clips) = canvas.stack.pop()
     elif name == "重置变换":
         canvas.transform = IDENTITY
     elif name == "取消裁剪":
@@ -395,7 +407,13 @@ def graphics_member(owner, n, receiver, name, args):
             text.encode("utf-8")
         except UnicodeError:
             fail("文字须为有效 Unicode")
-        canvas.command({"op": "text", "x": number(bound["横"], "横"), "y": number(bound["纵"], "纵"),
-                        "text": text, "color": canvas.fill, "size": canvas.text_size}, fail)
+        command = {"op": "text", "x": number(bound["横"], "横"), "y": number(bound["纵"], "纵"),
+                   "text": text, "color": canvas.fill, "size": canvas.text_size}
+        # Missing fields are frozen left/top defaults, including in old scenes.
+        if canvas.text_align != "left":
+            command["align"] = canvas.text_align
+        if canvas.text_baseline != "top":
+            command["baseline"] = canvas.text_baseline
+        canvas.command(command, fail)
     canvas.dirty = True
     return True, None

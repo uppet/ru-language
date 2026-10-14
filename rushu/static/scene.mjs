@@ -4,6 +4,16 @@ const eventNames=['frame','mouse_down','mouse_up','mouse_move','key_down','key_u
 // Only complete ASCII six/eight-digit hex values cross the worker/history boundary.
 const color=value=>typeof value==='string'&&[7,9].includes(value.length)&&/^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$/.test(value);
 const codePoints=value=>Array.from(value).length;
+const textEnums={align:['left','center','right'],baseline:['top','middle','bottom','alphabetic']};
+function textState(c){
+  const state={};
+  for(const [key,values] of Object.entries(textEnums)){
+    if(!Object.hasOwn(c,key))continue;
+    if(c.op!=='text'||typeof c[key]!=='string'||!values.includes(c[key]))throw new Error('画布文字对齐无效。');
+    state[key]=c[key];
+  }
+  return state;
+}
 // Account for actual backing stores, not CSS boxes or assumed device ratios.
 export const MAX_BACKING_PIXELS=16*1024*1024;
 const backingViews=new Map();
@@ -39,7 +49,7 @@ export function validateScene(value) {
     if(!command||typeof command!=='object')throw new Error('画布指令无效。');
     const c=command,names={background:[],line:['x1','y1','x2','y2','width'],rect:['x','y','width','height','stroke_width'],ellipse:['x','y','width','height','stroke_width'],text:['x','y','size'],polygon:['stroke_width']};
     if(!Object.hasOwn(names,c.op)||!names[c.op].every(key=>finite(c[key])))throw new Error('画布坐标无效。');
-    const state=drawingState(c);
+    const state={...drawingState(c),...textState(c)};
     if(c.op==='polygon'){
       if(!Array.isArray(c.points)||c.points.length<3||c.points.length>256)throw new Error('画布多边形无效。');
       const points=Array.from(c.points,point=>{if(!Array.isArray(point)||point.length!==2||!Array.from(point).every(finite))throw new Error('画布多边形坐标无效。');return point.slice();});
@@ -77,7 +87,7 @@ export function drawScene(canvas,value) {
       // Each background replaces earlier drawing, including historical scenes
       // with multiple backgrounds. Scoped primitives cannot leak a clip/matrix.
       if(c.op==='background'){ctx.clearRect(0,0,scene.width,scene.height);ctx.fillStyle=c.color;ctx.fillRect(0,0,scene.width,scene.height);}
-      else if(c.op==='text'){if(!c.color)continue;ctx.fillStyle=c.color;ctx.font=`${c.size}px sans-serif`;ctx.textBaseline='top';ctx.fillText(c.text,c.x,c.y);}
+      else if(c.op==='text'){if(!c.color)continue;ctx.fillStyle=c.color;ctx.font=`${c.size}px sans-serif`;ctx.textAlign=c.align??'left';ctx.textBaseline=c.baseline??'top';ctx.fillText(c.text,c.x,c.y);}
       else {ctx.beginPath();if(c.op==='line'){if(!c.color)continue;ctx.moveTo(c.x1,c.y1);ctx.lineTo(c.x2,c.y2);ctx.strokeStyle=c.color;ctx.lineWidth=c.width;ctx.stroke();}
         else {
           if(c.op==='rect')ctx.rect(c.x,c.y,c.width,c.height);

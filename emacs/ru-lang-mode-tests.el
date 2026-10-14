@@ -1396,3 +1396,26 @@
       (search-forward "颜色")
       (should-not (eq (get-text-property (1- (point)) 'face) 'font-lock-builtin-face))
       (should-not (get-text-property (1- (point)) 'help-echo)))))
+
+(ert-deftest ru-text-alignment-contextual-help ()
+  (should (member "文字对齐" ru-lang--member-builtins))
+  (should-not (member "文字对齐" ru-lang--keywords))
+  (should-not (member "文字对齐" ru-lang--builtins))
+  (dolist (source '("图 其 文字对齐 '中' '中'." "图@文字对齐 横向:'右' 纵向:'基线'."))
+    (ru-lang-test--buffer source
+      (font-lock-ensure)
+      (search-forward "文字对齐")
+      (should (eq (get-text-property (1- (point)) 'face) 'font-lock-builtin-face))
+      (let ((help (get-text-property (1- (point)) 'help-echo)))
+        (should (string-match-p "文字对齐 横向 纵向" help))
+        (should (string-match-p "默认左上" help))
+        (should (string-match-p "跨回调保留" help))
+        (should (string-match-p "不是笔画包围盒或宽度测量" help)))))
+  (dolist (source '("文字对齐 取 1." "文字对齐表 取 1." "作 调整 文字对齐: 显 文字对齐. 为."
+                    "# 图 其 文字对齐 '中' '中'." "'图 其 文字对齐'"
+                    "批. 图 其 文字对齐." "解. 图 其 文字对齐. 释."))
+    (ru-lang-test--buffer source
+      (font-lock-ensure)
+      (search-forward "文字对齐")
+      (should-not (eq (get-text-property (1- (point)) 'face) 'font-lock-builtin-face))
+      (should-not (get-text-property (1- (point)) 'help-echo)))))

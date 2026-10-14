@@ -27,8 +27,10 @@
     __ruHost.emit({type:'graphics',canvas_id:c.id,width:c.width,height:c.height,fps:c.fps,running:c.running,handlers:Object.keys(c.callbacks),commands:c.commands.slice()});c.dirty=false;
   }
   const browserEvents={每帧:['frame',1],鼠标按下:['mouse_down',3],鼠标松开:['mouse_up',3],鼠标移动:['mouse_move',2],按键:['key_down',1],松键:['key_up',1]};
-  const browserParams={背景:['色'],填色:['色'],描边:['色'],线宽:['粗'],字号:['大小'],矩形:['横','纵','宽','高'],椭圆:['横','纵','宽','高'],线:['横一','纵一','横二','纵二'],文字:['文','横','纵'],三角形:['横一','纵一','横二','纵二','横三','纵三'],多边形:['点阵'],平移:['横','纵'],旋转:['弧度'],缩放:['横倍率','纵倍率'],保存:[],恢复:[],变换:['a','b','c','d','e','f'],重置变换:[],裁剪:['横','纵','宽','高'],取消裁剪:[],帧率:['率'],停:[],继续:[],关闭:[],宽:[],高:[],帧:[]};
+  const browserParams={背景:['色'],填色:['色'],描边:['色'],线宽:['粗'],字号:['大小'],文字对齐:['横向','纵向'],矩形:['横','纵','宽','高'],椭圆:['横','纵','宽','高'],线:['横一','纵一','横二','纵二'],文字:['文','横','纵'],三角形:['横一','纵一','横二','纵二','横三','纵三'],多边形:['点阵'],平移:['横','纵'],旋转:['弧度'],缩放:['横倍率','纵倍率'],保存:[],恢复:[],变换:['a','b','c','d','e','f'],重置变换:[],裁剪:['横','纵','宽','高'],取消裁剪:[],帧率:['率'],停:[],继续:[],关闭:[],宽:[],高:[],帧:[]};
   for(const name of Object.keys(browserEvents))browserParams[name]=['回调'];
+  const browserTextAligns=Object.freeze({左:'left',中:'center',右:'right'});
+  const browserTextBaselines=Object.freeze({上:'top',中:'middle',下:'bottom',基线:'alphabetic'});
   function browserMember(m,receiver,name,args,loc){
     const kind=receiver.type.graphicsKind;if(!kind)return MISSING;
     const bad=message=>fail(m,message,loc);
@@ -46,7 +48,7 @@
       if(name!=='画布')bad('未知如观工具成员：'+name);
       const a=argsBind(m,name,args,['宽','高'],loc),width=num(a.宽,'宽',1,2048,true),height=num(a.高,'高',1,2048,true);
       browserClose();
-      browserCanvas={id:Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join(''),width,height,callbacks:dict(),commands:[],bytes:2,fill:'#4677ff',stroke:'#202530',lineWidth:1,textSize:16,fps:30,frame:0,running:false,closed:false,dirty:true,transform:browserIdentity(),clips:[],stack:[]};
+      browserCanvas={id:Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join(''),width,height,callbacks:dict(),commands:[],bytes:2,fill:'#4677ff',stroke:'#202530',lineWidth:1,textSize:16,textAlign:'left',textBaseline:'top',fps:30,frame:0,running:false,closed:false,dirty:true,transform:browserIdentity(),clips:[],stack:[]};
       const value=new Instance(browserTypes.canvas,dict());value.graphicsCanvas=browserCanvas;m.lastMemberProcedure=false;return value;
     }
     const c=receiver.graphicsCanvas;
@@ -80,9 +82,15 @@
     else if(name==='帧率')c.fps=num(a.率,'帧率',1,60,true);
     else if(name==='填色'||name==='描边')c[name==='填色'?'fill':'stroke']=color(a.色,true);
     else if(name==='线宽'||name==='字号')c[name==='线宽'?'lineWidth':'textSize']=num(a[name==='线宽'?'粗':'大小'],name,1,256);
+    else if(name==='文字对齐'){
+      if(typeof a.横向!=='string'||!own(browserTextAligns,a.横向))bad("文字对齐横向须为 '左'、'中' 或 '右' 的句");
+      if(typeof a.纵向!=='string'||!own(browserTextBaselines,a.纵向))bad("文字对齐纵向须为 '上'、'中'、'下' 或 '基线' 的句");
+      // Validate both arguments before changing either persistent style.
+      c.textAlign=browserTextAligns[a.横向];c.textBaseline=browserTextBaselines[a.纵向];
+    }
     else if(name==='保存'){
       if(c.stack.length>=64)bad('保存状态最多 64 层');
-      c.stack.push({m,loc,fill:c.fill,stroke:c.stroke,lineWidth:c.lineWidth,textSize:c.textSize,transform:c.transform.slice(),clips:c.clips.map(clip=>({...clip,transform:clip.transform.slice()}))});
+      c.stack.push({m,loc,fill:c.fill,stroke:c.stroke,lineWidth:c.lineWidth,textSize:c.textSize,textAlign:c.textAlign,textBaseline:c.textBaseline,transform:c.transform.slice(),clips:c.clips.map(clip=>({...clip,transform:clip.transform.slice()}))});
     }
     else if(name==='恢复'){
       if(!c.stack.length)bad('恢复须先有配对的保存');
@@ -109,7 +117,11 @@
     else if(name==='线')command({op:'line',x1:num(a.横一,'横一'),y1:num(a.纵一,'纵一'),x2:num(a.横二,'横二'),y2:num(a.纵二,'纵二'),color:c.stroke,width:c.lineWidth});
     else if(name==='文字'){
       if(typeof a.文!=='string'||Array.from(a.文).length>4096)bad('文字须为不超过 4096 字符的句');
-      command({op:'text',x:num(a.横,'横'),y:num(a.纵,'纵'),text:a.文,color:c.fill,size:c.textSize});
+      const text={op:'text',x:num(a.横,'横'),y:num(a.纵,'纵'),text:a.文,color:c.fill,size:c.textSize};
+      // Missing fields are frozen left/top defaults, including in old scenes.
+      if(c.textAlign!=='left')text.align=c.textAlign;
+      if(c.textBaseline!=='top')text.baseline=c.textBaseline;
+      command(text);
     }
     c.dirty=true;return null;
   }

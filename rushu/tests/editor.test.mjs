@@ -376,3 +376,18 @@ test('alpha color helper highlights and explains only member contexts',()=>{
   for(const color of ["'#RRGGBB'", "'#12345678'", "'#abcdef00'"])
     assert.equal(lex(color)[0].kind,'string');
 });
+
+test('text alignment highlights and explains only exact member contexts',()=>{
+  for(const source of ["图 其 文字对齐 '中' '中'.", "图@文字对齐 横向:'右' 纵向:'基线'."]) {
+    assert.equal(analyze(source).tokens.find(t=>t.text==='文字对齐').face,'builtin');
+    assert.match(highlight(source), /文字对齐 横向 纵向/);
+    assert.match(highlight(source), /默认左上/);
+    assert.match(highlight(source), /跨回调保留/);
+    assert.match(highlight(source), /不是笔画包围盒或宽度测量/);
+  }
+  for(const source of ['文字对齐 取 1.', '文字对齐表 取 1.', '作 调整 文字对齐: 显 文字对齐. 为.',
+      "# 图 其 文字对齐 '中' '中'.", "'图 其 文字对齐'", '批. 图 其 文字对齐.', '解. 图 其 文字对齐. 释.']) {
+    assert.doesNotMatch(highlight(source), /如:观画布：/);
+    for(const token of analyze(source).tokens.filter(t=>t.text==='文字对齐')) assert.equal(token.face,null);
+  }
+});
