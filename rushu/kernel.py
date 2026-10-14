@@ -355,21 +355,28 @@ class Session:
         if (not isinstance(commands, list) or len(commands) > MAX_GRAPHICS_COMMANDS
                 or self._event_size(event) > MAX_GRAPHICS_BYTES
                 or any(not isinstance(command, dict) or not isinstance(command.get("op"), str) or command["op"] not in
-                       {"rect", "ellipse", "line", "text", "background", "polygon", "arc", "sector"} for command in commands)):
+                       {"rect", "ellipse", "line", "text", "background", "polygon", "arc", "sector", "polyline"} for command in commands)):
             raise ValueError("invalid graphics payload")
-        # Validate colors, text enums and new arc geometry/state before retaining.
+        # Validate colors, text enums and new path geometry/state before retaining.
         # The browser independently validates all scene fields before drawing.
         for command in commands:
             op = command["op"]
-            if op in ("arc", "sector"):
-                fields = ("x", "y", "width", "height", "start", "sweep", "stroke_width")
+            if op in ("arc", "sector", "polyline"):
+                fields = (("stroke_width",) if op == "polyline" else
+                          ("x", "y", "width", "height", "start", "sweep", "stroke_width"))
                 if (not all(_graphics_number(command.get(key)) for key in fields)
-                        or command["width"] < 0 or command["height"] < 0
+                        or op != "polyline" and (command["width"] < 0 or command["height"] < 0)
                         or not 1 <= command["stroke_width"] <= 256
-                        or op == "arc" and command.get("fill") != ""):
-                    raise ValueError("invalid graphics arc geometry")
+                        or op in ("arc", "polyline") and command.get("fill") != ""):
+                    raise ValueError("invalid graphics path geometry")
+                if op == "polyline":
+                    points = command.get("points")
+                    if (not isinstance(points, list) or not 2 <= len(points) <= 256
+                            or any(not isinstance(point, list) or len(point) != 2
+                                   or not all(map(_graphics_number, point)) for point in points)):
+                        raise ValueError("invalid graphics polyline points")
                 if "transform" in command and not _graphics_matrix(command["transform"]):
-                    raise ValueError("invalid graphics arc transform")
+                    raise ValueError("invalid graphics path transform")
                 if "clips" in command:
                     clips = command["clips"]
                     if (not isinstance(clips, list) or len(clips) > 32
@@ -378,13 +385,13 @@ class Session:
                                               ("x", "y", "width", "height"))
                                    or clip["width"] < 0 or clip["height"] < 0
                                    or not _graphics_matrix(clip.get("transform")) for clip in clips)):
-                        raise ValueError("invalid graphics arc clips")
+                        raise ValueError("invalid graphics path clips")
             for key, values in (("align", ("left", "center", "right")),
                                 ("baseline", ("top", "middle", "bottom", "alphabetic"))):
                 if key in command and (op != "text" or not isinstance(command[key], str)
                                        or command[key] not in values):
                     raise ValueError("invalid graphics text alignment")
-            keys = ("fill", "stroke") if op in ("rect", "ellipse", "polygon", "arc", "sector") else ("color",)
+            keys = ("fill", "stroke") if op in ("rect", "ellipse", "polygon", "arc", "sector", "polyline") else ("color",)
             for key in keys:
                 value = command.get(key)
                 if value == "" and op != "background":

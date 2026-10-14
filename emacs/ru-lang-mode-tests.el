@@ -1470,3 +1470,26 @@
   (should (string-match-p "只描边，忽略填色" (cdr (assoc "弧" ru-lang--practical-member-help))))
   (should (string-match-p "部分扇形含两条半径边" (cdr (assoc "扇形" ru-lang--practical-member-help))))
   (should (string-match-p "无中心辐条" (cdr (assoc "扇形" ru-lang--practical-member-help)))))
+
+(ert-deftest ru-polyline-contextual-help ()
+  (should (member "折线" ru-lang--member-builtins))
+  (should-not (member "折线" ru-lang--keywords))
+  (should-not (member "折线" ru-lang--builtins))
+  (dolist (source '("图 其 折线 [[1,2],[3,4]]." "图@折线 点阵:[[1,2],[3,4]]."))
+    (ru-lang-test--buffer source
+      (font-lock-ensure)
+      (search-forward "折线")
+      (should (eq (get-text-property (1- (point)) 'face) 'font-lock-builtin-face))
+      (let ((help (get-text-property (1- (point)) 'help-echo)))
+        (dolist (fragment '("折线 点阵" "唯一参数必需" "位置或点阵:调用" "返回空" "2～256"
+                            "100000" "拒绝事实与空" "开放路径只描边一次" "不闭合、不填充"
+                            "忽略且保留填色" "不逐段叠色" "深复制" "全重合点合法"
+                            "空描边或零长度仍计入原有预算" "封闭填充用多边形"))
+          (should (string-match-p fragment help))))))
+  (dolist (source '("折线 取 1." "折线图 取 1." "作 描画 折线: 显 折线. 为."
+                    "# 图 其 折线." "'图 其 折线'" "批. 图 其 折线." "解. 图 其 折线. 释."))
+    (ru-lang-test--buffer source
+      (font-lock-ensure)
+      (search-forward "折线")
+      (should-not (eq (get-text-property (1- (point)) 'face) 'font-lock-builtin-face))
+      (should-not (get-text-property (1- (point)) 'help-echo)))))

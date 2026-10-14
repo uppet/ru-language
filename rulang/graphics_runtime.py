@@ -40,7 +40,7 @@ CANVAS_PARAMS = MappingProxyType({"背景": ("色",), "填色": ("色",), "描�
               "弧": ("横", "纵", "宽", "高", "始角", "转角"),
               "扇形": ("横", "纵", "宽", "高", "始角", "转角"),
               "线": ("横一", "纵一", "横二", "纵二"), "文字": ("文", "横", "纵"),
-              "三角形": ("横一", "纵一", "横二", "纵二", "横三", "纵三"), "多边形": ("点阵",),
+              "三角形": ("横一", "纵一", "横二", "纵二", "横三", "纵三"), "多边形": ("点阵",), "折线": ("点阵",),
               "平移": ("横", "纵"), "旋转": ("弧度",), "缩放": ("横倍率", "纵倍率"),
               "保存": (), "恢复": (), "变换": ("a", "b", "c", "d", "e", "f"), "重置变换": (),
               "裁剪": ("横", "纵", "宽", "高"), "取消裁剪": (),
@@ -430,20 +430,22 @@ def graphics_member(owner, n, receiver, name, args):
                 "width": number(bound["宽"], "宽", 0), "height": number(bound["高"], "高", 0),
                 "transform": canvas.transform}
         canvas.clips += (clip,)
-    elif name in ("三角形", "多边形"):
+    elif name in ("三角形", "多边形", "折线"):
         if name == "三角形":
             values = [number(bound[key], key) for key in params[name]]
             points = [values[index:index+2] for index in range(0, 6, 2)]
         else:
             source = bound["点阵"]
-            if not isinstance(source, list) or not 3 <= len(source) <= 256:
-                fail("多边形点阵须为包含 3 至 256 个点的阵")
+            minimum = 2 if name == "折线" else 3
+            if not isinstance(source, list) or not minimum <= len(source) <= 256:
+                fail(name + f"点阵须为包含 {minimum} 至 256 个点的阵")
             points = []
             for point in source:
                 if not isinstance(point, list) or len(point) != 2:
-                    fail("多边形每个点须为恰含两个坐标的阵")
+                    fail(name + "每个点须为恰含两个坐标的阵")
                 points.append([number(point[0], "横坐标"), number(point[1], "纵坐标")])
-        canvas.command({"op": "polygon", "points": points, "fill": canvas.fill,
+        canvas.command({"op": "polyline" if name == "折线" else "polygon", "points": points,
+                        "fill": "" if name == "折线" else canvas.fill,
                         "stroke": canvas.stroke, "stroke_width": canvas.line_width}, fail)
     elif name == "背景":
         background = color(bound["色"])

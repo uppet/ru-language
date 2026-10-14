@@ -1,6 +1,6 @@
-# 如（ru-language）· 0.19.4 元初实现
+# 如（ru-language）· 0.19.5 元初实现
 
-0.19.4 配套如书 0.8.4（`wip` 开发中，尚未发布到 `main`）：新增如观原生 `弧`／`扇形`，使用外接框和带符号弧度；弧只描边，扇形可填充及描边，整圈不出现半径辐条。可参考[披萨分份示例书](rushu/examples/pizza-portions.rushu.json)用按钮或方向键改变份额。真实时间、文字对齐、透明颜色、多边形、变换与裁剪继续可用。先看[安装、更新与执行目标](docs/stable-entry.md)、[如观指南](docs/ruguan-guide.md)及[本批验证记录](docs/ruguan-0.19.4-validation.md)。
+0.19.5 配套如书 0.8.5（`wip` 开发中，尚未发布到 `main`）：新增如观原生 `折线 点阵`：2～256 个点连成一条开放路径，只描边，一次完成整条路径，半透明折点不会逐段叠色。可参考[一周气温示例书](rushu/examples/weekly-temperature.rushu.json)，点击或用方向键调整每天的数据。弧／扇形、真实时间、文字对齐、透明颜色、多边形、变换与裁剪继续可用。先看[安装、更新与执行目标](docs/stable-entry.md)、[如观指南](docs/ruguan-guide.md)及[本批验证记录](docs/ruguan-0.19.5-validation.md)。
 
 0.18.0 配套如书 0.6.0：新增阵排序、另成与逐位，典遍历由列改为逐目。详见 [新阵与遍历指南](docs/array-sort-map.md)。
 
@@ -73,7 +73,7 @@
 
 </details>
 
-完整的实现语义以 [如语言规范 0.19.4](rulang/language-spec.md) 为准。它是学习者、工具作者与 LLM 共用的唯一规范文本；README 提供入门和操作摘要。
+完整的实现语义以 [如语言规范 0.19.5](rulang/language-spec.md) 为准。它是学习者、工具作者与 LLM 共用的唯一规范文本；README 提供入门和操作摘要。
 
 待逐项解决或确认忽略的审查事项见 [语言审查追踪](docs/language-review-tracker.md)。清单区分实现缺陷、现有设计取舍与未定提案，不替代语言规范。
 
@@ -101,7 +101,7 @@ python3 ru --version
 python3 ru repl
 ```
 
-`main` 是稳定使用入口，`wip` 用于后续开发；本工作树为如 0.19.4／如书 0.8.4，尚未发布到 `main`。已有仓库的安全更新步骤及执行目标对照见 [安装与更新](docs/stable-entry.md)，不需要强制重置或覆盖自己的书本。
+`main` 是稳定使用入口，`wip` 用于后续开发；本工作树为如 0.19.5／如书 0.8.5，尚未发布到 `main`。已有仓库的安全更新步骤及执行目标对照见 [安装与更新](docs/stable-entry.md)，不需要强制重置或覆盖自己的书本。
 
 REPL 中输入：
 

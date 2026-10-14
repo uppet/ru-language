@@ -428,3 +428,19 @@ test('arc and sector help stays contextual and states the six-argument contract'
   assert.match(highlight('图 其 扇形 0 0 30 20 0 1.'), /无中心辐条/);
   for(const word of ['横','纵','宽','高','始角','转角']) assert.equal(analyze(`${word} 取 1.`).tokens.find(t=>t.text===word).face,null);
 });
+
+test('polyline help stays contextual and states the open-path contract',()=>{
+  for(const source of ['图 其 折线 [[1,2],[3,4]].','图@折线 点阵:[[1,2],[3,4]].']) {
+    assert.equal(analyze(source).tokens.find(t=>t.text==='折线').face,'builtin');
+    const html=highlight(source);
+    for(const fragment of ['折线 点阵','唯一参数必需','位置或点阵:调用','返回空','2～256',
+      '100000','拒绝事实与空','开放路径只描边一次','不闭合、不填充','忽略且保留填色',
+      '不逐段叠色','深复制','全重合点合法','空描边或零长度仍计入原有预算','封闭填充用多边形']) assert.ok(html.includes(fragment),fragment);
+  }
+  for(const source of ['折线 取 1.','折线图 取 1.','作 描画 折线: 显 折线. 为.',
+    '# 图 其 折线.','\'图 其 折线\'','批. 图 其 折线.','解. 图 其 折线. 释.']) {
+    assert.doesNotMatch(highlight(source), /如:观画布：/);
+    for(const token of analyze(source).tokens.filter(t=>t.text==='折线')) assert.equal(token.face,null);
+  }
+  assert.equal(analyze('点阵 取 1.').tokens.find(t=>t.text==='点阵').face,null);
+});

@@ -51,6 +51,7 @@
   for(const name of Object.keys(browserEvents))browserParams[name]=['回调'];
   browserParams.弧=['横','纵','宽','高','始角','转角'];
   browserParams.扇形=['横','纵','宽','高','始角','转角'];
+  browserParams.折线=['点阵'];
   const browserTextAligns=Object.freeze({左:'left',中:'center',右:'right'});
   const browserTextBaselines=Object.freeze({上:'top',中:'middle',下:'bottom',基线:'alphabetic'});
   function browserMember(m,receiver,name,args,loc){
@@ -131,11 +132,12 @@
       if(c.clips.length>=32)bad('裁剪最多 32 层');
       c.clips.push({x:num(a.横,'横'),y:num(a.纵,'纵'),width:num(a.宽,'宽',0),height:num(a.高,'高',0),transform:c.transform.slice()});
     }
-    else if(name==='三角形'||name==='多边形'){
+    else if(name==='三角形'||name==='多边形'||name==='折线'){
       const points=name==='三角形'?[[a.横一,a.纵一],[a.横二,a.纵二],[a.横三,a.纵三]]:a.点阵;
-      if(!Array.isArray(points)||points.length<3||points.length>256)bad('多边形点阵须为含 3 至 256 个点的阵');
-      const copy=points.map(point=>{if(!Array.isArray(point)||point.length!==2)bad('多边形每个点须为两个坐标的阵');return point.map(value=>num(value,'多边形坐标'));});
-      command({op:'polygon',points:copy,fill:c.fill,stroke:c.stroke,stroke_width:c.lineWidth});
+      const minimum=name==='折线'?2:3;
+      if(!Array.isArray(points)||points.length<minimum||points.length>256)bad(name+'点阵须为含 '+minimum+' 至 256 个点的阵');
+      const copy=Array.from(points,(point,index)=>{if(!own(points,index)||!Array.isArray(point)||point.length!==2||!own(point,0)||!own(point,1))bad(name+'每个点须为两个坐标的阵');return Array.from(point,value=>num(value,name+'坐标'));});
+      command({op:name==='折线'?'polyline':'polygon',points:copy,fill:name==='折线'?'':c.fill,stroke:c.stroke,stroke_width:c.lineWidth});
     }
     else if(name==='背景'){const value=color(a.色);c.commands=[];c.bytes=2;command({op:'background',color:value});}
     // Invisible/zero-sweep drawing calls still replace input scenes and spend

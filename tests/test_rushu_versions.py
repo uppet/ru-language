@@ -16,9 +16,9 @@ from rushu.versions import version_info
 
 
 class VersionTests(unittest.TestCase):
-    def test_graphics_arc_versions(self):
-        self.assertEqual(ru_version, "0.19.4")
-        self.assertEqual(rushu_version, "0.8.4")
+    def test_graphics_polyline_versions(self):
+        self.assertEqual(ru_version, "0.19.5")
+        self.assertEqual(rushu_version, "0.8.5")
 
     def test_installed_versions(self):
         info = version_info()
