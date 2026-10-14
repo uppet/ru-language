@@ -1,10 +1,10 @@
-/** Editing aids for 如 0.19.2. These are tolerant lexical aids, not a parser/checker.
+/** Editing aids for 如 0.19.3. These are tolerant lexical aids, not a parser/checker.
  * The structural model mirrors emacs/ru-lang-mode.el, including anonymous
  * 算/作 headers, contextual 为/终, longest names and literal strings. */
 export const KEYWORDS = new Set('显 取 为 得 完 破 若 则 另 然 循 次 环 算 作 法 其 且 或 非 空 对 形 象 如 新 外言 尽 试 救 卒 真 假 典 成'.split(' '));
 const TYPES = new Set('数 句 阵 空 对 事实 典 件 录 件作成果'.split(' '));
 const BUILTINS = new Set('读 件 录 件作成果 读取 显出 错误 __如竞 __如观'.split(' '));
-const MEMBERS = new Set('含 位 段 增 删 弹 排序 另成 逐位 逐目 量 囫 囵 写 行 读 开 关 查 除 列 三角形 多边形 平移 旋转 缩放 保存 恢复 变换 重置变换 裁剪 取消裁剪 颜色 文字对齐'.split(' '));
+const MEMBERS = new Set('含 位 段 增 删 弹 排序 另成 逐位 逐目 量 囫 囵 写 行 读 开 关 查 除 列 三角形 多边形 平移 旋转 缩放 保存 恢复 变换 重置变换 裁剪 取消裁剪 颜色 文字对齐 经过秒 间隔秒'.split(' '));
 const PAIRS = new Map(Object.entries({'算':'法','作':'为','若':'然','循':'环','形':'象','试':'终','典':'成','段':'落','(' : ')','[':']','{':'}'}));
 const PUNCT = {'。':'.','：':':','（':'(','）':')','，':',','［':'[','］':']','｛':'{','｝':'}'};
 const nameStart = c => !!c && /[_\p{L}]/u.test(c);
@@ -160,6 +160,8 @@ export const TOKEN_HELP = {
   '真': '真：事实字面量。', '假': '假：事实字面量。'
 };
 const PRACTICAL_MEMBER_HELP = {
+  '经过秒': '如:观画布：经过秒，零参数只读数值，创建时为 0；从创建画布起的宿主单调经过秒，包含暂停和隐藏页间隔。同次回调内冻结，反复读取不会推进；不是日期或墙钟。用户同名方法按其声明。',
+  '间隔秒': '如:观画布：间隔秒，零参数只读数值。帧回调中是距上一实际帧开始的秒差；首帧及暂停恢复首帧为 0，输入回调为 0。隐藏间隔不截断，不补帧；物理积分可自行限制步长。同次回调内冻结，每帧仍只收帧序号。用户同名方法按其声明。',
   '文字对齐': '如:观画布：文字对齐 横向 纵向，两项句参数均必需；横向为左／中／右，纵向为上／中／下／基线，默认左上。设置跨回调保留并纳入保存／恢复；中部依据字体 em 方框，不是笔画包围盒或宽度测量。用户同名方法按其声明。',
   '颜色': '如:观：颜色 红 绿 蓝 不透明度，四个参数均为必需的 0～255 有限整数；支持全位置或全命名实参。返回小写 #rrggbbaa，0 全透明、255 不透明；不钳位、不舍入。用户同名方法按其声明。',
   '逐位': '内置阵：逐位 回调:二参算或作，按初始浅快照从0开始传入位、值；忽略返回值（含假/空），整体空。空阵也验证回调，完只结束当前作。用户同名方法按其声明。',

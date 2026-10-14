@@ -224,7 +224,7 @@ def _worker(connection):
                 if kind == "graphics":
                     stdin.graphics_callback = True
                     try:
-                        host.handle(command["event"])
+                        host.handle(command["event"], canvas_id=command["canvas_id"])
                     finally:
                         stdin.graphics_callback = False
                 else:

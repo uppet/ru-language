@@ -29,7 +29,7 @@ self.onmessage=async ({data})=>{
       if(typeof data.javascript!=='string'||bytes(data.javascript)>MAX_SOURCE)throw new Error('JavaScript 编译产物过大。');
       url=URL.createObjectURL(new Blob([data.javascript],{type:'text/javascript'}));
       const module=await import(url);URL.revokeObjectURL(url);url=null;
-      controller=module.default(Object.freeze({emit}));
+      controller=module.default(Object.freeze({emit,nowSeconds:()=>performance.now()/1000}));
       if(!controller||typeof controller.dispatch!=='function')throw new Error('JavaScript 编译产物接口无效。');
       self.postMessage({type:'batch',identity,serial:0,events});
     }catch(error){failure(error,0);controller=null;}finally{if(url)URL.revokeObjectURL(url);events=[];busy=false;}

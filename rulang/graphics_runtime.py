@@ -43,6 +43,7 @@ CANVAS_PARAMS = MappingProxyType({"背景": ("色",), "填色": ("色",), "描�
               "保存": (), "恢复": (), "变换": ("a", "b", "c", "d", "e", "f"), "重置变换": (),
               "裁剪": ("横", "纵", "宽", "高"), "取消裁剪": (),
               "帧率": ("率",), "停": (), "继续": (), "关闭": (), "宽": (), "高": (), "帧": (),
+              "经过秒": (), "间隔秒": (),
               **{key: ("回调",) for key in CALLBACK_NAMES}})
 
 def install_graphics(owner):
@@ -63,7 +64,7 @@ def install_graphics(owner):
 
 
 class Canvas:
-    def __init__(self, host, width, height):
+    def __init__(self, host, width, height, origin):
         self.host, self.width, self.height = host, width, height
         self.id = secrets.token_hex(16)
         self.callbacks = {}
@@ -74,8 +75,16 @@ class Canvas:
         self.text_align, self.text_baseline = "left", "top"
         self.fps, self.frame = 30, 0
         self.running, self.closed = False, False
+        self._origin = origin
+        self._previous_frame = None
+        self._elapsed, self._delta = 0.0, 0.0
         self.dirty = True
         self.reset_geometry()
+
+    def set_running(self, running):
+        if running and not self.running:
+            self._previous_frame = None
+        self.running = running
 
     def reset_geometry(self):
         self.transform, self.clips, self.stack = IDENTITY, (), []
@@ -119,12 +128,32 @@ class Canvas:
 
 
 class GraphicsHost:
-    def __init__(self, interpreter, emit):
+    def __init__(self, interpreter, emit, *, now_seconds=None):
         self.interpreter, self.emit = interpreter, emit
         self.canvas = None
         self.memory_start = 0
         self.owns_tracing = False
+        # This host-only hook never enters Ru or the event protocol. Capture the
+        # default separately: callback budget checks keep reading their live clock.
+        self._now_seconds = time.monotonic if now_seconds is None else now_seconds
+        self._last_clock_sample = None
         interpreter.graphics_host = self
+
+    def _sample_time(self, *, close_on_error=True):
+        try:
+            sample = self._now_seconds()
+            if isinstance(sample, bool) or not isinstance(sample, (int, float)):
+                raise ValueError
+            sample = float(sample)
+            if (not math.isfinite(sample) or sample < 0
+                    or self._last_clock_sample is not None and sample < self._last_clock_sample):
+                raise ValueError
+        except Exception:
+            if close_on_error:
+                self.close()
+            raise RuError("如观宿主单调时钟无效；请重新运行", category="运行错误") from None
+        self._last_clock_sample = sample
+        return sample
 
     @property
     def canvas_id(self):
@@ -153,12 +182,13 @@ class GraphicsHost:
 
     def create(self, width, height):
         from .interpreter import Instance
+        origin = self._sample_time(close_on_error=False)
         self.close()
         if not tracemalloc.is_tracing():
             tracemalloc.start(1)
             self.owns_tracing = True
         self.memory_start = tracemalloc.get_traced_memory()[0]
-        self.canvas = Canvas(self, width, height)
+        self.canvas = Canvas(self, width, height, origin)
         instance = Instance(_TYPES["canvas"], {})
         instance.graphics_canvas = self.canvas
         return instance
@@ -172,11 +202,33 @@ class GraphicsHost:
             self.emit(event)
             canvas.dirty = False
 
-    def handle(self, event):
+    def handle(self, event, *, canvas_id=None):
         canvas = self.canvas
         if canvas is None:
             raise RuError("如观画布已关闭", category="运行错误")
+        if canvas_id is not None and canvas_id != canvas.id:
+            raise RuError("如观事件已失效", category="运行错误")
+        if (not isinstance(event, dict) or not isinstance(event.get("type"), str)
+                or event["type"] not in (*EVENT_PARAMS, "close")):
+            raise RuError("无效如观事件", category="运行错误")
         kind = event["type"]
+        allowed = {"type"}
+        if kind.startswith("mouse_"):
+            allowed |= {"x", "y", "button"}
+            for key in ("x", "y"):
+                value = event.get(key)
+                if (isinstance(value, bool) or not isinstance(value, (int, float))
+                        or not -100000 <= value <= 100000 or not math.isfinite(value)):
+                    raise RuError("无效如观鼠标坐标", category="运行错误")
+            button = event.get("button", 0)
+            if isinstance(button, bool) or not isinstance(button, int) or not 0 <= button <= 4:
+                raise RuError("无效如观鼠标键", category="运行错误")
+        elif kind.startswith("key_"):
+            allowed.add("key")
+            if not isinstance(event.get("key"), str) or len(event["key"]) > 64:
+                raise RuError("无效如观按键", category="运行错误")
+        if set(event) - allowed:
+            raise RuError("如观事件含未知字段", category="运行错误")
         if kind == "close":
             self.close()
             return
@@ -184,13 +236,18 @@ class GraphicsHost:
         if callback is None or (kind == "frame" and not canvas.running):
             raise RuError("如观事件未启用", category="运行错误")
         fn, node = callback
+        now = self._sample_time()
+        canvas._elapsed = now - canvas._origin
+        canvas._delta = (now - canvas._previous_frame
+                         if kind == "frame" and canvas._previous_frame is not None else 0.0)
         if kind == "frame":
+            canvas._previous_frame = now
             canvas.frame += 1
             values = [float(canvas.frame)]
         elif kind.startswith("mouse"):
             values = [float(event["x"]), float(event["y"])]
             if kind != "mouse_move":
-                values.append(float(event["button"]))
+                values.append(float(event.get("button", 0)))
         else:
             values = [event["key"]]
         # Frames are complete scenes. Input callbacks can change style/data;
@@ -303,7 +360,7 @@ def graphics_member(owner, n, receiver, name, args):
     if name not in params:
         fail("未知如观画布成员：" + name)
     bound = bind_arguments(name, args, params[name], fail)
-    owner.last_member_procedure = name not in ("宽", "高", "帧")
+    owner.last_member_procedure = name not in ("宽", "高", "帧", "经过秒", "间隔秒")
     if name in CALLBACK_NAMES:
         fn = bound["回调"]
         event = CALLBACK_NAMES[name]
@@ -311,16 +368,18 @@ def graphics_member(owner, n, receiver, name, args):
             fail(name + "需要接受 " + str(len(EVENT_PARAMS[event][1])) + " 个参数的算／作回调")
         canvas.callbacks[event] = fn, n
         if event == "frame":
-            canvas.running = True
+            canvas.set_running(True)
     elif name in ("宽", "高", "帧"):
         return True, float({"宽": canvas.width, "高": canvas.height, "帧": canvas.frame}[name])
+    elif name in ("经过秒", "间隔秒"):
+        return True, canvas._elapsed if name == "经过秒" else canvas._delta
     elif name == "关闭":
         # Explicit close is cleanup and may discard an unfinished saved state.
         canvas.stack.clear()
         canvas.host.flush()
         canvas.host.close()
     elif name in ("停", "继续"):
-        canvas.running = name == "继续" and "frame" in canvas.callbacks
+        canvas.set_running(name == "继续" and "frame" in canvas.callbacks)
     elif name == "帧率":
         canvas.fps = number(bound["率"], "帧率", 1, 30, True)
     elif name in ("填色", "描边"):

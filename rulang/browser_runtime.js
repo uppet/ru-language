@@ -6,6 +6,26 @@
   builtins.values.__如观 = new Instance(browserTypes.helpers,dict());
   let browserCanvas = null, browserSteps = 0, browserOutputBytes = 0;
   const browserEncoder = new TextEncoder();
+  // Host-only clock injection; direct module users fall back to the platform's
+  // monotonic clock. Neither the function nor timestamps enter the Ru scope.
+  const browserNowSeconds=own(__ruHost,'nowSeconds')?__ruHost.nowSeconds:()=>performance.now()/1000;
+  let browserLastClockSample=null;
+  function browserSampleTime(m,loc,closeOnError=true){
+    let sample;
+    try{
+      sample=browserNowSeconds();
+      if(typeof sample!=='number'||!Number.isFinite(sample)||sample<0||
+          (browserLastClockSample!==null&&sample<browserLastClockSample))throw new Error();
+    }catch(error){
+      if(closeOnError)browserClose();
+      fail(m,'如观宿主单调时钟无效；请重新运行',loc);
+    }
+    browserLastClockSample=sample;return sample;
+  }
+  function browserSetRunning(c,running){
+    if(running&&!c.running)c.previousFrame=null;
+    c.running=running;
+  }
   function browserReset(){browserSteps=0;browserOutputBytes=0;}
   function browserTick(m,loc){if(++browserSteps>500000)fail(m,'浏览器 JS 执行超过 500000 步预算；请简化代码后重跑',loc);}
   function browserOutput(m,text,loc){
@@ -27,7 +47,7 @@
     __ruHost.emit({type:'graphics',canvas_id:c.id,width:c.width,height:c.height,fps:c.fps,running:c.running,handlers:Object.keys(c.callbacks),commands:c.commands.slice()});c.dirty=false;
   }
   const browserEvents={每帧:['frame',1],鼠标按下:['mouse_down',3],鼠标松开:['mouse_up',3],鼠标移动:['mouse_move',2],按键:['key_down',1],松键:['key_up',1]};
-  const browserParams={背景:['色'],填色:['色'],描边:['色'],线宽:['粗'],字号:['大小'],文字对齐:['横向','纵向'],矩形:['横','纵','宽','高'],椭圆:['横','纵','宽','高'],线:['横一','纵一','横二','纵二'],文字:['文','横','纵'],三角形:['横一','纵一','横二','纵二','横三','纵三'],多边形:['点阵'],平移:['横','纵'],旋转:['弧度'],缩放:['横倍率','纵倍率'],保存:[],恢复:[],变换:['a','b','c','d','e','f'],重置变换:[],裁剪:['横','纵','宽','高'],取消裁剪:[],帧率:['率'],停:[],继续:[],关闭:[],宽:[],高:[],帧:[]};
+  const browserParams={背景:['色'],填色:['色'],描边:['色'],线宽:['粗'],字号:['大小'],文字对齐:['横向','纵向'],矩形:['横','纵','宽','高'],椭圆:['横','纵','宽','高'],线:['横一','纵一','横二','纵二'],文字:['文','横','纵'],三角形:['横一','纵一','横二','纵二','横三','纵三'],多边形:['点阵'],平移:['横','纵'],旋转:['弧度'],缩放:['横倍率','纵倍率'],保存:[],恢复:[],变换:['a','b','c','d','e','f'],重置变换:[],裁剪:['横','纵','宽','高'],取消裁剪:[],帧率:['率'],停:[],继续:[],关闭:[],宽:[],高:[],帧:[],经过秒:[],间隔秒:[]};
   for(const name of Object.keys(browserEvents))browserParams[name]=['回调'];
   const browserTextAligns=Object.freeze({左:'left',中:'center',右:'right'});
   const browserTextBaselines=Object.freeze({上:'top',中:'middle',下:'bottom',基线:'alphabetic'});
@@ -47,15 +67,16 @@
       }
       if(name!=='画布')bad('未知如观工具成员：'+name);
       const a=argsBind(m,name,args,['宽','高'],loc),width=num(a.宽,'宽',1,2048,true),height=num(a.高,'高',1,2048,true);
+      const origin=browserSampleTime(m,loc,false);
       browserClose();
-      browserCanvas={id:Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join(''),width,height,callbacks:dict(),commands:[],bytes:2,fill:'#4677ff',stroke:'#202530',lineWidth:1,textSize:16,textAlign:'left',textBaseline:'top',fps:30,frame:0,running:false,closed:false,dirty:true,transform:browserIdentity(),clips:[],stack:[]};
+      browserCanvas={id:Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join(''),width,height,callbacks:dict(),commands:[],bytes:2,fill:'#4677ff',stroke:'#202530',lineWidth:1,textSize:16,textAlign:'left',textBaseline:'top',fps:30,frame:0,origin,elapsed:0,delta:0,previousFrame:null,running:false,closed:false,dirty:true,transform:browserIdentity(),clips:[],stack:[]};
       const value=new Instance(browserTypes.canvas,dict());value.graphicsCanvas=browserCanvas;m.lastMemberProcedure=false;return value;
     }
     const c=receiver.graphicsCanvas;
     if(!c||c.closed||c!==browserCanvas)bad('如观画布已关闭；请重新创建画布');
     if(!own(browserParams,name))bad('未知如观画布成员：'+name);
     const a=argsBind(m,name,args,browserParams[name],loc);
-    m.lastMemberProcedure=!['宽','高','帧'].includes(name);
+    m.lastMemberProcedure=!['宽','高','帧','经过秒','间隔秒'].includes(name);
     const command=value=>{
       if(value.op!=='background'){
         if(c.transform.some((v,i)=>v!==browserIdentity()[i]))value.transform=c.transform.slice();
@@ -73,12 +94,14 @@
     if(own(browserEvents,name)){
       const [event,count]=browserEvents[name],fn=a.回调;
       if(!(fn instanceof Fn)||fn.params.length!==count)bad(name+'需要接受 '+count+' 个参数的算／作回调');
-      c.callbacks[event]={fn,m,loc};if(event==='frame')c.running=true;
+      c.callbacks[event]={fn,m,loc};if(event==='frame')browserSetRunning(c,true);
     }else if(name==='宽')return c.width;
     else if(name==='高')return c.height;
     else if(name==='帧')return c.frame;
+    else if(name==='经过秒')return c.elapsed;
+    else if(name==='间隔秒')return c.delta;
     else if(name==='关闭'){c.stack=[];browserFlush();browserClose();return null;}
-    else if(name==='停'||name==='继续')c.running=name==='继续'&&own(c.callbacks,'frame');
+    else if(name==='停'||name==='继续')browserSetRunning(c,name==='继续'&&own(c.callbacks,'frame'));
     else if(name==='帧率')c.fps=num(a.率,'帧率',1,60,true);
     else if(name==='填色'||name==='描边')c[name==='填色'?'fill':'stroke']=color(a.色,true);
     else if(name==='线宽'||name==='字号')c[name==='线宽'?'lineWidth':'textSize']=num(a[name==='线宽'?'粗':'大小'],name,1,256);
@@ -128,21 +151,34 @@
   function browserDispatch(request){
     const c=browserCanvas;
     if(!c||!request||request.canvas_id!==c.id)throw new Error('如观画布已关闭或事件已失效');
+    if(Object.keys(request).some(key=>!['canvas_id','event'].includes(key)))throw new Error('如观请求含未知字段');
     const event=request.event;
-    if(!event||typeof event.type!=='string')throw new Error('无效如观事件');
+    if(!event||typeof event!=='object'||Array.isArray(event)||
+        !['frame','close','mouse_down','mouse_up','mouse_move','key_down','key_up'].includes(event.type))throw new Error('无效如观事件');
+    const allowed=['type'];
+    if(event.type.startsWith('mouse_'))allowed.push('x','y','button');
+    else if(event.type.startsWith('key_'))allowed.push('key');
+    if(Object.keys(event).some(key=>!allowed.includes(key)))throw new Error('如观事件含未知字段');
     if(event.type==='close'){browserClose();return;}
     const callback=c.callbacks[event.type];
     if(!callback||(event.type==='frame'&&!c.running))throw new Error('如观事件未启用');
     const {fn,m,loc}=callback;
     let values;
-    if(event.type==='frame')values=[++c.frame];
+    if(event.type==='frame')values=[c.frame+1];
     else if(event.type==='key_down'||event.type==='key_up'){
       if(typeof event.key!=='string'||Array.from(event.key).length>64)fail(m,'无效如观按键',loc);values=[event.key];
     }else{
       if(!Number.isFinite(event.x)||!Number.isFinite(event.y)||Math.abs(event.x)>100000||Math.abs(event.y)>100000)fail(m,'无效如观鼠标坐标',loc);
       values=[event.x,event.y];
-      if(event.type!=='mouse_move'){if(!Number.isInteger(event.button)||event.button<0||event.button>2)fail(m,'无效如观鼠标键',loc);values.push(event.button);}
+      if(own(event,'button')&&(!Number.isInteger(event.button)||event.button<0||event.button>2))fail(m,'无效如观鼠标键',loc);
+      if(event.type!=='mouse_move'){
+        if(!own(event,'button'))fail(m,'无效如观鼠标键',loc);
+        values.push(event.button);
+      }
     }
+    const now=browserSampleTime(m,loc);
+    c.elapsed=now-c.origin;c.delta=event.type==='frame'&&c.previousFrame!==null?now-c.previousFrame:0;
+    if(event.type==='frame'){c.previousFrame=now;c.frame++;}
     const previous=c.commands,previousBytes=c.bytes;c.commands=[];c.bytes=2;
     browserReset();browserResetDrawing(c);
     try{

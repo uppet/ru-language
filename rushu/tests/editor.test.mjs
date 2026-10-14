@@ -391,3 +391,21 @@ test('text alignment highlights and explains only exact member contexts',()=>{
     for(const token of analyze(source).tokens.filter(t=>t.text==='文字对齐')) assert.equal(token.face,null);
   }
 });
+
+test('real-time getters are contextual zero-argument value members',()=>{
+  for(const word of ['经过秒','间隔秒']) {
+    for(const source of [`显 图 其 ${word}.`, `显 图@${word}.`]) {
+      assert.equal(analyze(source).tokens.find(t=>t.text===word).face,'builtin');
+      assert.match(highlight(source), /零参数只读数值/);
+      assert.match(highlight(source), /同次回调内冻结/);
+    }
+    for(const source of [`${word} 取 1.`, `${word}数 取 1.`, `作 读值 ${word}: 显 ${word}. 为.`,
+        `# 图 其 ${word}.`, `'图 其 ${word}'`, `批. 图 其 ${word}.`, `解. 图 其 ${word}. 释.`]) {
+      assert.doesNotMatch(highlight(source), /如:观画布：/);
+      for(const token of analyze(source).tokens.filter(t=>t.text===word)) assert.equal(token.face,null);
+    }
+  }
+  assert.match(highlight('显 图 其 经过秒.'), /包含暂停和隐藏页间隔/);
+  assert.match(highlight('显 图 其 间隔秒.'), /隐藏间隔不截断/);
+  assert.match(highlight('显 图 其 间隔秒.'), /每帧仍只收帧序号/);
+});

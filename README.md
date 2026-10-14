@@ -1,6 +1,6 @@
-# 如（ru-language）· 0.19.2 元初实现
+# 如（ru-language）· 0.19.3 元初实现
 
-0.19.2 配套如书 0.8.2（`wip` 开发中，尚未发布到 `main`）：新增[文字对齐](docs/ruguan-guide.md)，支持左／中／右与上／中／下／基线锚点，默认左上，两个后端与静态历史共享语义。提供[文字对齐示例书](rushu/examples/text-alignment.rushu.json)。保留六／八位透明颜色、原生多边形、仿射变换与矩形裁剪；本批不提供文字宽度测量或真实时间接口。先看[安装、更新与执行目标](docs/stable-entry.md)及[本批验证记录](docs/ruguan-0.19.2-validation.md)。
+0.19.3 配套如书 0.8.3（`wip` 开发中，尚未发布到 `main`）：新增如观只读数值成员 `经过秒`／`间隔秒`，每次回调使用真实单调钟快照，保留原每帧回调的一参帧序号。经过秒包含暂停和隐藏页间隔，帧间隔不暗中截断；可参考[真实时间示例书](rushu/examples/elapsed-time.rushu.json)自行控制模拟步长。文字对齐、六／八位透明颜色、原生多边形、仿射变换与裁剪继续可用。先看[安装、更新与执行目标](docs/stable-entry.md)、[如观指南](docs/ruguan-guide.md)及[本批验证记录](docs/ruguan-0.19.3-validation.md)。
 
 0.18.0 配套如书 0.6.0：新增阵排序、另成与逐位，典遍历由列改为逐目。详见 [新阵与遍历指南](docs/array-sort-map.md)。
 
@@ -73,7 +73,7 @@
 
 </details>
 
-完整的实现语义以 [如语言规范 0.19.2](rulang/language-spec.md) 为准。它是学习者、工具作者与 LLM 共用的唯一规范文本；README 提供入门和操作摘要。
+完整的实现语义以 [如语言规范 0.19.3](rulang/language-spec.md) 为准。它是学习者、工具作者与 LLM 共用的唯一规范文本；README 提供入门和操作摘要。
 
 待逐项解决或确认忽略的审查事项见 [语言审查追踪](docs/language-review-tracker.md)。清单区分实现缺陷、现有设计取舍与未定提案，不替代语言规范。
 
@@ -101,7 +101,7 @@ python3 ru --version
 python3 ru repl
 ```
 
-`main` 是稳定使用入口，`wip` 用于后续开发；本工作树为如 0.19.2／如书 0.8.2，尚未发布到 `main`。已有仓库的安全更新步骤及执行目标对照见 [安装与更新](docs/stable-entry.md)，不需要强制重置或覆盖自己的书本。
+`main` 是稳定使用入口，`wip` 用于后续开发；本工作树为如 0.19.3／如书 0.8.3，尚未发布到 `main`。已有仓库的安全更新步骤及执行目标对照见 [安装与更新](docs/stable-entry.md)，不需要强制重置或覆盖自己的书本。
 
 REPL 中输入：
 
