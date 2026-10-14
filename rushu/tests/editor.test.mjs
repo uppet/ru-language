@@ -409,3 +409,22 @@ test('real-time getters are contextual zero-argument value members',()=>{
   assert.match(highlight('显 图 其 间隔秒.'), /隐藏间隔不截断/);
   assert.match(highlight('显 图 其 间隔秒.'), /每帧仍只收帧序号/);
 });
+
+test('arc and sector help stays contextual and states the six-argument contract',()=>{
+  for(const word of ['弧','扇形']) {
+    for(const source of [`图 其 ${word} 0 0 30 20 0 1.`, `图@${word} 横:0 纵:0 宽:30 高:20 始角:0 转角:1.`]) {
+      assert.equal(analyze(source).tokens.find(t=>t.text===word).face,'builtin');
+      const html=highlight(source);
+      for(const fragment of [`${word} 横 纵 宽 高 始角 转角`,'六个参数均必需','全位置或全命名','返回空','带符号转角为弧度','负缩放镜像','零转角无像素但保留命令','100000','非圆椭圆使用参数角']) assert.ok(html.includes(fragment),fragment);
+    }
+    for(const source of [`${word} 取 1.`, `${word}图 取 1.`, `作 描画 ${word}: 显 ${word}. 为.`,
+        `# 图 其 ${word}.`, `'图 其 ${word}'`, `批. 图 其 ${word}.`, `解. 图 其 ${word}. 释.`]) {
+      assert.doesNotMatch(highlight(source), /如:观画布：/);
+      for(const token of analyze(source).tokens.filter(t=>t.text===word)) assert.equal(token.face,null);
+    }
+  }
+  assert.match(highlight('图 其 弧 0 0 30 20 0 1.'), /只描边，忽略填色/);
+  assert.match(highlight('图 其 扇形 0 0 30 20 0 1.'), /部分扇形含两条半径边/);
+  assert.match(highlight('图 其 扇形 0 0 30 20 0 1.'), /无中心辐条/);
+  for(const word of ['横','纵','宽','高','始角','转角']) assert.equal(analyze(`${word} 取 1.`).tokens.find(t=>t.text===word).face,null);
+});

@@ -49,6 +49,8 @@
   const browserEvents={每帧:['frame',1],鼠标按下:['mouse_down',3],鼠标松开:['mouse_up',3],鼠标移动:['mouse_move',2],按键:['key_down',1],松键:['key_up',1]};
   const browserParams={背景:['色'],填色:['色'],描边:['色'],线宽:['粗'],字号:['大小'],文字对齐:['横向','纵向'],矩形:['横','纵','宽','高'],椭圆:['横','纵','宽','高'],线:['横一','纵一','横二','纵二'],文字:['文','横','纵'],三角形:['横一','纵一','横二','纵二','横三','纵三'],多边形:['点阵'],平移:['横','纵'],旋转:['弧度'],缩放:['横倍率','纵倍率'],保存:[],恢复:[],变换:['a','b','c','d','e','f'],重置变换:[],裁剪:['横','纵','宽','高'],取消裁剪:[],帧率:['率'],停:[],继续:[],关闭:[],宽:[],高:[],帧:[],经过秒:[],间隔秒:[]};
   for(const name of Object.keys(browserEvents))browserParams[name]=['回调'];
+  browserParams.弧=['横','纵','宽','高','始角','转角'];
+  browserParams.扇形=['横','纵','宽','高','始角','转角'];
   const browserTextAligns=Object.freeze({左:'left',中:'center',右:'right'});
   const browserTextBaselines=Object.freeze({上:'top',中:'middle',下:'bottom',基线:'alphabetic'});
   function browserMember(m,receiver,name,args,loc){
@@ -136,6 +138,9 @@
       command({op:'polygon',points:copy,fill:c.fill,stroke:c.stroke,stroke_width:c.lineWidth});
     }
     else if(name==='背景'){const value=color(a.色);c.commands=[];c.bytes=2;command({op:'background',color:value});}
+    // Invisible/zero-sweep drawing calls still replace input scenes and spend
+    // command/byte budget. Native rendering alone interprets the signed sweep.
+    else if(name==='弧'||name==='扇形')command({op:name==='弧'?'arc':'sector',x:num(a.横,'横'),y:num(a.纵,'纵'),width:num(a.宽,'宽',0),height:num(a.高,'高',0),start:num(a.始角,'始角'),sweep:num(a.转角,'转角'),fill:name==='弧'?'':c.fill,stroke:c.stroke,stroke_width:c.lineWidth});
     else if(name==='矩形'||name==='椭圆')command({op:name==='矩形'?'rect':'ellipse',x:num(a.横,'横'),y:num(a.纵,'纵'),width:num(a.宽,'宽',0),height:num(a.高,'高',0),fill:c.fill,stroke:c.stroke,stroke_width:c.lineWidth});
     else if(name==='线')command({op:'line',x1:num(a.横一,'横一'),y1:num(a.纵一,'纵一'),x2:num(a.横二,'横二'),y2:num(a.纵二,'纵二'),color:c.stroke,width:c.lineWidth});
     else if(name==='文字'){

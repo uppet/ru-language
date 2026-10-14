@@ -37,6 +37,8 @@ CALLBACK_NAMES = {name: kind for kind, (name, _) in EVENT_PARAMS.items()}
 
 CANVAS_PARAMS = MappingProxyType({"背景": ("色",), "填色": ("色",), "描边": ("色",), "线宽": ("粗",), "字号": ("大小",), "文字对齐": ("横向", "纵向"),
               "矩形": ("横", "纵", "宽", "高"), "椭圆": ("横", "纵", "宽", "高"),
+              "弧": ("横", "纵", "宽", "高", "始角", "转角"),
+              "扇形": ("横", "纵", "宽", "高", "始角", "转角"),
               "线": ("横一", "纵一", "横二", "纵二"), "文字": ("文", "横", "纵"),
               "三角形": ("横一", "纵一", "横二", "纵二", "横三", "纵三"), "多边形": ("点阵",),
               "平移": ("横", "纵"), "旋转": ("弧度",), "缩放": ("横倍率", "纵倍率"),
@@ -449,6 +451,16 @@ def graphics_member(owner, n, receiver, name, args):
         # after validation so a caught argument error cannot erase the scene.
         canvas.commands, canvas.command_bytes = [], 2
         canvas.command({"op": "background", "color": background}, fail)
+    elif name in ("弧", "扇形"):
+        # Keep signed angles and even invisible/zero-sweep commands. A drawing
+        # call still replaces the scene in an input callback and spends budget.
+        x, y = number(bound["横"], "横"), number(bound["纵"], "纵")
+        width, height = number(bound["宽"], "宽", 0), number(bound["高"], "高", 0)
+        start, sweep = number(bound["始角"], "始角"), number(bound["转角"], "转角")
+        canvas.command({"op": "arc" if name == "弧" else "sector", "x": x, "y": y,
+                        "width": width, "height": height, "start": start, "sweep": sweep,
+                        "fill": "" if name == "弧" else canvas.fill, "stroke": canvas.stroke,
+                        "stroke_width": canvas.line_width}, fail)
     elif name in ("矩形", "椭圆"):
         x, y = number(bound["横"], "横"), number(bound["纵"], "纵")
         width, height = number(bound["宽"], "宽", 0), number(bound["高"], "高", 0)

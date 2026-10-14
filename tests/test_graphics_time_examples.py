@@ -89,14 +89,14 @@ class GraphicsTimeExamplesTests(unittest.TestCase):
         raw = (ROOT / 'rulang/language-spec.md').read_bytes()
         spec = raw.decode('utf-8')
         digest = hashlib.sha256(raw).hexdigest()
-        self.assertTrue(spec.startswith('# 如语言规范 0.19.3\n'))
+        self.assertTrue(spec.startswith('# 如语言规范 0.19.4\n'))
         for target in ('cli', 'rushu', 'ruguan', 'rushu-browser-js', 'ruguan-browser-js'):
             with self.subTest(target=target):
                 prompt = generation_system_prompt(target)
                 self.assertEqual(prompt.count(spec), 1)
                 self.assertEqual(prompt.count('<ru-language-spec>'), 1)
                 self.assertIn(digest, prompt)
-                self.assertIn('随附规范版本：0.19.3', prompt)
+                self.assertIn('随附规范版本：0.19.4', prompt)
                 if target.startswith('ruguan'):
                     guidance = prompt.partition('<ru-language-spec>')[0]
                     for fragment in ('经过秒／间隔秒', '不把帧数除目标帧率当真实时间',

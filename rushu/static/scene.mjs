@@ -47,8 +47,8 @@ export function validateScene(value) {
   if(new TextEncoder().encode(JSON.stringify(value)).length>MAX_FRAME_BYTES)throw new Error('画布帧过大。');
   const commands=Array.from(value.commands,command=>{
     if(!command||typeof command!=='object')throw new Error('画布指令无效。');
-    const c=command,names={background:[],line:['x1','y1','x2','y2','width'],rect:['x','y','width','height','stroke_width'],ellipse:['x','y','width','height','stroke_width'],text:['x','y','size'],polygon:['stroke_width']};
-    if(!Object.hasOwn(names,c.op)||!names[c.op].every(key=>finite(c[key])))throw new Error('画布坐标无效。');
+    const c=command,names={background:[],line:['x1','y1','x2','y2','width'],rect:['x','y','width','height','stroke_width'],ellipse:['x','y','width','height','stroke_width'],arc:['x','y','width','height','start','sweep','stroke_width'],sector:['x','y','width','height','start','sweep','stroke_width'],text:['x','y','size'],polygon:['stroke_width']};
+    if(typeof c.op!=='string'||!Object.hasOwn(names,c.op)||!names[c.op].every(key=>finite(c[key])))throw new Error('画布坐标无效。');
     const state={...drawingState(c),...textState(c)};
     if(c.op==='polygon'){
       if(!Array.isArray(c.points)||c.points.length<3||c.points.length>256)throw new Error('画布多边形无效。');
@@ -56,9 +56,10 @@ export function validateScene(value) {
       if(c.stroke_width<1||c.stroke_width>256||![c.fill,c.stroke].every(x=>x===''||color(x)))throw new Error('图形尺寸或颜色无效。');
       return {op:c.op,points,fill:c.fill.toLowerCase(),stroke:c.stroke.toLowerCase(),stroke_width:c.stroke_width,...state};
     }
-    if(c.op==='rect'||c.op==='ellipse'){
-      if(c.width<0||c.height<0||c.stroke_width<1||c.stroke_width>256||![c.fill,c.stroke].every(x=>x===''||color(x)))throw new Error('图形尺寸或颜色无效。');
-      return {op:c.op,x:c.x,y:c.y,width:c.width,height:c.height,fill:c.fill.toLowerCase(),stroke:c.stroke.toLowerCase(),stroke_width:c.stroke_width,...state};
+    if(c.op==='rect'||c.op==='ellipse'||c.op==='arc'||c.op==='sector'){
+      if(c.width<0||c.height<0||c.stroke_width<1||c.stroke_width>256||![c.fill,c.stroke].every(x=>x===''||color(x))||(c.op==='arc'&&c.fill!==''))throw new Error('图形尺寸或颜色无效。');
+      const angles=c.op==='arc'||c.op==='sector'?{start:c.start,sweep:c.sweep}:{};
+      return {op:c.op,x:c.x,y:c.y,width:c.width,height:c.height,...angles,fill:c.fill.toLowerCase(),stroke:c.stroke.toLowerCase(),stroke_width:c.stroke_width,...state};
     }
     if(!(c.color===''&&c.op!=='background')&&!color(c.color))throw new Error('画布颜色无效。');
     if(c.op==='background')return {op:c.op,color:c.color.toLowerCase()};
@@ -88,10 +89,18 @@ export function drawScene(canvas,value) {
       // with multiple backgrounds. Scoped primitives cannot leak a clip/matrix.
       if(c.op==='background'){ctx.clearRect(0,0,scene.width,scene.height);ctx.fillStyle=c.color;ctx.fillRect(0,0,scene.width,scene.height);}
       else if(c.op==='text'){if(!c.color)continue;ctx.fillStyle=c.color;ctx.font=`${c.size}px sans-serif`;ctx.textAlign=c.align??'left';ctx.textBaseline=c.baseline??'top';ctx.fillText(c.text,c.x,c.y);}
-      else {ctx.beginPath();if(c.op==='line'){if(!c.color)continue;ctx.moveTo(c.x1,c.y1);ctx.lineTo(c.x2,c.y2);ctx.strokeStyle=c.color;ctx.lineWidth=c.width;ctx.stroke();}
+      else {if((c.op==='arc'||c.op==='sector')&&c.sweep===0)continue;
+        ctx.beginPath();if(c.op==='line'){if(!c.color)continue;ctx.moveTo(c.x1,c.y1);ctx.lineTo(c.x2,c.y2);ctx.strokeStyle=c.color;ctx.lineWidth=c.width;ctx.stroke();}
         else {
           if(c.op==='rect')ctx.rect(c.x,c.y,c.width,c.height);
           else if(c.op==='polygon'){ctx.moveTo(...c.points[0]);for(const point of c.points.slice(1))ctx.lineTo(...point);ctx.closePath();}
+          else if((c.op==='arc'||c.op==='sector')&&Math.abs(c.sweep)<Math.PI*2){
+            const cx=c.x+c.width/2,cy=c.y+c.height/2;
+            if(c.op==='sector')ctx.moveTo(cx,cy);
+            ctx.ellipse(cx,cy,c.width/2,c.height/2,0,c.start,c.start+c.sweep,c.sweep<0);
+            if(c.op==='sector')ctx.closePath();
+          }
+          // Complete turns use exactly the legacy ellipse path, with no radial seam.
           else ctx.ellipse(c.x+c.width/2,c.y+c.height/2,c.width/2,c.height/2,0,0,Math.PI*2);
           if(c.fill){ctx.fillStyle=c.fill;ctx.fill();}if(c.stroke&&c.stroke_width>0){ctx.strokeStyle=c.stroke;ctx.lineWidth=c.stroke_width;ctx.stroke();}}
       }

@@ -26,6 +26,15 @@ GRAPHICS_EVENTS = {"frame", "mouse_down", "mouse_up", "mouse_move", "key_down", 
 _GRAPHICS_COLOR = re.compile(r"#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?\Z")
 
 
+def _graphics_number(value):
+    return (not isinstance(value, bool) and isinstance(value, (int, float))
+            and -100000 <= value <= 100000)
+
+
+def _graphics_matrix(value):
+    return isinstance(value, list) and len(value) == 6 and all(map(_graphics_number, value))
+
+
 class KernelError(Exception):
     def __init__(self, message, status=400):
         super().__init__(message)
@@ -345,19 +354,37 @@ class Session:
         commands = event.get("commands", [])
         if (not isinstance(commands, list) or len(commands) > MAX_GRAPHICS_COMMANDS
                 or self._event_size(event) > MAX_GRAPHICS_BYTES
-                or any(not isinstance(command, dict) or command.get("op") not in
-                       {"rect", "ellipse", "line", "text", "background", "polygon"} for command in commands)):
+                or any(not isinstance(command, dict) or not isinstance(command.get("op"), str) or command["op"] not in
+                       {"rect", "ellipse", "line", "text", "background", "polygon", "arc", "sector"} for command in commands)):
             raise ValueError("invalid graphics payload")
-        # Validate color and text-enum wire fields before retaining a worker event.
+        # Validate colors, text enums and new arc geometry/state before retaining.
         # The browser independently validates all scene fields before drawing.
         for command in commands:
             op = command["op"]
+            if op in ("arc", "sector"):
+                fields = ("x", "y", "width", "height", "start", "sweep", "stroke_width")
+                if (not all(_graphics_number(command.get(key)) for key in fields)
+                        or command["width"] < 0 or command["height"] < 0
+                        or not 1 <= command["stroke_width"] <= 256
+                        or op == "arc" and command.get("fill") != ""):
+                    raise ValueError("invalid graphics arc geometry")
+                if "transform" in command and not _graphics_matrix(command["transform"]):
+                    raise ValueError("invalid graphics arc transform")
+                if "clips" in command:
+                    clips = command["clips"]
+                    if (not isinstance(clips, list) or len(clips) > 32
+                            or any(not isinstance(clip, dict)
+                                   or not all(_graphics_number(clip.get(key)) for key in
+                                              ("x", "y", "width", "height"))
+                                   or clip["width"] < 0 or clip["height"] < 0
+                                   or not _graphics_matrix(clip.get("transform")) for clip in clips)):
+                        raise ValueError("invalid graphics arc clips")
             for key, values in (("align", ("left", "center", "right")),
                                 ("baseline", ("top", "middle", "bottom", "alphabetic"))):
                 if key in command and (op != "text" or not isinstance(command[key], str)
                                        or command[key] not in values):
                     raise ValueError("invalid graphics text alignment")
-            keys = ("fill", "stroke") if op in ("rect", "ellipse", "polygon") else ("color",)
+            keys = ("fill", "stroke") if op in ("rect", "ellipse", "polygon", "arc", "sector") else ("color",)
             for key in keys:
                 value = command.get(key)
                 if value == "" and op != "background":
