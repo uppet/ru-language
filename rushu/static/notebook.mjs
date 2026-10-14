@@ -82,6 +82,13 @@ export function appendOutput(cell,type,text,book={cells:[cell]}) {
     cell.outputTruncated=true;
   }
 }
+/** Preflight without mutating either the last snapshot or diagnostics. */
+export function prepareGraphics(cell,scene,book){
+  const prior=cell.outputs.find(item=>item.type==='graphics'),previous=prior?outputBytes(prior):0;
+  const size=byteLength(JSON.stringify(scene));
+  if(cellOutputBytes(cell)-previous+size>MAX_OUTPUT-256||bookOutputBytes(book)-previous+size>MAX_BOOK_OUTPUT-book.cells.length*256)throw new Error('画布快照未保留：输出容量已满，请清除部分输出。');
+  return ()=>{if(prior)prior.scene=scene;else cell.outputs.push({type:'graphics',scene});};
+}
 export function retainGraphics(cell,scene,book){
   const prior=cell.outputs.find(item=>item.type==='graphics'),previous=prior?outputBytes(prior):0;
   const size=byteLength(JSON.stringify(scene));

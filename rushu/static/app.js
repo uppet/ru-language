@@ -4,10 +4,10 @@ import {copyInput} from './clipboard.mjs';
 import {sourceVersion,captureDiagnostic,currentDiagnostic,mountDiagnosticMarkers} from './diagnostics.mjs';
 import {templates,createTemplateBook} from './templates.mjs';
 import {outputWindow} from './output-view.mjs';
-import {createSceneView,validateScene} from './scene.mjs';
+import {createSceneView,canonicalScene as validateScene} from './scene.mjs';
 import {versionLabel} from './versions.mjs';
 import {analyze,highlight,enterEdit,indentSelection,needsAutoDedent} from './editor.mjs';
-import {newCell,parseBook,serializeBook,appendOutput as appendCellOutput,retainGraphics,historicalBook,MAX_FILE_BYTES,MAX_CELLS,MAX_SOURCE} from './notebook.mjs';
+import {newCell,parseBook,serializeBook,appendOutput as appendCellOutput,prepareGraphics,historicalBook,MAX_FILE_BYTES,MAX_CELLS,MAX_SOURCE} from './notebook.mjs';
 
 import {ensureGeneration,checkpoint,replaceWithRevision,restoreRevision,lineDiff,generationIntent,withGenerationMarker,prepareGenerationFromMarker} from './history.mjs';
 
@@ -29,7 +29,8 @@ const views=new Map();
 function appendOutput(cell,type,text){appendCellOutput(cell,type,text,book);}
 // Live handlers are deliberately separate from portable notebook snapshots.
 const sceneViews=new Map(),scenePending=new Map();
-function stopScenes(close=false,preserveBrowser=false){if(!preserveBrowser)stopBrowserRun();for(const [id,record] of sceneViews){record.view.deactivate();if(close&&!record.browser&&record.session===session&&record.epoch===epoch)api(sessionPath('/graphics'),'POST',{canvas_id:id,cell_id:record.cell.id,execution_count:record.count,expected_generation:record.generation,event:{type:'close'}}).catch(()=>{});}for(const pending of scenePending.values())pending.resolve();scenePending.clear();}
+const sceneKey=(cell,id)=>JSON.stringify([cell.id,cell.execution_count,id]);
+function stopScenes(close=false,preserveBrowser=false){if(!preserveBrowser)stopBrowserRun();for(const [id,record] of sceneViews){record.view.deactivate();if(close&&!record.browser&&record.session===session&&record.epoch===epoch)api(sessionPath('/graphics'),'POST',{canvas_id:record.canvasId,cell_id:record.cell.id,execution_count:record.count,expected_generation:record.generation,event:{type:'close'}}).catch(()=>{});}for(const pending of scenePending.values())pending.resolve();scenePending.clear();}
 async function closeScenesBeforeRun(id,myEpoch,myGeneration,preserveBrowser=false){
   stopScenes(false,preserveBrowser);const path=`/sessions/${encodeURIComponent(id)}`;
   const current=()=>id===session&&myEpoch===epoch&&myGeneration===generation;
@@ -39,20 +40,31 @@ async function closeScenesBeforeRun(id,myEpoch,myGeneration,preserveBrowser=fals
   while(state.graphics_busy||state.graphics){if(performance.now()>deadline)throw new Error('正在结束画布回调，请稍后重试或停止会话。');await new Promise(resolve=>setTimeout(resolve,50));state=await api(path+'/events?after='+cursor);if(!current()||state.generation!==myGeneration)throw new Error('画布回调已中断并重置会话，请重新运行。');}
 }
 function clearScene(cell){for(const [id,record] of sceneViews)if(record.cell===cell){record.view.dispose();sceneViews.delete(id);const pending=scenePending.get(id);if(pending){pending.resolve();scenePending.delete(id);}}}
-function sceneOutput(cell,item){
-  const scene=validateScene(item.scene);let record=sceneViews.get(scene.canvas_id);
-  if(record&&(record.cell!==cell||record.count!==cell.execution_count)){record.view.dispose();sceneViews.delete(scene.canvas_id);record=null;}
-  if(!record){record={cell,session,epoch,generation,count:cell.execution_count,browser:cell.runtimeBackend==='browser-js'?browserRun:null};
+function sceneOutput(cell,item,acceptedLiveFrame=false){
+  const scene=validateScene(item.scene),key=sceneKey(cell,scene.canvas_id);let record=sceneViews.get(key);
+  const previous=record;
+  if(record&&(record.width!==scene.width||record.height!==scene.height))record=null;
+  if(record&&(record.cell!==cell||record.count!==cell.execution_count)){record.view.dispose();sceneViews.delete(key);record=null;}
+  if(!record){record={cell,canvasId:scene.canvas_id,width:scene.width,height:scene.height,session,epoch,generation,count:cell.execution_count,browser:cell.runtimeBackend==='browser-js'?browserRun:null};
     const send=async event=>{if(record.browser){if(record.browser!==browserRun||!record.browser.driver?.active)return;return record.browser.driver.send({canvas_id:scene.canvas_id,...event});}if(record.session!==session||record.epoch!==epoch||record.generation!==generation||record.count!==cell.execution_count)return;
-      if(event.type==='close'){const pending=scenePending.get(scene.canvas_id);if(pending){pending.resolve();scenePending.delete(scene.canvas_id);}await api(sessionPath('/graphics'),'POST',{canvas_id:scene.canvas_id,cell_id:cell.id,execution_count:record.count,expected_generation:record.generation,event});return;}
+      if(event.type==='close'){const pending=scenePending.get(key);if(pending){pending.resolve();scenePending.delete(key);}await api(sessionPath('/graphics'),'POST',{canvas_id:scene.canvas_id,cell_id:cell.id,execution_count:record.count,expected_generation:record.generation,event});return;}
       if(activeRun||transition||!connected)return;
-      let resolve,reject;const completed=new Promise((yes,no)=>{resolve=yes;reject=no;});const pending={resolve,reject};scenePending.set(scene.canvas_id,pending);
+      let resolve,reject;const completed=new Promise((yes,no)=>{resolve=yes;reject=no;});const pending={resolve,reject};scenePending.set(key,pending);
       try{await api(sessionPath('/graphics'),'POST',{canvas_id:scene.canvas_id,cell_id:cell.id,execution_count:record.count,expected_generation:record.generation,event});pollSoon(0);await completed;}
-      catch(error){if(scenePending.get(scene.canvas_id)===pending)scenePending.delete(scene.canvas_id);throw error;}
+      catch(error){if(scenePending.get(key)===pending)scenePending.delete(key);throw error;}
     };
-    record.view=createSceneView(scene,{historical:cell.historical||(record.browser?record.browser!==browserRun:cell.execution_count!==lastExecutionCount),backend:record.browser?'javascript':'python',send,onError:error=>notice(error.message,true)});sceneViews.set(scene.canvas_id,record);
+    record.view=createSceneView(scene,{historical:cell.historical||(!acceptedLiveFrame&&(record.browser?record.browser!==browserRun:cell.execution_count!==lastExecutionCount)),backend:record.browser?'javascript':'python',send,onError:error=>notice(error.message,true)});sceneViews.set(key,record);if(previous&&previous!==record)previous.view.dispose();
   }else record.view.update(scene,cell.historical);
   return record.view.root;
+}
+function commitGraphics(cell,value){
+  const scene=validateScene(value),commit=prepareGraphics(cell,scene,book);
+  // Rendering commits pixels first. Save remains the last successful frame on failure.
+  const previous=[...sceneViews.values()].filter(record=>record.cell===cell);
+  for(const record of previous)record.view.pinBacking(true);
+  try{sceneOutput(cell,{type:'graphics',scene},true);commit();}
+  finally{for(const record of previous)record.view.pinBacking(false);}
+  for(const [key,record] of sceneViews)if(record.cell===cell&&record.canvasId!==scene.canvas_id){record.view.dispose();sceneViews.delete(key);const pending=scenePending.get(key);pending?.resolve();scenePending.delete(key);}
 }
 let generationRequest=null;
 let providerInfo=null;
@@ -483,9 +495,9 @@ async function runBrowserCell(cell){
   const onEvent=event=>{
     if(!current())return;
     try{
-      if(event.type==='graphics'){const scene=validateScene(event);const prior=cell.outputs.find(item=>item.type==='graphics');if(prior&&prior.scene.canvas_id!==scene.canvas_id)clearScene(cell);retainGraphics(cell,scene,book);}
+      if(event.type==='graphics'){commitGraphics(cell,event);}
       else if(event.type==='output')appendOutput(cell,event.stream==='stderr'?'stderr':'stdout',event.text);
-      else if(event.type==='error'){fail(event);return;}else if(event.type==='graphics_closed')sceneViews.get(event.canvas_id)?.view.deactivate();
+      else if(event.type==='error'){fail(event);return;}else if(event.type==='graphics_closed')sceneViews.get(sceneKey(cell,event.canvas_id))?.view.deactivate();
       renderOutput(cell);markDirty();
     }catch(error){fail(error);}
   };
@@ -564,8 +576,8 @@ async function pollEvents(){if(polling){pollSoon();return;}if(!session||transiti
       if(cell.status==='running'&&cell.execution_count==null){cell.execution_count=event.execution_count;if(cell.diagnosticSnapshot)cell.diagnosticSnapshot.execution=event.execution_count;}
       if(cell.execution_count!==event.execution_count)continue;
       if(event.type==='graphics'){
-        try{const scene=validateScene(event);const prior=cell.outputs.find(item=>item.type==='graphics');if(prior){if(prior.scene.canvas_id!==scene.canvas_id)clearScene(cell);retainGraphics(cell,scene,book);}else retainGraphics(cell,scene,book);changed.add(cell);}catch(error){appendOutput(cell,'error',error.message+'\n');changed.add(cell);}
-      }else if(event.type==='graphics_done'||event.type==='graphics_closed'){if(event.type==='graphics_done'&&event.status==='error'){cell.status='error';changed.add(cell);}const pending=scenePending.get(event.canvas_id);if(pending){scenePending.delete(event.canvas_id);if(event.status==='error')pending.reject(new Error('画布回调运行出错'));else pending.resolve();}if(event.type==='graphics_closed'||event.status==='error')sceneViews.get(event.canvas_id)?.view.deactivate();
+        try{commitGraphics(cell,event);changed.add(cell);}catch(error){appendOutput(cell,'error',error.message+'\n');changed.add(cell);}
+      }else if(event.type==='graphics_done'||event.type==='graphics_closed'){if(event.type==='graphics_done'&&event.status==='error'){cell.status='error';changed.add(cell);}const pending=scenePending.get(sceneKey(cell,event.canvas_id));if(pending){scenePending.delete(sceneKey(cell,event.canvas_id));if(event.status==='error')pending.reject(new Error('画布回调运行出错'));else pending.resolve();}if(event.type==='graphics_closed'||event.status==='error')sceneViews.get(sceneKey(cell,event.canvas_id))?.view.deactivate();
       }else if(event.type==='output'){appendOutput(cell,event.stream==='stderr'?'stderr':'stdout',event.text);changed.add(cell);}
       else if(event.type==='error'){const position=diagnosticLocation(event,true);const text=typeof event.diagnostic?.formatted==='string'?event.diagnostic.formatted:(position?position+'\n':'')+event.message;appendOutput(cell,'error',text+'\n');const diagnostic=captureDiagnostic(book,event);if(diagnostic){cell.diagnostics??=[];if(cell.diagnostics.length<20)cell.diagnostics.push(diagnostic);}changed.add(cell);}
       else if(event.type==='input_request'){requestInput(cell,event.request_id);}
@@ -609,7 +621,7 @@ $('#add-code').addEventListener('click',()=>addCell('code'));$('#add-markdown').
 $('#help-button').addEventListener('click',()=>$('#help-dialog').showModal());$('#close-help').addEventListener('click',()=>$('#help-dialog').close());
 $('#help-dialog').addEventListener('click',event=>{if(event.target===$('#help-dialog')){const r=event.target.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)event.target.close();}});
 document.addEventListener('keydown',event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='s'){event.preventDefault();saveBook();}});
-window.addEventListener('pagehide',()=>{stopScenes();cancelGeneration(false);if(session)fetch('/api'+sessionPath(),{method:'DELETE',headers:{'X-Rushu-Token':token,'Content-Type':'application/json'},body:'{}',keepalive:true}).catch(()=>{});});
+window.addEventListener('pagehide',()=>{stopScenes();for(const cell of book.cells)clearScene(cell);cancelGeneration(false);if(session)fetch('/api'+sessionPath(),{method:'DELETE',headers:{'X-Rushu-Token':token,'Content-Type':'application/json'},body:'{}',keepalive:true}).catch(()=>{});});
 window.addEventListener('pageshow',event=>{if(event.persisted&&hasBook){historicalBook(book);replaceBook(book).catch(error=>notice(error.message,true,true));}});
 window.addEventListener('beforeunload',event=>{if(dirty||activeRun||generationRequest){event.preventDefault();event.returnValue='';}});
 const keyboardHelp=el('span','sr-only','按 Tab 缩进。按 Escape 后再按 Tab 可移出编辑器。Shift 加 Enter 运行。');keyboardHelp.id='editor-keyboard-help';document.body.append(keyboardHelp);

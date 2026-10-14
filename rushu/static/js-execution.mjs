@@ -28,7 +28,7 @@ export function createJSExecution({javascript,identity,onEvent=()=>{},onFatal=()
       // Validate the entire batch before exposing any event to the UI.
       const events=message.events.map(event=>{
         if(!event||typeof event!=='object')throw new Error('JavaScript 输出无效。');
-        if(event.type==='graphics')return {...validateScene(event),type:'graphics',...id};
+        if(event.type==='graphics'){const wrapped={...validateScene(event),type:'graphics',...id};validateScene(wrapped);return wrapped;}
         if(event.type==='output'){
           if(typeof event.text!=='string'||!['stdout','stderr'].includes(event.stream))throw new Error('JavaScript 文本输出无效。');
           totalOutput+=bytes(event.text);if(totalOutput>budget.outputBytes)throw new Error('JavaScript 文本输出超过上限。');

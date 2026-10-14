@@ -12,7 +12,7 @@ class Target {
   setPointerCapture(id){this.captures.add(id);}
   releasePointerCapture(id){if(this.captures.delete(id))this.emit('lostpointercapture',{pointerId:id});}
   getBoundingClientRect(){return {left:10,top:20,width:200,height:100};}
-  getContext(){return {clearRect(){},fillRect(){}};}
+  getContext(){return {save(){},restore(){},setTransform(){},drawImage(){},clearRect(){},fillRect(){}};}
 }
 const frame=()=>({canvas_id:'c',width:400,height:200,fps:60,running:false,handlers:['mouse_down','mouse_up','mouse_move','key_down','key_up'],commands:[]});
 const pointer=(more={})=>({pointerId:1,pointerType:'mouse',isPrimary:true,button:0,buttons:1,clientX:60,clientY:45,...more});
@@ -86,7 +86,7 @@ for(const backend of ['python','javascript']){
   for(const action of ['deactivate','dispose','replace','error'])test(`${backend}: ${action} detaches global input and never resumes stale callbacks`,async t=>{
     let finish;const events=[];const h=harness(t,backend,event=>{events.push(event);return new Promise((yes,no)=>finish=action==='error'?()=>no(new Error('budget')):yes);});
     h.view.canvas.emit('pointerdown',pointer());await h.tick();h.view.canvas.emit('keydown',key());
-    if(action==='replace')h.view.update({...frame(),canvas_id:'new'});else if(action!=='error')h.view[action]();finish();for(let i=0;i<5;i++)await Promise.resolve();
+    if(action==='replace'){const replacement=createSceneView({...frame(),canvas_id:'new'},{historical:true});h.view.dispose();replacement.dispose();}else if(action!=='error')h.view[action]();finish();for(let i=0;i<5;i++)await Promise.resolve();
     h.win.emit('blur');h.win.emit('pointerup',pointer());h.win.emit('keyup',key());h.doc.emit('visibilitychange');await h.drain();assert.equal(events.length,1);assert.equal(h.view.live,false);assert.equal([...h.win.listeners.values()].reduce((n,s)=>n+s.size,0),0);assert.equal([...h.doc.listeners.values()].reduce((n,s)=>n+s.size,0),0);
   });
 }

@@ -160,3 +160,38 @@ test('real transformed clipped alpha text matches native anchors and historical 
     assert.deepEqual(result,[true,true,true,true]);
   }finally{await p.close();}
 });
+
+test('real immutable cache pixels retain alpha, clips, transforms and transparent frame replacement',options,async()=>{
+  const p=await page();try{
+    const result=await p.evaluate(()=>{
+      const recipe={id:'cache-1',kind:'drawing',width:20,height:20,commands:[{op:'rect',x:0,y:0,width:20,height:20,fill:'#ff000080',stroke:'',stroke_width:1}]};
+      const scene={canvas_id:'cache',width:100,height:80,fps:30,running:false,handlers:[],resources:[recipe],commands:[{op:'image',resource:'cache-1',x:0,y:0,transform:[1,0,0,1,30,20],clips:[{x:35,y:20,width:10,height:20,transform:[1,0,0,1,0,0]}]}]};
+      const view=graphics.createSceneView(scene);document.querySelector('main').append(view.root);const ctx=view.canvas.getContext('2d'),pixel=(x,y)=>[...ctx.getImageData(x,y,1,1).data];
+      const out=[pixel(40,25),pixel(32,25),pixel(47,25)];for(let i=0;i<10;i++)view.update(structuredClone(scene));out.push(pixel(40,25));
+      view.update({...scene,resources:[],commands:[]});out.push(pixel(40,25));view.dispose();out.push(graphics.backingStorePixels());return out;
+    });assert.deepEqual(result,[[255,0,0,128],[0,0,0,0],[0,0,0,0],[255,0,0,128],[0,0,0,0],0]);
+  }finally{await p.close();}
+});
+
+test('real failed cache or root preparation preserves visible pixels and releases resources',options,async()=>{
+  const p=await page();try{
+    const result=await p.evaluate(()=>{
+      const base={canvas_id:'atomic',width:40,height:40,fps:30,running:false,handlers:[],commands:[{op:'background',color:'#00ff00'}]};const v=graphics.createSceneView(base);document.querySelector('main').append(v.root);
+      const prototype=CanvasRenderingContext2D.prototype,original=prototype.fillText;prototype.fillText=function(){throw Error('injected paint failure');};let failed=false;
+      try{v.update({...base,commands:[{op:'background',color:'#ff0000'},{op:'text',text:'x',x:0,y:0,size:12,color:'#ffffff'}]});}catch{failed=true;}finally{prototype.fillText=original;}
+      const pixel=[...v.canvas.getContext('2d').getImageData(5,5,1,1).data];v.dispose();return {failed,pixel,pixels:graphics.backingStorePixels()};
+    });assert.deepEqual(result,{failed:true,pixel:[0,255,0,255],pixels:0});
+  }finally{await p.close();}
+});
+
+test('real standalone legacy-to-cache failure preserves original pixels and dimensions',options,async()=>{
+  const p=await page();try{
+    const result=await p.evaluate(()=>{
+      const canvas=document.createElement('canvas');document.querySelector('main').append(canvas);
+      const scene={canvas_id:'standalone',width:40,height:40,fps:30,running:false,handlers:[],commands:[{op:'background',color:'#00ff00'}]};graphics.drawScene(canvas,scene);
+      const prototype=CanvasRenderingContext2D.prototype,original=prototype.fillText;prototype.fillText=function(){throw Error('injected cache failure');};let failed=false;
+      try{graphics.drawScene(canvas,{...scene,resources:[{id:'r',kind:'drawing',width:8,height:8,commands:[{op:'text',text:'x',x:0,y:0,size:12,color:'#ffffff'}]}],commands:[{op:'image',resource:'r',x:0,y:0}]});}catch{failed=true;}finally{prototype.fillText=original;}
+      const result={failed,width:canvas.width,height:canvas.height,pixel:[...canvas.getContext('2d').getImageData(5,5,1,1).data],backing:graphics.backingStorePixels()};graphics.disposeScene(canvas);result.released=graphics.backingStorePixels();return result;
+    });assert.deepEqual(result,{failed:true,width:40,height:40,pixel:[0,255,0,255],backing:1600,released:0});
+  }finally{await p.close();}
+});

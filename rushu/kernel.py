@@ -35,6 +35,138 @@ def _graphics_matrix(value):
     return isinstance(value, list) and len(value) == 6 and all(map(_graphics_number, value))
 
 
+_MAX_GRAPHICS_RESOURCES = 8
+_MAX_GRAPHICS_RESOURCE_BYTES = 128 * 1024
+_MAX_GRAPHICS_RESOURCE_PIXELS = 4 * 1024 * 1024
+_GRAPHICS_RESOURCE_ID = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
+_GRAPHICS_GEOMETRY = {
+    "background": (), "line": ("x1", "y1", "x2", "y2", "width"),
+    "rect": ("x", "y", "width", "height", "stroke_width"),
+    "ellipse": ("x", "y", "width", "height", "stroke_width"),
+    "arc": ("x", "y", "width", "height", "start", "sweep", "stroke_width"),
+    "sector": ("x", "y", "width", "height", "start", "sweep", "stroke_width"),
+    "text": ("x", "y", "size"), "polygon": ("stroke_width",),
+    "polyline": ("stroke_width",),
+    "bezier": ("x1", "y1", "cx1", "cy1", "cx2", "cy2", "x2", "y2", "stroke_width"),
+    "image": ("x", "y"),
+}
+
+
+def _graphics_resource_id(value):
+    return isinstance(value, str) and _GRAPHICS_RESOURCE_ID.fullmatch(value)
+
+
+def _validate_cache_command(command, *, image=False):
+    """Strict pure-drawing recipe/image contract; old root commands stay compatible."""
+    if not isinstance(command, dict):
+        raise ValueError("invalid graphics cache command")
+    op = command.get("op")
+    if (not isinstance(op, str) or op not in _GRAPHICS_GEOMETRY
+            or (op == "image") != image):
+        raise ValueError("invalid graphics cache operation")
+    geometry = _GRAPHICS_GEOMETRY[op]
+    required = {"op", *geometry}
+    optional = set() if op == "background" else {"transform", "clips"}
+    if op == "image":
+        required.add("resource")
+    elif op in ("line", "background", "text"):
+        required.add("color")
+    else:
+        required.update(("fill", "stroke"))
+    if op in ("polygon", "polyline"):
+        required.add("points")
+    if op == "text":
+        required.add("text")
+        optional.update(("align", "baseline"))
+    if not required <= command.keys() or command.keys() - required - optional:
+        raise ValueError("invalid graphics cache fields")
+    if not all(_graphics_number(command[key]) for key in geometry):
+        raise ValueError("invalid graphics cache geometry")
+    if "transform" in command and not _graphics_matrix(command["transform"]):
+        raise ValueError("invalid graphics cache transform")
+    if "clips" in command:
+        clips = command["clips"]
+        if (not isinstance(clips, list) or len(clips) > 32
+                or any(not isinstance(clip, dict)
+                       or set(clip) != {"x", "y", "width", "height", "transform"}
+                       or not all(_graphics_number(clip.get(key)) for key in ("x", "y", "width", "height"))
+                       or clip["width"] < 0 or clip["height"] < 0
+                       or not _graphics_matrix(clip["transform"]) for clip in clips)):
+            raise ValueError("invalid graphics cache clips")
+    if image:
+        if not _graphics_resource_id(command["resource"]):
+            raise ValueError("invalid graphics image reference")
+        return
+    for key in ("fill", "stroke", "color"):
+        if key in command:
+            value = command[key]
+            if value == "" and op != "background":
+                continue
+            if not isinstance(value, str) or not _GRAPHICS_COLOR.fullmatch(value):
+                raise ValueError("invalid graphics cache color")
+    if "stroke_width" in command and not 1 <= command["stroke_width"] <= 256:
+        raise ValueError("invalid graphics cache stroke width")
+    if op in ("arc", "polyline", "bezier") and command["fill"] != "":
+        raise ValueError("invalid graphics cache open-path fill")
+    if op in ("rect", "ellipse", "arc", "sector") and (command["width"] < 0 or command["height"] < 0):
+        raise ValueError("invalid graphics cache dimensions")
+    if op in ("polygon", "polyline"):
+        points = command.get("points")
+        if (not isinstance(points, list) or not (2 if op == "polyline" else 3) <= len(points) <= 256
+                or any(not isinstance(point, list) or len(point) != 2
+                       or not all(map(_graphics_number, point)) for point in points)):
+            raise ValueError("invalid graphics cache points")
+    if op == "line" and not 0 < command["width"] <= 256:
+        raise ValueError("invalid graphics cache line width")
+    if op == "text":
+        if (not isinstance(command["text"], str) or len(command["text"]) > 4096
+                or not 0 < command["size"] <= 256):
+            raise ValueError("invalid graphics cache text")
+        for key, values in (("align", ("left", "center", "right")),
+                            ("baseline", ("top", "middle", "bottom", "alphabetic"))):
+            if key in command and command[key] not in values:
+                raise ValueError("invalid graphics cache text alignment")
+
+
+def _validate_graphics_resources(event, size):
+    resources = event.get("resources", [])
+    if not isinstance(resources, list) or len(resources) > _MAX_GRAPHICS_RESOURCES:
+        raise ValueError("invalid graphics resources")
+    if size(resources) > _MAX_GRAPHICS_RESOURCE_BYTES:
+        raise ValueError("graphics cache definitions exceed 128 KiB UTF-8")
+    definitions, pixels, count = set(), 0, len(event.get("commands", []))
+    for resource in resources:
+        if (not isinstance(resource, dict)
+                or set(resource) != {"id", "kind", "width", "height", "commands"}
+                or not _graphics_resource_id(resource.get("id"))
+                or resource["id"] in definitions or resource["kind"] != "drawing"):
+            raise ValueError("invalid graphics resource definition")
+        if any(isinstance(resource[key], bool) or not isinstance(resource[key], int)
+               or not 1 <= resource[key] <= 2048 for key in ("width", "height")):
+            raise ValueError("invalid graphics resource dimensions")
+        commands = resource["commands"]
+        if not isinstance(commands, list) or len(commands) >= MAX_GRAPHICS_COMMANDS:
+            raise ValueError("graphics cache recipe exceeds 2047 commands")
+        for command in commands:
+            _validate_cache_command(command)
+        definitions.add(resource["id"])
+        pixels += resource["width"] * resource["height"]
+        count += len(commands)
+    if pixels > _MAX_GRAPHICS_RESOURCE_PIXELS or count > MAX_GRAPHICS_COMMANDS:
+        raise ValueError("graphics cache pixel or frame command budget exceeded")
+    references = set()
+    for command in event.get("commands", []):
+        if command.get("op") == "image":
+            _validate_cache_command(command, image=True)
+            references.add(command["resource"])
+    if references != definitions:
+        raise ValueError("graphics resources must exactly match image references")
+
+
+class _GraphicsFrameBudgetError(ValueError):
+    pass
+
+
 class KernelError(Exception):
     def __init__(self, message, status=400):
         super().__init__(message)
@@ -224,6 +356,10 @@ def _worker(connection):
             if command.get("kind") == "close":
                 break
             kind = command.get("kind")
+            if kind == "graphics_rejected":
+                if host.canvas_id == command.get("canvas_id"):
+                    host.close()
+                continue
             if kind not in ("execute", "graphics"):
                 continue
             budget.update(chars=0, events=0, truncated=False, parts=[], pending=0, last_flush=0)
@@ -322,6 +458,10 @@ class Session:
         # Count complete serialized records, including graphics command payloads.
         return len(json.dumps(event, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
 
+    def _graphics_record(self, event):
+        return dict(event, seq=self.cursor + 1, cell_id=self.cell_id,
+                    execution_count=self.execution_count, generation=self.generation)
+
     def _append(self, event):
         if event.get("type") == "error" and "diagnostic" not in event:
             from rulang.frontend import RuError
@@ -329,9 +469,10 @@ class Session:
             error.location_known = False
             detail = diagnostic(error, "<如书>")
             event = dict(event, diagnostic=detail, source_name=detail["source_name"])
+        record = self._graphics_record(event)
+        if record.get("type") == "graphics" and self._event_size(record) > MAX_GRAPHICS_BYTES:
+            raise _GraphicsFrameBudgetError("画布帧连同执行标识超过 256 KiB UTF-8；请减少文字、图元或缓存配方。")
         self.cursor += 1
-        record = dict(event, seq=self.cursor, cell_id=self.cell_id,
-                      execution_count=self.execution_count, generation=self.generation)
         if record["type"] in ("graphics", "graphics_done"):
             # Frames are complete scene snapshots; keep only the newest per canvas.
             retained = deque()
@@ -351,16 +492,24 @@ class Session:
             self.event_text -= self._event_size(removed)
 
     def _accept_graphics(self, event):
+        try:
+            size = self._event_size(self._graphics_record(event))
+        except (TypeError, RecursionError, UnicodeEncodeError) as error:
+            raise ValueError("invalid graphics JSON payload") from error
+        if size > MAX_GRAPHICS_BYTES:
+            raise _GraphicsFrameBudgetError("画布帧连同执行标识超过 256 KiB UTF-8；请减少文字、图元或缓存配方。")
         commands = event.get("commands", [])
         if (not isinstance(commands, list) or len(commands) > MAX_GRAPHICS_COMMANDS
-                or self._event_size(event) > MAX_GRAPHICS_BYTES
                 or any(not isinstance(command, dict) or not isinstance(command.get("op"), str) or command["op"] not in
-                       {"rect", "ellipse", "line", "text", "background", "polygon", "arc", "sector", "polyline", "bezier"} for command in commands)):
+                       {"rect", "ellipse", "line", "text", "background", "polygon", "arc", "sector", "polyline", "bezier", "image"} for command in commands)):
             raise ValueError("invalid graphics payload")
+        _validate_graphics_resources(event, self._event_size)
         # Validate colors, text enums and new path geometry/state before retaining.
         # The browser independently validates all scene fields before drawing.
         for command in commands:
             op = command["op"]
+            if op == "image":
+                continue  # The strict new command contract was checked above.
             if op in ("arc", "sector", "polyline", "bezier"):
                 if op == "polyline":
                     fields = ("stroke_width",)
@@ -405,6 +554,16 @@ class Session:
         self.graphics = {key: event.get(key) for key in
                          ("canvas_id", "width", "height", "fps", "running", "handlers")}
 
+    def _reject_graphics_frame(self, event, error):
+        # Refuse only this oversized frame, retain the previous portable snapshot,
+        # and release the worker's canvas without running a user close callback.
+        self.graphics = None
+        self.graphics_busy = self.graphics_close_pending = False
+        self._cancel_graphics_timer()
+        self._append({"type": "error", "category": "图形错误", "message": str(error),
+                      "line": 1, "col": 1})
+        self.connection.send({"kind": "graphics_rejected", "canvas_id": event.get("canvas_id")})
+
     def _collect(self, connection, sentinel, generation):
         try:
             while True:
@@ -418,7 +577,11 @@ class Session:
                     if self.closed or generation != self.generation:
                         return
                     if event["type"] == "graphics":
-                        self._accept_graphics(event)
+                        try:
+                            self._accept_graphics(event)
+                        except _GraphicsFrameBudgetError as error:
+                            self._reject_graphics_frame(event, error)
+                            continue
                     elif event["type"] == "graphics_closed":
                         if self.graphics and event.get("canvas_id") == self.graphics["canvas_id"]:
                             self.graphics = None

@@ -8,7 +8,8 @@ function harness(overrides={},cellOverrides={},activeRun=null){
   const cell={id:'cell',execution_count:2,status:'done',outputs:[],...cellOverrides};
   const effects={rendered:0,deactivated:0,rejected:0,resolved:0};
   const context={cell,session:'s',epoch:1,generation:1,cursor:0,polling:false,transition:false,book:{cells:[cell]},activeRun,connected:true,kernelDead:false,lastExecutionCount:2,
-    scenePending:new Map([['canvas',{reject:()=>effects.rejected++,resolve:()=>effects.resolved++}]]),sceneViews:new Map([['canvas',{view:{deactivate:()=>effects.deactivated++}}]]),
+    sceneKey:(cell,id)=>JSON.stringify([cell.id,cell.execution_count,id]),
+    scenePending:new Map([[JSON.stringify(['cell',2,'canvas']),{reject:()=>effects.rejected++,resolve:()=>effects.resolved++}]]),sceneViews:new Map([[JSON.stringify(['cell',2,'canvas']),{view:{deactivate:()=>effects.deactivated++}}]]),
     api:async()=>({events:[{seq:1,generation:1,cell_id:'cell',execution_count:2,type:'graphics_done',canvas_id:'canvas',status:'error',...overrides}],cursor:1,state:'idle',execution_count:2}),
     renderOutput(){effects.rendered++;},markDirty(){},runtimeStatus(){},refreshControls(){},notice(){},stopScenes(){},setTimeout(){return 1;},clearTimeout(){},
   };

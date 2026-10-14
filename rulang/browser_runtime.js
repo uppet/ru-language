@@ -1,10 +1,13 @@
   // Browser-only graphics and resource accounting. No DOM or ambient I/O.
   const browserTypes = {
     helpers: builtin('如观工具', [], 'helpers', 'graphicsKind'),
-    canvas: builtin('如观画布', [], 'canvas', 'graphicsKind')
+    canvas: builtin('如观画布', [], 'canvas', 'graphicsKind'),
+    recorder: builtin('如观绘图目标', [], 'recorder', 'graphicsKind'),
+    image: builtin('如观图像', [], 'image', 'graphicsKind')
   };
   builtins.values.__如观 = new Instance(browserTypes.helpers,dict());
   let browserCanvas = null, browserSteps = 0, browserOutputBytes = 0;
+  let browserPhase='initialization',browserRecording=null;
   const browserEncoder = new TextEncoder();
   // Host-only clock injection; direct module users fall back to the platform's
   // monotonic clock. Neither the function nor timestamps enter the Ru scope.
@@ -35,20 +38,63 @@
   }
   function browserClose(){
     if(!browserCanvas)return;
-    const c=browserCanvas;c.closed=true;c.running=false;c.callbacks=dict();c.commands=[];browserResetDrawing(c);browserCanvas=null;
+    const c=browserCanvas;c.closed=true;c.running=false;c.callbacks=dict();browserResetCommands(c);c.resources.clear();c.resourceSizes.clear();c.resourcePixels=0;c.resourceBytes=2;browserResetDrawing(c);browserCanvas=null;
     __ruHost.emit({type:'graphics_closed',canvas_id:c.id});
   }
   const browserIdentity=()=>[1,0,0,1,0,0];
+  function browserResetCommands(c){
+    c.commands=[];c.bytes=2;c.referenceIds=new Set();c.referenceBytes=0;c.referenceCommands=0;
+  }
   function browserResetDrawing(c){c.transform=browserIdentity();c.clips=[];c.stack=[];}
   function browserFlush(){
     const c=browserCanvas;if(!c)return;
     if(c.stack.length){const saved=c.stack[0];browserClose();fail(saved.m,'保存与恢复须配对；绘制结束时仍有未恢复的状态',saved.loc);}
     if(!c.dirty)return;
-    __ruHost.emit({type:'graphics',canvas_id:c.id,width:c.width,height:c.height,fps:c.fps,running:c.running,handlers:Object.keys(c.callbacks),commands:c.commands.slice()});c.dirty=false;
+    const scene=browserScene(c,c.commands);browserCheckScene(c,scene,c.module,c.location);
+    __ruHost.emit(scene);c.dirty=false;
+  }
+  function browserResources(c,commands){
+    const ids=new Set(commands.filter(command=>command.op==='image').map(command=>command.resource));
+    return Array.from(ids,id=>c.resources.get(id));
+  }
+  function browserScene(c,commands){
+    const scene={type:'graphics',canvas_id:c.id,width:c.width,height:c.height,fps:c.fps,running:c.running,handlers:Object.keys(c.callbacks),commands:commands.slice()};
+    const resources=browserResources(c,commands);if(resources.length)scene.resources=resources;
+    return scene;
+  }
+  function browserCheckScene(c,scene,m,loc){
+    const resources=scene.resources||[];
+    if(scene.commands.length+resources.reduce((n,r)=>n+r.commands.length,0)>2048)fail(m,'如观每帧根命令与引用缓存合计最多 2048 个绘制命令',loc);
+    if(browserEncoder.encode(JSON.stringify(scene)).length>262144)fail(m,'如观完整画面含缓存超过 256 KiB 数据',loc);
+  }
+  function browserCheckCommand(c,value,size,m,loc){
+    const added=value.op==='image'&&!c.referenceIds.has(value.resource);
+    const recipe=added?c.resources.get(value.resource):null;
+    const count=c.referenceCommands+(added?recipe.commands.length:0);
+    if(c.commands.length+1+count>2048)fail(m,'如观每帧根命令与引用缓存合计最多 2048 个绘制命令',loc);
+    const references=c.referenceIds.size+(added?1:0);
+    const bytes=c.referenceBytes+(added?c.resourceSizes.get(value.resource):0);
+    if(references){
+      // Only metadata is serialized here. Recipes are encoded once on creation;
+      // the actual complete event is still measured independently at flush.
+      const base=browserEncoder.encode(JSON.stringify(browserScene(c,[]))).length;
+      const total=base+c.bytes+size-3+',"resources":'.length+2+references-1+bytes;
+      if(total>262144)fail(m,'如观完整画面含缓存超过 256 KiB 数据',loc);
+    }
+    if(added){c.referenceIds.add(value.resource);c.referenceBytes=bytes;c.referenceCommands=count;}
+  }
+  function browserFreeze(value){
+    if(value&&typeof value==='object'){Object.values(value).forEach(browserFreeze);Object.freeze(value);}return value;
+  }
+  function browserDrawingTarget(width,height){
+    return {width,height,commands:[],bytes:2,fill:'#4677ff',stroke:'#202530',lineWidth:1,textSize:16,textAlign:'left',textBaseline:'top',transform:browserIdentity(),clips:[],stack:[],dirty:false,closed:false};
   }
   const browserEvents={每帧:['frame',1],鼠标按下:['mouse_down',3],鼠标松开:['mouse_up',3],鼠标移动:['mouse_move',2],按键:['key_down',1],松键:['key_up',1]};
   const browserParams={背景:['色'],填色:['色'],描边:['色'],线宽:['粗'],字号:['大小'],文字对齐:['横向','纵向'],矩形:['横','纵','宽','高'],椭圆:['横','纵','宽','高'],线:['横一','纵一','横二','纵二'],文字:['文','横','纵'],三角形:['横一','纵一','横二','纵二','横三','纵三'],多边形:['点阵'],平移:['横','纵'],旋转:['弧度'],缩放:['横倍率','纵倍率'],保存:[],恢复:[],变换:['a','b','c','d','e','f'],重置变换:[],裁剪:['横','纵','宽','高'],取消裁剪:[],帧率:['率'],停:[],继续:[],关闭:[],宽:[],高:[],帧:[],经过秒:[],间隔秒:[]};
   for(const name of Object.keys(browserEvents))browserParams[name]=['回调'];
+  browserParams.缓存=['宽','高','绘制'];
+  browserParams.贴图=['图像','横','纵'];
+  const browserRecorderForbidden=new Set(['缓存','贴图','帧率','停','继续','关闭','帧','经过秒','间隔秒',...Object.keys(browserEvents)]);
   browserParams.弧=['横','纵','宽','高','始角','转角'];
   browserParams.扇形=['横','纵','宽','高','始角','转角'];
   browserParams.折线=['点阵'];
@@ -70,17 +116,28 @@
         m.lastMemberProcedure=false;return value;
       }
       if(name!=='画布')bad('未知如观工具成员：'+name);
+      if(browserRecording)bad('缓存录制期间不能创建或替换主画布');
       const a=argsBind(m,name,args,['宽','高'],loc),width=num(a.宽,'宽',1,2048,true),height=num(a.高,'高',1,2048,true);
       const origin=browserSampleTime(m,loc,false);
       browserClose();
-      browserCanvas={id:Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join(''),width,height,callbacks:dict(),commands:[],bytes:2,fill:'#4677ff',stroke:'#202530',lineWidth:1,textSize:16,textAlign:'left',textBaseline:'top',fps:30,frame:0,origin,elapsed:0,delta:0,previousFrame:null,running:false,closed:false,dirty:true,transform:browserIdentity(),clips:[],stack:[]};
+      browserCanvas={id:Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join(''),width,height,callbacks:dict(),commands:[],bytes:2,fill:'#4677ff',stroke:'#202530',lineWidth:1,textSize:16,textAlign:'left',textBaseline:'top',fps:30,frame:0,origin,elapsed:0,delta:0,previousFrame:null,running:false,closed:false,dirty:true,transform:browserIdentity(),clips:[],stack:[],resources:new Map(),resourceSizes:new Map(),resourcePixels:0,resourceBytes:2,referenceIds:new Set(),referenceBytes:0,referenceCommands:0,token:{},module:m,location:loc};
       const value=new Instance(browserTypes.canvas,dict());value.graphicsCanvas=browserCanvas;m.lastMemberProcedure=false;return value;
     }
+    if(kind==='image'){
+      if(name!=='宽'&&name!=='高')bad('如观图像只支持宽、高查询');
+      argsBind(m,name,args,[],loc);m.lastMemberProcedure=false;return receiver.graphicsImage[name==='宽'?'width':'height'];
+    }
     const c=receiver.graphicsCanvas;
-    if(!c||c.closed||c!==browserCanvas)bad('如观画布已关闭；请重新创建画布');
+    if(kind==='recorder'){
+      if(!c||c.closed||c!==browserRecording)bad('如观缓存绘图目标已失效');
+      if(browserRecorderForbidden.has(name))bad('缓存绘图目标不支持成员：'+name);
+    }else{
+      if(!c||c.closed||c!==browserCanvas)bad('如观画布已关闭；请重新创建画布');
+      if(browserRecording&&!['宽','高','帧','经过秒','间隔秒'].includes(name))bad('缓存录制期间不能修改主画布');
+    }
     if(!own(browserParams,name))bad('未知如观画布成员：'+name);
     const a=argsBind(m,name,args,browserParams[name],loc);
-    m.lastMemberProcedure=!['宽','高','帧','经过秒','间隔秒'].includes(name);
+    m.lastMemberProcedure=!['宽','高','帧','经过秒','间隔秒','缓存'].includes(name);
     const command=value=>{
       if(value.op!=='background'){
         if(c.transform.some((v,i)=>v!==browserIdentity()[i]))value.transform=c.transform.slice();
@@ -88,6 +145,13 @@
       }
       const size=browserEncoder.encode(JSON.stringify(value)).length+1;
       if(c.commands.length>=2048||c.bytes+size>261120)bad('如观每帧最多 2048 个绘制命令、256 KiB 数据');
+      if(kind==='recorder'){
+        if(c.commands.length>=2047)bad('单份缓存最多 2047 个命令，须为贴图预留一条命令');
+        // bytes includes one trailing-comma allowance; remove it for exact
+        // resource/list accounting without serializing the whole prefix again.
+        const recipeBytes=c.recipeBaseBytes+c.bytes+size-3;
+        if(browserCanvas.resourceBytes+recipeBytes+(browserCanvas.resources.size?1:0)>131072)bad('如观全部缓存配方最多 128 KiB 数据');
+      }else if(c.resources.size)browserCheckCommand(c,value,size,m,loc);
       c.commands.push(value);c.bytes+=size;c.dirty=true;
     };
     const multiply=right=>{
@@ -95,7 +159,35 @@
       const next=[a*h+d*i,b*h+e*i,a*j+d*k,b*j+e*k,a*l+d*n+f,b*l+e*n+g];
       next.forEach(value=>num(value,'累计变换'));c.transform=next;
     };
-    if(own(browserEvents,name)){
+    if(name==='缓存'){
+      if(browserPhase!=='initialization')bad('缓存只可在初始化时创建，不能在事件回调中创建');
+      const width=num(a.宽,'缓存宽',1,2048,true),height=num(a.高,'缓存高',1,2048,true),fn=a.绘制;
+      if(!(fn instanceof Fn)||fn.params.length!==1)bad('缓存绘制需要接受 1 个参数的算／作回调');
+      if(c.resources.size>=8)bad('如观每画布最多 8 份缓存');
+      if(c.resourcePixels+width*height>4194304)bad('如观全部缓存最多 4194304 像素');
+      const target=browserDrawingTarget(width,height),id='cache-'+(c.resources.size+1);
+      target.resourceId=id;target.recipeBaseBytes=browserEncoder.encode(JSON.stringify({id,kind:'drawing',width,height,commands:[]})).length;
+      if(c.resourceBytes+target.recipeBaseBytes+(c.resources.size?1:0)>131072)bad('如观全部缓存配方最多 128 KiB 数据');
+      const temporary=new Instance(browserTypes.recorder,dict());temporary.graphicsCanvas=target;
+      browserRecording=target;
+      try{
+        call(m,fn,[[null,temporary]],loc);
+        if(target.stack.length)bad('缓存保存与恢复须配对');
+        const recipe=browserFreeze(JSON.parse(JSON.stringify({id,kind:'drawing',width,height,commands:target.commands})));
+        const bytes=browserEncoder.encode(JSON.stringify([...c.resources.values(),recipe])).length;
+        if(bytes>131072)bad('如观全部缓存配方最多 128 KiB 数据');
+        c.resources.set(id,recipe);c.resourceSizes.set(id,browserEncoder.encode(JSON.stringify(recipe)).length);c.resourcePixels+=width*height;c.resourceBytes=bytes;
+        const image=new Instance(browserTypes.image,dict());
+        image.graphicsImage=Object.freeze({owner:c.id,token:c.token,id,width,height});
+        m.lastMemberProcedure=false;return image;
+      }finally{
+        target.closed=true;target.commands=[];browserResetDrawing(target);temporary.graphicsCanvas=null;browserRecording=null;
+      }
+    }else if(name==='贴图'){
+      const image=a.图像 instanceof Instance&&a.图像.type===browserTypes.image?a.图像.graphicsImage:null;
+      if(!image||image.owner!==c.id||image.token!==c.token||!c.resources.has(image.id))bad('贴图须使用当前画布的有效如观图像');
+      command({op:'image',resource:image.id,x:num(a.横,'横'),y:num(a.纵,'纵')});
+    }else if(own(browserEvents,name)){
       const [event,count]=browserEvents[name],fn=a.回调;
       if(!(fn instanceof Fn)||fn.params.length!==count)bad(name+'需要接受 '+count+' 个参数的算／作回调');
       c.callbacks[event]={fn,m,loc};if(event==='frame')browserSetRunning(c,true);
@@ -140,7 +232,7 @@
       const copy=Array.from(points,(point,index)=>{if(!own(points,index)||!Array.isArray(point)||point.length!==2||!own(point,0)||!own(point,1))bad(name+'每个点须为两个坐标的阵');return Array.from(point,value=>num(value,name+'坐标'));});
       command({op:name==='折线'?'polyline':'polygon',points:copy,fill:name==='折线'?'':c.fill,stroke:c.stroke,stroke_width:c.lineWidth});
     }
-    else if(name==='背景'){const value=color(a.色);c.commands=[];c.bytes=2;command({op:'background',color:value});}
+    else if(name==='背景'){const value=color(a.色);browserResetCommands(c);command({op:'background',color:value});}
     // Invisible/zero-sweep drawing calls still replace input scenes and spend
     // command/byte budget. Native rendering alone interprets the signed sweep.
     else if(name==='弧'||name==='扇形')command({op:name==='弧'?'arc':'sector',x:num(a.横,'横'),y:num(a.纵,'纵'),width:num(a.宽,'宽',0),height:num(a.高,'高',0),start:num(a.始角,'始角'),sweep:num(a.转角,'转角'),fill:name==='弧'?'':c.fill,stroke:c.stroke,stroke_width:c.lineWidth});
@@ -188,14 +280,15 @@
     const now=browserSampleTime(m,loc);
     c.elapsed=now-c.origin;c.delta=event.type==='frame'&&c.previousFrame!==null?now-c.previousFrame:0;
     if(event.type==='frame'){c.previousFrame=now;c.frame++;}
-    const previous=c.commands,previousBytes=c.bytes;c.commands=[];c.bytes=2;
+    const previous=c.commands,previousBytes=c.bytes,previousIds=c.referenceIds,previousReferenceBytes=c.referenceBytes,previousReferenceCommands=c.referenceCommands;browserResetCommands(c);
     browserReset();browserResetDrawing(c);
+    const previousPhase=browserPhase;browserPhase='event';
     try{
       call(m,fn,values.map(value=>[null,value]),loc);
       if(browserCanvas===c&&!c.closed){
-        if(event.type!=='frame'&&!c.commands.length){c.commands=previous;c.bytes=previousBytes;}
+        if(event.type!=='frame'&&!c.commands.length){c.commands=previous;c.bytes=previousBytes;c.referenceIds=previousIds;c.referenceBytes=previousReferenceBytes;c.referenceCommands=previousReferenceCommands;}
         c.dirty=true;
       }
       browserFlush();
-    }catch(error){browserClose();throw error;}
+    }catch(error){browserClose();throw error;}finally{browserPhase=previousPhase;}
   }

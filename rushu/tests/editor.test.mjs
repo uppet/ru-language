@@ -463,3 +463,10 @@ test('bezier help is contextual and states the native cubic contract',()=>{
   for(const word of ['起横','起纵','控一横','控一纵','控二横','控二纵','终横','终纵'])
     assert.equal(analyze(`${word} 取 1.`).tokens.find(t=>t.text===word).face,null);
 });
+
+test('cache and image remain contextual ordinary members with lifecycle and budget help',()=>{
+  for(const [word,source,parts] of [['缓存','图 其 缓存 32 32 (作 层: 为).',['只在初始化','不可变图像','2047','128 KiB']],['贴图','图@贴图 图像:星空 横:0 纵:0.',['原尺寸','返回空','关闭','完整定义']]]){
+    assert.equal(analyze(source).tokens.find(t=>t.text===word).face,'builtin');for(const part of parts)assert.ok(highlight(source).includes(part));
+    for(const plain of [`${word} 取 1.`,`作 方法 ${word}: 显 ${word}. 为.`,`# 图 其 ${word}.`,`'图 其 ${word}'`]){for(const t of analyze(plain).tokens.filter(t=>t.text===word))assert.equal(t.face,null);}
+  }
+});

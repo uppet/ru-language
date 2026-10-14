@@ -5,6 +5,7 @@ host retains real Ru Function values; the ordinary interpreter owns closures.
 This is resource accounting for trusted local code, not a security sandbox.
 """
 import json
+from dataclasses import dataclass
 import math
 import re
 import secrets
@@ -21,6 +22,10 @@ MAX_CLIPS = 32
 IDENTITY = (1, 0, 0, 1, 0, 0)
 MAX_COMMANDS = 2048
 MAX_FRAME_BYTES = 262144
+MAX_IMAGES = 8
+MAX_RESOURCE_PIXELS = 4194304
+MAX_RESOURCE_BYTES = 131072
+MAX_RECIPE_COMMANDS = MAX_COMMANDS - 1
 MAX_CALLBACK_LINES = 500000
 MAX_CALLBACK_SECONDS = 1.0
 MAX_GRAPHICS_MEMORY = 64 * 1024 * 1024
@@ -45,6 +50,7 @@ CANVAS_PARAMS = MappingProxyType({"背景": ("色",), "填色": ("色",), "描�
               "平移": ("横", "纵"), "旋转": ("弧度",), "缩放": ("横倍率", "纵倍率"),
               "保存": (), "恢复": (), "变换": ("a", "b", "c", "d", "e", "f"), "重置变换": (),
               "裁剪": ("横", "纵", "宽", "高"), "取消裁剪": (),
+              "缓存": ("宽", "高", "绘制"), "贴图": ("图像", "横", "纵"),
               "帧率": ("率",), "停": (), "继续": (), "关闭": (), "宽": (), "高": (), "帧": (),
               "经过秒": (), "间隔秒": (),
               **{key: ("回调",) for key in CALLBACK_NAMES}})
@@ -54,7 +60,8 @@ def install_graphics(owner):
     global _TYPES
     if _TYPES is None:
         _TYPES = {}
-        for kind, name in (("helpers", "如观工具"), ("canvas", "如观画布")):
+        for kind, name in (("helpers", "如观工具"), ("canvas", "如观画布"),
+                           ("recorder", "如观绘图目标"), ("image", "如观图像")):
             node = Node("type", Token("IDENT", name, 0, 0),
                         {"name": name, "parent": None, "fields": [], "methods": []})
             typ = RuType(_BUILTIN_OWNER, node, fields={}, methods={}, state=2)
@@ -66,11 +73,45 @@ def install_graphics(owner):
     owner.graphics_host = None
 
 
+READ_MEMBERS = frozenset(("宽", "高", "帧", "经过秒", "间隔秒"))
+RECORDER_MEMBERS = frozenset(CANVAS_PARAMS) - frozenset(CALLBACK_NAMES) - {
+    "缓存", "贴图", "帧率", "停", "继续", "关闭", "帧", "经过秒", "间隔秒"}
+
+
+def _json(value):
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+@dataclass(frozen=True, slots=True)
+class ImageHandle:
+    owner: object
+    token: object
+    resource_id: str
+    width: int
+    height: int
+
+
+@dataclass(frozen=True, slots=True)
+class DrawingResource:
+    # Immutable serialized recipe; escaped language values never own its data.
+    definition: str
+    count: int
+    pixels: int
+
+    @property
+    def byte_size(self):
+        return len(self.definition.encode("utf-8"))
+
+
 class Canvas:
     def __init__(self, host, width, height, origin):
         self.host, self.width, self.height = host, width, height
         self.id = secrets.token_hex(16)
         self.callbacks = {}
+        self.token = object()
+        self.resources = {}
+        self.resource_bytes = 2
+        self.resource_pixels = 0
         self.commands = []
         self.command_bytes = 2
         self.fill, self.stroke = "#4677ff", "#202530"
@@ -110,11 +151,23 @@ class Canvas:
             return
         self.closed, self.running = True, False
         self.callbacks.clear()
+        self.resources.clear()
+        self.resource_bytes, self.resource_pixels = 2, 0
         self.commands.clear()
         self.reset_geometry()
         self.host.emit({"type": "graphics_closed", "canvas_id": self.id})
         if self.host.canvas is self:
             self.host.canvas = None
+
+    def scene(self, commands=None):
+        commands = self.commands if commands is None else commands
+        event = {"canvas_id": self.id, "width": self.width, "height": self.height,
+                 "fps": self.fps, "running": self.running, "handlers": list(self.callbacks),
+                 "type": "graphics", "commands": list(commands)}
+        refs = dict.fromkeys(command["resource"] for command in commands if command["op"] == "image")
+        if refs:
+            event["resources"] = [json.loads(self.resources[key].definition) for key in refs]
+        return event
 
     def command(self, command, fail):
         if command["op"] != "background":
@@ -125,15 +178,64 @@ class Canvas:
         size = len(json.dumps(command, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) + 1
         if len(self.commands) >= MAX_COMMANDS or self.command_bytes + size > MAX_FRAME_BYTES - 1024:
             fail("如观每帧最多 2048 个绘制命令、256 KiB 数据；请减少图形或文字")
+        refs = ({item["resource"] for item in self.commands if item["op"] == "image"}
+                if self.resources else set())
+        if command["op"] == "image":
+            refs.add(command["resource"])
+        if len(self.commands) + 1 + sum(self.resources[key].count for key in refs) > MAX_COMMANDS:
+            fail("如观每帧根命令与引用缓存配方合计最多 2048 个命令")
+        if refs:
+            # Account exact serialized boundaries without decoding/copying every
+            # cached recipe again for each dynamic primitive in a warm frame.
+            frame_size = len(_json(self.scene([])).encode("utf-8")) + self.command_bytes + size - 3
+            frame_size += len(',"resources":') + 2 + len(refs) - 1
+            frame_size += sum(self.resources[key].byte_size for key in refs)
+            if frame_size > MAX_FRAME_BYTES:
+                fail("如观完整绘图帧超过 256 KiB UTF-8 数据；请减少图形或文字")
         self.commands.append(command)
         self.command_bytes += size
         self.dirty = True
+
+
+class DrawingRecorder(Canvas):
+    """A short-lived drawing target, never installed as the host's canvas."""
+    def __init__(self, host, width, height, resource_id, owner):
+        super().__init__(host, width, height, 0)
+        self.resource_id, self.owner = resource_id, owner
+        self.definition_overhead = len(self.definition([]).encode("utf-8"))
+
+    def definition(self, commands=None):
+        return _json({"id": self.resource_id, "kind": "drawing", "width": self.width,
+                      "height": self.height, "commands": self.commands if commands is None else commands})
+
+    def check_balanced(self):
+        if self.stack:
+            raise RuError("如观缓存保存与恢复须成对", category="运行错误")
+
+    def command(self, command, fail):
+        if len(self.commands) >= MAX_RECIPE_COMMANDS:
+            fail("如观单张缓存最多 2047 个命令；须为贴图保留一个命令")
+        # Use the common geometry snapshot and ordinary command validation.
+        super().command(command, fail)
+        size = self.definition_overhead + self.command_bytes - 2 - bool(self.commands)
+        if self.owner.resource_bytes + size + bool(self.owner.resources) > MAX_RESOURCE_BYTES:
+            self.commands.pop()
+            fail("如观全部缓存定义最多 128 KiB UTF-8 数据；请减少图形或文字")
+
+    def invalidate(self):
+        self.closed = True
+        self.commands.clear()
+        self.callbacks.clear()
+        self.reset_geometry()
+        self.owner = None
 
 
 class GraphicsHost:
     def __init__(self, interpreter, emit, *, now_seconds=None):
         self.interpreter, self.emit = interpreter, emit
         self.canvas = None
+        self.phase = "initialization"
+        self.recording = None
         self.memory_start = 0
         self.owns_tracing = False
         # This host-only hook never enters Ru or the event protocol. Capture the
@@ -182,9 +284,12 @@ class GraphicsHost:
 
     def begin_execution(self):
         self.close()
+        self.phase = "initialization"
 
     def create(self, width, height):
         from .interpreter import Instance
+        if self.recording is not None:
+            raise RuError("如观缓存录制期间不能创建主画布", category="运行错误")
         origin = self._sample_time(close_on_error=False)
         self.close()
         if not tracemalloc.is_tracing():
@@ -201,7 +306,9 @@ class GraphicsHost:
         if canvas:
             canvas.check_balanced()
         if canvas and canvas.dirty:
-            event = dict(self.snapshot(), type="graphics", commands=list(canvas.commands))
+            event = canvas.scene()
+            if len(_json(event).encode("utf-8")) > MAX_FRAME_BYTES:
+                raise RuError("如观完整绘图帧超过 256 KiB UTF-8 数据；请减少图形或文字", category="运行错误")
             self.emit(event)
             canvas.dirty = False
 
@@ -307,6 +414,7 @@ class GraphicsHost:
         except (ImportError, OSError, ValueError):
             old_limit = None
         callback_error = False
+        previous_phase, self.phase = self.phase, "event"
         try:
             sys.settrace(trace)
             self.interpreter.invoke_value(node, fn, [(None, value) for value in values])
@@ -318,6 +426,7 @@ class GraphicsHost:
             self.close()
             raise
         finally:
+            self.phase = previous_phase
             sys.settrace(old_trace)
             if old_limit is not None:
                 try:
@@ -333,7 +442,11 @@ class GraphicsHost:
             if not canvas.commands and kind != "frame":
                 canvas.commands, canvas.command_bytes = previous, previous_bytes
             canvas.dirty = True
-        self.flush()
+        try:
+            self.flush()
+        except BaseException:
+            self.close()
+            raise
 
 
 def graphics_member(owner, n, receiver, name, args):
@@ -370,15 +483,69 @@ def graphics_member(owner, n, receiver, name, args):
             fail("如观画布仅在如书 Python 会话中可用；命令行和 C／JavaScript 后端尚不支持图形")
         owner.last_member_procedure = False
         return True, owner.graphics_host.create(width, height)
+    if kind == "image":
+        if name not in ("宽", "高"):
+            fail("如观图像只提供只读宽、高")
+        bind_arguments(name, args, (), fail)
+        owner.last_member_procedure = False
+        return True, float(receiver.graphics_image.width if name == "宽" else receiver.graphics_image.height)
     canvas = receiver.graphics_canvas
-    if canvas.closed or canvas.host.canvas is not canvas:
+    if canvas.closed or (kind == "recorder" and canvas.host.recording is not canvas) or (kind != "recorder" and canvas.host.canvas is not canvas):
         fail("如观画布已关闭；运行新代码格、停止或重启会话后，请重新创建画布")
+    if kind == "recorder" and name not in RECORDER_MEMBERS:
+        fail("如观缓存绘图目标不支持成员：" + name)
+    if kind != "recorder" and canvas.host.recording is not None and name not in READ_MEMBERS:
+        fail("如观缓存录制期间不能修改主画布或嵌套缓存")
     params = CANVAS_PARAMS
     if name not in params:
         fail("未知如观画布成员：" + name)
     bound = bind_arguments(name, args, params[name], fail)
-    owner.last_member_procedure = name not in ("宽", "高", "帧", "经过秒", "间隔秒")
-    if name in CALLBACK_NAMES:
+    owner.last_member_procedure = name not in READ_MEMBERS and name != "缓存"
+    if name == "缓存":
+        host = canvas.host
+        if host.phase != "initialization":
+            fail("如观缓存仅可在初始化执行时创建，不能在事件回调中创建")
+        width = number(bound["宽"], "宽", 1, 2048, True)
+        height = number(bound["高"], "高", 1, 2048, True)
+        fn = bound["绘制"]
+        if not isinstance(fn, Function) or len(fn.node.data["params"]) != 1:
+            fail("缓存绘制需要接受 1 个参数的算／作回调")
+        if len(canvas.resources) >= MAX_IMAGES:
+            fail("如观每画布最多 8 张缓存图像")
+        if canvas.resource_pixels + width * height > MAX_RESOURCE_PIXELS:
+            fail("如观全部缓存最多 4194304 像素")
+        resource_id = "cache-" + str(len(canvas.resources) + 1)
+        recorder = DrawingRecorder(host, width, height, resource_id, canvas)
+        target = Instance(_TYPES["recorder"], {})
+        target.graphics_canvas = recorder
+        host.recording = recorder
+        try:
+            owner.invoke_value(n, fn, [(None, target)])
+            recorder.check_balanced()
+            definition = recorder.definition()
+            size = len(definition.encode("utf-8")) + bool(canvas.resources)
+            if canvas.resource_bytes + size > MAX_RESOURCE_BYTES:
+                fail("如观全部缓存定义最多 128 KiB UTF-8 数据")
+            canvas.resources[resource_id] = DrawingResource(definition, len(recorder.commands), width * height)
+            canvas.resource_bytes += size
+            canvas.resource_pixels += width * height
+        finally:
+            host.recording = None
+            recorder.invalidate()
+        result = Instance(_TYPES["image"], {})
+        result.graphics_image = ImageHandle(canvas, canvas.token, resource_id, width, height)
+        owner.last_member_procedure = False
+        return True, result
+    elif name == "贴图":
+        image = bound["图像"]
+        if not isinstance(image, Instance) or getattr(image.type, "graphics_kind", None) != "image":
+            fail("贴图需要如观图像")
+        handle = image.graphics_image
+        if handle.owner is not canvas or handle.token is not canvas.token or handle.resource_id not in canvas.resources:
+            fail("如观图像已失效或属于另一画布；请重新创建缓存")
+        canvas.command({"op": "image", "resource": handle.resource_id,
+                        "x": number(bound["横"], "横"), "y": number(bound["纵"], "纵")}, fail)
+    elif name in CALLBACK_NAMES:
         fn = bound["回调"]
         event = CALLBACK_NAMES[name]
         if not isinstance(fn, Function) or len(fn.node.data["params"]) != len(EVENT_PARAMS[event][1]):

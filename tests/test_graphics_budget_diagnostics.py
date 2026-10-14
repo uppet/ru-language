@@ -221,7 +221,7 @@ class GraphicsBudgetPromptTests(unittest.TestCase):
     def check_prompt(self, kind):
         raw = (Path(__file__).resolve().parents[1] / 'rulang/language-spec.md').read_bytes()
         spec = raw.decode('utf-8')
-        self.assertTrue(spec.startswith('# 如语言规范 0.19.7\n'))
+        self.assertTrue(spec.startswith('# 如语言规范 0.19.8\n'))
         for backend in ('python', 'browser-js'):
             with self.subTest(kind=kind, backend=backend):
                 stdout, stderr = io.StringIO(), io.StringIO()

@@ -17,8 +17,8 @@ from rushu.versions import version_info
 
 class VersionTests(unittest.TestCase):
     def test_graphics_bezier_versions(self):
-        self.assertEqual(ru_version, "0.19.7")
-        self.assertEqual(rushu_version, "0.8.7")
+        self.assertEqual(ru_version, "0.19.8")
+        self.assertEqual(rushu_version, "0.8.8")
 
     def test_installed_versions(self):
         info = version_info()

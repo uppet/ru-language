@@ -75,3 +75,9 @@ test('canvas close immediately terminates even an in-flight callback',async()=>{
 test('failure preserves prior bounded stdout before structured fatal',async()=>{
   const {worker,run,events,fatal}=setup();worker.reply({type:'failure',events:[output('before\n')],message:'undefined'});await assert.rejects(run.ready,/undefined/);assert.equal(events[0].text,'before\n');assert.equal(fatal.length,1);
 });
+test('actual identity wrapping cannot push a near-limit accepted scene over 256 KiB',async()=>{
+  const s={type:'graphics',canvas_id:'c',width:32,height:32,fps:30,running:false,handlers:[],commands:Array.from({length:64},()=>({op:'text',x:0,y:0,size:12,color:'#ffffff',text:'x'.repeat(4096)}))};
+  const bytes=value=>new TextEncoder().encode(JSON.stringify(value)).length;let excess=bytes(s)-262100;
+  for(const c of s.commands){const n=Math.min(c.text.length,excess);c.text=c.text.slice(n);excess-=n;if(!excess)break;}
+  assert.equal(bytes(s),262100);const {worker,run,events,fatal}=setup();worker.reply({events:[output('must not leak'),s]});await assert.rejects(run.ready,/帧过大/);assert.equal(events.length,0);assert.equal(fatal.length,1);
+});

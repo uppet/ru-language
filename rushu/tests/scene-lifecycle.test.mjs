@@ -10,7 +10,7 @@ class Node {
   emit(name,event={}){return this.listeners.get(name)?.(event);}
   focus(){}
   getBoundingClientRect(){return {left:0,top:0,width:320,height:200};}
-  getContext(){return {clearRect(){},fillRect(){},fillText(){},beginPath(){},moveTo(){},lineTo(){},stroke(){},rect(){},ellipse(){},fill(){}};}
+  getContext(){return {save(){},restore(){},setTransform(){},drawImage(){},clearRect(){},fillRect(){},fillText(){},beginPath(){},moveTo(){},lineTo(){},stroke(){},rect(){},ellipse(){},fill(){}};}
 }
 const fakeDocument=()=>({hidden:false,listeners:new Map(),createElement:tag=>new Node(tag),addEventListener(name,fn){this.listeners.set(name,fn);},removeEventListener(name){this.listeners.delete(name);}});
 const scene=(id='view',size=320)=>({canvas_id:id,width:size,height:size,fps:30,running:false,handlers:[],commands:[{op:'background',color:'#ffffff'}]});

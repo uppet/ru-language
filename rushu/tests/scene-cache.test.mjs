@@ -1,0 +1,47 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+import {validateScene,canonicalScene,createSceneView,backingStorePixels,MAX_BACKING_PIXELS} from '../static/scene.mjs';
+import {newCell,prepareGraphics,serializeBook,parseBook,MAX_OUTPUT} from '../static/notebook.mjs';
+const resource=(id='cache-1',color='#ff000080',width=16,height=16)=>({id,kind:'drawing',width,height,commands:[{op:'background',color}]});
+const scene=(resources=[resource()])=>({canvas_id:'canvas-1',width:32,height:32,fps:30,running:false,handlers:[],resources,commands:resources.map(r=>({op:'image',resource:r.id,x:0,y:0}))});
+class Node {
+  constructor(tag,doc){this.tagName=tag;this.ownerDocument=doc;this.children=[];this.listeners=new Map();this.width=0;this.height=0;this.ctx={save(){},restore(){},setTransform(){},clearRect(){},beginPath(){},fillRect:()=>{doc.rasters++;if(doc.failRaster===doc.rasters)throw Error('raster failed');},drawImage:(canvas)=>{if(doc.failCopy===this)throw Error('copy failed');this.copied=canvas;doc.copies++;},fillText:()=>{if(doc.failRoot)throw Error('root failed');}};}
+  append(...nodes){this.children.push(...nodes);}setAttribute(){}addEventListener(k,f){this.listeners.set(k,f);}removeEventListener(k){this.listeners.delete(k);}getContext(){if(this.ownerDocument.failContext)return null;return this.ctx;}
+}
+function harness(t){const old=globalThis.document;const doc={rasters:0,copies:0,hidden:false,createElement(tag){return new Node(tag,this);},addEventListener(){},removeEventListener(){}};globalThis.document=doc;const views=[];t.after(()=>{views.forEach(v=>v.dispose());globalThis.document=old;assert.equal(backingStorePixels(),0);});return {doc,view(s=scene(),options={}){const v=createSceneView(s,options);views.push(v);return v;}};}
+test('strict self-contained resources clone and reject every new ingress',()=>{
+  const good=scene();assert.deepEqual(validateScene(good).resources,good.resources);
+  for(const change of [s=>s.resources.push(resource()),s=>s.resources[0].url='https://x',s=>s.resources[0].kind='url',s=>s.resources[0].width=true,s=>s.resources[0].commands=[s.commands[0]],s=>s.resources[0].commands[0].path='x',s=>s.commands[0].width=16,s=>s.commands[0].resource='missing',s=>s.commands=[],s=>s.resources[0].id='../x',s=>s.resources[0].commands[0].color='#fff']){const s=scene();change(s);assert.throws(()=>validateScene(s));}
+  const old={...scene(),commands:[]};delete old.resources;assert.equal(Object.hasOwn(validateScene(old),'resources'),false);
+});
+test('unique recipe commands count once while image roots each count',()=>{const s=scene();s.resources[0].commands=Array.from({length:2047},()=>({op:'background',color:'#ffffff'}));assert.equal(validateScene(s).commands.length,1);s.commands.push({...s.commands[0]});assert.throws(()=>validateScene(s),/2048/);s.commands.pop();s.resources[0].commands.push({op:'background',color:'#ffffff'});assert.throws(()=>validateScene(s),/2047/);});
+test('immutable canonical snapshots cannot be externally forged or changed',()=>{const s=canonicalScene(scene());assert.equal(canonicalScene(s),s);assert.throws(()=>s.resources[0].commands.push({}));const clone=structuredClone(s);clone.commands[0].x=Infinity;assert.throws(()=>canonicalScene(clone));});
+test('100 warm view frames rasterize once; same ID changed recipe rasterizes anew',t=>{const h=harness(t),v=h.view();for(let i=0;i<100;i++){const s=scene();s.commands[0].x=i;v.update(s);}assert.equal(h.doc.rasters,1);v.update(scene([resource('cache-1','#00ff00')]));assert.equal(h.doc.rasters,2);assert.equal(backingStorePixels(),32*32*2+16*16);v.deactivate();assert.equal(backingStorePixels(),32*32);});
+test('resource, context, root and final copy failures retain committed snapshot and free temporary backing',t=>{const h=harness(t),v=h.view(),old=v.canvas.copied,pixels=backingStorePixels();const s=scene([resource('new')]);h.doc.failRaster=h.doc.rasters+1;assert.throws(()=>v.update(s),/raster/);assert.equal(v.canvas.copied,old);assert.equal(backingStorePixels(),pixels);h.doc.failRaster=0;h.doc.failContext=true;assert.throws(()=>v.update(s));h.doc.failContext=false;assert.equal(backingStorePixels(),pixels);const root=scene();root.commands.push({op:'text',x:0,y:0,text:'x',size:12,color:'#ffffff'});h.doc.failRoot=true;assert.throws(()=>v.update(root),/root/);h.doc.failRoot=false;assert.equal(v.canvas.copied,old);assert.equal(backingStorePixels(),pixels);h.doc.failCopy=v.canvas;assert.throws(()=>v.update(scene()),/copy/);h.doc.failCopy=false;assert.equal(v.live,false);assert.equal(backingStorePixels(),32*32);});
+test('first allocation failure leaves no ledger or listeners',t=>{const h=harness(t);h.doc.failContext=true;assert.throws(()=>h.view());assert.equal(backingStorePixels(),0);});
+test('4M main + cache + staging and old-resource transition remain within 16M',t=>{const h=harness(t),s=scene([resource('one','#ffffff',2048,2048)]);s.width=s.height=2048;const v=h.view(s);assert.equal(backingStorePixels(),12582912);const next=structuredClone(s);next.resources[0].id='two';next.commands[0].resource='two';v.update(next);assert.equal(backingStorePixels(),12582912);assert.ok(backingStorePixels()<=MAX_BACKING_PIXELS);v.dispose();assert.equal(backingStorePixels(),0);});
+test('cache eviction never deactivates its owner, main eviction yields static restore',t=>{const h=harness(t),s=scene([resource('one','#ffffff',2048,2048)]);s.width=s.height=2048;s.handlers=['mouse_down'];const a=h.view(s),b=h.view({...s,canvas_id:'other'},{historical:true});assert.equal(a.live,true);assert.ok(backingStorePixels()<=MAX_BACKING_PIXELS);a.update(s);assert.equal(a.live,true);assert.equal(b.live,false);});
+test('capacity preflight and renderer failure leave Save on last committed frame',t=>{const h=harness(t),cell=newCell(),book={title:'x',cells:[cell]},v=h.view();prepareGraphics(cell,scene(),book)();const before=JSON.stringify(cell.outputs);cell.outputs.push({type:'stdout',text:'x'.repeat(MAX_OUTPUT)});assert.throws(()=>prepareGraphics(cell,scene(),book));cell.outputs.pop();const next=scene([resource('new')]);const commit=prepareGraphics(cell,next,book);h.doc.failRaster=h.doc.rasters+1;assert.throws(()=>{v.update(next);commit();});assert.equal(JSON.stringify(cell.outputs),before);const restored=parseBook(serializeBook(book));assert.deepEqual(restored.cells[0].outputs[0].scene.resources,scene().resources);assert.deepEqual(restored.cells[0].outputs[0].scene.handlers,[]);});
+test('actual app update chain keeps one warm view, isolates duplicate canvas IDs and commits Save atomically',t=>{
+  const h=harness(t),a=newCell(),b=newCell();a.execution_count=b.execution_count=1;a.historical=b.historical=false;const book={title:'app',cells:[a,b]};
+  const source=fs.readFileSync(new URL('../static/app.js',import.meta.url),'utf8');
+  const code=source.slice(source.indexOf('function clearScene('),source.indexOf('let generationRequest=null;'));
+  const ctx={validateScene:canonicalScene,createSceneView,prepareGraphics,book,sceneViews:new Map(),scenePending:new Map(),sceneKey:(cell,id)=>JSON.stringify([cell.id,cell.execution_count,id]),session:'s',epoch:1,generation:1,lastExecutionCount:0,browserRun:null,notice(){}};
+  vm.createContext(ctx);vm.runInContext(code,ctx);
+  t.after(()=>{ctx.clearScene(a);ctx.clearScene(b);});
+  for(let i=0;i<100;i++){const s=scene();s.commands[0].x=i;ctx.commitGraphics(a,s);ctx.sceneOutput(a,a.outputs[0]);}
+  assert.equal(h.doc.rasters,1);const liveScene=scene();liveScene.handlers=['mouse_down'];ctx.commitGraphics(a,liveScene);assert.equal([...ctx.sceneViews.values()][0].view.live,true);ctx.commitGraphics(b,scene([resource('cache-1','#00ff00')]));assert.equal(ctx.sceneViews.size,2);assert.equal(h.doc.rasters,2);
+  const saved=JSON.stringify(a.outputs);h.doc.failRaster=h.doc.rasters+1;assert.throws(()=>ctx.commitGraphics(a,scene([resource('new')])));assert.equal(JSON.stringify(a.outputs),saved);assert.equal(ctx.sceneViews.size,2);
+  ctx.clearScene(a);ctx.clearScene(b);assert.equal(backingStorePixels(),0);
+});
+test('resource count, logical pixels and exact UTF-8 definition/frame byte boundaries',()=>{
+  const eight=scene(Array.from({length:8},(_,i)=>resource('c'+i,'#ffffff',1,1)));assert.equal(validateScene(eight).resources.length,8);eight.resources.push(resource('ninth'));eight.commands.push({op:'image',resource:'ninth',x:0,y:0});assert.throws(()=>validateScene(eight));
+  const full=scene([resource('a','#ffffff',2048,1024),resource('b','#ffffff',2048,1024)]);assert.equal(validateScene(full).resources.length,2);full.resources[1].height++;assert.throws(()=>validateScene(full),/像素/);
+  const s=scene();s.resources[0].commands=Array.from({length:32},()=>({op:'text',x:0,y:0,size:12,color:'#ffffff',text:'x'.repeat(4096)}));
+  const bytes=value=>new TextEncoder().encode(JSON.stringify(value)).length;
+  let excess=bytes(s.resources)-131072;for(const c of s.resources[0].commands){const cut=Math.min(excess,c.text.length);c.text=c.text.slice(cut);excess-=cut;if(!excess)break;}
+  assert.equal(bytes(s.resources),131072);validateScene(s);s.resources[0].commands[0].text+='x';assert.throws(()=>validateScene(s),/128 KiB/);
+  const old={...scene(),commands:[],padding:''};delete old.resources;old.padding='x'.repeat(262144-bytes(old));assert.equal(bytes(old),262144);assert.equal(Object.hasOwn(validateScene(old),'resources'),false);old.padding+='x';assert.throws(()=>validateScene(old),/帧过大/);
+});

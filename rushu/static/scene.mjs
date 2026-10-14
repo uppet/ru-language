@@ -19,37 +19,51 @@ export const MAX_BACKING_PIXELS=16*1024*1024;
 const backingViews=new Map();
 let backingPixels=0;
 function releaseBacking(entry){if(!backingViews.has(entry))return;backingPixels-=backingViews.get(entry);backingViews.delete(entry);entry.release();}
-function reserveBacking(entry,pixels){
-  if(backingViews.has(entry)){backingPixels-=backingViews.get(entry);backingViews.delete(entry);}
-  while(backingPixels+pixels>MAX_BACKING_PIXELS){const entries=[...backingViews.keys()];const victim=entries.find(item=>!item.active())||entries[0];if(!victim)break;releaseBacking(victim);}
-  backingViews.set(entry,pixels);backingPixels+=pixels;
+function reserveGroup(group){
+  const total=[...group.values()].reduce((a,b)=>a+b,0);
+  if(total>MAX_BACKING_PIXELS)throw new Error('画布实际像素工作集超过 16 Mi。');
+  for(const entry of group.keys())entry.pinned=true;
+  const added=[...group].reduce((sum,[entry,pixels])=>sum+pixels-(backingViews.get(entry)||0),0);
+  while(backingPixels+added>MAX_BACKING_PIXELS){
+    const entries=[...backingViews.keys()].filter(entry=>!entry.pinned);
+    const victim=entries.find(entry=>entry.kind!=='main')||entries[0];
+    if(!victim)throw new Error('画布实际像素预算不足。');releaseBacking(victim);
+  }
+  for(const [entry,pixels] of group){backingPixels+=pixels-(backingViews.get(entry)||0);backingViews.set(entry,pixels);}
 }
 export function backingStorePixels(){return backingPixels;}
 const finite=value=>typeof value==='number'&&Number.isFinite(value)&&Math.abs(value)<=100000;
 const identity=[1,0,0,1,0,0];
 function matrix(value){if(!Array.isArray(value)||value.length!==6||!Array.from(value).every(finite))throw new Error('画布变换无效。');return value.slice();}
-function drawingState(c){
+function drawingState(c,strict=false){
   const state={};
   if(Object.hasOwn(c,'transform'))state.transform=matrix(c.transform);
   if(Object.hasOwn(c,'clips')){
     if(!Array.isArray(c.clips)||c.clips.length>32)throw new Error('画布裁剪无效。');
     state.clips=Array.from(c.clips,clip=>{
       if(!clip||typeof clip!=='object'||Array.isArray(clip)||!['x','y','width','height'].every(key=>finite(clip[key]))||clip.width<0||clip.height<0)throw new Error('画布裁剪无效。');
+      if(strict)exact(clip,['x','y','width','height','transform']);
       return {x:clip.x,y:clip.y,width:clip.width,height:clip.height,transform:matrix(clip.transform)};
     });
   }
   return state;
 }
-export function validateScene(value) {
-  if(!value||typeof value!=='object'||Array.isArray(value)||typeof value.canvas_id!=='string'||!/^[\w-]{1,128}$/.test(value.canvas_id))throw new Error('画布标识无效。');
-  if(!Number.isInteger(value.width)||!Number.isInteger(value.height)||value.width<1||value.height<1||value.width>2048||value.height>2048)throw new Error('画布尺寸无效（最大 2048 × 2048）。');
-  if(!Array.isArray(value.commands)||value.commands.length>MAX_COMMANDS)throw new Error('画布指令过多。');
-  if(new TextEncoder().encode(JSON.stringify(value)).length>MAX_FRAME_BYTES)throw new Error('画布帧过大。');
-  const commands=Array.from(value.commands,command=>{
+const bytes=value=>new TextEncoder().encode(JSON.stringify(value)).length;
+const resourceId=value=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(value);
+function exact(value,fields){if(Object.keys(value).some(key=>!fields.includes(key)))throw new Error('画布资源含不支持的字段。');}
+function validateCommands(commands,{strict=false,resources=null}={}){
+  return Array.from(commands,command=>{
     if(!command||typeof command!=='object'||Array.isArray(command))throw new Error('画布指令无效。');
-    const c=command,names={background:[],line:['x1','y1','x2','y2','width'],rect:['x','y','width','height','stroke_width'],ellipse:['x','y','width','height','stroke_width'],arc:['x','y','width','height','start','sweep','stroke_width'],sector:['x','y','width','height','start','sweep','stroke_width'],text:['x','y','size'],polygon:['stroke_width'],polyline:['stroke_width'],bezier:['x1','y1','cx1','cy1','cx2','cy2','x2','y2','stroke_width']};
+    const c=command;
+    if(c.op==='image'){
+      exact(c,['op','resource','x','y','transform','clips']);
+      if(!resources||!resources.has(c.resource)||!finite(c.x)||!finite(c.y))throw new Error('画布图像引用无效。');
+      return {op:'image',resource:c.resource,x:c.x,y:c.y,...drawingState(c,true)};
+    }
+    const names={background:[],line:['x1','y1','x2','y2','width'],rect:['x','y','width','height','stroke_width'],ellipse:['x','y','width','height','stroke_width'],arc:['x','y','width','height','start','sweep','stroke_width'],sector:['x','y','width','height','start','sweep','stroke_width'],text:['x','y','size'],polygon:['stroke_width'],polyline:['stroke_width'],bezier:['x1','y1','cx1','cy1','cx2','cy2','x2','y2','stroke_width']};
     if(typeof c.op!=='string'||!Object.hasOwn(names,c.op)||!names[c.op].every(key=>finite(c[key])))throw new Error('画布坐标无效。');
-    const state={...drawingState(c),...textState(c)};
+    if(strict){const extras=c.op==='background'?['color']:c.op==='line'?['color']:c.op==='text'?['text','color','align','baseline']:c.op==='polygon'||c.op==='polyline'?['points','fill','stroke']:['fill','stroke'];exact(c,['op',...names[c.op],...extras,...(c.op==='background'?[]:['transform','clips'])]);}
+    const state={...drawingState(c,strict),...textState(c)};
     if(c.op==='polygon'||c.op==='polyline'){
       const open=c.op==='polyline',label=open?'折线':'多边形';
       if(!Array.isArray(c.points)||c.points.length<(open?2:3)||c.points.length>256)throw new Error(`画布${label}无效。`);
@@ -72,17 +86,40 @@ export function validateScene(value) {
     if(typeof c.text!=='string'||codePoints(c.text)>4096||c.size<=0||c.size>256)throw new Error('画布文字无效。');
     return {op:c.op,x:c.x,y:c.y,text:c.text,color:c.color.toLowerCase(),size:c.size,...state};
   });
+}
+export function validateScene(value) {
+  if(!value||typeof value!=='object'||Array.isArray(value)||typeof value.canvas_id!=='string'||!/^[\w-]{1,128}$/.test(value.canvas_id))throw new Error('画布标识无效。');
+  if(!Number.isInteger(value.width)||!Number.isInteger(value.height)||value.width<1||value.height<1||value.width>2048||value.height>2048)throw new Error('画布尺寸无效（最大 2048 × 2048）。');
+  if(!Array.isArray(value.commands)||value.commands.length>MAX_COMMANDS)throw new Error('画布指令过多。');
+  if(new TextEncoder().encode(JSON.stringify(value)).length>MAX_FRAME_BYTES)throw new Error('画布帧过大。');
+  let resources,resourceMap=new Map();
+  if(Object.hasOwn(value,'resources')){
+    if(!Array.isArray(value.resources)||value.resources.length>8||bytes(value.resources)>131072)throw new Error('画布缓存定义超过 8 张或 128 KiB。');
+    let pixels=0;
+    resources=Array.from(value.resources,r=>{
+      if(!r||typeof r!=='object'||Array.isArray(r))throw new Error('画布缓存无效。');
+      exact(r,['id','kind','width','height','commands']);
+      if(!resourceId(r.id)||resourceMap.has(r.id)||r.kind!=='drawing'||!Number.isInteger(r.width)||!Number.isInteger(r.height)||r.width<1||r.height<1||r.width>2048||r.height>2048)throw new Error('画布缓存标识或尺寸无效。');
+      pixels+=r.width*r.height;if(pixels>4194304)throw new Error('画布缓存像素超过 4 Mi。');
+      if(!Array.isArray(r.commands)||r.commands.length>2047)throw new Error('单张缓存最多 2047 条指令。');
+      const resource={id:r.id,kind:'drawing',width:r.width,height:r.height,commands:validateCommands(r.commands,{strict:true})};
+      resourceMap.set(r.id,resource);return resource;
+    });
+    if(bytes(resources)>131072)throw new Error('画布缓存定义超过 128 KiB。');
+  }
+  const commands=validateCommands(value.commands,{resources:resourceMap});
+  const referenced=new Set(commands.filter(c=>c.op==='image').map(c=>c.resource));
+  if(referenced.size!==resourceMap.size)throw new Error('画布含未引用的缓存。');
+  if(commands.length+[...resourceMap.values()].reduce((n,r)=>n+r.commands.length,0)>MAX_COMMANDS)throw new Error('画布及缓存合计指令超过 2048。');
   if(!Array.isArray(value.handlers)||!value.handlers.every(x=>eventNames.includes(x)))throw new Error('画布交互无效。');
   if(!Number.isInteger(value.fps)||value.fps<1||value.fps>60)throw new Error('画布帧率无效。');
   if(typeof value.running!=='boolean')throw new Error('画布运行状态无效。');
-  const scene={canvas_id:value.canvas_id,width:value.width,height:value.height,commands,fps:value.fps,handlers:[...new Set(value.handlers)],running:value.running};
+  const scene={...(resources===undefined?{}:{resources}),canvas_id:value.canvas_id,width:value.width,height:value.height,commands,fps:value.fps,handlers:[...new Set(value.handlers)],running:value.running};
   // Both wire input and canonical snapshots must fit, even when input JSON omits properties.
   if(new TextEncoder().encode(JSON.stringify(scene)).length>MAX_FRAME_BYTES)throw new Error('画布帧过大。');
   return scene;
 }
-export function drawScene(canvas,value) {
-  const scene=validateScene(value);canvas.width=scene.width;canvas.height=scene.height;
-  const ctx=canvas.getContext('2d');if(!ctx)throw new Error('浏览器不支持二维画布。');
+function renderCommands(ctx,scene,resources=new Map()) {
   for(const c of scene.commands){
     // Canvas resizing above resets state. Legacy commands need no new context APIs.
     const hasState=c.op!=='background'&&(c.transform||c.clips?.length);
@@ -96,6 +133,7 @@ export function drawScene(canvas,value) {
       // Each background replaces earlier drawing, including historical scenes
       // with multiple backgrounds. Scoped primitives cannot leak a clip/matrix.
       if(c.op==='background'){ctx.clearRect(0,0,scene.width,scene.height);ctx.fillStyle=c.color;ctx.fillRect(0,0,scene.width,scene.height);}
+      else if(c.op==='image'){ctx.drawImage(resources.get(c.resource).canvas,c.x,c.y);}
       else if(c.op==='text'){if(!c.color)continue;ctx.fillStyle=c.color;ctx.font=`${c.size}px sans-serif`;ctx.textAlign=c.align??'left';ctx.textBaseline=c.baseline??'top';ctx.fillText(c.text,c.x,c.y);}
       else {if((c.op==='arc'||c.op==='sector')&&c.sweep===0)continue;
         ctx.beginPath();if(c.op==='line'){if(!c.color)continue;ctx.moveTo(c.x1,c.y1);ctx.lineTo(c.x2,c.y2);ctx.strokeStyle=c.color;ctx.lineWidth=c.width;ctx.stroke();}
@@ -114,11 +152,74 @@ export function drawScene(canvas,value) {
           if(c.fill){ctx.fillStyle=c.fill;ctx.fill();}if(c.stroke&&c.stroke_width>0){ctx.strokeStyle=c.stroke;ctx.lineWidth=c.stroke_width;ctx.stroke();}}
       }
     }finally{if(scoped)ctx.restore();}
-  }return scene;
+  }
+}
+// Canonical immutable values are trusted only by identity inside this module.
+const snapshots=new WeakSet();
+function freeze(value){if(value&&typeof value==='object'){for(const child of Object.values(value))freeze(child);Object.freeze(value);}return value;}
+export function canonicalScene(value){if(snapshots.has(value))return value;const scene=freeze(validateScene(value));snapshots.add(scene);return scene;}
+function surface(canvas,kind,release=()=>{},reset=true){
+  if(reset){canvas.width=0;canvas.height=0;}
+  return {canvas,kind,pinned:false,release(){canvas.width=0;canvas.height=0;release();}};
+}
+function context(entry,width,height){
+  if(entry.canvas.width!==width)entry.canvas.width=width;
+  if(entry.canvas.height!==height)entry.canvas.height=height;
+  const ctx=entry.canvas.getContext('2d');if(!ctx)throw new Error('浏览器不支持二维画布。');return ctx;
+}
+function renderer(canvas,onEvict=()=>{},previous=null){
+  const make=kind=>surface((canvas.ownerDocument||globalThis.document).createElement('canvas'),kind);
+  const main=surface(canvas,'main',onEvict,!previous);let cache=new Map(),stage=null,committed=previous;
+  if(previous){
+    // Adopt already-visible standalone pixels without clearing them. Their
+    // backing joins the same ledger before any candidate allocation.
+    try{reserveGroup(new Map([[main,previous.width*previous.height]]));}
+    finally{main.pinned=false;}
+  }
+  function releaseAux(){for(const item of cache.values())releaseBacking(item);cache.clear();if(stage)releaseBacking(stage);stage=null;}
+  function paint(value){
+    const scene=canonicalScene(value);if(scene===committed&&backingViews.has(main))return scene;
+    if(committed&&backingViews.has(main)&&(scene.width!==committed.width||scene.height!==committed.height||scene.canvas_id!==committed.canvas_id))throw new Error('画布尺寸或身份变化需要新的视图。');
+    const next=new Map(),created=[],group=new Map([[main,scene.width*scene.height]]);
+    let candidateStage=stage;if(!candidateStage||!backingViews.has(candidateStage)){candidateStage=make('staging');created.push(candidateStage);}
+    group.set(candidateStage,scene.width*scene.height);
+    for(const resource of scene.resources||[]){const recipe=JSON.stringify(resource);let item=cache.get(resource.id);
+      if(!item||!backingViews.has(item)||item.recipe!==recipe){item=make('cache');item.recipe=recipe;created.push(item);}
+      next.set(resource.id,item);group.set(item,resource.width*resource.height);
+    }
+    try{
+      reserveGroup(group);
+      for(const resource of scene.resources||[]){const item=next.get(resource.id);if(created.includes(item)){const ctx=context(item,resource.width,resource.height);renderCommands(ctx,resource);}}
+      const ctx=context(candidateStage,scene.width,scene.height);
+      // A resized staging surface resets even clips/state after a failed render.
+      candidateStage.canvas.width=scene.width;renderCommands(ctx,scene,next);
+      const visible=context(main,scene.width,scene.height);
+      try{visible.save();visible.setTransform(1,0,0,1,0,0);visible.globalAlpha=1;visible.globalCompositeOperation='copy';visible.drawImage(candidateStage.canvas,0,0);}
+      catch(error){error.graphicsCommitFailed=true;throw error;}finally{try{visible.restore();}catch(error){error.graphicsCommitFailed=true;throw error;}}
+      for(const item of cache.values())if(![...next.values()].includes(item))releaseBacking(item);
+      cache=next;stage=candidateStage;committed=scene;return scene;
+    }catch(error){for(const item of created)releaseBacking(item);if(!committed)releaseBacking(main);throw error;}
+    finally{for(const entry of group.keys())entry.pinned=false;}
+  }
+  return {paint,releaseAux,pinBacking(value){main.pinned=value;},dispose(){releaseAux();releaseBacking(main);},get scene(){return committed;}};
+}
+const standaloneRenderers=new WeakMap(),standaloneSnapshots=new WeakMap();
+export function drawScene(canvas,value){
+  const scene=validateScene(value);
+  // Legacy standalone callers keep their existing direct primitive path.
+  if(!scene.resources?.length&&!standaloneRenderers.has(canvas)){canvas.width=scene.width;canvas.height=scene.height;const ctx=canvas.getContext('2d');if(!ctx)throw new Error('浏览器不支持二维画布。');renderCommands(ctx,scene);standaloneSnapshots.set(canvas,canonicalScene(scene));return scene;}
+  let instance=standaloneRenderers.get(canvas);if(!instance){instance=renderer(canvas,()=>{},standaloneSnapshots.get(canvas)||null);standaloneRenderers.set(canvas,instance);standaloneSnapshots.delete(canvas);}return instance.paint(scene);
+}
+/** Release a standalone drawScene owner, its recipes and all backing stores.
+ * Does not affect createSceneView ownership; those callers use view.dispose(). */
+export function disposeScene(canvas){
+  const instance=standaloneRenderers.get(canvas),legacy=standaloneSnapshots.delete(canvas);
+  standaloneRenderers.delete(canvas);
+  if(instance)instance.dispose();else if(legacy){canvas.width=0;canvas.height=0;}
 }
 /** send resolves after the server's graphics_done, not merely HTTP acceptance. */
 export function createSceneView(value,{send=async()=>{},historical=false,onError=()=>{},backend='python'}={}) {
-  let scene=validateScene(value),disposed=false,inFlight=false,timer=null,pendingMove=null,queue=[],live=!historical,lastDispatch=0,failure='',suspended=false,retryAt=0,retryEvent=null,moveEpoch=0;
+  let scene=canonicalScene(value),disposed=false,inFlight=false,timer=null,pendingMove=null,queue=[],live=!historical,lastDispatch=0,failure='',suspended=false,retryAt=0,retryEvent=null,moveEpoch=0;
   // Each held input reserves a queue slot for its release, even under overload.
   const pointers=new Map(),keys=new Map(),MAX_INPUTS=16;
   const root=document.createElement('section');root.className='scene-output';
@@ -128,7 +229,7 @@ export function createSceneView(value,{send=async()=>{},historical=false,onError
   const stop=document.createElement('button');stop.type='button';stop.textContent='停止画布';
   const restore=document.createElement('button');restore.type='button';restore.textContent='重新查看画面';restore.hidden=true;
   toolbar.append(status,stop,restore);root.append(canvas,toolbar);
-  const backing={active:()=>live&&scene.handlers.length>0,release:()=>{deactivate();suspended=true;canvas.width=0;canvas.height=0;canvas.hidden=true;restore.hidden=false;label();}};
+  const painter=renderer(canvas,()=>{deactivate();suspended=true;canvas.hidden=true;restore.hidden=false;label();});
   const listeners=[];
   function listen(type,fn,target=canvas){if(!target?.addEventListener)return;target.addEventListener(type,fn);listeners.push([target,type,fn]);}
   function unlisten(){for(const [target,type,fn] of listeners)target.removeEventListener(type,fn);listeners.length=0;}
@@ -182,12 +283,12 @@ export function createSceneView(value,{send=async()=>{},historical=false,onError
     if(scene.handlers.includes('key_down'))queue.push({type:'key_down',key});schedule();});
   const keyUp=event=>releaseKey(event.code||event.key);
   listen('keyup',keyUp);listen('keyup',keyUp,win);listen('blur',releaseInputs);listen('blur',releaseInputs,win);
-  function deactivate(){live=false;cancelSchedule();pendingMove=null;retryEvent=null;queue=[];keys.clear();const ids=[...pointers.keys()];pointers.clear();for(const id of ids)try{canvas.releasePointerCapture?.(id);}catch{}unlisten();label();}
+  function deactivate(){painter.releaseAux();live=false;cancelSchedule();pendingMove=null;retryEvent=null;queue=[];keys.clear();const ids=[...pointers.keys()];pointers.clear();for(const id of ids)try{canvas.releasePointerCapture?.(id);}catch{}unlisten();label();}
   stop.addEventListener('click',()=>{if(!live)return;deactivate();Promise.resolve().then(()=>send({type:'close'})).catch(onError);});
   const visibility=()=>{if(document.hidden){cancelSchedule();releaseInputs();}else schedule();};listen('visibilitychange',visibility,document);
-  function paint(){reserveBacking(backing,scene.width*scene.height);scene=drawScene(canvas,scene);suspended=false;canvas.hidden=false;restore.hidden=true;}
-  restore.addEventListener('click',()=>{if(disposed)return;paint();label();});
-  function update(value,isHistorical=historical){if(disposed)return;const next=validateScene(value);if(next.canvas_id!==scene.canvas_id)deactivate();scene=next;historical=isHistorical;if(historical)deactivate();paint();label();schedule();}
-  function dispose(){disposed=true;deactivate();releaseBacking(backing);unlisten();}
-  update(scene);return {root,canvas,update,deactivate,dispose,get live(){return live&&!disposed&&scene.handlers.length>0;}};
+  function paint(next=scene){try{const result=painter.paint(next);scene=result;suspended=false;canvas.hidden=false;restore.hidden=true;}catch(error){if(error.graphicsCommitFailed){deactivate();failure=error.message;label();}throw error;}}
+  restore.addEventListener('click',()=>{if(disposed)return;try{paint();}catch(error){failure=error.message;onError(error);}label();});
+  function update(value,isHistorical=historical){if(disposed)return;const next=canonicalScene(value);paint(next);historical=isHistorical;if(historical)deactivate();label();schedule();}
+  function dispose(){disposed=true;deactivate();painter.dispose();unlisten();}
+  try{update(scene);}catch(error){dispose();throw error;}return {root,canvas,update,deactivate,dispose,pinBacking:painter.pinBacking,get live(){return live&&!disposed&&scene.handlers.length>0;}};
 }

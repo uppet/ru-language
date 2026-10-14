@@ -80,7 +80,7 @@ class GraphicsArcExamplesTests(unittest.TestCase):
     def test_four_cli_exports_have_one_complete_spec_and_arc_focus(self):
         raw = (ROOT / 'rulang/language-spec.md').read_bytes()
         spec, digest = raw.decode('utf-8'), hashlib.sha256(raw).hexdigest()
-        self.assertTrue(spec.startswith('# 如语言规范 0.19.7\n'))
+        self.assertTrue(spec.startswith('# 如语言规范 0.19.8\n'))
         for kind in ('rushu', 'ruguan'):
             for backend in ('python', 'browser-js'):
                 with self.subTest(kind=kind, backend=backend):
@@ -95,7 +95,7 @@ class GraphicsArcExamplesTests(unittest.TestCase):
                     self.assertEqual(prompt.count(spec), 1)
                     self.assertEqual(prompt.count('<ru-language-spec>'), 1)
                     self.assertIn(digest, prompt)
-                    self.assertIn('随附规范版本：0.19.7', prompt)
+                    self.assertIn('随附规范版本：0.19.8', prompt)
                     for name in ('弧', '扇形'):
                         self.assertIn('图 其 ' + name + ' 横 纵 宽 高 始角 转角', prompt)
                     if kind == 'ruguan':
