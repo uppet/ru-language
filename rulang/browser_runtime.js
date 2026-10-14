@@ -36,8 +36,13 @@
       if(typeof value!=='number'||!Number.isFinite(value)||value<low||value>high||(integer&&!Number.isInteger(value)))bad(label+'须为范围内'+(integer?'整数':'有限数'));
       return value;
     };
-    const color=(value,optional=false)=>{if(optional&&value===null)return '';if(typeof value!=='string'||!/^#[0-9a-fA-F]{6}$/.test(value))bad('颜色须为 #RRGGBB 文字');return value.toLowerCase();};
+    const color=(value,optional=false)=>{if(optional&&value===null)return '';if(typeof value!=='string'||![7,9].includes(value.length)||!/^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$/.test(value))bad('颜色须为 #RRGGBB 或 #RRGGBBAA 文字');return value.toLowerCase();};
     if(kind==='helpers'){
+      if(name==='颜色'){
+        const channels=['红','绿','蓝','不透明度'],a=argsBind(m,name,args,channels,loc);
+        const value='#'+channels.map(key=>num(a[key],key,0,255,true).toString(16).padStart(2,'0')).join('');
+        m.lastMemberProcedure=false;return value;
+      }
       if(name!=='画布')bad('未知如观工具成员：'+name);
       const a=argsBind(m,name,args,['宽','高'],loc),width=num(a.宽,'宽',1,2048,true),height=num(a.高,'高',1,2048,true);
       browserClose();

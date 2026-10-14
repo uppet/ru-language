@@ -3,6 +3,7 @@ from collections import deque
 import multiprocessing
 import json
 import math
+import re
 import time
 from multiprocessing.connection import wait
 import secrets
@@ -22,6 +23,7 @@ GRAPHICS_TIMEOUT = 10.0
 MAX_GRAPHICS_COMMANDS = 2048
 MAX_GRAPHICS_BYTES = 262_144
 GRAPHICS_EVENTS = {"frame", "mouse_down", "mouse_up", "mouse_move", "key_down", "key_up", "close"}
+_GRAPHICS_COLOR = re.compile(r"#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?\Z")
 
 
 class KernelError(Exception):
@@ -346,6 +348,17 @@ class Session:
                 or any(not isinstance(command, dict) or command.get("op") not in
                        {"rect", "ellipse", "line", "text", "background", "polygon"} for command in commands)):
             raise ValueError("invalid graphics payload")
+        # Validate the color-only wire format before retaining a worker event.
+        # The browser independently validates all scene fields before drawing.
+        for command in commands:
+            op = command["op"]
+            keys = ("fill", "stroke") if op in ("rect", "ellipse", "polygon") else ("color",)
+            for key in keys:
+                value = command.get(key)
+                if value == "" and op != "background":
+                    continue
+                if not isinstance(value, str) or not _GRAPHICS_COLOR.fullmatch(value):
+                    raise ValueError("invalid graphics color")
         self.graphics = {key: event.get(key) for key in
                          ("canvas_id", "width", "height", "fps", "running", "handlers")}
 

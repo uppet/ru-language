@@ -1,7 +1,8 @@
 /** Declarative local canvas output. No script, URLs, HTML or saved callbacks. */
 export const MAX_COMMANDS=2048,MAX_FRAME_BYTES=262144;
 const eventNames=['frame','mouse_down','mouse_up','mouse_move','key_down','key_up'];
-const color=value=>typeof value==='string'&&/^#[\da-f]{6}$/i.test(value);
+// Only complete ASCII six/eight-digit hex values cross the worker/history boundary.
+const color=value=>typeof value==='string'&&[7,9].includes(value.length)&&/^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$/.test(value);
 const codePoints=value=>Array.from(value).length;
 // Account for actual backing stores, not CSS boxes or assumed device ratios.
 export const MAX_BACKING_PIXELS=16*1024*1024;
@@ -43,17 +44,17 @@ export function validateScene(value) {
       if(!Array.isArray(c.points)||c.points.length<3||c.points.length>256)throw new Error('画布多边形无效。');
       const points=Array.from(c.points,point=>{if(!Array.isArray(point)||point.length!==2||!Array.from(point).every(finite))throw new Error('画布多边形坐标无效。');return point.slice();});
       if(c.stroke_width<1||c.stroke_width>256||![c.fill,c.stroke].every(x=>x===''||color(x)))throw new Error('图形尺寸或颜色无效。');
-      return {op:c.op,points,fill:c.fill,stroke:c.stroke,stroke_width:c.stroke_width,...state};
+      return {op:c.op,points,fill:c.fill.toLowerCase(),stroke:c.stroke.toLowerCase(),stroke_width:c.stroke_width,...state};
     }
     if(c.op==='rect'||c.op==='ellipse'){
       if(c.width<0||c.height<0||c.stroke_width<1||c.stroke_width>256||![c.fill,c.stroke].every(x=>x===''||color(x)))throw new Error('图形尺寸或颜色无效。');
-      return {op:c.op,x:c.x,y:c.y,width:c.width,height:c.height,fill:c.fill,stroke:c.stroke,stroke_width:c.stroke_width,...state};
+      return {op:c.op,x:c.x,y:c.y,width:c.width,height:c.height,fill:c.fill.toLowerCase(),stroke:c.stroke.toLowerCase(),stroke_width:c.stroke_width,...state};
     }
     if(!(c.color===''&&c.op!=='background')&&!color(c.color))throw new Error('画布颜色无效。');
-    if(c.op==='background')return {op:c.op,color:c.color};
-    if(c.op==='line'){if(c.width<=0||c.width>256)throw new Error('画布线宽无效。');return {op:c.op,x1:c.x1,y1:c.y1,x2:c.x2,y2:c.y2,color:c.color,width:c.width,...state};}
+    if(c.op==='background')return {op:c.op,color:c.color.toLowerCase()};
+    if(c.op==='line'){if(c.width<=0||c.width>256)throw new Error('画布线宽无效。');return {op:c.op,x1:c.x1,y1:c.y1,x2:c.x2,y2:c.y2,color:c.color.toLowerCase(),width:c.width,...state};}
     if(typeof c.text!=='string'||codePoints(c.text)>4096||c.size<=0||c.size>256)throw new Error('画布文字无效。');
-    return {op:c.op,x:c.x,y:c.y,text:c.text,color:c.color,size:c.size,...state};
+    return {op:c.op,x:c.x,y:c.y,text:c.text,color:c.color.toLowerCase(),size:c.size,...state};
   });
   if(!Array.isArray(value.handlers)||!value.handlers.every(x=>eventNames.includes(x)))throw new Error('画布交互无效。');
   if(!Number.isInteger(value.fps)||value.fps<1||value.fps>60)throw new Error('画布帧率无效。');
@@ -73,7 +74,9 @@ export function drawScene(canvas,value) {
         for(const clip of c.clips||[]){ctx.setTransform(...clip.transform);ctx.beginPath();ctx.rect(clip.x,clip.y,clip.width,clip.height);ctx.clip();}
         ctx.setTransform(...(c.transform||identity));
       }
-      if(c.op==='background'){ctx.fillStyle=c.color;ctx.fillRect(0,0,scene.width,scene.height);}
+      // Each background replaces earlier drawing, including historical scenes
+      // with multiple backgrounds. Scoped primitives cannot leak a clip/matrix.
+      if(c.op==='background'){ctx.clearRect(0,0,scene.width,scene.height);ctx.fillStyle=c.color;ctx.fillRect(0,0,scene.width,scene.height);}
       else if(c.op==='text'){if(!c.color)continue;ctx.fillStyle=c.color;ctx.font=`${c.size}px sans-serif`;ctx.textBaseline='top';ctx.fillText(c.text,c.x,c.y);}
       else {ctx.beginPath();if(c.op==='line'){if(!c.color)continue;ctx.moveTo(c.x1,c.y1);ctx.lineTo(c.x2,c.y2);ctx.strokeStyle=c.color;ctx.lineWidth=c.width;ctx.stroke();}
         else {

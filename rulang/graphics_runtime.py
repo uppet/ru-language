@@ -24,7 +24,7 @@ MAX_FRAME_BYTES = 262144
 MAX_CALLBACK_LINES = 500000
 MAX_CALLBACK_SECONDS = 1.0
 MAX_GRAPHICS_MEMORY = 64 * 1024 * 1024
-_COLOR = re.compile(r"#[0-9a-fA-F]{6}\Z")
+_COLOR = re.compile(r"#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?\Z")
 _TYPES = None
 EVENT_PARAMS = {"frame": ("每帧", ["帧"]), "mouse_down": ("鼠标按下", ["横", "纵", "键"]),
                 "mouse_up": ("鼠标松开", ["横", "纵", "键"]),
@@ -275,9 +275,15 @@ def graphics_member(owner, n, receiver, name, args):
         if optional and value is None:
             return ""
         if not isinstance(value, str) or not _COLOR.fullmatch(value):
-            fail("颜色须为 #RRGGBB 文字" + ("，空表示不绘制" if optional else ""))
+            fail("颜色须为 #RRGGBB 或 #RRGGBBAA 文字" + ("，空表示不绘制" if optional else ""))
         return value.lower()
     if kind == "helpers":
+        if name == "颜色":
+            params = ("红", "绿", "蓝", "不透明度")
+            bound = bind_arguments(name, args, params, fail)
+            channels = [number(bound[key], key, 0, 255, True) for key in params]
+            owner.last_member_procedure = False
+            return True, "#" + "".join(f"{value:02x}" for value in channels)
         if name != "画布":
             fail("未知如观工具成员：" + name)
         bound = bind_arguments(name, args, ["宽", "高"], fail)

@@ -12,7 +12,7 @@ class Target {
   setPointerCapture(id){this.captures.add(id);}
   releasePointerCapture(id){if(this.captures.delete(id))this.emit('lostpointercapture',{pointerId:id});}
   getBoundingClientRect(){return {left:10,top:20,width:200,height:100};}
-  getContext(){return {fillRect(){}};}
+  getContext(){return {clearRect(){},fillRect(){}};}
 }
 const frame=()=>({canvas_id:'c',width:400,height:200,fps:60,running:false,handlers:['mouse_down','mouse_up','mouse_move','key_down','key_up'],commands:[]});
 const pointer=(more={})=>({pointerId:1,pointerType:'mouse',isPrimary:true,button:0,buttons:1,clientX:60,clientY:45,...more});

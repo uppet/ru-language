@@ -360,3 +360,19 @@ test('graphics upgrade names are contextual members, not keywords',()=>{
     assert.equal(analyze(`${word} 取 1.`).tokens.find(t=>t.text===word).face,null);
   }
 });
+
+test('alpha color helper highlights and explains only member contexts',()=>{
+  for(const source of ['观 其 颜色 255 64 64 128.','观@颜色 红:255 绿:64 蓝:64 不透明度:128.']) {
+    assert.equal(analyze(source).tokens.find(t=>t.text==='颜色').face,'builtin');
+    assert.match(highlight(source), /颜色 红 绿 蓝 不透明度/);
+    assert.match(highlight(source), /0 全透明、255 不透明/);
+    assert.match(highlight(source), /不钳位、不舍入/);
+  }
+  for(const source of ['颜色 取 1.', '颜色表 取 1.', '作 调色 颜色: 显 颜色. 为.',
+      '# 观 其 颜色 1 2 3 4.', "'观 其 颜色 1 2 3 4.'", '批. 观 其 颜色.', '解. 观 其 颜色. 释.']) {
+    assert.doesNotMatch(highlight(source), /如:观：/);
+    for(const token of analyze(source).tokens.filter(t=>t.text==='颜色')) assert.equal(token.face,null);
+  }
+  for(const color of ["'#RRGGBB'", "'#12345678'", "'#abcdef00'"])
+    assert.equal(lex(color)[0].kind,'string');
+});

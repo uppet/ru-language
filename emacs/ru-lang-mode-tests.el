@@ -1374,3 +1374,25 @@
     (should (member name ru-lang--member-builtins))
     (should-not (member name ru-lang--keywords))
     (should-not (member name ru-lang--builtins))))
+
+(ert-deftest ru-alpha-color-helper-contextual-help ()
+  (should (member "颜色" ru-lang--member-builtins))
+  (should-not (member "颜色" ru-lang--keywords))
+  (should-not (member "颜色" ru-lang--builtins))
+  (dolist (source '("观 其 颜色 255 64 64 128." "观@颜色 红:255 绿:64 蓝:64 不透明度:128."))
+    (ru-lang-test--buffer source
+      (font-lock-ensure)
+      (search-forward "颜色")
+      (should (eq (get-text-property (1- (point)) 'face) 'font-lock-builtin-face))
+      (let ((help (get-text-property (1- (point)) 'help-echo)))
+        (should (string-match-p "颜色 红 绿 蓝 不透明度" help))
+        (should (string-match-p "0 全透明、255 不透明" help))
+        (should (string-match-p "不钳位、不舍入" help)))))
+  (dolist (source '("颜色 取 1." "颜色表 取 1." "作 调色 颜色: 显 颜色. 为."
+                    "# 观 其 颜色 1 2 3 4." "'观 其 颜色 1 2 3 4.'"
+                    "批. 观 其 颜色." "解. 观 其 颜色. 释."))
+    (ru-lang-test--buffer source
+      (font-lock-ensure)
+      (search-forward "颜色")
+      (should-not (eq (get-text-property (1- (point)) 'face) 'font-lock-builtin-face))
+      (should-not (get-text-property (1- (point)) 'help-echo)))))

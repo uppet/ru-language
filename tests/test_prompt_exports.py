@@ -95,6 +95,22 @@ class PromptExportTests(unittest.TestCase):
                                      "256 KiB", "画布坐标", "不会自动恢复", "保存栈必须配平"):
                         self.assertIn(contract, prompt)
 
+    def test_alpha_color_contract_is_shared_by_both_exports_and_targets(self):
+        raw = (ROOT / "rulang/language-spec.md").read_bytes()
+        for target in ("rushu", "ruguan"):
+            for backend in ("python", "browser-js"):
+                with self.subTest(target=target, backend=backend):
+                    prompt = export_prompt(target, runtime_target=backend)
+                    self.assertEqual(prompt.count(raw.decode()), 1)
+                    self.assertIn(hashlib.sha256(raw).hexdigest(), prompt)
+                    for contract in ("#RRGGBB", "#RRGGBBAA", "颜色 红 绿 蓝 不透明度",
+                                     "四个参数均必需", "0～255 的有限整数", "#rrggbbaa",
+                                     "不钳位、不舍入", "不是画布成员", "不是新增保留字",
+                                     "填色 空", "描边 空", "不保留上一帧像素",
+                                     "透明底上完整重绘", "半透明背景拖尾"):
+                        self.assertIn(contract, prompt)
+                    self.assertNotIn("颜色只接受 `#RRGGBB`，", prompt)
+
     def test_all_generation_targets_share_canonical_standard_imports(self):
         raw = (ROOT / "rulang/language-spec.md").read_text(encoding="utf-8")
         for target in ("cli", "rushu", "ruguan", "rushu-browser-js", "ruguan-browser-js"):
