@@ -1493,3 +1493,28 @@
       (search-forward "折线")
       (should-not (eq (get-text-property (1- (point)) 'face) 'font-lock-builtin-face))
       (should-not (get-text-property (1- (point)) 'help-echo)))))
+
+(ert-deftest ru-bezier-contextual-help ()
+  (should (member "贝塞尔" ru-lang--member-builtins))
+  (should-not (member "贝塞尔" ru-lang--keywords))
+  (should-not (member "贝塞尔" ru-lang--builtins))
+  (dolist (source '("图 其 贝塞尔 0 0 10 20 30 20 40 0."
+                    "图@贝塞尔 起横:0 起纵:0 控一横:10 控一纵:20 控二横:30 控二纵:20 终横:40 终纵:0."))
+    (ru-lang-test--buffer source
+      (font-lock-ensure)
+      (search-forward "贝塞尔")
+      (should (eq (get-text-property (1- (point)) 'face) 'font-lock-builtin-face))
+      (let ((help (get-text-property (1- (point)) 'help-echo)))
+        (dolist (fragment '("贝塞尔 起横 起纵 控一横 控一纵 控二横 控二纵 终横 终纵" "八参全必需"
+                            "全位置或全命名调用" "返回空" "单段三次曲线" "控制点不必经过"
+                            "100000" "拒绝事实与空" "moveTo" "bezierCurveTo" "只描边一次"
+                            "不闭合、不填充" "忽略且保留填色" "深复制" "原生退化行为"
+                            "空描边或退化仍计入原有预算" "用户同名方法按其声明"))
+          (should (string-match-p fragment help))))))
+  (dolist (source '("贝塞尔 取 1." "贝塞尔图 取 1." "作 描画 贝塞尔: 显 贝塞尔. 为."
+                    "# 图 其 贝塞尔." "'图 其 贝塞尔'" "批. 图 其 贝塞尔." "解. 图 其 贝塞尔. 释."))
+    (ru-lang-test--buffer source
+      (font-lock-ensure)
+      (search-forward "贝塞尔")
+      (should-not (eq (get-text-property (1- (point)) 'face) 'font-lock-builtin-face))
+      (should-not (get-text-property (1- (point)) 'help-echo)))))

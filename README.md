@@ -1,6 +1,6 @@
-# 如（ru-language）· 0.19.5 元初实现
+# 如（ru-language）· 0.19.6 元初实现
 
-0.19.5 配套如书 0.8.5（`wip` 开发中，尚未发布到 `main`）：新增如观原生 `折线 点阵`：2～256 个点连成一条开放路径，只描边，一次完成整条路径，半透明折点不会逐段叠色。可参考[一周气温示例书](rushu/examples/weekly-temperature.rushu.json)，点击或用方向键调整每天的数据。弧／扇形、真实时间、文字对齐、透明颜色、多边形、变换与裁剪继续可用。先看[安装、更新与执行目标](docs/stable-entry.md)、[如观指南](docs/ruguan-guide.md)及[本批验证记录](docs/ruguan-0.19.5-validation.md)。
+0.19.6 配套如书 0.8.6（`wip` 开发中，尚未发布到 `main`）：新增如观原生三次 `贝塞尔 起横 起纵 控一横 控一纵 控二横 控二纵 终横 终纵`，八参全必需，单段开放曲线只描边一次。曲线经过起终点，两枚控制点改变弯曲方向，不必在曲线上。打开[弯弯小桥示例书](rushu/examples/curved-bridge.rushu.json)，选控制点、用方向键或点击改变曲线，按 r 复原。折线、弧／扇形、真实时间、透明颜色、变换与裁剪继续可用。先看[安装、更新与执行目标](docs/stable-entry.md)、[如观指南](docs/ruguan-guide.md)及[本批验证记录](docs/ruguan-0.19.6-validation.md)。
 
 0.18.0 配套如书 0.6.0：新增阵排序、另成与逐位，典遍历由列改为逐目。详见 [新阵与遍历指南](docs/array-sort-map.md)。
 
@@ -73,7 +73,7 @@
 
 </details>
 
-完整的实现语义以 [如语言规范 0.19.5](rulang/language-spec.md) 为准。它是学习者、工具作者与 LLM 共用的唯一规范文本；README 提供入门和操作摘要。
+完整的实现语义以 [如语言规范 0.19.6](rulang/language-spec.md) 为准。它是学习者、工具作者与 LLM 共用的唯一规范文本；README 提供入门和操作摘要。
 
 待逐项解决或确认忽略的审查事项见 [语言审查追踪](docs/language-review-tracker.md)。清单区分实现缺陷、现有设计取舍与未定提案，不替代语言规范。
 
@@ -101,7 +101,7 @@ python3 ru --version
 python3 ru repl
 ```
 
-`main` 是稳定使用入口，`wip` 用于后续开发；本工作树为如 0.19.5／如书 0.8.5，尚未发布到 `main`。已有仓库的安全更新步骤及执行目标对照见 [安装与更新](docs/stable-entry.md)，不需要强制重置或覆盖自己的书本。
+`main` 是稳定使用入口，`wip` 用于后续开发；本工作树为如 0.19.6／如书 0.8.6，尚未发布到 `main`。已有仓库的安全更新步骤及执行目标对照见 [安装与更新](docs/stable-entry.md)，不需要强制重置或覆盖自己的书本。
 
 REPL 中输入：
 

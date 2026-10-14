@@ -47,7 +47,7 @@ export function validateScene(value) {
   if(new TextEncoder().encode(JSON.stringify(value)).length>MAX_FRAME_BYTES)throw new Error('画布帧过大。');
   const commands=Array.from(value.commands,command=>{
     if(!command||typeof command!=='object'||Array.isArray(command))throw new Error('画布指令无效。');
-    const c=command,names={background:[],line:['x1','y1','x2','y2','width'],rect:['x','y','width','height','stroke_width'],ellipse:['x','y','width','height','stroke_width'],arc:['x','y','width','height','start','sweep','stroke_width'],sector:['x','y','width','height','start','sweep','stroke_width'],text:['x','y','size'],polygon:['stroke_width'],polyline:['stroke_width']};
+    const c=command,names={background:[],line:['x1','y1','x2','y2','width'],rect:['x','y','width','height','stroke_width'],ellipse:['x','y','width','height','stroke_width'],arc:['x','y','width','height','start','sweep','stroke_width'],sector:['x','y','width','height','start','sweep','stroke_width'],text:['x','y','size'],polygon:['stroke_width'],polyline:['stroke_width'],bezier:['x1','y1','cx1','cy1','cx2','cy2','x2','y2','stroke_width']};
     if(typeof c.op!=='string'||!Object.hasOwn(names,c.op)||!names[c.op].every(key=>finite(c[key])))throw new Error('画布坐标无效。');
     const state={...drawingState(c),...textState(c)};
     if(c.op==='polygon'||c.op==='polyline'){
@@ -56,6 +56,10 @@ export function validateScene(value) {
       const points=Array.from({length:c.points.length},(_,index)=>{const point=c.points[index];if(!Object.hasOwn(c.points,index)||!Array.isArray(point)||point.length!==2||!Object.hasOwn(point,0)||!Object.hasOwn(point,1)||!finite(point[0])||!finite(point[1]))throw new Error(`画布${label}坐标无效。`);return [point[0],point[1]];});
       if(c.stroke_width<1||c.stroke_width>256||![c.fill,c.stroke].every(x=>x===''||color(x))||(open&&c.fill!==''))throw new Error('图形尺寸或颜色无效。');
       return {op:c.op,points,fill:c.fill.toLowerCase(),stroke:c.stroke.toLowerCase(),stroke_width:c.stroke_width,...state};
+    }
+    if(c.op==='bezier'){
+      if(c.fill!==''||c.stroke_width<1||c.stroke_width>256||!(c.stroke===''||color(c.stroke)))throw new Error('图形尺寸或颜色无效。');
+      return {op:c.op,x1:c.x1,y1:c.y1,cx1:c.cx1,cy1:c.cy1,cx2:c.cx2,cy2:c.cy2,x2:c.x2,y2:c.y2,fill:'',stroke:c.stroke.toLowerCase(),stroke_width:c.stroke_width,...state};
     }
     if(c.op==='rect'||c.op==='ellipse'||c.op==='arc'||c.op==='sector'){
       if(c.width<0||c.height<0||c.stroke_width<1||c.stroke_width>256||![c.fill,c.stroke].every(x=>x===''||color(x))||(c.op==='arc'&&c.fill!==''))throw new Error('图形尺寸或颜色无效。');
@@ -98,6 +102,7 @@ export function drawScene(canvas,value) {
         else {
           if(c.op==='rect')ctx.rect(c.x,c.y,c.width,c.height);
           else if(c.op==='polygon'||c.op==='polyline'){ctx.moveTo(...c.points[0]);for(const point of c.points.slice(1))ctx.lineTo(...point);if(c.op==='polygon')ctx.closePath();}
+          else if(c.op==='bezier'){ctx.moveTo(c.x1,c.y1);ctx.bezierCurveTo(c.cx1,c.cy1,c.cx2,c.cy2,c.x2,c.y2);}
           else if((c.op==='arc'||c.op==='sector')&&Math.abs(c.sweep)<Math.PI*2){
             const cx=c.x+c.width/2,cy=c.y+c.height/2;
             if(c.op==='sector')ctx.moveTo(cx,cy);

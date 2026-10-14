@@ -70,7 +70,7 @@ class GraphicsArcExamplesTests(unittest.TestCase):
                                  '`abs(转角) >= 2π`', '不对转角取模归零', '没有中心径向辐条',
                                  '只使用当前描边和线宽，忽略填色', '描边包含两条半径边',
                                  'nonzero（非零环绕）', '2048 条／约 256 KiB',
-                                 '不提供弦形、贝塞尔曲线或路径构造器',
+                                 '不提供弦形、二次贝塞尔或路径构造器',
                                  'pizza-portions.ru', 'pizza-portions.rushu.json'):
                     self.assertIn(fragment, text)
                 # Previous release headings remain historical and accurate.
@@ -80,7 +80,7 @@ class GraphicsArcExamplesTests(unittest.TestCase):
     def test_four_cli_exports_have_one_complete_spec_and_arc_focus(self):
         raw = (ROOT / 'rulang/language-spec.md').read_bytes()
         spec, digest = raw.decode('utf-8'), hashlib.sha256(raw).hexdigest()
-        self.assertTrue(spec.startswith('# 如语言规范 0.19.5\n'))
+        self.assertTrue(spec.startswith('# 如语言规范 0.19.6\n'))
         for kind in ('rushu', 'ruguan'):
             for backend in ('python', 'browser-js'):
                 with self.subTest(kind=kind, backend=backend):
@@ -95,14 +95,14 @@ class GraphicsArcExamplesTests(unittest.TestCase):
                     self.assertEqual(prompt.count(spec), 1)
                     self.assertEqual(prompt.count('<ru-language-spec>'), 1)
                     self.assertIn(digest, prompt)
-                    self.assertIn('随附规范版本：0.19.5', prompt)
+                    self.assertIn('随附规范版本：0.19.6', prompt)
                     for name in ('弧', '扇形'):
                         self.assertIn('图 其 ' + name + ' 横 纵 宽 高 始角 转角', prompt)
                     if kind == 'ruguan':
                         focus = prompt.partition('<ru-language-spec>')[0]
                         for fragment in ('原生弧／扇形', '带符号转角', '弧只描边',
                                          '零转角保留命令', '无辐条的整椭圆', '非圆椭圆使用参数角',
-                                         '不要用折线近似', '贝塞尔曲线、路径构造器'):
+                                         '不要用折线近似', '二次贝塞尔、路径构造器'):
                             self.assertIn(fragment, focus)
 
     def run_python(self):

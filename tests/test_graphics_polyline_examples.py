@@ -85,7 +85,7 @@ class GraphicsPolylineExamplesTests(unittest.TestCase):
                                  '不能逐段绘制', '半透明折点重复叠色', '使用既有 `多边形`',
                                  '深复制外层点阵及各点坐标', '变换、裁剪、描边和线宽',
                                  '`描边 空` 或零长度折线仍保留并计数为一条绘制命令',
-                                 '2048 条／约 256 KiB', '贝塞尔曲线、路径构造器或文字测量',
+                                 '2048 条／约 256 KiB', '二次贝塞尔、路径构造器或文字测量',
                                  'weekly-temperature.ru', 'weekly-temperature.rushu.json'):
                     self.assertIn(fragment, text)
                 for milestone in ('弧与扇形（0.19.4／如书 0.8.4）',
@@ -97,7 +97,7 @@ class GraphicsPolylineExamplesTests(unittest.TestCase):
     def test_four_offline_cli_exports_embed_exact_current_spec_and_signature(self):
         raw = (ROOT / 'rulang/language-spec.md').read_bytes()
         spec, digest = raw.decode('utf-8'), hashlib.sha256(raw).hexdigest()
-        self.assertTrue(spec.startswith('# 如语言规范 0.19.5\n'))
+        self.assertTrue(spec.startswith('# 如语言规范 0.19.6\n'))
         for kind in ('rushu', 'ruguan'):
             for backend in ('python', 'browser-js'):
                 with self.subTest(kind=kind, backend=backend):
@@ -112,7 +112,7 @@ class GraphicsPolylineExamplesTests(unittest.TestCase):
                     self.assertEqual(prompt.count(spec), 1)
                     self.assertEqual(prompt.count('<ru-language-spec>'), 1)
                     self.assertIn(digest, prompt)
-                    self.assertIn('随附规范版本：0.19.5', prompt)
+                    self.assertIn('随附规范版本：0.19.6', prompt)
                     for fragment in ('图 其 折线 点阵', '唯一的 `点阵` 参数必需',
                                      '2～256 个点', '深复制外层点阵及各点坐标',
                                      '只调用一次 `stroke`', '2048 条／约 256 KiB'):

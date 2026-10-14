@@ -355,19 +355,23 @@ class Session:
         if (not isinstance(commands, list) or len(commands) > MAX_GRAPHICS_COMMANDS
                 or self._event_size(event) > MAX_GRAPHICS_BYTES
                 or any(not isinstance(command, dict) or not isinstance(command.get("op"), str) or command["op"] not in
-                       {"rect", "ellipse", "line", "text", "background", "polygon", "arc", "sector", "polyline"} for command in commands)):
+                       {"rect", "ellipse", "line", "text", "background", "polygon", "arc", "sector", "polyline", "bezier"} for command in commands)):
             raise ValueError("invalid graphics payload")
         # Validate colors, text enums and new path geometry/state before retaining.
         # The browser independently validates all scene fields before drawing.
         for command in commands:
             op = command["op"]
-            if op in ("arc", "sector", "polyline"):
-                fields = (("stroke_width",) if op == "polyline" else
-                          ("x", "y", "width", "height", "start", "sweep", "stroke_width"))
+            if op in ("arc", "sector", "polyline", "bezier"):
+                if op == "polyline":
+                    fields = ("stroke_width",)
+                elif op == "bezier":
+                    fields = ("x1", "y1", "cx1", "cy1", "cx2", "cy2", "x2", "y2", "stroke_width")
+                else:
+                    fields = ("x", "y", "width", "height", "start", "sweep", "stroke_width")
                 if (not all(_graphics_number(command.get(key)) for key in fields)
-                        or op != "polyline" and (command["width"] < 0 or command["height"] < 0)
+                        or op in ("arc", "sector") and (command["width"] < 0 or command["height"] < 0)
                         or not 1 <= command["stroke_width"] <= 256
-                        or op in ("arc", "polyline") and command.get("fill") != ""):
+                        or op in ("arc", "polyline", "bezier") and command.get("fill") != ""):
                     raise ValueError("invalid graphics path geometry")
                 if op == "polyline":
                     points = command.get("points")
@@ -391,7 +395,7 @@ class Session:
                 if key in command and (op != "text" or not isinstance(command[key], str)
                                        or command[key] not in values):
                     raise ValueError("invalid graphics text alignment")
-            keys = ("fill", "stroke") if op in ("rect", "ellipse", "polygon", "arc", "sector", "polyline") else ("color",)
+            keys = ("fill", "stroke") if op in ("rect", "ellipse", "polygon", "arc", "sector", "polyline", "bezier") else ("color",)
             for key in keys:
                 value = command.get(key)
                 if value == "" and op != "background":

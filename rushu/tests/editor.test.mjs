@@ -444,3 +444,22 @@ test('polyline help stays contextual and states the open-path contract',()=>{
   }
   assert.equal(analyze('点阵 取 1.').tokens.find(t=>t.text==='点阵').face,null);
 });
+
+test('bezier help is contextual and states the native cubic contract',()=>{
+  for(const source of ['图 其 贝塞尔 0 0 10 20 30 20 40 0.',
+    '图@贝塞尔 起横:0 起纵:0 控一横:10 控一纵:20 控二横:30 控二纵:20 终横:40 终纵:0.']) {
+    assert.equal(analyze(source).tokens.find(t=>t.text==='贝塞尔').face,'builtin');
+    const html=highlight(source);
+    for(const fragment of ['贝塞尔 起横 起纵 控一横 控一纵 控二横 控二纵 终横 终纵','八参全必需',
+      '全位置或全命名调用','返回空','单段三次曲线','控制点不必经过','100000','拒绝事实与空',
+      'moveTo','bezierCurveTo','只描边一次','不闭合、不填充','忽略且保留填色','深复制',
+      '原生退化行为','空描边或退化仍计入原有预算','用户同名方法按其声明']) assert.ok(html.includes(fragment),fragment);
+  }
+  for(const source of ['贝塞尔 取 1.','贝塞尔图 取 1.','作 描画 贝塞尔: 显 贝塞尔. 为.',
+    '# 图 其 贝塞尔.','\'图 其 贝塞尔\'','批. 图 其 贝塞尔.','解. 图 其 贝塞尔. 释.']) {
+    assert.doesNotMatch(highlight(source), /如:观画布：/);
+    for(const token of analyze(source).tokens.filter(t=>t.text==='贝塞尔')) assert.equal(token.face,null);
+  }
+  for(const word of ['起横','起纵','控一横','控一纵','控二横','控二纵','终横','终纵'])
+    assert.equal(analyze(`${word} 取 1.`).tokens.find(t=>t.text===word).face,null);
+});

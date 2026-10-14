@@ -52,6 +52,7 @@
   browserParams.弧=['横','纵','宽','高','始角','转角'];
   browserParams.扇形=['横','纵','宽','高','始角','转角'];
   browserParams.折线=['点阵'];
+  browserParams.贝塞尔=['起横','起纵','控一横','控一纵','控二横','控二纵','终横','终纵'];
   const browserTextAligns=Object.freeze({左:'left',中:'center',右:'right'});
   const browserTextBaselines=Object.freeze({上:'top',中:'middle',下:'bottom',基线:'alphabetic'});
   function browserMember(m,receiver,name,args,loc){
@@ -144,6 +145,7 @@
     // command/byte budget. Native rendering alone interprets the signed sweep.
     else if(name==='弧'||name==='扇形')command({op:name==='弧'?'arc':'sector',x:num(a.横,'横'),y:num(a.纵,'纵'),width:num(a.宽,'宽',0),height:num(a.高,'高',0),start:num(a.始角,'始角'),sweep:num(a.转角,'转角'),fill:name==='弧'?'':c.fill,stroke:c.stroke,stroke_width:c.lineWidth});
     else if(name==='矩形'||name==='椭圆')command({op:name==='矩形'?'rect':'ellipse',x:num(a.横,'横'),y:num(a.纵,'纵'),width:num(a.宽,'宽',0),height:num(a.高,'高',0),fill:c.fill,stroke:c.stroke,stroke_width:c.lineWidth});
+    else if(name==='贝塞尔')command({op:'bezier',x1:num(a.起横,'起横'),y1:num(a.起纵,'起纵'),cx1:num(a.控一横,'控一横'),cy1:num(a.控一纵,'控一纵'),cx2:num(a.控二横,'控二横'),cy2:num(a.控二纵,'控二纵'),x2:num(a.终横,'终横'),y2:num(a.终纵,'终纵'),fill:'',stroke:c.stroke,stroke_width:c.lineWidth});
     else if(name==='线')command({op:'line',x1:num(a.横一,'横一'),y1:num(a.纵一,'纵一'),x2:num(a.横二,'横二'),y2:num(a.纵二,'纵二'),color:c.stroke,width:c.lineWidth});
     else if(name==='文字'){
       if(typeof a.文!=='string'||Array.from(a.文).length>4096)bad('文字须为不超过 4096 字符的句');

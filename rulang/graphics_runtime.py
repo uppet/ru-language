@@ -39,6 +39,7 @@ CANVAS_PARAMS = MappingProxyType({"背景": ("色",), "填色": ("色",), "描�
               "矩形": ("横", "纵", "宽", "高"), "椭圆": ("横", "纵", "宽", "高"),
               "弧": ("横", "纵", "宽", "高", "始角", "转角"),
               "扇形": ("横", "纵", "宽", "高", "始角", "转角"),
+              "贝塞尔": ("起横", "起纵", "控一横", "控一纵", "控二横", "控二纵", "终横", "终纵"),
               "线": ("横一", "纵一", "横二", "纵二"), "文字": ("文", "横", "纵"),
               "三角形": ("横一", "纵一", "横二", "纵二", "横三", "纵三"), "多边形": ("点阵",), "折线": ("点阵",),
               "平移": ("横", "纵"), "旋转": ("弧度",), "缩放": ("横倍率", "纵倍率"),
@@ -469,6 +470,10 @@ def graphics_member(owner, n, receiver, name, args):
         canvas.command({"op": "rect" if name == "矩形" else "ellipse", "x": x, "y": y,
                         "width": width, "height": height, "fill": canvas.fill, "stroke": canvas.stroke,
                         "stroke_width": canvas.line_width}, fail)
+    elif name == "贝塞尔":
+        values = [number(bound[key], key) for key in params[name]]
+        canvas.command(dict(zip(("x1", "y1", "cx1", "cy1", "cx2", "cy2", "x2", "y2"), values),
+                            op="bezier", fill="", stroke=canvas.stroke, stroke_width=canvas.line_width), fail)
     elif name == "线":
         values = [number(bound[key], key) for key in params[name]]
         canvas.command(dict(zip(("x1", "y1", "x2", "y2"), values), op="line", color=canvas.stroke, width=canvas.line_width), fail)
