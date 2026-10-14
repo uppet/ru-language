@@ -70,7 +70,8 @@ class NativeDiagnosticTests(unittest.TestCase):
                 graph = load_module_graph(root, parse(source))
                 result = self.run_program(backend, source, str(root), graph)
                 self.assertEqual(result.returncode, 1)
-                self.assertTrue(result.stderr.startswith(str(child) + location + ': error: '), result.stderr)
+                # The module loader resolves aliases, including Windows 8.3 paths.
+                self.assertTrue(result.stderr.startswith(str(child.resolve()) + location + ': error: '), result.stderr)
 
     @unittest.skipUnless(CC, 'C compiler unavailable')
     def test_c_import_keeps_original_filename(self):

@@ -1283,7 +1283,7 @@
 (ert-deftest ru-dictionary-named-parameter-help ()
   (dolist (entry '(("查" . "典：查 目:") ("增" . "典：增 目: 相:") ("除" . "典：除 目:")))
     (should (string-match-p (regexp-quote (cdr entry))
-                            (cdr (assoc (car entry) ru-lang--practical-member-help)))))
+                            (cdr (assoc (car entry) ru-lang--practical-member-help))))))
 
 (ert-deftest ru-lang-diagnostic-paths-and-legacy-format ()
   (dolist (file '("C:\\中文 目录\\题目.ru" "/tmp/空 格/😀.ru" "C:/中文/题.ru"))
@@ -1299,34 +1299,43 @@
     (unwind-protect
         (with-temp-buffer
           (comint-mode)
-          (ru-lang--enable-run-diagnostics (point-min))
-          (insert (format "%s:1:5: error: 运行错误：定位\n" file))
-          (save-window-excursion
-            (compilation-next-error-function 1 t)
-            (with-current-buffer source-buffer
-              (should (= (point) 5))
-              (should (eq (char-after) ?目)))))
+          ;; A rerun must find its first diagnostic, not revisit old output.
+          (dolist (column '(5 6))
+            (goto-char (point-max))
+            (insert "Running test.ru\n")
+            (ru-lang--enable-run-diagnostics (copy-marker (point)))
+            ;; Comint process output is inserted before markers.
+            (insert-before-markers
+             (format "%s:1:%s: error: 运行错误：定位\n" file column))
+            (save-window-excursion
+              (compilation-next-error-function 1 t)
+              (with-current-buffer source-buffer
+                (should (= (point) column))
+                (should (eq (char-after) (if (= column 5) ?目 ?标)))))))
       (when (buffer-live-p source-buffer) (kill-buffer source-buffer))
       (delete-file file))))
 
 (ert-deftest ru-lang-diagnostic-virtual-sources-are-not-files ()
   (with-temp-buffer
     (comint-mode)
-    (ru-lang--enable-run-diagnostics (point-min))
+    (insert "Running test.ru\n")
+    (ru-lang--enable-run-diagnostics (point))
     (insert "rushu://session/1/cell/2.ru:1:1: error: 虚拟来源\n<cell>:1:1: error: 虚拟来源\n")
     (should-error (compilation-next-error-function 1 t) :type 'user-error)))
 
 (ert-deftest ru-lang-diagnostic-keeps-comint-input-bindings ()
   (with-temp-buffer
     (comint-mode)
-    (ru-lang--enable-run-diagnostics (point-min))
-    (should (derived-mode-p 'comint-mode))
-    (should compilation-shell-minor-mode)
-    (should (eq (key-binding (kbd "RET")) #'comint-send-input))
-    (should (eq (key-binding (kbd "C-c C-c")) #'comint-interrupt-subjob))
-    (should (eq (key-binding (kbd "C-c C-d")) #'comint-delchar-or-maybe-eof))
-    (should-not compilation-error-screen-columns)
-    (should (= compilation-first-column 1))))
+    (let ((bindings (mapcar (lambda (key) (cons key (key-binding (kbd key))))
+                            '("RET" "C-c C-c" "C-c C-d"))))
+      (ru-lang--enable-run-diagnostics (point-min))
+      (should (derived-mode-p 'comint-mode))
+      (should compilation-shell-minor-mode)
+      (dolist (binding bindings)
+        (should (cdr binding))
+        (should (eq (key-binding (kbd (car binding))) (cdr binding))))
+      (should-not compilation-error-screen-columns)
+      (should (= compilation-first-column 1)))))
 
 (ert-deftest ru-lang-diagnostic-line-only-and-colon-paths ()
   (dolist (file '("C:\\中文 目录\\题目.ru" "/tmp/中文:片段 文件.ru"))

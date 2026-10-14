@@ -61,7 +61,10 @@ shell; do not add shell quotes.  Relative paths use the source directory."
               (copy-sequence compilation-transform-file-match-alist))
   (cl-pushnew '("\\`rushu://" nil) compilation-transform-file-match-alist :test #'equal)
   (cl-pushnew '("\\`<" nil) compilation-transform-file-match-alist :test #'equal)
-  (setq-local compilation-messages-start start)
+  ;; `compilation-next-error' searches after this position.  Keep it on
+  ;; the run header's newline so an immediate first diagnostic is included.
+  (setq-local compilation-messages-start
+              (if (> start (point-min)) (copy-marker (1- start)) start))
   (setq-local compilation-current-error nil))
 
 ;;;###autoload

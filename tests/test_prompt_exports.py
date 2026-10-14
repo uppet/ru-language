@@ -205,7 +205,8 @@ class PromptExportTests(unittest.TestCase):
             with self.assertRaises(RuError):
                 export_prompt("rushu", output)
             self.assertEqual(output.read_text(), "original")
-            self.assertEqual(export_prompt("ruguan", output, force=True), output)
+            # Temporary paths may use aliases such as Windows 8.3 short names.
+            self.assertEqual(export_prompt("ruguan", output, force=True), output.resolve())
             self.assertEqual(output.read_text(), export_prompt("ruguan"))
 
     def test_force_accepts_new_file(self):
