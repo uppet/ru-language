@@ -26,10 +26,15 @@ WINDOWS_X64 = (sys.platform == 'win32' and ctypes.sizeof(ctypes.c_void_p) == 8
 
 
 def cli_run(source, *, timeout=45):
-    env = dict(os.environ, PYTHONIOENCODING='utf-8')
-    return subprocess.run([sys.executable, str(ROOT / 'ru'), 'run', '--allow-native', str(source)],
-                          cwd=str(ROOT), text=True, encoding='utf-8',
-                          capture_output=True, timeout=timeout, env=env)
+    env = dict(os.environ, PYTHONIOENCODING='utf-8', PYTHONUNBUFFERED='1')
+    try:
+        return subprocess.run([sys.executable, str(ROOT / 'ru'), 'run', '--allow-native', str(source)],
+                              cwd=str(ROOT), text=True, encoding='utf-8',
+                              capture_output=True, timeout=timeout, env=env)
+    except subprocess.TimeoutExpired as error:
+        raise AssertionError(
+            f'Ru native subprocess exceeded {timeout}s; '
+            f'stdout={error.stdout!r}; stderr={error.stderr!r}') from error
 
 
 class RuJianSourceTests(unittest.TestCase):
@@ -147,13 +152,25 @@ W 取 见 其 Win32.
 
     def test_getmessage_minus_one_is_not_quit(self):
         self.run_source(self.prelude() + '''
+# Use an owned, destroyed HWND, the invalid-parameter example documented by
+# GetMessageW. A guessed numeric handle such as 1 is not an invalidity proof.
+# https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-getmessagew
 消息体 取 (W 其 MSG) 其 新建.
-成果 取 (W 其 GetMessageW) 其 调用 [消息体,((密 其 指针) 其 值 1),0,0].
+窗 取 见 其 窗口 类名 '无效过滤器生命周期' 300 160.
+旧柄 取 窗 其 句柄.
+断言 ((确认 ((W 其 IsWindow) 其 调用 [旧柄])) 其 数 == 1) '测试窗口未创建'.
+窗 其 关闭.
+断言 ((窗 其 循环) == 0) '销毁后的 WM_QUIT 未正常消耗'.
+断言 (非 (旧柄 其 为空)) '保存的 HWND 变成了 NULL 过滤器'.
+断言 ((确认 ((W 其 IsWindow) 其 调用 [旧柄])) 其 为空) '测试 HWND 尚未失效'.
+断言 ((确认 ((W 其 PeekMessageW) 其 调用 [消息体,空,W 其 WM_QUIT,W 其 WM_QUIT,0])) 其 为空) '测试队列残留 WM_QUIT'.
+显 'invalid-filter-ready'.
+成果 取 (W 其 GetMessageW) 其 调用 [消息体,旧柄,0,0].
 断言 (((成果 其 值) 其 数) == -1) 'GetMessageW 未保留有符号错误'.
 断言 ((成果 其 错误码) != 0) 'GetMessageW 丢失错误码'.
 消息体 其 关闭.
 显 'minus-one-ok'.
-''', 'minus-one-ok\n')
+''', 'invalid-filter-ready\nminus-one-ok\n')
 
     def test_callback_panic_and_runtime_error_are_contained_then_cleaned(self):
         for body, diagnostic in (("卒 '点击故障'.", '点击故障'), ('得 1/0.', None)):
