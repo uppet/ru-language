@@ -431,28 +431,46 @@ class NativeCPlan:
         return self._function_cache[key]
 
     def _state(self):
-        def value_key(value, active=()):
+        # Snapshot the reachable graph, not its expansion along every path.
+        # Shared containers can form diamonds/cycles; their identity and each
+        # ordered edge are recorded once, without discarding any leaf value.
+        pending, owners, choices = [], {}, {}
+
+        def value_key(value):
             if type(value) is bool:
                 return ('fact', value)
             if type(value) in (int, float):
                 return ('number', value)
             if isinstance(value, _Choice):
-                return ('choice', tuple(value_key(v, active) for v in value.values))
-            if isinstance(value, _Array):
-                if id(value) in active:
-                    return ('array-cycle', id(value))
-                items = None if value.items is None else tuple(
-                    value_key(v, (*active, id(value))) for v in value.items)
-                return ('array', id(value), items)
-            if isinstance(value, _Opaque):
-                if id(value) in active:
-                    return ('object-cycle', id(value))
-                return ('object', id(value), tuple(value_key(v, (*active, id(value))) for v in value.values))
+                # Choices are immutable value unions, not identity-bearing
+                # owners. _merge keeps their alternatives flat; sharing an
+                # equal wrapper must not change fixed-point equality.
+                key = id(value)
+                if key not in choices:
+                    choices[key] = ('choice', tuple(value_key(v) for v in value.values))
+                return choices[key]
+            if isinstance(value, (_Array, _Opaque)):
+                key = id(value)
+                if key not in owners:
+                    owners[key] = value
+                    pending.append(value)
+                return ('array' if isinstance(value, _Array) else 'object', key)
             if isinstance(value, _Function):
                 return ('function', id(value.node), id(value.env), value.declared)
             return value
-        return tuple((id(env), tuple((key, value_key(value))
-                     for key, value in env.values.items())) for env in self._envs)
+
+        roots = tuple((id(env), tuple((key, value_key(value))
+                      for key, value in env.values.items())) for env in self._envs)
+        records = []
+        for owner in pending:
+            if isinstance(owner, _Array):
+                values = None if owner.items is None else tuple(value_key(v) for v in owner.items)
+                kind = 'array'
+            else:
+                values = tuple(value_key(v) for v in owner.values)
+                kind = 'object'
+            records.append((id(owner), kind, values))
+        return roots, tuple(sorted(records))
 
     def _block(self, body, env):
         for node in body:

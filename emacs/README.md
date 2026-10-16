@@ -1,6 +1,6 @@
 # ru-lang-mode：Emacs 基础语言支持
 
-`ru-lang-mode.el` 用于查看和编辑如语言的 `.ru` 源码；当前稳定版为 0.20.0，0.21.4 开发版未改变本模式使用的语法和原生库成员提示。只使用 Emacs 自带的库，编辑功能不需要安装其他包、Python 进程、LSP 或 tree-sitter；快捷运行需要 Python 3 和如 CLI。
+`ru-lang-mode.el` 用于查看和编辑如语言的 `.ru` 源码；当前稳定版为 0.20.0，0.21.5 开发版未改变本模式使用的语法和原生库成员提示。只使用 Emacs 自带的库，编辑功能不需要安装其他包、Python 进程、LSP 或 tree-sitter；快捷运行需要 Python 3 和如 CLI。
 
 0.6 的 JavaScript 后端与生成目标不改变 `.ru` 语法；匿名算 / 作字面量更新已同步高亮、缩进、定义和结构导航。
 

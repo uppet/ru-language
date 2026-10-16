@@ -20,6 +20,149 @@ def plan(source, path='/tmp/native_c_plan.ru'):
 
 
 class NativeCAnalysisTests(unittest.TestCase):
+    def test_state_snapshot_visits_shared_container_edges_once(self):
+        class CountingArray(native_c._Array):
+            reads = 0
+            read_limit = None
+
+            @property
+            def items(self):
+                type(self).reads += 1
+                if self.read_limit is not None and self.reads > self.read_limit:
+                    raise AssertionError('state snapshot repeatedly expands a shared owner')
+                return self._items
+
+            @items.setter
+            def items(self, value):
+                self._items = value
+
+        value = NativeCPlan.__new__(NativeCPlan)
+        env = native_c._Env(lambda *_: None, lambda *_: None)
+        value._envs = [env]
+        shared = CountingArray((0,))
+        arrays = 1
+        for _ in range(512):
+            # Each next level reaches the same previous owner along three
+            # paths. A tree expansion repeats work exponentially.
+            choice = native_c._Choice((shared, None))
+            shared = CountingArray((shared, choice, native_c._Opaque((choice, shared))))
+            arrays += 1
+        env.values['root'] = shared
+        env.values['alias'] = shared
+        CountingArray.read_limit = 2 * arrays
+        before = value._state()
+        self.assertLessEqual(CountingArray.reads, 2 * arrays)
+        self.assertEqual(len(before[1]), arrays + 512)
+        CountingArray.reads = 0
+        self.assertEqual(value._state(), before)
+
+    def test_state_snapshot_preserves_graph_identity_cycles_and_frozen_leaves(self):
+        value = NativeCPlan.__new__(NativeCPlan)
+        env = native_c._Env(lambda *_: None, lambda *_: None)
+        value._envs = [env]
+        leaf = native_c._Array((False,))
+        root = native_c._Array(())
+        opaque = native_c._Opaque((root, leaf))
+        root.items = (opaque, native_c._Choice((leaf, None)))
+        env.values['root'] = root
+        before = value._state()
+        # No revision/version bump: snapshots must encode actual edges/leaves,
+        # not assume a version-only shortcut makes unseen mutation impossible.
+        leaf.items = (0,)
+        self.assertNotEqual(value._state(), before)
+        leaf.items = (False,)
+        self.assertEqual(value._state(), before)
+        env.values['choice'] = native_c._Choice((leaf, None))
+        with_choice = value._state()
+        env.values['choice'] = native_c._Choice((leaf, None))
+        self.assertEqual(value._state(), with_choice)
+        env.values['choice'] = native_c._Choice((native_c._Array((False,)), None))
+        self.assertNotEqual(value._state(), with_choice)
+        leaf.items = None
+        invalid = value._state()
+        leaf.items = ()
+        self.assertNotEqual(value._state(), invalid)
+
+    def test_flat_state_equality_matches_legacy_expansion_on_small_graphs(self):
+        # Keep the old encoding as a small-graph equality oracle. Do not use it
+        # for the deep/shared resource test: its path expansion is the defect.
+        def legacy(plan):
+            def key(value, active=()):
+                if type(value) is bool:
+                    return ('fact', value)
+                if type(value) in (int, float):
+                    return ('number', value)
+                if isinstance(value, native_c._Choice):
+                    return ('choice', tuple(key(v, active) for v in value.values))
+                if isinstance(value, native_c._Array):
+                    if id(value) in active:
+                        return ('array-cycle', id(value))
+                    items = None if value.items is None else tuple(
+                        key(v, (*active, id(value))) for v in value.items)
+                    return ('array', id(value), items)
+                if isinstance(value, native_c._Opaque):
+                    if id(value) in active:
+                        return ('object-cycle', id(value))
+                    return ('object', id(value), tuple(
+                        key(v, (*active, id(value))) for v in value.values))
+                if isinstance(value, native_c._Function):
+                    return ('function', id(value.node), id(value.env), value.declared)
+                return value
+            return tuple((id(env), tuple((name, key(value)) for name, value in env.values.items()))
+                         for env in plan._envs)
+
+        plan = NativeCPlan.__new__(NativeCPlan)
+        env = native_c._Env(lambda *_: None, lambda *_: None)
+        plan._envs = [env]
+        leaf = native_c._Array((0,))
+        root = native_c._Array(())
+        node = parse('算 原样: 得 空. 法')[0]
+        snapshots = []
+        retained = []
+        for contents in ((0,), (False,), (), None, (0,)):
+            leaf.items = contents
+            for reverse in (False, True):
+                items = (leaf, native_c._Opaque((root, leaf)))
+                retained.append(items[1])
+                root.items = tuple(reversed(items)) if reverse else items
+                for alias in (leaf, leaf, native_c._Array(contents or ())):
+                    retained.append(alias)
+                    env.values['root'] = root
+                    env.values['choice'] = native_c._Choice((alias, None))
+                    env.values['function'] = native_c._Function(node, env, '<test>')
+                    snapshots.append((legacy(plan), plan._state()))
+        for old_a, new_a in snapshots:
+            for old_b, new_b in snapshots:
+                self.assertEqual(old_a == old_b, new_a == new_b)
+
+    def test_shared_opaque_source_graph_preserves_late_native_alias_validation(self):
+        chain = '根 取 [密 其 i32].\n'
+        previous = '根'
+        for index in range(12):
+            name = f'层{index}'
+            chain += f'{name} 取 {previous} 对 {previous}.\n'
+            previous = name
+        source = PREFIX + chain + """
+            算 新建: 得 根. 法
+            算 复制 值: 得 值. 法
+            算 保留 值: 得 值. 法
+            算 包装 建 复 留:
+                A 取 建(). B 取 复 A. 得 留 B.
+            法
+            参数 取 包装 (算 新建) (算 复制) (算 保留).
+            循 2 次
+                S 取 密 其 签名 (密 其 i32) 参数 'cdecl'.
+            环
+        """
+        for cache in (True, False):
+            limit = native_c.MAX_SUMMARY_DEPENDENCIES if cache else 0
+            with self.subTest(cache=cache), patch('rulang.native_c.MAX_SUMMARY_DEPENDENCIES', limit):
+                result = plan(source)
+                self.assertEqual(result.signatures, (NativeCSignature('i32', ('i32',)),))
+                self.assertLess(result._steps, 1000)
+                with self.assertRaisesRegex(RuError, '无法静态确定'):
+                    plan(source + f'未知 {previous}.')
+
     def test_primitive_ids_match_runtime_contract(self):
         self.assertEqual(list(PRIMITIVE_IDS.values()), list(range(14)))
         self.assertEqual(PRIMITIVE_IDS['无值'], 0)
