@@ -9,6 +9,7 @@ from unittest.mock import patch
 from rulang.frontend import RuError, parse
 from rulang.modules import load_module_graph
 from rulang.native_c import MAX_CALLBACKS, NativeCPlan, NativeCSignature, PRIMITIVE_IDS
+from rulang import native_c
 
 
 PREFIX = "密 取 外言 '如:密'. "
@@ -145,6 +146,112 @@ class NativeCAnalysisTests(unittest.TestCase):
         """)
         self.assertEqual(set(value.signatures), {
             NativeCSignature('i32', ()), NativeCSignature('f32', ())})
+
+    def test_large_numeric_table_widens_without_changing_native_shapes(self):
+        numbers = ','.join(str(value) for value in range(1024))
+        source = PREFIX + f"""
+            表 取 [{numbers}].
+            算 查询 位: 得 表[位]. 法
+            序 取 查询 (读 为 数).
+            类型们 取 [密 其 i32, 密 其 f64].
+            型 取 类型们[序].
+            S 取 密 其 签名 型 ([]) 'cdecl'.
+        """
+        expected = {NativeCSignature('i32', ()), NativeCSignature('f64', ())}
+        for cache in (True, False):
+            with self.subTest(cache=cache):
+                if cache:
+                    value = plan(source)
+                else:
+                    with patch('rulang.native_c.MAX_SUMMARY_DEPENDENCIES', 0):
+                        value = plan(source)
+                self.assertEqual(set(value.signatures), expected)
+                self.assertLess(value._steps, 5000)
+
+    def test_numeric_widening_is_stable_and_preserves_nonnumeric_values(self):
+        integers = tuple(range(129))
+        floats = tuple(value + 0.5 for value in range(129))
+        self.assertIs(native_c._merge(*integers), native_c.NUMBER)
+        self.assertIs(native_c._merge(*floats), native_c.NUMBER)
+        self.assertIsInstance(native_c._merge(*range(128)), native_c._Choice)
+        marker = native_c._Type('i32')
+        value = native_c._merge(native_c.UNKNOWN, *integers, marker, False, None, 'cdecl')
+        expected = native_c._alternatives(value)
+        self.assertEqual(set(expected), {native_c.UNKNOWN, native_c.NUMBER, marker, False, None, 'cdecl'})
+        for _ in range(140):
+            value = native_c._merge(value, *floats, *integers)
+            self.assertEqual(native_c._alternatives(value), expected)
+        self.assertEqual(set(native_c._alternatives(native_c._merge(*integers, value))), set(expected))
+        for fact, number in ((False, 0), (True, 1), (False, 0.0), (True, 1.0)):
+            for pair in ((fact, number), (number, fact)):
+                with self.subTest(pair=pair):
+                    merged = native_c._alternatives(native_c._merge(*pair, *integers))
+                    self.assertEqual(len(merged), 2)
+                    self.assertTrue(any(item is fact for item in merged))
+                    self.assertTrue(any(item is native_c.NUMBER for item in merged))
+
+    def test_widened_numbers_cannot_supply_abi_components(self):
+        table = '表 取 [' + ','.join(map(str, range(129))) + ']. 值 取 表[读]. '
+        for expression in (
+                "__密 其 类型 值",
+                "密 其 签名 值 ([]) 'cdecl'",
+                "密 其 签名 (密 其 i32) ([值]) 'cdecl'",
+                "密 其 签名 (密 其 i32) ([]) 值",
+                "密 其 回调 值 (算: 得 0. 法) 0"):
+            with self.subTest(expression=expression), self.assertRaises(RuError):
+                plan(PREFIX + table + 'S 取 ' + expression + '.')
+
+    def test_fact_numeric_identity_survives_choices_contexts_and_state(self):
+        for fact, number in ((False, 0), (True, 1)):
+            self.assertFalse(native_c._same(native_c._Choice((fact, 'x')),
+                                           native_c._Choice((number, 'x'))))
+            self.assertFalse(native_c._same(
+                native_c._Choice((native_c._Choice((fact, 'x')), None)),
+                native_c._Choice((native_c._Choice((number, 'x')), None))))
+        value = plan(PREFIX + """
+            算 原样 值: 得 值. 法
+            甲 取 原样 真. 乙 取 原样 1.
+            丙 取 原样 假. 丁 取 原样 0.
+            戊 取 原样 真. 己 取 原样 1.
+        """)
+        env = value._module_values[str(Path('/tmp/native_c_plan.ru').resolve())].env
+        for name in ('甲', '丙', '戊'):
+            self.assertIs(type(env.get(name)), bool)
+        for name in ('乙', '丁', '己'):
+            self.assertIs(type(env.get(name)), float)
+        for fact, number in ((False, 0), (True, 1)):
+            env.values['probe'] = fact
+            before = value._state()
+            env.values['probe'] = number
+            self.assertNotEqual(value._state(), before)
+            array = native_c._Array((native_c._Choice((fact, 'x')),))
+            env.values['probe'] = array
+            before = value._state()
+            array.items = (native_c._Choice((number, 'x')),)
+            self.assertNotEqual(value._state(), before)
+
+    def test_numeric_widening_keeps_callable_effects_and_array_aliases(self):
+        numbers = ','.join(map(str, range(129)))
+        value = plan(PREFIX + f"""
+            算 造: 得 密 其 签名 (密 其 f64) ([]) 'cdecl'. 法
+            表 取 [{numbers}, 算 造].
+            回 取 表[读]. 回().
+        """)
+        self.assertEqual(value.signatures, (NativeCSignature('f64', ()),))
+        with self.assertRaisesRegex(RuError, '无法静态确定'):
+            plan(PREFIX + f"""
+                参数 取 [密 其 i32].
+                S 取 密 其 签名 (密 其 i32) 参数 'cdecl'.
+                表 取 [{numbers}, 参数].
+                别名 取 表[读]. 未知 别名.
+            """)
+
+    def test_numeric_widening_does_not_raise_nonnumeric_candidate_limit(self):
+        for values in (
+                ','.join(f"'item{value}'" for value in range(129)),
+                ','.join(f'[{value},{value + 1}]' for value in range(129))):
+            with self.subTest(values=values[:40]), self.assertRaisesRegex(RuError, '128 上限'):
+                plan(PREFIX + '表 取 [' + values + ']. 显 表[读].')
 
     def test_dynamic_array_mutation_cannot_smuggle_signature(self):
         for mutation in ("参数们 其 增 (密 其 f32).", "参数们[0] 取 密 其 f64."):

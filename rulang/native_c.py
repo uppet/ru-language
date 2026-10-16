@@ -62,6 +62,9 @@ class _Unknown:
 
 
 UNKNOWN = _Unknown()
+# Analysis-only numeric top: unlike UNKNOWN it absorbs later numeric constants
+# in joins, so widening a large data table remains a monotone fixed point.
+NUMBER = _Unknown()
 NATIVE = object()
 LIBRARY = object()
 
@@ -195,6 +198,14 @@ def _alternatives(value):
 
 
 def _same(left, right):
+    # Python equates True/1 and False/0, but facts are not numeric candidates.
+    # Keep their identity before a later numeric widening can erase constants.
+    if ((type(left) is bool and type(right) in (int, float)) or
+            (type(right) is bool and type(left) in (int, float))):
+        return False
+    if isinstance(left, _Choice) and isinstance(right, _Choice):
+        return len(left.values) == len(right.values) and all(
+            _same(a, b) for a, b in zip(left.values, right.values))
     if isinstance(left, _Function) and isinstance(right, _Function):
         return (left.node is right.node and left.env is right.env and
                 left.declared == right.declared)
@@ -203,12 +214,27 @@ def _same(left, right):
 
 def _merge(*values):
     result = []
+    numeric = False
     for value in values:
         for alternative in _alternatives(value):
+            if alternative is NUMBER:
+                result = [item for item in result if type(item) not in (int, float)]
+                numeric = True
+            elif numeric and type(alternative) in (int, float):
+                continue
             if not any(_same(alternative, item) for item in result):
                 result.append(alternative)
             if len(result) > MAX_STATIC_ALTERNATIVES:
-                raise RuError('原生签名静态分析的候选值超过 128 上限；请简化描述符数据流', category='原生编译错误')
+                # Numeric literals have no owner/callable/descriptor identity.
+                # Losing their exact values only broadens subsequent indexing;
+                # ABI consumers still reject this unknown numeric value. Never
+                # erase nonnumeric alternatives or mutable container aliases.
+                nonnumeric = [item for item in result if type(item) not in (int, float)]
+                if len(nonnumeric) < len(result):
+                    result = nonnumeric + ([] if numeric else [NUMBER])
+                    numeric = True
+                if len(result) > MAX_STATIC_ALTERNATIVES:
+                    raise RuError('原生签名静态分析的候选值超过 128 上限；请简化描述符数据流', category='原生编译错误')
     if not result:
         return UNKNOWN
     return result[0] if len(result) == 1 else _Choice(tuple(result))
@@ -406,6 +432,10 @@ class NativeCPlan:
 
     def _state(self):
         def value_key(value, active=()):
+            if type(value) is bool:
+                return ('fact', value)
+            if type(value) in (int, float):
+                return ('number', value)
             if isinstance(value, _Choice):
                 return ('choice', tuple(value_key(v, active) for v in value.values))
             if isinstance(value, _Array):
@@ -690,6 +720,10 @@ class NativeCPlan:
 
     def _context_key(self, value):
         self._observe_value(value)
+        if type(value) is bool:
+            return ('fact', value)
+        if type(value) in (int, float):
+            return ('number', value)
         if isinstance(value, _Choice):
             return ('choice', tuple(self._context_key(v) for v in value.values))
         if isinstance(value, _Function):
