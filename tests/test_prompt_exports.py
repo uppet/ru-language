@@ -143,7 +143,9 @@ class PromptExportTests(unittest.TestCase):
                                  "不执行模块顶层、不加载 DLL、不调用原生函数",
                                  "ru check --target c --allow-native",
                                  "C 原生回调内不能首次初始化外言",
-                                 "独立目录中的随附三方 Win32 库入口"):
+                                 "独立目录中的随附三方 Win32 库入口",
+                                 "读U32LE阵 字节偏移 个数", "little-endian",
+                                 "`0～4096`", "DLL 返回指针不是可读接收者"):
                     self.assertIn(contract, prompt)
                 if target in ("rushu", "ruguan"):
                     self.assertIn("如书 Python 也不能启用如:密或如见", guidance)

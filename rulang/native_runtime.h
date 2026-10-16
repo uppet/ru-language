@@ -1,6 +1,7 @@
 /* Trusted fixed-signature native bridge. Included only after explicit build
  * opt-in. Ru 数 remains binary64; all native scalars are separate heap values. */
 #define RN_MAX_BUFFER ((size_t)16777216)
+#define RN_MAX_U32_BATCH ((size_t)4096)
 #define RN_SAFE_INTEGER UINT64_C(9007199254740991)
 static RuNative *ru_native_primitives[14];
 static Env ru_native_environment;
@@ -223,6 +224,36 @@ static Val rn_memory(RuNative *type, size_t size, int line)
     memset(object->as.memory.data, 0, size);
     rn_edge(object, type ? rn_value(type) : v_null(), line);
     rn_edge(object, v_null(), line); /* root owner of a nested view */
+    return result;
+}
+static size_t rn_batch_index(Val value, size_t high, int line, const char *label)
+{
+    if (value.kind != RU_NUM || !isfinite(value.n) || trunc(value.n) != value.n)
+        ru_fail(line, "读U32LE阵%s须为有限非负整数的普通数", label);
+    if (value.n < 0 || value.n > (double)high) ru_fail(line, "读U32LE阵%s超出范围", label);
+    return (size_t)value.n;
+}
+static Val rn_read_u32le_array(RuNative *memory, Val offset_value, Val count_value, int line)
+{
+    size_t offset, count, i; RuArray *array; Val result = v_null();
+    const unsigned char *bytes;
+    rn_memory_check(memory, line);
+    offset = rn_batch_index(offset_value, memory->as.memory.size, line, "字节偏移");
+    count = rn_batch_index(count_value, RN_MAX_U32_BATCH, line, "个数");
+    if (offset % 4) ru_fail(line, "读U32LE阵字节偏移须为 4 的倍数");
+    if (count > (memory->as.memory.size - offset) / 4) ru_fail(line, "读U32LE阵超出缓冲边界");
+    array = (RuArray *)ru_new_heap(sizeof(*array), RU_ARRAY, line);
+    result.kind = RU_ARRAY; result.heap = &array->gc;
+    /* Publish length only after allocation/fill: callback OOM cleanup can
+     * safely dispose the initially empty heap. Scalars need no extra roots. */
+    array->items = (Val *)ru_alloc(count * sizeof(Val), line);
+    bytes = memory->as.memory.data + offset;
+    for (i = 0; i < count; ++i, bytes += 4) {
+        uint32_t word = (uint32_t)bytes[0] | ((uint32_t)bytes[1] << 8) |
+                        ((uint32_t)bytes[2] << 16) | ((uint32_t)bytes[3] << 24);
+        array->items[i] = v_num((double)word);
+    }
+    array->len = array->capacity = count;
     return result;
 }
 /* Transactional pin replacement: an allocation failure must leave both old
@@ -849,6 +880,7 @@ static int ru_native_member(Val receiver, const char *name, size_t argc, const c
         rn_memory_check(object, line);
         if (!strcmp(name, "大小")) { RN_BIND(0, NULL); RN_RETURN(v_num((double)object->as.memory.size)); }
         if (!strcmp(name, "地址")) { RuNativeRaw raw; RN_BIND(0, NULL); memset(&raw, 0, sizeof(raw)); raw.p = object->as.memory.data; RN_RETURN(rn_scalar(ru_native_primitives[RN_PTR], raw, receiver, line)); }
+        if (!strcmp(name, "读U32LE阵")) { const char *parameters[] = {"字节偏移", "个数"}; RN_BIND(2, parameters); RN_RETURN(rn_read_u32le_array(object, bound[0], bound[1], line)); }
         if (!strcmp(name, "解UTF8") || !strcmp(name, "解UTF16")) { RN_BIND(0, NULL); RN_RETURN(rn_decode(object, !strcmp(name, "解UTF16"), line)); }
         if (!strcmp(name, "读")) { RN_BIND(1, field); RN_RETURN(rn_memory_read(object, bound[0], line)); }
         if (!strcmp(name, "写")) { const char *parameters[] = {"字段", "值"}; RN_BIND(2, parameters); RN_RETURN(rn_memory_write(object, bound[0], bound[1], line)); }

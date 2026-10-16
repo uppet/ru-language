@@ -18,6 +18,7 @@ from .contest_runtime import _BUILTIN_OWNER
 NATIVE_MODULE = "如:密"
 SAFE_INTEGER = (1 << 53) - 1
 MAX_BUFFER = 16 * 1024 * 1024
+MAX_U32_BATCH = 4096
 MAX_CALLBACKS = 1024
 MAX_CALLBACK_RETURN_OWNERS = 128
 _TYPES = {}
@@ -652,6 +653,24 @@ def _member(context, owner, node, obj, name, bind):
         if name == '地址':
             bind([])
             return NativeScalar(PRIMITIVES['指针'], obj.address, (obj,))
+        if name == '读U32LE阵':
+            b = bind(['字节偏移', '个数'])
+            offset, count = b['字节偏移'], b['个数']
+            for value, high, label in ((offset, obj.size, '字节偏移'),
+                                       (count, MAX_U32_BATCH, '个数')):
+                if not isinstance(value, float) or not math.isfinite(value) or value != math.trunc(value):
+                    _fault('读U32LE阵' + label + '须为有限非负整数的普通数')
+                if not 0 <= value <= high:
+                    _fault('读U32LE阵' + label + '超出范围')
+            offset, count = int(offset), int(count)
+            if offset % 4:
+                _fault('读U32LE阵字节偏移须为 4 的倍数')
+            if count > (obj.size - offset) // 4:
+                _fault('读U32LE阵超出缓冲边界')
+            # Only owned storage reaches this branch. Copy exactly the checked
+            # span, then decode explicit LE independently of host alignment.
+            raw = C.string_at(obj.address + offset, count * 4)
+            return [float(word[0]) for word in struct.iter_unpack('<I', raw)]
         if name in ('解UTF8', '解UTF16'):
             bind([])
             raw = bytes(obj.storage)

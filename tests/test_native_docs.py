@@ -39,7 +39,9 @@ class NativeDocumentationTests(unittest.TestCase):
                     self.assertIn(term, content)
         guide = (ROOT / "docs/native-library.md").read_text(encoding="utf-8")
         for term in ("16 MiB", "1024", "1～128", "64 个参数", "界内第一个 NUL",
-                     "关闭父内存", "PostQuitMessage", "位段 起 宽"):
+                     "关闭父内存", "PostQuitMessage", "位段 起 宽",
+                     "读U32LE阵 字节偏移 个数", "little-endian", "`0～4096`",
+                     "空范围", "整条父所有者链", "不接受事实、句或原生标量"):
             self.assertIn(term, guide)
         for term in ("build --allow-native", "check --target c --allow-native", "libffi",
                      "静态签名", "首次初始化", "64 KiB"):
