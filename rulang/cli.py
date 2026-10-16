@@ -107,11 +107,13 @@ def compiler_command(selected, windows=None):
     return parts
 
 
-def build(program, source_path, output, cc=None, emit_c=None, modules=None, target="c", full_runtime=False, allow_native=False):
+def build(program, source_path, output, cc=None, emit_c=None, modules=None, target="c", full_runtime=False, allow_native=False, source_prefix_maps=()):
     if target not in ("c", "js"):
         raise RuError("编译目标须为 c 或 js", category="编译错误")
     if target == "js" and (cc is not None or emit_c is not None):
         raise RuError("JavaScript 目标不能使用 --cc 或 --emit-c", category="编译错误")
+    if source_prefix_maps and target != 'c':
+        raise RuError('源码路径映射只适用于 C 编译目标', category='编译错误')
     if allow_native and target != "c":
         raise RuError("--allow-native 只适用于本地 Windows x64 Python 运行或 C 原生编译；JavaScript 不支持", category="能力错误")
     source_path = Path(source_path).resolve()
@@ -138,7 +140,8 @@ def build(program, source_path, output, cc=None, emit_c=None, modules=None, targ
                 os.fsync(stream.fileno())
             os.replace(script, output)
         return output, "JavaScript (Node.js)"
-    generated = Compiler(program, str(source_path), modules=modules, full_runtime=full_runtime, allow_native=allow_native).compile()
+    generated = Compiler(program, str(source_path), modules=modules, full_runtime=full_runtime, allow_native=allow_native,
+                         source_prefix_maps=source_prefix_maps).compile()
     if emit_c:
         cpath.parent.mkdir(parents=True, exist_ok=True)
         cpath.write_text(generated, encoding="utf-8")
@@ -255,6 +258,8 @@ def make_parser():
     p.add_argument("--emit-c", metavar="PATH", help="额外保存可审阅的独立 C99 源码")
     p.add_argument("--full-runtime", action="store_true", help="保留完整运行时及已导入标准库声明，供诊断对比")
     p.add_argument("--allow-native", action="store_true", help="信任原生代码，编译含 Windows x64 ABI 的独立程序；默认关闭，产物不依赖 Python")
+    p.add_argument("--source-prefix-map", action="append", default=[], metavar="OLD=NEW",
+                   help="仅 C：重写产物的运行时源码路径；可重复，最长目录前缀优先，同长后者优先；不改源码正文")
     p = sub.add_parser("generate", help="显式发送意图文档至 Responses API，检查并保存源码（默认不执行）")
     p.add_argument("document")
     destination = p.add_mutually_exclusive_group()
@@ -289,6 +294,8 @@ def main(argv=None):
         parser.error("--run 不能与 --stdout 同时使用")
     if args.command == "build" and args.target == "js" and (args.cc is not None or args.emit_c is not None):
         parser.error("--target js 不能使用 --cc 或 --emit-c")
+    if args.command == 'build' and args.target == 'js' and args.source_prefix_map:
+        parser.error('--source-prefix-map 只适用于 --target c')
     if args.command in (None, "repl"):
         return repl()
     source, name = "", getattr(args, "source", getattr(args, "document", "<输入>"))
@@ -353,7 +360,8 @@ def main(argv=None):
             output = args.output or (str(Path(args.source).with_suffix(".js")) if args.target == "js"
                                      else str(Path(args.source).with_suffix("")) + (".exe" if os.name == "nt" else ""))
             result, compiler = build(program, args.source, output, args.cc, args.emit_c,
-                                     modules=modules, target=args.target, full_runtime=args.full_runtime, allow_native=args.allow_native)
+                                     modules=modules, target=args.target, full_runtime=args.full_runtime, allow_native=args.allow_native,
+                                     source_prefix_maps=args.source_prefix_map)
             if args.target == "js":
                 print(f"已编译：{result}\n运行目标：{compiler}；未执行")
             else:

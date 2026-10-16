@@ -690,6 +690,9 @@ def parse(source, source_origin=None):
         raise
 
 
+EXCESS_ARGUMENT_HINT = "；若并列阵元素，请括起调用"
+
+
 def bind_arguments(name, args, params, fail, optional=False):
     """Match both call styles without changing source evaluation order.
 
@@ -699,10 +702,11 @@ def bind_arguments(name, args, params, fail, optional=False):
     positional = any(key is None for key, _ in args)
     if positional:
         if any(key is not None for key, _ in args):
-            fail("同一次调用不能混用位置实参与命名实参")
+            fail("不能混用位置实参与命名实参")
         if len(args) != len(params):
             fail(f"函数「{name}」需要 {len(params)} 个位置实参（" +
-                 "、".join(params) + f"），收到 {len(args)} 个")
+                 "、".join(params) + f"），收到 {len(args)} 个" +
+                 (EXCESS_ARGUMENT_HINT if len(args) > len(params) else ""))
         return {key: value for key, (_, value) in zip(params, args)}
     values = {}
     for key, value in args:
@@ -719,7 +723,8 @@ def bind_arguments(name, args, params, fail, optional=False):
             detail.append("缺少「" + "、".join(missing) + "」")
         if unknown:
             detail.append("未知「" + "、".join(unknown) + "」")
-        fail(f"函数「{name}」实参不匹配：" + "；".join(detail))
+        fail(f"函数「{name}」实参不匹配：" + "；".join(detail) +
+             f"（需要 {len(params)} 个实参，收到 {len(args)} 个）")
     return values
 
 

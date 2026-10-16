@@ -148,6 +148,15 @@ class PromptExportTests(unittest.TestCase):
                 if target in ("rushu", "ruguan"):
                     self.assertIn("如书 Python 也不能启用如:密或如见", guidance)
 
+    def test_grouping_and_build_path_mapping_are_reference_knowledge(self):
+        for target in ('rushu', 'ruguan', 'rushu-browser-js', 'ruguan-browser-js'):
+            with self.subTest(target=target):
+                prompt = generation_system_prompt(target)
+                self.assertIn("[(表 其 查 '键'), 值]", prompt)
+                self.assertIn('--source-prefix-map OLD=NEW', prompt)
+                self.assertIn('不是普通生成所必需', prompt)
+                self.assertNotIn('--source-prefix-map', prompt.split('<ru-language-spec>', 1)[0])
+
     def test_generation_targets_include_collection_interfaces(self):
         for target in ("cli", "rushu", "ruguan", "rushu-browser-js", "ruguan-browser-js"):
             with self.subTest(target=target):

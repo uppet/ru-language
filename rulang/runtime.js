@@ -290,9 +290,10 @@ const R = (() => {
   function argsBind(m, name, args, params, loc, optional = false) {
     const result = dict();
     if (args.some(x => x[0] === null)) {
-      if (args.some(x => x[0] !== null)) fail(m, '同一次调用不能混用位置实参与命名实参', loc);
+      if (args.some(x => x[0] !== null)) fail(m, '不能混用位置实参与命名实参', loc);
       if (args.length !== params.length)
-        fail(m, '函数「'+name+'」需要 '+params.length+' 个位置实参（'+params.join('、')+'），收到 '+args.length+' 个', loc);
+        fail(m, '函数「'+name+'」需要 '+params.length+' 个位置实参（'+params.join('、')+'），收到 '+args.length+' 个'+
+          (args.length > params.length ? "；若并列阵元素，请括起调用" : ''), loc);
       args.forEach((x,i) => { result[params[i]] = x[1]; }); return result;
     }
     for (const [key,value] of args) {
@@ -304,7 +305,7 @@ const R = (() => {
       const detail = [];
       if (missing.length) detail.push('缺少「'+missing.join('、')+'」');
       if (unknown.length) detail.push('未知「'+unknown.join('、')+'」');
-      fail(m, '函数「'+name+'」实参不匹配：'+detail.join('；'), loc);
+      fail(m, '函数「'+name+'」实参不匹配：'+detail.join('；')+'（需要 '+params.length+' 个实参，收到 '+args.length+' 个）', loc);
     }
     return result;
   }

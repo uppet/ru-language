@@ -21,7 +21,7 @@ from rulang.c_runtime import (
     mask_noncode, member_names, prune_functions, runtime_source,
     specialize_members,
 )
-from rulang.compiler import Compiler
+from rulang.compiler import Compiler, cstr
 from rulang.frontend import parse
 from rulang.modules import load_module_graph
 
@@ -263,6 +263,16 @@ class RuntimeGenerationTests(unittest.TestCase):
         self.assertIn('static Val ', generated)
         self.assertIn('\n    ', generated)
         self.assertNotRegex(generated, r'(?m)^\s*#\s*include\s*"')
+
+    def test_p1010_size_budget_includes_escaped_windows_source_labels(self):
+        source = FIXTURE.read_text(encoding='utf-8')
+        graph = load_module_graph('/p1010.ru', parse(source))
+        # Exercise drive/backslash label overhead on every CI host; the actual
+        # fixture and the ordinary 50,000-byte budget stay unchanged.
+        generated = Compiler(graph[graph.root], graph.root, modules=graph,
+                             source_prefix_maps=[graph.root + r'=C:\p1010.ru']).compile()
+        self.assertIn('ru_source = ' + cstr(r'C:\p1010.ru'), generated)
+        self.assertLess(len(generated.encode('utf-8')), 50000)
 
 
 @unittest.skipUnless(CC, 'C compiler unavailable')

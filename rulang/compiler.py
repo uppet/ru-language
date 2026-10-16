@@ -21,9 +21,13 @@ def cstr(value):
 class Compiler:
     supports_browser_graphics = False
 
-    def __init__(self, program, source_name='<源码>', modules=None, full_runtime=False, allow_native=False):
+    def __init__(self, program, source_name='<源码>', modules=None, full_runtime=False, allow_native=False, source_prefix_maps=()):
         self.full_runtime = full_runtime
         self.allow_native = bool(allow_native)
+        from .source_paths import SourcePathMapper
+        self.source_path_mapper = SourcePathMapper(source_prefix_maps)
+        if self.source_path_mapper and type(self) is not Compiler:
+            raise RuError('源码路径映射只适用于 C 编译目标', category='编译错误')
         from .modules import ModuleGraph, import_nodes, load_module_graph
         if modules is None and any(import_nodes(program)):
             modules = load_module_graph(source_name, program)
@@ -94,7 +98,8 @@ class Compiler:
                 pruned_modules = ModuleGraph(self.root)
                 pruned_modules.update(pruned)
                 pruned_modules.sources = source_texts
-                self.__init__(program, source_name, modules=pruned_modules, full_runtime=True, allow_native=allow_native)
+                self.__init__(program, source_name, modules=pruned_modules, full_runtime=True, allow_native=allow_native,
+                              source_prefix_maps=self.source_path_mapper)
                 self.source_texts = source_texts
                 self.full_runtime = False
                 self.can_panic = self.native_enabled or any(n.kind in ('panic', 'try') for n in walk_nodes(self.modules))
@@ -676,7 +681,7 @@ class Compiler:
         self.known_values = self._values(path, fn)
         self.line(f'static Val {ident}(Env *global, Val self, int call_line, Val *args) {{')
         self.indent += 1
-        self.line(f'const char *previous_source = ru_source; ru_source = {cstr(display_text(path))};')
+        self.line(f'const char *previous_source = ru_source; ru_source = {cstr(display_text(self.source_path_mapper(path)))};')
         self.line('(void) self; (void) args; (void) call_line;')
         self.line(f'Env *local = env_new(global, RU_SCOPE_FUNCTION, {fn.token.line}); Env *env = local;')
         self.panic_context('local')
@@ -762,7 +767,7 @@ class Compiler:
                 # entering foreign code; repeat imports remain allowed.
                 self.line('if (ru_native_callback_depth) ru_fail(1, "原生 C 回调中不能首次初始化外言；请在首次原生调用之前导入依赖");')
             self.line(f'{ident}_state = 1;')
-            self.line(f'const char *previous_source = ru_source; ru_source = {cstr(display_text(path))};')
+            self.line(f'const char *previous_source = ru_source; ru_source = {cstr(display_text(self.source_path_mapper(path)))};')
             builtins = 'ru_practical_builtins' if '__实用' in set(ast_strings(self.modules)) else 'ru_contest_builtins'
             builtins_call = f'ru_native_builtins({builtins}())' if self.native_enabled else f'{builtins}()'
             self.line(f'Env *global = &{ident}_env; Env *env = global; env_init(env, {builtins_call});')
@@ -782,7 +787,7 @@ class Compiler:
             self.line('}')
         self.line('int main(int argc, char **argv) {')
         self.indent += 1
-        self.line(f'ru_source = {cstr(display_text(self.source_name))}; ru_init();')
+        self.line(f'ru_source = {cstr(display_text(self.source_path_mapper(self.source_name)))}; ru_init();')
         self.line(f'Val root = {self.module_ids[self.root]}_init(); (void) root; (void) argc; (void) argv;')
         if self.can_panic:
             self.line('if (ru_panicking) return ru_panic_uncaught();')

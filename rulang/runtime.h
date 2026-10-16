@@ -1132,11 +1132,11 @@ static void ru_enter(int line) {if(ru_call_depth>=128)ru_fail(line,"函数调用
 static void ru_leave(void) {if(ru_call_depth)--ru_call_depth;}
 static void ru_bind(const char *name,size_t count,const char **names,size_t argc,const char **keys,Val *args,Val *bound,int line)
 {
-    size_t i,j;unsigned char *seen=(unsigned char *)ru_scratch_alloc(count?count:1,line);int positional=argc&&keys[0]==NULL;
+    size_t i,j;const char *fmt="函数「%s」%s「%s」（需要 %zu 个实参，收到 %zu 个）";unsigned char *seen=ru_scratch_alloc(count,line);int positional=argc&&keys[0]==NULL;
     memset(seen,0,count);
-    if(positional&&argc!=count)ru_fail(line,"函数「%s」需要 %zu 个位置实参，收到 %zu 个",name,count,argc);
-    for(i=0;i<argc;++i){if((keys[i]==NULL)!=positional)ru_fail(line,"同一次调用不能混用位置实参与命名实参");j=i;if(!positional){for(j=0;j<count;++j)if(!strcmp(names[j],keys[i]))break;if(j==count)ru_fail(line,"函数「%s」未知实参「%s」",name,keys[i]);}if(seen[j])ru_fail(line,"重复的实参：%s",names[j]);seen[j]=1;bound[j]=args[i];}
-    for(i=0;i<count;++i)if(!seen[i])ru_fail(line,"函数「%s」缺少「%s」",name,names[i]);
+    if(positional&&argc!=count)ru_fail(line,"函数「%s」需要 %zu 个位置实参，收到 %zu 个%s",name,count,argc,argc>count?"；若并列阵元素，请括起调用":"");
+    for(i=0;i<argc;++i){if((keys[i]==NULL)!=positional)ru_fail(line,"不能混用位置实参与命名实参");j=i;if(!positional){for(j=0;j<count;++j)if(!strcmp(names[j],keys[i]))break;if(j==count)ru_fail(line,fmt,name,"未知实参",keys[i],count,argc);}if(seen[j])ru_fail(line,"重复的实参：%s",names[j]);seen[j]=1;bound[j]=args[i];}
+    for(i=0;i<count;++i)if(!seen[i])ru_fail(line,fmt,name,"缺少",names[i],count,argc);
     ru_scratch_free(seen);
 }
 static Val v_call(Val callable,size_t argc,const char **keys,Val *args,int line)
@@ -1305,7 +1305,7 @@ static Val ru_map_member(Val receiver,const char *name,size_t argc,const char **
     if(!strcmp(name,"逐目")){ru_bind(name,1,callback,argc,keys,args,bound,line);return ru_map_each(receiver,bound[0],line);}
 /* RU_END_MEMBERS */
 /* RU_MEMBERS: 量 */
-    if(!strcmp(name,"量")){if(argc)ru_fail(line,"量不接收实参");return v_num((double)((RuMap *)receiver.heap)->len);}
+    if(!strcmp(name,"量")){if(argc)ru_bind(name,0,NULL,argc,keys,args,bound,line);return v_num((double)((RuMap *)receiver.heap)->len);}
 /* RU_END_MEMBERS */
     ru_fail(line,"未知典成员：%s",name);return v_null();
 }
@@ -1459,10 +1459,10 @@ static Val v_member(Val receiver,const char *name,size_t argc,const char **keys,
 /* RU_END_FEATURE */
 
 /* RU_MEMBERS: 囫,囵 */
-    if(receiver.kind==RU_PAIR&&(!strcmp(name,"囫")||!strcmp(name,"囵"))){if(argc)ru_fail(line,"对的成员不接收实参");return v_copy(!strcmp(name,"囫")?((RuPair *)receiver.heap)->first:((RuPair *)receiver.heap)->second);}
+    if(receiver.kind==RU_PAIR&&(!strcmp(name,"囫")||!strcmp(name,"囵"))){if(argc)ru_bind(name,0,NULL,argc,keys,args,bound,line);return v_copy(!strcmp(name,"囫")?((RuPair *)receiver.heap)->first:((RuPair *)receiver.heap)->second);}
 /* RU_END_MEMBERS */
 /* RU_MEMBERS: 量 */
-    if(!strcmp(name,"量")){if(argc)ru_fail(line,"量不接收实参");return v_num((double)v_length(receiver,line));}
+    if(!strcmp(name,"量")){if(argc)ru_bind(name,0,NULL,argc,keys,args,bound,line);return v_num((double)v_length(receiver,line));}
 /* RU_END_MEMBERS */
 /* RU_MEMBERS: 位 */
     if(!strcmp(name,"位")){ru_bind(name,1,position,argc,keys,args,bound,line);return v_index(receiver,bound[0],line);}
