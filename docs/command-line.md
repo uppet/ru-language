@@ -2,7 +2,7 @@
 
 先按[安装与更新](stable-entry.md)准备工具链。以下命令在仓库根目录执行；Windows 可把 `python3` 换成 `py -3`。如书画布的入口见[如书说明](../rushu/README.md)，它与下面的 C／Node.js 程序目标不同。
 
-本页对应 `main` 上的如 0.20.0。`--allow-native` 和 `check --target python` 已随本版提供；原生执行仍仅限 Windows x64 本地 Python，C 原生库后端尚未提供。具体组合见[版本说明](stable-entry.md)。
+本页含 `wip` 上如 0.21.0 的 C 原生后端开发接口；当前 `main` 稳定版仍为如 0.20.0，只提供 Windows x64 本地 Python 原生执行。新增命令须使用 0.21.0 工具链，不能据此认定 Windows 验证或发布已完成。具体组合见[版本说明](stable-entry.md)。
 
 ## 常用命令
 
@@ -13,7 +13,9 @@ python3 ru run source.ru           # 解释执行
 python3 ru check source.ru         # 默认 C 目标，检查结构和显式函数调用
 python3 ru check --target python source.ru # 解析、校验源码与导入，不执行 DLL
 python3 ru run --allow-native source.ru    # 仅 Windows x64 本地 Python，先审阅
-python3 ru build source.ru -o app  # 原生编译
+python3 ru check --target c --allow-native source.ru # 0.21.0：静态原生签名检查
+python3 ru build --allow-native source.ru -o app.exe # 0.21.0：须 Windows x64 C 工具链
+python3 ru build source.ru -o app  # 普通 C 编译
 python3 ru build source.ru -o app --emit-c app.c
 python3 ru build source.ru -o app-full --emit-c app-full.c --full-runtime
 python3 ru build source.ru -o app --cc clang
@@ -27,9 +29,11 @@ python3 -m rulang --help           # 模块入口也可用
 
 ## 原生调用的单独授权
 
-`如:密` 与随附三方库 `如见` 首版只支持 Windows x64 本地 Python。原生调用具有当前进程权限，错误 ABI 可崩溃或破坏内存，不是沙箱；先读[原生指南](native-library.md)。
+`如:密` 与随附三方库 `如见` 的运行平台目前仅为 Windows x64；0.20.0 提供本地 Python，0.21.0 增加不依赖 Python／libffi 的独立 C 程序。原生调用具有当前进程权限，错误 ABI 可崩溃或破坏内存，不是沙箱；先读[原生指南](native-library.md)。
 
-`run` 默认不允许原生调用，`--allow-native` 只对文件执行生效且必须写在文件名前；放在文件后是程序外参。如书和 REPL 不能启用此能力。`check --target python` 只解析、校验源码与静态导入图，不执行模块顶层、不加载 DLL；默认 `check` 仍为 C。C、Node.js 和 browser-js 会拒绝 `如:密`／`如见` 原生依赖。检查通过不能证明原生 ABI 或资源生命周期安全。
+`run` 默认不允许原生调用，`--allow-native` 只对文件执行生效且必须写在文件名前；放在文件后是程序外参。如书和 REPL 不能启用此能力。`check --target python` 只解析、校验源码与静态导入图，不执行模块顶层、不加载 DLL；默认 `check` 仍为 C。C 默认仍拒绝 `如:密`／`如见` 原生依赖，0.21.0 的 `check --target c --allow-native` 可显式检查静态签名，`build --allow-native` 可构建；这两个操作均不执行用户代码或加载 DLL。`check --target python` 不接受也不需要该开关。Node.js 与 browser-js 仍拒绝原生依赖，不能启用。检查通过不能证明原生 ABI 或资源生命周期安全。
+
+C 原生后端只支持编译期能确定的有限机器标量／指针签名，无法确定的动态 ABI 会报编译错误；DLL 路径、导出名和实参值仍可在运行时决定。回调依赖须在首次原生调用前完成导入；不能在 C 原生回调内首次初始化新模块。完整边界见[静态签名子集](native-library.md#c-后端的静态签名子集0210)。
 
 ## 构建与输出保护
 
@@ -37,15 +41,17 @@ python3 -m rulang --help           # 模块入口也可用
 
 JavaScript 产物采用 CommonJS。在 `package.json` 含 `"type":"module"` 的目录树中，使用 `-o app.cjs` 并执行 `node app.cjs`；不要把输出作为 `.mjs`、ES module 或浏览器脚本加载。文件 I/O 路径相对运行时工作目录；打包的静态外言不需要源文件。Node 的最大递归深度、垃圾回收及资源限制与 Python / C 不相同；栈溢出报告运行错误。Node 在 Windows / macOS 上尚未实测。
 
-C 目标的 `--emit-c` 会额外保存一个可独立编译的 C 文件；该路径也不得覆盖源文件、依赖或程序输出。运行它不需要这个项目的头文件：
+C 目标的 `--emit-c` 会额外保存一个可独立编译的 C 文件；该路径也不得覆盖源文件、依赖或程序输出。它包含所需的运行时，不需要这个项目的头文件。普通 C 程序可用：
 
 ```sh
 cc -std=c99 -O2 dist/my-hello.c -lm -o another-hello
 ```
 
+包含原生依赖的 C 必须用真正面向 Windows x64 的编译器、头文件和系统库复编。编译宿主可以不同，产物运行平台仍为 Windows x64；Linux 本机 C 编译器不会因此得到原生执行能力。交叉编译时用 `--cc` 选择目标工具链并显式命名 `.exe`。产物运行不需要 Python／libffi，但仍需要 Windows 与被调用 DLL；没有自动运行或缺少平台时的隐式回退。
+
 默认 C 输出保留生成代码所需的运行时函数及其传递依赖，也按整个模块图中出现的成员名称保留动态分派分支。 若依赖闭包中没有对／阵构造器，会省去不可达的容器遍历；没有用户形或受检查 I/O 时省去用户字段／方法查找；全模块图没有「卒」或「试」时省去异常传播状态。随附的 `如竞` 只在能安全证明时移除未引用声明；别名、函数引用、闭包和转导出都参与分析，模块值逃逸或无法确定时保守保留。用户源码和用户模块的函数、初始化副作用不会因此删除；裁剪前仍检查完整依赖图。
 
-`build --full-runtime` 对 C / JavaScript 都有效：关闭随附标准库声明裁剪，C 保留完整动态运行时，JavaScript 保留完整 I/O / 竞赛 / 实用库运行时区段。它不会额外导入未使用的标准库，也不改变语言语义、错误检查或执行方式。两种输出都可用于排查差异，正常构建无需此选项。源码长度取决于程序所用功能；请按目标平台限制检查最终文件的字节数，而非假定所有程序都能通过同一源码长度上限。
+`build --full-runtime` 对 C / JavaScript 都有效：关闭随附标准库声明裁剪，C 保留完整动态运行时，JavaScript 保留完整 I/O / 竞赛 / 实用库运行时区段。它不会额外导入未使用的标准库，也不改变语言语义、错误检查或执行方式。两种输出都可用于排查差异，正常构建无需此选项。没有原生依赖的普通程序不会因 0.21.0 新能力而包含原生运行时／回调跳板，普通 OJ 用例的 64 KiB 预算仍单独检查。原生 GUI 输出可以更大。源码长度取决于程序所用功能；请按目标平台限制检查最终文件的字节数，而非假定所有程序都能通过同一源码长度上限。
 
 ## 错误与退出码
 

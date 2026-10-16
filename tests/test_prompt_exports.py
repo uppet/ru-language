@@ -131,7 +131,9 @@ class PromptExportTests(unittest.TestCase):
                 self.assertEqual(prompt.count(raw.decode()), 1)
                 self.assertIn(hashlib.sha256(raw).hexdigest(), prompt)
                 guidance = prompt.split("<ru-language-spec>", 1)[0]
-                for rule in ("如:密是标准原生库", "如见是随附三方 Win32 库",
+                for rule in ("如:密是标准原生库", "如见是随附三方 GUI 库、当前只有 Win32 驱动",
+                             "Windows x64 C 原生后端只接受有限静态签名",
+                             "独立产物不需要 Python 或 libffi",
                              "生成器不得自动启用 --allow-native",
                              "不得用 generate --run 执行原生程序",
                              "不得生成依赖原生调用的程序"):
@@ -139,6 +141,8 @@ class PromptExportTests(unittest.TestCase):
                 for contract in ("ru check --target python", "后端／宿主权限边界",
                                  "默认 `check` 仍为 C", "不是沙箱", "同位宽整数／指针",
                                  "不执行模块顶层、不加载 DLL、不调用原生函数",
+                                 "ru check --target c --allow-native",
+                                 "C 原生回调内不能首次初始化外言",
                                  "独立目录中的随附三方 Win32 库入口"):
                     self.assertIn(contract, prompt)
                 if target in ("rushu", "ruguan"):

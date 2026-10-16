@@ -21,6 +21,11 @@ rulang/io_runtime.h        内联到独立 C 输出的受检查 I/O
 rulang/stdlib/如竞.ru      普通如函数组成的如竞标准外言
 rulang/stdlib/密.ru         如:密标准库入口（普通如源码）
 rulang/native_runtime.py    Windows x64 Python 原生能力与受管理值
+rulang/native_c.py          C 原生有限签名分析与有类型调用／回调跳板
+rulang/native_c_runtime.py  仅原生程序启用的 C 运行时整合
+rulang/native_runtime.h    C 原生值、内存、调用与回调错误边界
+rulang/native_types.h      C 原生值与资源表示
+rulang/native_platform_win64.h Windows x64 系统适配边界
 rulang/thirdparty/如见/     独立随附三方 Win32 库，不属于语言标准
 docs/native-library.md      如:密接口、生命周期、权限与目标边界
 rulang/contest_runtime.py  解释器的读写游标、拆分及稳定排序桥接
@@ -50,6 +55,8 @@ CHANGELOG.md               版本变化与调用语法兼容说明
 VALIDATION.md              各次实际验证记录
 ```
 
+0.21.0 的 C 原生支持只在显式启用且依赖图使用如:密时加入；普通 C／OJ 程序继续走原有裁剪路径。原生 ABI 由有限静态签名生成有类型 C 跳板，不引入 Python、libffi 或运行时机器码生成。平台适配层当前仅实现 Windows x64；如见的 Win32 名称和消息循环留在三方库，后续跨平台驱动不能依赖“所有平台都等于 Win32”的假设。接口与限制见[原生指南](native-library.md)。
+
 两个编译后端把表达式和控制流直接翻译成 C 或 JavaScript 语句 / 函数；每个值的类型仍在运行时表示和检查，这是动态值模型，不是静态类型推断。集合、对象和模块使用统一的运行时值表示，赋值 / 调用 / 返回保留引用语义。
 
 JavaScript 后端会保守扫描完整已解析的模块依赖图 AST：只有整图未引用相应内置名称 / 类型时，才省略受检查 I/O 或竞赛辅助运行时区段。经别名访问或外言依赖所需的区段仍保留，包括尚未执行的分支与函数。这是通用运行时裁剪，不做压缩混淆或针对某道题重写源码。
@@ -74,7 +81,7 @@ make examples-js   # 构建并由 Node 检查 JavaScript 示例语法
 python3 -m unittest discover -s tests -v
 ```
 
-测试命令和实际通过记录分开看。定向测试、模拟服务、平台跳过和真实浏览器检查不能互相代替；各批实测见 [VALIDATION.md](../VALIDATION.md) 及[分项报告](index.md#实现与验证)。CI 的实际矩阵以 [ci.yml](../.github/workflows/ci.yml) 为准，不能从配置推定某个提交已经通过。
+测试命令和实际通过记录分开看。定向测试、模拟服务、平台跳过和真实浏览器检查不能互相代替；各批实测见 [VALIDATION.md](../VALIDATION.md) 及[分项报告](index.md#实现与验证)。CI 的实际矩阵以 [ci.yml](../.github/workflows/ci.yml) 为准，不能从配置推定某个提交已经通过。0.21.0 的真实 DLL／Windows x64 ABI／回调与如见窗口须在 Windows 上单独验证；便携 C 夹具、静态签名检查及平台跳过都不能替代。
 
 回归覆盖语言求值、持久会话、模块、输入输出、错误位置、闭包和回收；独立产物另检查不依赖原源码的运行。生成服务测试使用本地协议模拟，不代表真实提供方、账号或模型兼容性已验证。
 

@@ -1,8 +1,10 @@
-# 如见：用如编写的 Win32 试验库
+# 如见：用如编写的 GUI 试验库，当前为 Win32 驱动
 
-如见随工具链一起发布，但属于第三方库，暂不成为如语言本身的一部分。精确导入名是 `外言 '如见'`，没有冒号。它使用通用标准库 `如:密`；不使用 `ffi.ru`，也没有 Python GUI 专用运行时。
+如见随工具链一起发布，但属于第三方库，暂不成为如语言本身的一部分。精确导入名是 `外言 '如见'`，没有冒号。它使用通用标准库 `如:密`；不使用 `ffi.ru`，也没有 Python GUI 专用运行时。长期方向是跨平台 GUI 库，但当前只实现 Win32 驱动；如:密保留通用原生适配边界，后续其他平台驱动需分别实现和验证。
 
-首版只支持 **Windows x64 的本地 Python 解释器**。需要可用的 Windows 桌面；未显示的真实窗口仍需要窗口站/桌面。32 位 Windows、Windows ARM64、其他操作系统、C、Node.js、浏览器及如书执行均不支持。源码检查不执行 DLL 或创建窗口，不能代替 Windows 上的运行验证。
+运行平台当前仅为 **Windows x64**。如 0.20.0 稳定版通过本地 Python 解释器运行；如 0.21.0 开发版增加显式启用的 C 后端，可构建不需要 Python／libffi 的独立 Windows `.exe`。需要可用的 Windows 桌面；未显示的真实窗口仍需要窗口站/桌面。32 位 Windows、Windows ARM64、Linux、macOS、Android、Node.js、浏览器及如书执行均不支持。
+
+本页新增 C 命令对应 0.21.0 开发版，不表示已发布或 Windows 验证已完成。源码／静态签名检查不执行 DLL 或创建窗口，不能代替 Windows 上的运行验证。
 
 ## 运行
 
@@ -13,9 +15,18 @@ python ru check --target python examples/native/rujian_window_button.ru
 python ru run --allow-native examples/native/rujian_window_button.ru
 python ru run --allow-native examples/native/rujian_hidden.ru
 python -m unittest discover -s tests -p 'test_rujian*.py' -v
+
+# 0.21.0：无执行的 C 静态签名检查，可在开发宿主进行
+python ru check --target c --allow-native examples/native/rujian_window_button.ru
+
+# 0.21.0：使用面向 Windows x64 的 C 工具链构建，不自动运行
+python ru build --allow-native examples/native/rujian_window_button.ru -o window.exe --emit-c window.c
+.\window.exe
 ```
 
 第一个例子显示原生窗口和 BUTTON，点击会更新 Unicode 标题。第二个实际创建隐藏窗口与按钮，发送 `BM_CLICK`，核对标题，投递 `WM_CLOSE` 并运行消息循环。它不是 GUI 模拟。非 Windows x64 上，集成测试明确跳过，仅检查如源码。
+
+C 构建宿主与运行平台可以不同，但产物仍要求 Windows x64；交叉编译须提供真正的 Windows x64 工具链并用 `--cc` 选择。独立 C 不需要项目头文件或如源码，仍需要 Windows 系统库与目标 C 运行库。当前如见声明使用可静态确定的签名；应用额外声明的动态 ABI 若无法确定会报编译错误，详见[如:密指南](../../../docs/native-library.md)。
 
 原生能力默认关闭。`--allow-native` 表示信任本程序及其整个导入图。错误的 ABI、地址、生命周期或任意 DLL 都可能破坏或终止进程；如:密 **不是沙箱**。只运行自己检查并信任的源码及 DLL。不要对下载的未知程序直接开启原生能力。
 
@@ -46,7 +57,7 @@ python -m unittest discover -s tests -p 'test_rujian*.py' -v
 - `窗 其 循环`：执行 GetMessage / TranslateMessage / DispatchMessage，返回退出码，并释放类与原生回调。Win32 失败或回调错误会先尝试清理，再以 `卒` 报告。GetMessage 的 -1 与 0 分开处理。
 - `窗 其 释放`：销毁尚活着的窗口，再注销类并关闭回调和类名内存；成功后重复调用安全。失败可重试。直接释放保留唤醒进行中 GetMessage 所需的 WM_QUIT；循环栈退出后或下一个主窗口创建前清除本生命周期的退出消息。
 
-首版**同一解释器只允许一个如见主窗口同时存在**。一个主窗口可以有多个按钮；可顺序创建、运行、释放，再创建下一个。处理器内可以释放，但必须等当前处理器和消息循环返回后才能创建下一主窗口；任何原生回调内创建主窗口或启动消息循环都会明确报错。不要与另一个 GUI 框架、其他线程、嵌套消息循环或独立拥有的 WM_QUIT 共用线程。底层 `Win32` 导出不自动施加高层限制；混用底层改变所有权后，必须自行维护约定。
+当前**同一执行上下文只允许一个如见主窗口同时存在**，Python 与 C 入口均遵守这项限制。一个主窗口可以有多个按钮；可顺序创建、运行、释放，再创建下一个。处理器内可以释放，但必须等当前处理器和消息循环返回后才能创建下一主窗口；任何原生回调内创建主窗口或启动消息循环都会明确报错。不要与另一个 GUI 框架、其他线程、嵌套消息循环或独立拥有的 WM_QUIT 共用线程。底层 `Win32` 导出不自动施加高层限制；混用底层改变所有权后，必须自行维护约定。
 
 ## 两层边界
 
@@ -69,15 +80,16 @@ W 取 见 其 Win32.
 - 注册的类在如模块中保持强引用。销毁完成且 UnregisterClassW **成功之后**才能关闭回调与类名缓冲；注销失败会保留引用，避免悬空 WNDPROC，可稍后重试。
 - 销毁窗口与注销类不依赖垃圾回收。用户丢失窗体引用不会自动销毁 Windows 资源；务必显式结束生命周期。
 - 点击处理器可调用 `释放`；已进入的 WNDPROC 可完成标量返回，后续循环检查已释放状态，不再等待下一条消息。退出消息清理延后到安全边界，避免吃掉正在等待的 GetMessage 唤醒消息。
-- 如:密只支持拥有者线程上、原生调用期间的同步回调。回调中的 `卒` 和普通运行错误都被隔离在 C 边界内，返回安全的 0，并记录在调用成果中。如见声明通用失败动作 `PostQuitMessage(1)`，使正在 GetMessage 内等待的调用能返回。
-- `循环` 在成果错误后清理并重新报告主错误；清理失败附在主错误之后。回调不能自行保留原生临时指针、跨线程调用窗体或依赖回调参数的外部存储继续存活。
+- 如:密只支持拥有者线程上、原生调用期间的同步回调。Python 与 C 入口都把回调中的 `卒` 和普通运行错误隔离在 C 边界内，返回预先检查的失败默认值；如见的 WNDPROC 默认值为 0，首个回调错误记录在调用成果中。如见的 Win32 驱动声明失败动作 `PostQuitMessage(1)`，使正在 GetMessage 内等待的调用能返回；这不是所有 GUI 平台通用的退出机制。
+- C 回调不能首次初始化外言，须在第一次可能触发回调的原生调用之前导入并完成依赖初始化；重复导入已初始化模块允许。仅在点击回调里首次导入新模块会作为回调错误收束。
+- `循环` 在成果错误后先清理再以 `卒` 报告主错误；清理失败附在主错误之后。不自动重试回调、消息或原生调用，不回滚既有副作用。回调不能自行保留原生临时指针、跨线程调用窗体或依赖回调参数的外部存储继续存活。
 - 如的 `试/救` 只捕获 `卒`。调用高层方法前应满足其类型、范围与文本契约；普通参数错误不是可恢复的 `卒`。错误的低层声明仍可能直接崩溃，无法保证清理。
 - 如:密会保留已关闭回调的安全占位，防止外部陈旧地址变成已释放代码。单进程有 1024 个累计回调上限；反复创建大量窗口时应启动新进程。
 
 ## 验证范围与待办
 
-Windows 集成测试使用独立子进程与 45 秒超时，断言结构大小/对齐/每个字段偏移、真实 BM_CLICK、Unicode 和非 BMP 字符标题、错误 WM_COMMAND 路由、重复创建/注销、父子销毁、GetMessage 的 -1、回调 `卒` 与普通错误、队列回调失败清理、过期 WM_QUIT 隔离。跳过不算通过真实 Windows 验证。
+Windows 集成测试使用带超时的独立子进程，断言结构大小/对齐/每个字段偏移、真实 BM_CLICK、Unicode 和非 BMP 字符标题、错误 WM_COMMAND 路由、重复创建/注销、父子销毁、GetMessage 的 -1、回调 `卒` 与普通错误、队列回调失败清理、过期 WM_QUIT 隔离。跳过不算通过真实 Windows 验证。
 
-人工验收还须运行可见例子，鼠标连续点击，调整大小，最小化/恢复，点 X 或 Alt+F4 退出。当前没有布局系统、DPI 自适应、对话框 Tab 键导航、菜单、自绘、资源编辑器、复杂控件、辅助功能承诺或跨平台抽象。
+人工验收还须运行可见例子，鼠标连续点击，调整大小，最小化/恢复，点 X 或 Alt+F4 退出。当前没有布局系统、DPI 自适应、对话框 Tab 键导航、菜单、自绘、资源编辑器、复杂控件或辅助功能承诺。跨平台 GUI 是后续方向，当前接口与行为仍以 Win32 驱动为准。
 
 布局和消息语义依据 Microsoft 文档：[WNDCLASSEXW](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-wndclassexw)、[MSG](https://learn.microsoft.com/en-us/windows/win32/api/winuser/ns-winuser-msg)、[WM_NCCREATE](https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-nccreate)、[WM_COMMAND](https://learn.microsoft.com/en-us/windows/win32/menurc/wm-command)、[BM_CLICK](https://learn.microsoft.com/en-us/windows/win32/controls/bm-click)、[GetMessageW](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getmessagew)、[UnregisterClassW](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-unregisterclassw)。

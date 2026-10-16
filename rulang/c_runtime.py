@@ -161,10 +161,16 @@ static int ru_io_member(Val receiver, const char *name, size_t argc, const char 
 '''
 
 
-def runtime_source(modules, generated, full=False):
+def runtime_source(modules, generated, full=False, native_plan=None):
     directory = Path(__file__).parent
     headers = [(directory / name).read_text(encoding='utf-8')
                for name in ('runtime.h', 'io_runtime.h', 'contest_runtime.h', 'practical_runtime.h')]
+    if native_plan is not None:
+        from .native_c_runtime import integrate_runtime, integrate_io
+        headers[0] = integrate_runtime(headers[0])
+        headers[1] = integrate_io(headers[1])
+        headers.append((directory / 'native_runtime.h').read_text(encoding='utf-8'))
+        headers.append(native_plan.emit_c())
     if full:
         source = _FEATURE.sub(lambda m: m[2], _MAP_REGION.sub(lambda m: m[1], '\n'.join(headers)))
         return re.sub(r'/\* RU_(?:MEMBERS: [^*]*|OPERATORS: [^*]*|END_MEMBERS) \*/\n', '', source)
@@ -202,7 +208,7 @@ static int ru_practical_member(Val receiver, const char *name, size_t argc,
     general = _FEATURE.sub(lambda m: m[2], source)
     preliminary = prune_functions(general, generated)
     definitions = {m[1] for m in _FUNCTION.finditer(mask_noncode(preliminary))}
-    panic = any(n.kind in ('panic', 'try') for n in walk_nodes(modules))
+    panic = native_plan is not None or any(n.kind in ('panic', 'try') for n in walk_nodes(modules))
     features = {'type_detail': user_class or 'v_array' in definitions,
                 'callable': 'ru_enter' in definitions,
                 'panic': panic,

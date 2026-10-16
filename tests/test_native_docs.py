@@ -41,6 +41,9 @@ class NativeDocumentationTests(unittest.TestCase):
         for term in ("16 MiB", "1024", "1～128", "64 个参数", "界内第一个 NUL",
                      "关闭父内存", "PostQuitMessage", "位段 起 宽"):
             self.assertIn(term, guide)
+        for term in ("build --allow-native", "check --target c --allow-native", "libffi",
+                     "静态签名", "首次初始化", "64 KiB"):
+            self.assertIn(term, guide)
 
 
 if __name__ == "__main__":

@@ -21,13 +21,16 @@ def cstr(value):
 class Compiler:
     supports_browser_graphics = False
 
-    def __init__(self, program, source_name='<源码>', modules=None, full_runtime=False):
+    def __init__(self, program, source_name='<源码>', modules=None, full_runtime=False, allow_native=False):
         self.full_runtime = full_runtime
+        self.allow_native = bool(allow_native)
         from .modules import import_nodes, load_module_graph
         if modules is None and any(import_nodes(program)):
             modules = load_module_graph(source_name, program)
-        from .native_runtime import reject_native_backend
-        reject_native_backend((program, modules))
+        from .native_runtime import _native_nodes, reject_native_backend
+        self.native_enabled = bool(list(_native_nodes((program, modules))))
+        if self.native_enabled and (not self.allow_native or type(self) is not Compiler):
+            reject_native_backend((program, modules))
         for node in import_nodes(modules or program):
             if not self.supports_browser_graphics and (node.data.get("path") == "如:观" or Path(node.data.get("resolved", "")).resolve() == (Path(__file__).parent / "stdlib" / "如观.ru").resolve()):
                 raise RuError("如观图形仅支持如书 Python 会话；C／JavaScript 编译后端尚不支持", node.token.line, node.token.col, "能力错误")
@@ -37,8 +40,12 @@ class Compiler:
         self.modules = dict(modules or {self.root: program})
         self.modules[self.root] = program
         self.program = program
+        self.native_plan = None
+        if self.native_enabled:
+            from .native_c import NativeCPlan
+            self.native_plan = NativeCPlan(self.modules)
         from .c_runtime import walk_nodes
-        self.can_panic = full_runtime or any(n.kind in ('panic', 'try') for n in walk_nodes(self.modules))
+        self.can_panic = self.native_enabled or full_runtime or any(n.kind in ('panic', 'try') for n in walk_nodes(self.modules))
         self.counter = 0
         self.lines = []
         self.indent = 0
@@ -79,10 +86,10 @@ class Compiler:
                 # Validate the complete graph above before rebuilding its semantic
                 # indexes: omitted exports must not hide declaration conflicts.
                 source_texts = self.source_texts
-                self.__init__(program, source_name, modules=pruned, full_runtime=True)
+                self.__init__(program, source_name, modules=pruned, full_runtime=True, allow_native=allow_native)
                 self.source_texts = source_texts
                 self.full_runtime = False
-                self.can_panic = any(n.kind in ('panic', 'try') for n in walk_nodes(self.modules))
+                self.can_panic = self.native_enabled or any(n.kind in ('panic', 'try') for n in walk_nodes(self.modules))
 
     def _exports(self, path):
         if path in self.exports:
@@ -741,10 +748,16 @@ class Compiler:
             if self.can_panic:
                 self.line(f'if ({ident}_state == 3) return ru_module_failure_raise(&{ident}_failure);')
             self.line(f'if ({ident}_state == 1) ru_fail(1, "循环外言");')
+            if self.native_enabled:
+                # A caught ordinary error cannot strand a first-time module in
+                # initialization state. Static imports must initialize before
+                # entering foreign code; repeat imports remain allowed.
+                self.line('if (ru_native_callback_depth) ru_fail(1, "原生 C 回调中不能首次初始化外言；请在首次原生调用之前导入依赖");')
             self.line(f'{ident}_state = 1;')
             self.line(f'const char *previous_source = ru_source; ru_source = {cstr(display_text(path))};')
             builtins = 'ru_practical_builtins' if '__实用' in set(ast_strings(self.modules)) else 'ru_contest_builtins'
-            self.line(f'Env *global = &{ident}_env; Env *env = global; env_init(env, {builtins}());')
+            builtins_call = f'ru_native_builtins({builtins}())' if self.native_enabled else f'{builtins}()'
+            self.line(f'Env *global = &{ident}_env; Env *env = global; env_init(env, {builtins_call});')
             self.panic_context(f'&{ident}_env')
             for n in program:
                 if n.kind == 'function':
@@ -779,5 +792,5 @@ class Compiler:
         self.line('}')
         from .c_runtime import runtime_source
         generated = '\n'.join(self.lines)
-        self.lines.insert(runtime_position, runtime_source(self.modules, generated, self.full_runtime))
+        self.lines.insert(runtime_position, runtime_source(self.modules, generated, self.full_runtime, native_plan=self.native_plan))
         return '\n'.join(self.lines) + '\n'

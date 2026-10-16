@@ -766,4 +766,4 @@ def _native_nodes(value):
 
 def reject_native_backend(program):
     for node in _native_nodes(program):
-        raise RuError('如:密／如见只支持显式开启原生能力的本地 Windows x64 Python 解释器；C、Node.js 和浏览器后端不支持', node.token.line, node.token.col, '能力错误')
+        raise RuError('如:密／如见原生能力默认关闭；本地 Windows x64 可用 run --allow-native 解释执行或 build --allow-native 编译独立程序；C 静态检查需 check --allow-native，Node.js 和浏览器后端不支持', node.token.line, node.token.col, '能力错误')
