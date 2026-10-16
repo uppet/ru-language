@@ -288,26 +288,27 @@ const R = (() => {
     }
   }
   function argsBind(m, name, args, params, loc, optional = false) {
-    const result = dict();
-    if (args.some(x => x[0] === null)) {
+    const result = dict(), count = params.length, argc = args.length;
+    const positional = args.some(x => x[0] === null);
+    let detail = '';
+    if (positional) {
       if (args.some(x => x[0] !== null)) fail(m, '不能混用位置实参与命名实参', loc);
-      if (args.length !== params.length)
-        fail(m, '函数「'+name+'」需要 '+params.length+' 个位置实参（'+params.join('、')+'），收到 '+args.length+' 个'+
-          (args.length > params.length ? "；若并列阵元素，请括起调用" : ''), loc);
-      args.forEach((x,i) => { result[params[i]] = x[1]; }); return result;
+      if (argc === count) {
+        args.forEach((x,i) => { result[params[i]] = x[1]; }); return result;
+      }
+    } else {
+      for (const [key,value] of args) {
+        if (own(result,key)) fail(m, '重复的实参：'+key, loc); result[key] = value;
+      }
+      if (optional && !argc) return result;
+      for (const [label, keys] of [
+        ['缺少', params.filter(k => !own(result,k))],
+        ['未知', Object.keys(result).filter(k => !params.includes(k))]
+      ]) if (keys.length) detail += label+'「'+keys.join('、')+'」；';
+      if (!detail) return result;
     }
-    for (const [key,value] of args) {
-      if (own(result,key)) fail(m, '重复的实参：'+key, loc); result[key] = value;
-    }
-    if (optional && !args.length) return result;
-    const missing = params.filter(k => !own(result,k)), unknown = Object.keys(result).filter(k => !params.includes(k));
-    if (missing.length || unknown.length) {
-      const detail = [];
-      if (missing.length) detail.push('缺少「'+missing.join('、')+'」');
-      if (unknown.length) detail.push('未知「'+unknown.join('、')+'」');
-      fail(m, '函数「'+name+'」实参不匹配：'+detail.join('；')+'（需要 '+params.length+' 个实参，收到 '+args.length+' 个）', loc);
-    }
-    return result;
+    fail(m, `函数「${name}」${detail}需要 ${count} 个${positional ? '位置' : ''}实参，收到 ${argc} 个`+
+      (positional && argc > count ? '；若并列阵元素，请括起调用' : ''), loc);
   }
   function ordinary(m,value,loc) {
     if (value instanceof Type) fail(m,'形名「'+value.name+'」不能作为普通值；创建实例请用「新 '+value.name+'」，类型注解请直接使用形名',loc);

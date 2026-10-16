@@ -156,6 +156,16 @@ class JavaScriptCompileTests(unittest.TestCase):
         self.assertNotIn('class Scanner', code)
         self.assertLess(len(code.encode('utf-8')), 32 * 1024)
 
+    def test_small_runtime_budget_covers_posix_and_windows_source_labels(self):
+        from rulang.js_compiler import JSCompiler
+        for source_name in ('/src/hello.ru', r'C:\src\hello.ru'):
+            with self.subTest(source_name=source_name):
+                code = JSCompiler(parse("显 '你好😀'."), source_name).compile()
+                self.assertLess(len(code.encode('utf-8')), 32 * 1024)
+                self.assertIn('function argsBind(', code)
+                self.assertIn('若并列阵元素，请括起调用', code)
+                self.assertGreater(len(code.splitlines()), 500)
+
     def test_builtin_type_annotations_keep_checked_io(self):
         from rulang.js_compiler import JSCompiler
         for kind in ('件', '录', '件作成果', '件 阵', '录 阵', '件作成果 阵'):
@@ -306,6 +316,16 @@ class JavaScriptParityTests(unittest.TestCase):
     def test_closure_and_panic_allocation_stress(self):
         self.assert_output(closures.STRESS, '11\n', name='closure_stress')
         self.assert_output(panic.STRESS, '底返\n', name='panic_stress')
+
+    def test_named_arity_error_retains_missing_unknown_names_and_counts(self):
+        source = '算 合 左 右: 得 左+右. 法 别名 取 算 合.\n显 别名 多:1 余:2.'
+        path, graph = compiled(source, self.folder)
+        status, output, error = node_run(path)
+        self.assertEqual((status, output), (1, ''))
+        for fragment in ('函数「合」', '缺少「左、右」', '未知「多、余」',
+                         '需要 2 个实参', '收到 2 个', graph.root + ':2:'):
+            self.assertIn(fragment, error)
+        self.assertNotIn('若并列阵元素', error)
 
     def test_entry_arguments_exit_status_and_invalid_returns(self):
         source = "显 '顶层'. 算 元初 外参 为 句 阵: 显 外参 其 量. 显 外参[0]. 显 外参[1]. 得 7. 法"
