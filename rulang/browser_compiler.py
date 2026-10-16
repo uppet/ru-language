@@ -15,7 +15,7 @@ from .modules import ModuleGraph, STANDARD_MODULES, import_nodes, reject_generat
 # Windows an absolute slash path gains a drive and native separators when
 # resolved; keeping the slash spelling would collect the same root AST twice.
 ROOT = str(Path('/__rushu_browser__/root.ru').resolve())
-ALLOWED_MODULES = frozenset(STANDARD_MODULES)
+ALLOWED_MODULES = frozenset(STANDARD_MODULES) - {"如:密"}
 FORBIDDEN_NAMES = frozenset({'读', '件', '录', '件作成果', '读取', '显出', '错误'})
 MAX_NODES = 20000
 
@@ -31,6 +31,8 @@ def browser_graph(code):
         try:
             program = parse(source)
             validate(program)
+            from .native_runtime import reject_native_backend
+            reject_native_backend(program)
         except RuError as error:
             error.source_name = path
             raise

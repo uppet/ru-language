@@ -122,12 +122,12 @@ class ImportedParameterTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             main, binary = root / "main.ru", root / "program"
-            (root / "relay.ru").write_text("尽 取 外言 'lib.ru'.", encoding="utf-8")
+            (root / "relay.ru").write_text("尽取 外言 'lib.ru'.", encoding="utf-8")
             for declaration in declarations:
                 (root / "lib.ru").write_text(declaration, encoding="utf-8")
                 for imported in ("lib.ru", "relay.ru"):
                     for consumer in consumers:
-                        main.write_text(f"尽 取 外言 '{imported}'.\n" + consumer, encoding="utf-8")
+                        main.write_text(f"尽取 外言 '{imported}'.\n" + consumer, encoding="utf-8")
                         for command in ("run", "check", "build"):
                             with self.subTest(declaration=declaration, imported=imported,
                                               consumer=consumer, command=command):
@@ -147,7 +147,7 @@ class ImportedParameterTests(unittest.TestCase):
             (root / "lib.ru").write_text(
                 "普通值 取 1. 形 导入形: 象 实例别名 取 新 导入形.", encoding="utf-8")
             main.write_text(
-                "尽 取 外言 'lib.ru'.\n"
+                "尽取 外言 'lib.ru'.\n"
                 "算 检查 普通值 为 数 实例别名 为 数: 得 普通值+实例别名. 法\n"
                 "形 工具: 算 检查 普通值 为 数 实例别名 为 数: 得 普通值+实例别名. 法 象\n"
                 "显 检查 2 3. 显 (新 工具) 其 检查 4 5.", encoding="utf-8")
@@ -162,7 +162,7 @@ class ImportedParameterTests(unittest.TestCase):
                 "形 工具: 算 检查 主形 为 数: 得 主形. 法 象", encoding="utf-8")
             main.write_text(
                 "算 主函数: 得 1. 法 形 主形: 象\n"
-                "尽 取 外言 'lib.ru'. 显 检查 2. 显 (新 工具) 其 检查 3.", encoding="utf-8")
+                "尽取 外言 'lib.ru'. 显 检查 2. 显 (新 工具) 其 检查 3.", encoding="utf-8")
             self.assert_success(main, "2\n3\n")
 
     def assert_success(self, main, expected):
@@ -186,7 +186,7 @@ class ImportedParameterTests(unittest.TestCase):
             (root / "base.ru").write_text("算 导入名: 得 1. 法", encoding="utf-8")
             main.write_text("模 取 外言 'lib.ru'.\n显 模 其 检查 2.", encoding="utf-8")
             library.write_text(
-                "尽 取 外言 'base.ru'.\n算 检查 导入名 为 数: 得 导入名. 法", encoding="utf-8")
+                "尽取 外言 'base.ru'.\n算 检查 导入名 为 数: 得 导入名. 法", encoding="utf-8")
             for command in ("run", "check"):
                 with self.subTest(command=command):
                     result = self.cli(command, main)
@@ -201,7 +201,7 @@ class ImportedParameterTests(unittest.TestCase):
             main = root / "main.ru"
             (root / "lib.ru").write_text("算 导入名: 得 1. 法", encoding="utf-8")
             source = ("算 检查 导入名 为 数: 得 导入名. 法\n"
-                      "显 检查 2.\n尽 取 外言 'lib.ru'.\n")
+                      "显 检查 2.\n尽取 外言 'lib.ru'.\n")
             main.write_text(source, encoding="utf-8")
             result = self.cli("run", main)
             self.assertEqual(result.returncode, 0, result.stderr)

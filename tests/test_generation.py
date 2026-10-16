@@ -300,7 +300,7 @@ class LanguageSpecificationTests(TemporaryGeneration):
         self.assertEqual(system.split("<ru-language-spec>\n", 1)[1], text + "\n</ru-language-spec>\n")
         self.assertNotIn(DUMMY, json.dumps(server.requests[0][2]))
         self.assertIn("形名称（包括内置形）不是运行时普通值", system)
-        self.assertIn("跨模块构造须先使用 `尽` 导入形", system)
+        self.assertIn("跨模块构造须先使用 `尽取` 导入形", system)
         self.assertIn("类型在各方法的声明模块中解析", system)
         self.assertIn("`解.` / `解。` 开始非嵌套块注释", system)
         self.assertIn("说明性注释指出更新外层捕获绑定", system)

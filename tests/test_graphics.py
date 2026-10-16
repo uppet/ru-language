@@ -213,7 +213,7 @@ class GraphicsTests(unittest.TestCase):
         self.run_ru('显 42.')
         self.assertEqual(self.output.getvalue(),'42\n')
     def test_cli_and_compilers_explicitly_reject(self):
-        source="尽 取 外言 '如:观'. 图 取 画布 20 20."
+        source="尽取 外言 '如:观'. 图 取 画布 20 20."
         with self.assertRaisesRegex(RuError,'仅在如书'): Interpreter().execute(parse(source))
         for cls in (Compiler,JSCompiler):
             with self.assertRaisesRegex(RuError,'如书 Python'): cls(parse(source)).compile()

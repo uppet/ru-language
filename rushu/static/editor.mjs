@@ -1,7 +1,7 @@
-/** Editing aids for 如 0.19.8. These are tolerant lexical aids, not a parser/checker.
+/** Editing aids for 如 0.20.0. These are tolerant lexical aids, not a parser/checker.
  * The structural model mirrors emacs/ru-lang-mode.el, including anonymous
  * 算/作 headers, contextual 为/终, longest names and literal strings. */
-export const KEYWORDS = new Set('显 取 为 得 完 破 若 则 另 然 循 次 环 算 作 法 其 且 或 非 空 对 形 象 如 新 外言 尽 试 救 卒 真 假 典 成'.split(' '));
+export const KEYWORDS = new Set('显 取 为 得 完 破 若 则 另 然 循 次 环 算 作 法 其 且 或 非 空 对 形 象 如 新 外言 尽取 尽 试 救 卒 真 假 典 成'.split(' '));
 const TYPES = new Set('数 句 阵 空 对 事实 典 件 录 件作成果'.split(' '));
 const BUILTINS = new Set('读 件 录 件作成果 读取 显出 错误 __如竞 __如观'.split(' '));
 const MEMBERS = new Set('含 位 段 增 删 弹 排序 另成 逐位 逐目 量 囫 囵 写 行 读 开 关 查 除 列 三角形 多边形 平移 旋转 缩放 保存 恢复 变换 重置变换 裁剪 取消裁剪 颜色 文字对齐 经过秒 间隔秒 弧 扇形 折线 贝塞尔 缓存 贴图'.split(' '));
@@ -152,6 +152,8 @@ export function analyze(source) {
 }
 export const ASSIGNMENT_HELP = '取（词法规则）：函数内先更新当前局部，否则更新最近已有的非模块捕获绑定；未找到则新建当前局部，不隐式改写模块变量。直接救正文中的取写救局部；直接段／花括号作用域块中的取写块局部（含其中的若、循、试正文）；闭包共享捕获绑定，可更新捕获的块局部。:= 与取完全等价。参数属于本次调用局部。此提示不判断具体名称的运行时绑定。';
 export const TOKEN_HELP = {
+  '尽取': "尽取：模块顶层全量导入。写作 尽取 外言 '如:数学'.，尽取须连写，不能替换成 :=。旧 尽 取 已停用并给出迁移提示；单字尽继续保留。保留原有静态解析、导出和名称冲突规则，长名称尽取值不拆分。此提示不检查此处语义。",
+  '尽': "旧语法 尽 取 外言 已停用；请改用 尽取 外言 '文件.ru'.，尽取须连写。单字尽继续保留用于迁移诊断，没有兼容别名。",
   '取': ASSIGNMENT_HELP, ':=': ASSIGNMENT_HELP,
   '典': '典：键值映射。字面量 {目: 相, 目: 相}，表达式位置的空典 {}；语句位置的 {} 是作用域块。也可写 典: 目 对 相. 成。支持全角｛｝和尾逗号。',
   '成': '成：结束典字面量；外层语句的句点另写。',

@@ -437,7 +437,7 @@ class SourceGenerationTests(unittest.TestCase):
             self.assertIn('本次运行环境：如书 Python 代码格', system)
             for knowledge in ('观 取 外言', '图 其 鼠标松开 回调', '图 其 松键 回调',
                               '图 其 关闭', '图 其 文字 文 横 纵', '每帧最多 2048',
-                              '1 秒／500000 Python 跟踪行', '10 秒硬看门狗', '为).', '同一种事件再次注册', '不重复 `尽`'):
+                              '1 秒／500000 Python 跟踪行', '10 秒硬看门狗', '为).', '同一种事件再次注册', '不重复 `尽取`'):
                 self.assertIn(knowledge, system)
             for payload in captured:
                 self.assertEqual(payload['tools'], [])

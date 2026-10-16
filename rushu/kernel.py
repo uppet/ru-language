@@ -347,7 +347,7 @@ def _worker(connection):
                   col=detail["col"] or 1, **{key: detail[key] for key in
                   ("category", "message", "source_name")}))
 
-    interpreter = Interpreter(stdin, stdout, stderr=stderr)
+    interpreter = Interpreter(stdin, stdout, stderr=stderr, allow_native=False)
     host = GraphicsHost(interpreter, send)
     interpreter.graphics_host = host
     try:

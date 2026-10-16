@@ -38,7 +38,7 @@ class ScopedSyntaxTests(unittest.TestCase):
                 parse(source)
 
     def test_structural_restrictions(self):
-        for body in ('形 盒: 象', "尽 取 外言 'other.ru'.", '得 1.', '完.', '破.'):
+        for body in ('形 盒: 象', "尽取 外言 'other.ru'.", '得 1.', '完.', '破.'):
             for template in ('{ %s }', '段: %s 落.'):
                 with self.subTest(body=body, template=template), self.assertRaises(RuError):
                     validate(parse(template % body))

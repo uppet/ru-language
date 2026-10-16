@@ -669,7 +669,7 @@
         (ru-lang-end-of-defun)))))
 
 (ert-deftest ru-lang-contest-stream-members-and-bridge-faces ()
-  (ru-lang-test--buffer "尽 取 外言 '如:竞'.\n入 取 读入.\n出 取 蓄出.\n显 入 其 词.\n显 入@数.\n显 入 其 # 成员之前的注释\n行.\n出 其 写 内容:'甲'.\n出@行 值:42.\n出 其 清.\n显 __如竞.\n"
+  (ru-lang-test--buffer "尽取 外言 '如:竞'.\n入 取 读入.\n出 取 蓄出.\n显 入 其 词.\n显 入@数.\n显 入 其 # 成员之前的注释\n行.\n出 其 写 内容:'甲'.\n出@行 值:42.\n出 其 清.\n显 __如竞.\n"
     (font-lock-ensure)
     (dolist (text '("词." "数." "行." "写 内容" "行 值" "清." "__如竞"))
       (goto-char (point-min)) (search-forward text)
@@ -701,7 +701,7 @@
    "竞 取 外言 '如:竞'.\n算 造比较 方向 为 数:\n    算 比较 左 为 数 右 为 数:\n        得 (左-右)*方向.\n    法\n    得 算 比较.\n法\n排 取 算 竞 其 排序.\n入 取 竞 其 读入.\n出 取 竞 其 蓄出.\n循\n    值 取 入 其 数.\n    若 值 == 空 则 破. 然\n    出 其 行 值.\n环\n出 其 清.\n"))
 
 (ert-deftest ru-lang-contest-all-editing-prefixes ()
-  (let ((source "尽 取 外言 '如:竞'.\n算 工厂 方向 为 数:\n算 比较 左 为 数 右 为 数: 得 (左-右)*方向. 法\n得 算 比较.\n法\n入 取 读入.\n出 取 蓄出.\n循\n词值 取 入 其 词.\n若 词值 == 空 则 破. 然\n出 其 行 词值.\n环\n出 其 清.\n"))
+  (let ((source "尽取 外言 '如:竞'.\n算 工厂 方向 为 数:\n算 比较 左 为 数 右 为 数: 得 (左-右)*方向. 法\n得 算 比较.\n法\n入 取 读入.\n出 取 蓄出.\n循\n词值 取 入 其 词.\n若 词值 == 空 则 破. 然\n出 其 行 词值.\n环\n出 其 清.\n"))
     (dotimes (end (1+ (length source)))
       (ru-lang-test--buffer (substring source 0 end)
         (font-lock-ensure)
@@ -1541,4 +1541,30 @@
       (font-lock-ensure)
       (search-forward word)
       (should-not (eq (get-text-property (1- (point)) 'face) 'font-lock-builtin-face))
+      (should-not (get-text-property (1- (point)) 'help-echo)))))
+
+(ert-deftest ru-lang-import-all-canonical-and-legacy-migration ()
+  (ru-lang-test--buffer "尽取 外言 '如:数学'.\n尽 取 外言 '如:数学'.\n尽取值 取 1. 尽取器 取 2. 未尽取 取 3. 进取 取 4. 言 取 5.\n"
+    (font-lock-ensure)
+    (search-forward "尽取")
+    (should (eq (get-text-property (1- (point)) 'face) 'font-lock-keyword-face))
+    (should (string-match-p "尽取须连写" (get-text-property (1- (point)) 'help-echo)))
+    (search-forward "尽 取")
+    (should (string-match-p "已停用" (get-text-property (- (point) 3) 'help-echo)))
+    (dolist (name '("尽取值" "尽取器" "未尽取" "进取" "言"))
+      (search-forward name)
+      (should-not (get-text-property (1- (point)) 'face))
+      (should-not (get-text-property (1- (point)) 'help-echo)))
+    (should-not (ru-lang--navigation-blocks t))
+    (let ((original (buffer-string)))
+      (indent-region (point-min) (point-max))
+      (should (equal original (buffer-string))))))
+
+(ert-deftest ru-lang-import-all-boundaries-ignore-long-names-strings-comments ()
+  (dolist (text '("尽取值" "尽取²" "𠀀尽取" "α尽取" "_尽取" "'尽取'" "批. 尽取" "解. 尽取 释."))
+    (ru-lang-test--buffer text
+      (font-lock-ensure)
+      (goto-char (point-min))
+      (search-forward "尽取")
+      (should-not (eq (get-text-property (1- (point)) 'face) 'font-lock-keyword-face))
       (should-not (get-text-property (1- (point)) 'help-echo)))))

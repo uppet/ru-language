@@ -5,6 +5,7 @@ import unittest
 
 import rulang
 import rushu
+from rulang.frontend import parse, validate
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -14,9 +15,39 @@ class StableEntryDocsTests(unittest.TestCase):
         entry = (ROOT / 'docs/stable-entry.md').read_text(encoding='utf-8')
         self.assertIn(f'如 {rulang.__version__}、语言规范 {rulang.__version__}、如书 {rushu.__version__}', entry)
         readme = (ROOT / 'README.md').read_text(encoding='utf-8')
-        self.assertIn(f'· {rulang.__version__} 元初实现', readme)
+        self.assertIn('[安装、版本与更新](docs/stable-entry.md)', readme)
         notebook = (ROOT / 'rushu/README.md').read_text(encoding='utf-8')
         self.assertIn(f'如书包版本：{rushu.__version__}', notebook)
+
+    def test_readme_offers_a_progressive_learning_path(self):
+        readme = (ROOT / 'README.md').read_text(encoding='utf-8')
+        stages = ('## 第一步：在如书里试一试', '## 第二步：给程序一点本领',
+                  '## 第三步：做一个自己的小作品', '## 用到时，再往下走')
+        positions = [readme.index(stage) for stage in stages]
+        self.assertEqual(positions, sorted(positions))
+        self.assertLess(readme.index('```ru'), positions[0])
+        for link in ('docs/first-steps.md', 'docs/index.md', 'docs/language-guide.md',
+                     'docs/command-line.md', 'docs/generation.md', 'docs/development.md',
+                     'CHANGELOG.md', 'VALIDATION.md'):
+            self.assertIn('](' + link + ')', readme)
+        self.assertIn('不需要账号或 API key', readme)
+        self.assertIn('语言原型', readme)
+        self.assertIn('安全沙箱', readme)
+        # Advanced contracts live in linked references, not hidden homepage blocks.
+        for moved_detail in ('<details', '<!--', '--allow-native', 'max_output_tokens'):
+            self.assertNotIn(moved_detail, readme)
+        index = (ROOT / 'docs/index.md').read_text(encoding='utf-8')
+        self.assertIn('](native-library.md)', index)
+
+    def test_intro_examples_parse_without_execution(self):
+        for document in ('README.md', 'docs/first-steps.md'):
+            text = (ROOT / document).read_text(encoding='utf-8')
+            examples = re.findall(r'^```ru[ \t]*\n(.*?)^```[ \t]*$', text,
+                                  re.MULTILINE | re.DOTALL)
+            self.assertGreaterEqual(len(examples), 2)
+            for index, source in enumerate(examples, 1):
+                with self.subTest(document=document, example=index):
+                    validate(parse(source))
 
     def test_update_commands_are_non_destructive(self):
         entry = (ROOT / 'docs/stable-entry.md').read_text(encoding='utf-8')
@@ -39,7 +70,9 @@ class StableEntryDocsTests(unittest.TestCase):
     def test_local_document_links_resolve(self):
         for document in ('README.md', 'docs/stable-entry.md', 'docs/getting-started.md',
                          'docs/prompt-export.md', 'docs/browser-js.md', 'docs/ruguan-guide.md',
-                         'rushu/README.md'):
+                         'rushu/README.md', 'docs/index.md', 'docs/first-steps.md',
+                         'docs/language-guide.md', 'docs/command-line.md',
+                         'docs/generation.md', 'docs/development.md'):
             path = ROOT / document
             for link in re.findall(r'\]\(([^)]+)\)', path.read_text(encoding='utf-8')):
                 target = link.split('#')[0]

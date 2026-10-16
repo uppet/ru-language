@@ -300,7 +300,7 @@ class OptionalParameterIntegrationTests(unittest.TestCase):
     def test_import_does_not_hide_unknown_explicit_annotation(self):
         self.assert_rejected_engines({
             'empty.ru': '',
-            'main.ru': "尽 取 外言 'empty.ru'. 算 回 任意 值 为 未知 阵: 得 1. 法 显 回 空, [].",
+            'main.ru': "尽取 外言 'empty.ru'. 算 回 任意 值 为 未知 阵: 得 1. 法 显 回 空, [].",
         }, '未定义类型：未知')
 
     def test_imported_shape_is_still_not_first_class(self):

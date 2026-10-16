@@ -14,6 +14,7 @@ from .io_runtime import install_io, io_member, io_new_defaults, read_stream_line
 from .contest_runtime import install_contest, contest_member
 from .practical_runtime import install_practical, practical_member
 from .graphics_runtime import install_graphics, graphics_member
+from .native_runtime import install_native, native_member, check_native_imports, NativeFault
 
 DECIMAL = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?\Z")
 
@@ -279,7 +280,7 @@ class FailedModule:
 
 
 class Interpreter:
-    def __init__(self, stdin=None, stdout=None, stderr=None):
+    def __init__(self, stdin=None, stdout=None, stderr=None, *, allow_native=False, _native_context=None):
         self.stdin, self.stdout = stdin or sys.stdin, stdout or sys.stdout
         self.stderr = sys.stderr if stderr is None else stderr
         self.global_scope, self.functions, self.depth = Scope(), {}, 0
@@ -294,6 +295,7 @@ class Interpreter:
         install_contest(self)
         install_practical(self)
         install_graphics(self)
+        install_native(self, _native_context, allow_native)
         if sys.getrecursionlimit() < 10000:
             sys.setrecursionlimit(10000)
 
@@ -306,6 +308,11 @@ class Interpreter:
 
     def execute(self, program, echo=False, source_path=None, modules=None, module_cache=None):
         validate(program, self.functions, self.types)
+        if modules is None:
+            from .modules import import_nodes, load_module_graph
+            if any(import_nodes(program)):
+                modules = load_module_graph(source_path or self.source_path or str(Path.cwd() / "<REPL>"), program)
+        check_native_imports(self, program, modules)
         if source_path is not None:
             self.source_path = str(Path(source_path).resolve())
         if modules is not None:
@@ -670,17 +677,26 @@ class Interpreter:
             except RuError as error:
                 error.line, error.col = n.token.line, n.token.col
                 raise
+        from .native_runtime import native_import
+        if native_import(n.data["path"], path):
+            try:
+                self._native_context.check()
+            except NativeFault as error:
+                self.fail(n, str(error))
         if path in self.loading:
             self.fail(n, "外言导入形成循环：" + path)
         if path in self.module_cache:
             cached = self.module_cache[path]
             if isinstance(cached, FailedModule):
                 cached.rethrow()
+            cached_context = cached.interpreter._native_context
+            if cached_context is not self._native_context and (cached_context.capability.allowed or self._native_context.capability.allowed):
+                self.fail(n, "不能复用不同原生能力上下文的外言缓存")
             return cached
         if path not in self.modules:
             from .modules import load_module_graph
             self.modules.update(load_module_graph(path))
-        child = Interpreter(self.stdin, self.stdout, self.stderr)
+        child = Interpreter(self.stdin, self.stdout, self.stderr, _native_context=self._native_context)
         child.loading, child.call_state = self.loading, self.call_state
         child.graphics_host = self.graphics_host
         self.loading.add(path)
@@ -1046,6 +1062,12 @@ class Interpreter:
         self.last_member_procedure = False
         if isinstance(receiver, RuMap):
             return self.map_member(n, receiver, name, args)
+        # Keep ordinary/graphics member dispatch out of the traced native
+        # function. Native receivers still pass every context/lifetime guard.
+        if getattr(receiver, 'native_payload', None) is not None:
+            handled, result = native_member(self, n, receiver, name, args)
+            if handled:
+                return result
         handled, result = graphics_member(self, n, receiver, name, args)
         if handled:
             return result
@@ -1151,6 +1173,8 @@ class Interpreter:
 
     def invoke(self, n, function, args, receiver=None, caller=None, environment=None, parameter_types=None):
         caller = self if caller is None else caller
+        if caller._native_context is not self._native_context and (caller._native_context.capability.allowed or self._native_context.capability.allowed):
+            caller.fail(n, '函数不能跨原生能力上下文调用')
         name, params = function.data["name"], function.data["params"]
         # Imports execute lazily. Validate against the function owner's names
         # at invocation, without rejecting calls before an import has run or

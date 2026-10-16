@@ -305,22 +305,22 @@ class ExtensionCLITests(unittest.TestCase):
                    "lib.ru": "值 取 10. 算 加 数值 为 数: 得 值+数值. 法"}, "13\n100\n")
 
     def test_import_all_function_type_and_shared_array(self):
-        self.both({"main.ru": "尽 取 外言 'lib.ru'. 显 (平方 4). 甲 取 新 人 名:'甲'. 显 甲 其 名. 列 其 增 2. 模 取 外言 'lib.ru'. 显 模 其 列 其 量.",
+        self.both({"main.ru": "尽取 外言 'lib.ru'. 显 (平方 4). 甲 取 新 人 名:'甲'. 显 甲 其 名. 列 其 增 2. 模 取 外言 'lib.ru'. 显 模 其 列 其 量.",
                    "lib.ru": "列 取 [1]. 算 平方 根 为 数: 得 根*根. 法 形 人: 名 为 句. 象"}, "16\n甲\n2\n")
 
     def test_cross_module_inheritance_and_dispatch(self):
-        self.both({"main.ru": "尽 取 外言 'base.ru'. 形 子 如 父: 算 读取: 得 其 值*2. 法 象 对象 取 新 子 值:3. 显 对象 其 读取. 显 对象 其 双读.",
+        self.both({"main.ru": "尽取 外言 'base.ru'. 形 子 如 父: 算 读取: 得 其 值*2. 法 象 对象 取 新 子 值:3. 显 对象 其 读取. 显 对象 其 双读.",
                    "base.ru": "显 '初始化'. 形 父: 值 为 数. 算 读取: 得 其 值. 法 算 双读: 得 (其 读取)*2. 法 象"},
                   "初始化\n6\n12\n", standalone=True)
 
     def test_imported_scalar_can_be_rebound_locally(self):
-        self.both({"main.ru": "尽 取 外言 'lib.ru'. 值 取 2. 显 值. 模 取 外言 'lib.ru'. 显 模 其 值.",
+        self.both({"main.ru": "尽取 外言 'lib.ru'. 值 取 2. 显 值. 模 取 外言 'lib.ru'. 显 模 其 值.",
                    "lib.ru": "值 取 1."}, "2\n1\n")
 
     def test_imported_entry_not_called(self):
         self.both({"main.ru": "模 取 外言 'lib.ru'. 显 '主文件'. 算 元初 参数 为 句 阵: 显 '主入口'. 得 0. 法",
                    "lib.ru": "显 '库顶层'. 算 元初 参数 为 句 阵: 显 '库入口错误'. 得 9. 法"}, "库顶层\n主文件\n主入口\n")
-        self.both({"main.ru": "尽 取 外言 'lib.ru'. 显 '主文件'.",
+        self.both({"main.ru": "尽取 外言 'lib.ru'. 显 '主文件'.",
                    "lib.ru": "算 元初 参数 为 句 阵: 显 '库入口错误'. 得 9. 法"}, "主文件\n")
 
     def test_diamond_import_initialized_once(self):
@@ -333,8 +333,8 @@ class ExtensionCLITests(unittest.TestCase):
         cases = [
             ({"main.ru": "模 取 外言 'missing.ru'."}, "missing.ru"),
             ({"main.ru": "模 取 外言 'a.ru'.", "a.ru": "模 取 外言 'main.ru'."}, "循环"),
-            ({"main.ru": "值 取 1. 尽 取 外言 'a.ru'.", "a.ru": "值 取 2."}, "冲突"),
-            ({"main.ru": "尽 取 外言 'a.ru'. 尽 取 外言 'b.ru'.", "a.ru": "值 取 1.", "b.ru": "值 取 2."}, "冲突"),
+            ({"main.ru": "值 取 1. 尽取 外言 'a.ru'.", "a.ru": "值 取 2."}, "冲突"),
+            ({"main.ru": "尽取 外言 'a.ru'. 尽取 外言 'b.ru'.", "a.ru": "值 取 1.", "b.ru": "值 取 2."}, "冲突"),
         ]
         for files, diagnostic in cases:
             with self.subTest(files=files), tempfile.TemporaryDirectory() as temp:
@@ -347,10 +347,10 @@ class ExtensionCLITests(unittest.TestCase):
 
     def test_import_runtime_order_and_branch_collisions(self):
         cases = [
-            ("若 1 则 值 取 2. 然 尽 取 外言 'lib.ru'.", "值 取 1.", "冲突"),
-            ("值 取 1. 尽 取 外言 'lib.ru'.", "若 1 则 值 取 2. 然", "冲突"),
-            ("形 子 如 基: 象 尽 取 外言 'lib.ru'.", "形 基: 象", "基"),
-            ("对象 取 新 基. 尽 取 外言 'lib.ru'.", "形 基: 象", "基"),
+            ("若 1 则 值 取 2. 然 尽取 外言 'lib.ru'.", "值 取 1.", "冲突"),
+            ("值 取 1. 尽取 外言 'lib.ru'.", "若 1 则 值 取 2. 然", "冲突"),
+            ("形 子 如 基: 象 尽取 外言 'lib.ru'.", "形 基: 象", "基"),
+            ("对象 取 新 基. 尽取 外言 'lib.ru'.", "形 基: 象", "基"),
         ]
         for source, library, diagnostic in cases:
             with self.subTest(source=source), tempfile.TemporaryDirectory() as temp:
@@ -373,7 +373,7 @@ class ExtensionCLITests(unittest.TestCase):
     def test_imported_function_and_class_cannot_be_overwritten(self):
         for name, definition in (("函", "算 函: 得 1. 法"), ("人", "形 人: 象")):
             with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
-                main = self.write_tree(temp, {"main.ru": f"尽 取 外言 'lib.ru'. {name} 取 2.",
+                main = self.write_tree(temp, {"main.ru": f"尽取 外言 'lib.ru'. {name} 取 2.",
                                               "lib.ru": definition})
                 for command in ("check", "run", "build"):
                     result = self.cli(command, main)

@@ -235,7 +235,10 @@ def make_parser():
     for name, help_text in (("run", "解释执行 .ru 文件"), ("check", "检查语法与函数调用")):
         p = sub.add_parser(name, help=help_text)
         p.add_argument("source")
+        if name == "check":
+            p.add_argument("--target", choices=("c", "python"), default="c", help="c（默认）检查可编译性；python 仅解析和验证模块，不执行代码或加载 DLL")
         if name == "run":
+            p.add_argument("--allow-native", action="store_true", help="信任本地原生代码，开启 Windows x64 ABI；须放在源文件路径之前")
             p.add_argument("args", nargs=argparse.REMAINDER, help="传给元初的外参；可使用 -- 分隔")
     p = sub.add_parser("build", help="编译为独立原生程序或 Node.js JavaScript")
     p.add_argument("source")
@@ -327,14 +330,15 @@ def main(argv=None):
         modules = load_module_graph(name, program)
         modules.sources[modules.root] = source
         if args.command in ("run", "generate"):
-            interpreter = Interpreter()
+            interpreter = Interpreter(allow_native=args.command == "run" and args.allow_native)
             interpreter.execute(program, source_path=modules.root, modules=modules)
             # argparse already consumes the optional separator. A second --
             # is an actual program argument and must be preserved.
             return interpreter.execute_entry(args.args if args.command == "run" else [])
         elif args.command == "check":
-            Compiler(program, modules.root, modules=modules).compile()
-            print(f"检查通过：{name}")
+            if args.target == "c":
+                Compiler(program, modules.root, modules=modules).compile()
+            print(f"检查通过：{name}" + ("（Python 模块语法验证；未执行代码或加载 DLL）" if args.target == "python" else ""))
         elif args.command == "build":
             output = args.output or (str(Path(args.source).with_suffix(".js")) if args.target == "js"
                                      else str(Path(args.source).with_suffix("")) + (".exe" if os.name == "nt" else ""))

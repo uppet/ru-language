@@ -97,7 +97,7 @@ STRUCTURAL_ERRORS = [
     ('break_crosses_nested_boundary', '回 取 算: 循 1 次 内 取 作: 破. 为. 环 得 0. 法.'),
     ('self_outside_method', '回 取 算: 得 其 值. 法.'),
     ('nested_type', '回 取 算: 形 内: 象 得 0. 法.'),
-    ('nested_import_all', "回 取 算: 尽 取 外言 '如:竞'. 得 0. 法."),
+    ('nested_import_all', "回 取 算: 尽取 外言 '如:竞'. 得 0. 法."),
     ('conditional_named_declaration', '回 取 算: 若 1 则 算 内: 得 1. 法 然 得 0. 法.'),
     ('protected_binding', '算 已有: 得 1. 法 回 取 算: 已有 取 2. 得 0. 法.'),
 ]

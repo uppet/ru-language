@@ -21,9 +21,9 @@ RENAMED = {'如观': '如:观', '如竞': '如:竞', '如:竞赛': '如:竞'}
 
 class ModuleNameTests(unittest.TestCase):
     def test_canonical_names_are_the_only_standard_names(self):
-        expected = {'如:观', '如:竞', '如:文本', '如:数学', '如:随机'}
+        expected = {'如:观', '如:竞', '如:文本', '如:数学', '如:随机', '如:密'}
         self.assertEqual(set(STANDARD_MODULES), expected)
-        self.assertEqual(ALLOWED_MODULES, expected)
+        self.assertEqual(ALLOWED_MODULES, expected - {'如:密'})
         for name, filename in STANDARD_MODULES.items():
             self.assertEqual(resolve_import(name, '/tmp/main.ru'),
                              str((ROOT / 'rulang' / 'stdlib' / filename).resolve()))

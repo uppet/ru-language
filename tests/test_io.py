@@ -241,7 +241,7 @@ class CheckedIOTests(unittest.TestCase):
             root = Path(temp).resolve()
             (root/'text').write_text('跨模块', encoding='utf-8')
             (root/'lib.ru').write_text("算 内容 文件 为 件: 得 文件 其 读. 法 算 解包 应 为 件作成果: 得 应 其 值. 法", encoding='utf-8')
-            source = f"尽 取 外言 'lib.ru'. 文档 取 新 件 路径:{quote(root/'text')}. 显 解包 (内容 文档)."
+            source = f"尽取 外言 'lib.ru'. 文档 取 新 件 路径:{quote(root/'text')}. 显 解包 (内容 文档)."
             path = root/'test.ru'
             path.write_text(source, encoding='utf-8')
             commands = [[sys.executable, str(ROOT/'ru'), 'run', str(path)]]

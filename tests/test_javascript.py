@@ -28,6 +28,13 @@ import test_panic as panic
 import test_ru as core
 
 NODE = shutil.which('node') or shutil.which('nodejs')
+EXAMPLE_SOURCES = tuple(sorted((ROOT / 'examples').rglob('*.ru')))
+# Native examples are Python-only. Keep their structural and denial checks
+# separate from Node parity, rather than silently excluding their coverage.
+NATIVE_EXAMPLE_SOURCES = tuple(path for path in EXAMPLE_SOURCES
+                               if ROOT / 'examples' / 'native' in path.parents)
+PORTABLE_EXAMPLE_SOURCES = tuple(path for path in EXAMPLE_SOURCES
+                                 if path not in NATIVE_EXAMPLE_SOURCES)
 
 POWER_DECOMPOSITION = contest.PRELUDE + """
 算 分 数值 为 数:
@@ -84,6 +91,24 @@ class JavaScriptCompileTests(unittest.TestCase):
         self.assertIn(__version__, code)
         self.assertIn('source.ru', code)
         self.assertNotIn('child_process', code)
+
+    def test_python_only_native_examples_validate_and_explicitly_reject_node(self):
+        from rulang.js_compiler import JSCompiler
+        self.assertGreaterEqual(len(NATIVE_EXAMPLE_SOURCES), 3)
+        self.assertEqual(set(EXAMPLE_SOURCES), set(PORTABLE_EXAMPLE_SOURCES) | set(NATIVE_EXAMPLE_SOURCES))
+        self.assertFalse(set(PORTABLE_EXAMPLE_SOURCES) & set(NATIVE_EXAMPLE_SOURCES))
+        for source_path in NATIVE_EXAMPLE_SOURCES:
+            with self.subTest(example=str(source_path.relative_to(ROOT))):
+                # Same non-executing parse/validate graph used by check --target
+                # python, including the native bundle's transitive imports.
+                graph = load_module_graph(source_path)
+                with self.assertRaisesRegex(RuError, 'Node.js.*不支持') as caught:
+                    JSCompiler(graph[graph.root], graph.root, modules=graph).compile()
+                self.assertEqual(caught.exception.category, '能力错误')
+                output = io.StringIO()
+                with self.assertRaisesRegex(RuError, '原生能力默认关闭'):
+                    Interpreter(stdout=output).execute(graph[graph.root], source_path=graph.root, modules=graph)
+                self.assertEqual(output.getvalue(), '')
 
     def test_rejects_structurally_invalid_programs(self):
         from rulang.js_compiler import JSCompiler
@@ -298,7 +323,7 @@ class JavaScriptParityTests(unittest.TestCase):
             'contest_line_words.ru': '甲 乙\n\n😀\n',
             'contest_stable_records.ru': '4 1\n甲 2\n乙 1\n丙 2\n丁 -1\n',
         }
-        for source_path in sorted((ROOT / 'examples').rglob('*.ru')):
+        for source_path in PORTABLE_EXAMPLE_SOURCES:
             with self.subTest(example=str(source_path.relative_to(ROOT))):
                 source = source_path.read_text(encoding='utf-8')
                 path, graph = compiled(source, self.folder, source_path.stem, source_path=source_path)
@@ -350,7 +375,7 @@ class JavaScriptParityTests(unittest.TestCase):
         self.assert_modules({
             'main.ru': "基 取 999. 模 取 外言 'sub/factory.ru'. 别 取 外言 'sub/../sub/factory.ru'. "
                        "显 模 == 别. 工厂 取 算 模 其 制. 回调 取 工厂 2. 显 (回调 3). "
-                       "尽 取 外言 'base.ru'. 形 子 如 父: 算 读取: 得 其 值*2. 法 象 "
+                       "尽取 外言 'base.ru'. 形 子 如 父: 算 读取: 得 其 值*2. 法 象 "
                        "对象 取 新 子 值:3. 显 对象 其 双读. "
                        "算 元初 参数 为 句 阵: 显 参数[0]. 得 7. 法",
             'sub/factory.ru': "显 '初始化'. 基 取 100. 算 制 起 为 数: 值 取 起. "
@@ -361,7 +386,7 @@ class JavaScriptParityTests(unittest.TestCase):
 
     def test_import_all_aliasing_and_diamond(self):
         self.assert_modules({
-            'main.ru': "尽 取 外言 'common.ru'. 值 取 2. 列 其 增 3. "
+            'main.ru': "尽取 外言 'common.ru'. 值 取 2. 列 其 增 3. "
                        "甲 取 外言 'a.ru'. 乙 取 外言 'b.ru'. 显 (甲 其 共) == (乙 其 共). "
                        "显 甲 其 共 其 值. 显 甲 其 共 其 列. 显 值.",
             'a.ru': "共 取 外言 'common.ru'.", 'b.ru': "共 取 外言 'common.ru'.",

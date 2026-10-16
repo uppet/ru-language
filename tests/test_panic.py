@@ -236,7 +236,7 @@ class PanicTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(f'{child}:2:3: error: 未救之卒：模块原点', result.stderr)
                 self.assertIn('RU_GC live=0 ', result.stderr)
-            source = "尽 取 外言 'child.ru'. 试 卒 '坏'. 救 坏 显 坏. 终."
+            source = "尽取 外言 'child.ru'. 试 卒 '坏'. 救 坏 显 坏. 终."
             root.write_text(source, encoding='utf-8')
             graph = load_module_graph(root)
             with self.assertRaises(RuError) as raised:

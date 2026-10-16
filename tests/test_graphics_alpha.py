@@ -34,7 +34,7 @@ class GraphicsAlphaTests(unittest.TestCase):
         self.assertIsNone(self.host.canvas)
         # The pure helper needs no graphics host, unlike canvas creation.
         output = io.StringIO()
-        Interpreter(stdout=output).execute(parse("尽 取 外言 '如:观'. 显 (颜色 1 2 3 255)."))
+        Interpreter(stdout=output).execute(parse("尽取 外言 '如:观'. 显 (颜色 1 2 3 255)."))
         self.assertEqual(output.getvalue(), '#010203ff\n')
 
     def test_every_byte_has_two_lowercase_hex_digits(self):

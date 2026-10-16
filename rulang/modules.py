@@ -11,7 +11,8 @@ from .frontend import Node, RuError, parse, validate, comment_marker, block_comm
 
 GENERATION_MARKER = "如是我言"
 STANDARD_MODULES = {"如:竞": "如竞.ru", "如:观": "如观.ru", "如:文本": "文本.ru",
-                    "如:数学": "数学.ru", "如:随机": "随机.ru"}
+                    "如:数学": "数学.ru", "如:随机": "随机.ru", "如:密": "密.ru"}
+BUNDLED_THIRD_PARTY_MODULES = {"如见": "如见/如见.ru"}
 
 
 RENAMED_MODULES = {"如竞": "如:竞", "如观": "如:观", "如:竞赛": "如:竞"}
@@ -30,6 +31,9 @@ def resolve_import(requested, importer_path):
     filename = STANDARD_MODULES.get(requested)
     if filename is not None:
         return str((Path(__file__).parent / "stdlib" / filename).resolve())
+    bundled = BUNDLED_THIRD_PARTY_MODULES.get(requested)
+    if bundled is not None:
+        return str((Path(__file__).parent / "thirdparty" / bundled).resolve())
     if requested.startswith("如:"):
         raise RuError("未知的标准外言：" + requested, category="模块错误")
     if not requested or "://" in requested:

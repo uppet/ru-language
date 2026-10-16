@@ -60,7 +60,7 @@ class BundledDeclarationPruningTests(unittest.TestCase):
         self.assert_names(source, ALL_NAMES)
 
     def test_import_all_and_transitive_function_dependency(self):
-        source = "尽 取 外言 '如:竞'. 显 整除 (-7) 3."
+        source = "尽取 外言 '如:竞'. 显 整除 (-7) 3."
         self.assert_names(source, {'整除', '取整'})
         self.assert_equivalent(source, '-2\n')
 
@@ -73,7 +73,7 @@ class BundledDeclarationPruningTests(unittest.TestCase):
         member = PRELUDE + "分 取 算 竞 其 拆词. 另名 取 分. 显 (另名 'a b')."
         self.assert_names(member, {'拆词'})
         self.assert_equivalent(member, '[a, b]\n')
-        imported = "尽 取 外言 '如:竞'. 分 取 算 拆词. 显 (分 'a b')."
+        imported = "尽取 外言 '如:竞'. 分 取 算 拆词. 显 (分 'a b')."
         self.assert_names(imported, {'拆词'})
         self.assert_equivalent(imported, '[a, b]\n')
 
@@ -131,9 +131,9 @@ class BundledDeclarationPruningTests(unittest.TestCase):
 
     def test_runtime_import_all_and_protected_binding_errors_are_preserved(self):
         samples = (
-            "小 取 1. 尽 取 外言 '如:竞'.",
-            "尽 取 外言 '如:竞'. 算 用: 小 取 1. 得 0. 法 显 用.",
-            "尽 取 外言 '如:竞'. 显 小 1.",
+            "小 取 1. 尽取 外言 '如:竞'.",
+            "尽取 外言 '如:竞'. 算 用: 小 取 1. 得 0. 法 显 用.",
+            "尽取 外言 '如:竞'. 显 小 1.",
         )
         for source in samples:
             with self.subTest(source=source):
@@ -186,7 +186,7 @@ class BundledDeclarationPruningTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             lib = Path(directory).resolve() / 'relay.ru'
             for declaration, expression in (
-                    ("尽 取 外言 '如:竞'.", '模 其 小 2 3'),
+                    ("尽取 外言 '如:竞'.", '模 其 小 2 3'),
                     ("库 取 外言 '如:竞'.", '模 其 库 其 小 2 3')):
                 with self.subTest(declaration=declaration):
                     lib.write_text(declaration, encoding='utf-8')

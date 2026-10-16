@@ -75,33 +75,33 @@ class ConditionalExportTests(unittest.TestCase):
                      "试 {binding} 救 因 卒 因. 终."):
             with self.subTest(body=body):
                 self.check_engines(body.format(binding='回 取 算 值: 得 值+1. 法.'),
-                                   "尽 取 外言 'lib.ru'. 显 回 2. 显 回 值:4.", '3\n5\n')
+                                   "尽取 外言 'lib.ru'. 显 回 2. 显 回 值:4.", '3\n5\n')
 
     def test_transitive_export_closure_and_procedure(self):
         self.check_engines(
             "种 取 4. 若 真 则 回 取 算 值: 得 种+值. 法. "
             "报 取 作 值: 显 值. 为. 然",
-            "尽 取 外言 'middle.ru'. 显 回 2. 报 值:7.", '6\n7\n',
-            middle="尽 取 外言 'lib.ru'.")
+            "尽取 外言 'middle.ru'. 显 回 2. 报 值:7.", '6\n7\n',
+            middle="尽取 外言 'lib.ru'.")
 
     def test_untaken_branch_still_fails_at_runtime(self):
         self.check_engines('若 假 则 回 取 算 值: 得 值. 法. 然',
-                           "尽 取 外言 'lib.ru'. 显 回 2.", error='未定义.*回')
+                           "尽取 外言 'lib.ru'. 显 回 2.", error='未定义.*回')
 
     def test_conditional_conflict_remains_runtime_only(self):
         for fact, expected_error in (('假', None), ('真', '名称冲突')):
             with self.subTest(fact=fact):
                 self.check_engines(f'若 {fact} 则 回 取 算 值: 得 值. 法. 然',
-                                   "回 取 9. 尽 取 外言 'lib.ru'. 显 回.",
+                                   "回 取 9. 尽取 外言 'lib.ru'. 显 回.",
                                    '' if expected_error else '9\n', error=expected_error)
 
     def test_noncallable_value_is_not_promoted_to_function(self):
         self.check_engines('若 真 则 回 取 3. 然',
-                           "尽 取 外言 'lib.ru'. 显 回 2.", error='不是(算|函数)')
+                           "尽取 外言 'lib.ru'. 显 回 2.", error='不是(算|函数)')
 
     def test_plain_value_and_existing_call_forms(self):
         self.check_engines('若 真 则 值 取 3. 回 取 算 数值: 得 数值+1. 法. 然',
-                           "模 取 外言 'lib.ru'. 尽 取 外言 'lib.ru'. "
+                           "模 取 外言 'lib.ru'. 尽取 外言 'lib.ru'. "
                            '显 值. 显 模 其 回 2. 显 (回) 3.', '3\n3\n4\n')
 
     def test_private_scopes_and_unknown_names_still_rejected(self):
@@ -113,7 +113,7 @@ class ConditionalExportTests(unittest.TestCase):
                 root = Path(folder)
                 (root / 'lib.ru').write_text(library, encoding='utf-8')
                 source = root / 'main.ru'
-                source.write_text("尽 取 外言 'lib.ru'. 显 回 2.", encoding='utf-8')
+                source.write_text("尽取 外言 'lib.ru'. 显 回 2.", encoding='utf-8')
                 graph = load_module_graph(source)
                 for backend in (Compiler, JSCompiler):
                     with self.subTest(library=library, backend=backend.__name__):

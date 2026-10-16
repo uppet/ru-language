@@ -42,7 +42,8 @@ MEMBER_PARAMS = {"含": ["句"], "位": ["位"], "段": ["始", "终"], "增": [
                  "量": [], "囫": [], "囵": [], "删": ["位"], "弹": [], "查": ["值"],
                  "排序": ["先于"], "另成": ["算法"], "逐位": ["回调"]}
 
-KEYWORDS = set("显 取 为 得 完 破 若 则 另 然 循 次 环 算 作 法 其 且 或 非 空 真 假 典 成 对 形 象 如 新 外言 尽 试 救 卒".split())
+# 尽 remains reserved only to diagnose the retired two-token import spelling.
+KEYWORDS = set("显 取 为 得 完 破 若 则 另 然 循 次 环 算 作 法 其 且 或 非 空 真 假 典 成 对 形 象 如 新 外言 尽取 尽 试 救 卒".split())
 NUMBER = re.compile(r"(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
 
 
@@ -393,10 +394,11 @@ class Parser:
         if self.isv("形"):
             return self.type_definition()
         if self.accept("尽"):
-            self.expect("取")
+            self.fail("旧语法「尽 取 外言」已停用；请改用「尽取 外言 '文件.ru'.」（尽取须连写）", t)
+        if self.accept("尽取"):
             expr = self.expression()
             if expr.kind != "import":
-                self.fail("「尽 取」需要「外言 '文件.ru'」", t)
+                self.fail("「尽取」需要「外言 '文件.ru'」", t)
             self.expect(".")
             return node("import_all", t, expr=expr)
         if t.kind == "NAME" and ((self.peek().kind == "NAME" and self.peek().value == "取") or
@@ -849,7 +851,7 @@ def validate(program, existing_functions=(), existing_types=()):
                 walk(d["methods"], method=True, visible_functions=visible_functions,
                      bindings=bindings, method_definitions=True)
             elif n.kind == "import_all" and not top:
-                error(n, "「尽 取 外言」只能用于顶层")
+                error(n, "「尽取 外言」只能用于顶层")
             elif n.kind == "break" and depth == 0:
                 error(n, "「破」只能出现在当前函数的循环内")
             elif n.kind == "return" and (function is None or function.data["procedure"]):

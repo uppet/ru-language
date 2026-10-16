@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import unittest
 
+from rulang import __version__
 from rulang.browser_compiler import compile_browser
 from rulang.cli import main
 from rulang.frontend import parse, validate
@@ -97,7 +98,7 @@ class GraphicsPolylineExamplesTests(unittest.TestCase):
     def test_four_offline_cli_exports_embed_exact_current_spec_and_signature(self):
         raw = (ROOT / 'rulang/language-spec.md').read_bytes()
         spec, digest = raw.decode('utf-8'), hashlib.sha256(raw).hexdigest()
-        self.assertTrue(spec.startswith('# 如语言规范 0.19.8\n'))
+        self.assertTrue(spec.startswith(f'# 如语言规范 {__version__}\n'))
         for kind in ('rushu', 'ruguan'):
             for backend in ('python', 'browser-js'):
                 with self.subTest(kind=kind, backend=backend):
@@ -112,7 +113,7 @@ class GraphicsPolylineExamplesTests(unittest.TestCase):
                     self.assertEqual(prompt.count(spec), 1)
                     self.assertEqual(prompt.count('<ru-language-spec>'), 1)
                     self.assertIn(digest, prompt)
-                    self.assertIn('随附规范版本：0.19.8', prompt)
+                    self.assertIn(f'随附规范版本：{__version__}', prompt)
                     for fragment in ('图 其 折线 点阵', '唯一的 `点阵` 参数必需',
                                      '2～256 个点', '深复制外层点阵及各点坐标',
                                      '只调用一次 `stroke`', '2048 条／约 256 KiB'):

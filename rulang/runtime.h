@@ -1518,7 +1518,7 @@ static Val v_member_finish(Val receiver, const char *name, size_t argc, const ch
 static void env_import_all(Env *env,Val module,int line)
 {
     RuBinding *b;
-    if(module.kind!=RU_MODULE)ru_fail(line,"尽 取 需要外言");
+    if(module.kind!=RU_MODULE)ru_fail(line,"尽取 需要外言");
     for(b=module.module->bindings;b;b=b->next)
         if(env_find(env,b->name)||!strcmp(b->name,"读"))ru_fail(line,"导入名称冲突：%s",b->name);
     for(b=module.module->bindings;b;b=b->next) {

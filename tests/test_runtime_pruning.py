@@ -241,7 +241,7 @@ class RuntimeGenerationTests(unittest.TestCase):
                 self.assertIn('static RuClass ru_io_file_class', generate(source))
 
     def test_compilation_does_not_mutate_graph_or_write_artifacts(self):
-        source = "尽 取 外言 '如:竞'. 显 小 2 3."
+        source = "尽取 外言 '如:竞'. 显 小 2 3."
         with tempfile.TemporaryDirectory() as directory:
             graph = load_module_graph(str(Path(directory).resolve() / 'main.ru'), parse(source))
             before = copy.deepcopy(graph)
@@ -332,7 +332,7 @@ class RuntimeParityTests(unittest.TestCase):
     def test_user_module_side_effects_reexports_and_unused_function_survive(self):
         with tempfile.TemporaryDirectory() as directory:
             module = Path(directory).resolve() / 'helper.ru'
-            module.write_text("显 '初始化'. 尽 取 外言 '如:竞'. 算 不用: 得 99. 法", encoding='utf-8')
+            module.write_text("显 '初始化'. 尽取 外言 '如:竞'. 算 不用: 得 99. 法", encoding='utf-8')
             source = "模 取 外言 'helper.ru'. 显 模 其 小 2 3. 再 取 外言 'helper.ru'. 显 再 其 不用."
             graph = load_module_graph(str(Path(directory).resolve() / 'main.ru'), parse(source))
             # Loading is compile-time; neither generated executable may need

@@ -123,6 +123,27 @@ class PromptExportTests(unittest.TestCase):
                 self.assertNotIn("外言 '如竞'", prompt)
                 self.assertIn("不保留兼容别名", prompt)
 
+    def test_native_library_knowledge_does_not_grant_generation_capability(self):
+        raw = (ROOT / "rulang/language-spec.md").read_bytes()
+        for target in ("cli", "rushu", "ruguan", "rushu-browser-js", "ruguan-browser-js"):
+            with self.subTest(target=target):
+                prompt = generation_system_prompt(target)
+                self.assertEqual(prompt.count(raw.decode()), 1)
+                self.assertIn(hashlib.sha256(raw).hexdigest(), prompt)
+                guidance = prompt.split("<ru-language-spec>", 1)[0]
+                for rule in ("如:密是标准原生库", "如见是随附三方 Win32 库",
+                             "生成器不得自动启用 --allow-native",
+                             "不得用 generate --run 执行原生程序",
+                             "不得生成依赖原生调用的程序"):
+                    self.assertIn(rule, guidance)
+                for contract in ("ru check --target python", "后端／宿主权限边界",
+                                 "默认 `check` 仍为 C", "不是沙箱", "同位宽整数／指针",
+                                 "不执行模块顶层、不加载 DLL、不调用原生函数",
+                                 "独立目录中的随附三方 Win32 库入口"):
+                    self.assertIn(contract, prompt)
+                if target in ("rushu", "ruguan"):
+                    self.assertIn("如书 Python 也不能启用如:密或如见", guidance)
+
     def test_generation_targets_include_collection_interfaces(self):
         for target in ("cli", "rushu", "ruguan", "rushu-browser-js", "ruguan-browser-js"):
             with self.subTest(target=target):

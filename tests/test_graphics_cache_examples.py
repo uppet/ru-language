@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from rulang import __version__
 from rulang.frontend import parse, validate
 from rulang.graphics_runtime import GraphicsHost
 from rulang.interpreter import Interpreter
@@ -24,7 +25,7 @@ class CacheExamplesTests(unittest.TestCase):
             for backend in ('python','browser-js'):
                 with self.subTest(target=target,backend=backend),tempfile.TemporaryDirectory() as tmp:
                     path=Path(tmp)/'prompt.txt';export_prompt(target,path,runtime_target=backend);prompt=path.read_text()
-                    for fragment in ('随附规范版本：0.19.8','缓存 宽 高 绘制','贴图 图像 横 纵','2047','128 KiB','每帧内嵌定义的方案 A','不是跨机器冻结的像素'):
+                    for fragment in (f'随附规范版本：{__version__}','缓存 宽 高 绘制','贴图 图像 横 纵','2047','128 KiB','每帧内嵌定义的方案 A','不是跨机器冻结的像素'):
                         self.assertIn(fragment,prompt)
     @unittest.skipUnless(test_browser_js.NODE,'Node required')
     def test_browser_example_static_recipe_and_animation(self):

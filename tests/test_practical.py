@@ -142,7 +142,7 @@ class PracticalLibraryTests(unittest.TestCase):
         with self.assertRaises(RuError):
             interpreted('__实用 取 1.')
         with self.assertRaises(RuError):
-            interpreted("尽 取 外言 '如:数学'. 尽 取 外言 '如:竞'.")
+            interpreted("尽取 外言 '如:数学'. 尽取 外言 '如:竞'.")
 
 if __name__ == '__main__':
     unittest.main()

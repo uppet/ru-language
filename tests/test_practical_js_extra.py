@@ -215,9 +215,9 @@ process.stdout.write(JSON.stringify(result));
 
     def test_wrapper_references_and_all_imports(self):
         self.parity("""
-尽 取 外言 '如:文本'. 格式 取 算 定点. 显 格式 位数:2 值:1.25.
-尽 取 外言 '如:数学'. 平 取 算 平方根. 显 平 16. 显 整除 (-7) 3.
-尽 取 外言 '如:随机'. 制 取 算 造源. 源 取 制 42. 显 源 其 整数 上:10 下:1.
+尽取 外言 '如:文本'. 格式 取 算 定点. 显 格式 位数:2 值:1.25.
+尽取 外言 '如:数学'. 平 取 算 平方根. 显 平 16. 显 整除 (-7) 3.
+尽取 外言 '如:随机'. 制 取 算 造源. 源 取 制 42. 显 源 其 整数 上:10 下:1.
 """, '1.25\n4\n-2\n4\n')
 
     def test_validation_errors_have_language_diagnostics(self):

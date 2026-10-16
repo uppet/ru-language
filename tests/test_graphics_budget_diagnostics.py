@@ -8,6 +8,7 @@ import sys
 import unittest
 from unittest.mock import patch
 
+from rulang import __version__
 from rulang.cli import main, report
 from rulang.diagnostics import SourceOrigin, diagnostic
 from rulang.frontend import RuError, parse
@@ -221,7 +222,7 @@ class GraphicsBudgetPromptTests(unittest.TestCase):
     def check_prompt(self, kind):
         raw = (Path(__file__).resolve().parents[1] / 'rulang/language-spec.md').read_bytes()
         spec = raw.decode('utf-8')
-        self.assertTrue(spec.startswith('# 如语言规范 0.19.8\n'))
+        self.assertTrue(spec.startswith(f'# 如语言规范 {__version__}\n'))
         for backend in ('python', 'browser-js'):
             with self.subTest(kind=kind, backend=backend):
                 stdout, stderr = io.StringIO(), io.StringIO()

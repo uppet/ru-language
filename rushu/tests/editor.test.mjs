@@ -470,3 +470,18 @@ test('cache and image remain contextual ordinary members with lifecycle and budg
     for(const plain of [`${word} 取 1.`,`作 方法 ${word}: 显 ${word}. 为.`,`# 图 其 ${word}.`,`'图 其 ${word}'`]){for(const t of analyze(plain).tokens.filter(t=>t.text===word))assert.equal(t.face,null);}
   }
 });
+
+test('canonical import-all is one keyword, with legacy migration help and whole-name boundaries',()=>{
+  const source="尽取 外言 '如:数学'.\n尽 取 外言 '如:数学'.\n尽取值 取 1. 尽取器 取 2. 未尽取 取 3. 进取 取 4. 言 取 5.";
+  const result=analyze(source);
+  for(const word of ['尽取','尽']) assert.equal(result.tokens.find(t=>t.text===word).face,'keyword');
+  for(const word of ['尽取值','尽取器','未尽取','进取','言']) assert.equal(result.tokens.find(t=>t.text===word).face,null);
+  assert.equal(result.blocks.length,0);
+  assert.equal(indentText(source),source);
+  assert.match(highlight("尽取 外言 '如:数学'."),/尽取须连写/);
+  assert.match(highlight("尽 取 外言 '如:数学'."),/已停用/);
+  for(const source of ["'尽取'",'批. 尽取','解. 尽取 释.','尽取值','尽取²','𠀀尽取','α尽取','_尽取']) {
+    assert.doesNotMatch(highlight(source),/data-help=/,source);
+    assert.doesNotMatch(highlight(source),/tok-keyword/,source);
+  }
+});

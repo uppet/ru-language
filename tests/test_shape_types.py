@@ -152,7 +152,7 @@ class ShapeTypeTests(unittest.TestCase):
         ):
             with self.subTest(expression=expression):
                 self.assert_rejected_engines({'empty.ru': '',
-                    'main.ru': "尽 取 外言 'empty.ru'. " + expression}, '未定义类型：未知')
+                    'main.ru': "尽取 外言 'empty.ru'. " + expression}, '未定义类型：未知')
 
     def test_forward_declared_nested_array_method_types(self):
         self.assert_engines({'main.ru': '''
@@ -171,16 +171,16 @@ class ShapeTypeTests(unittest.TestCase):
         ):
             with self.subTest(declaration=declaration):
                 self.assert_rejected_engines({'models.ru': SHAPE,
-                    'main.ru': declaration + " 尽 取 外言 'models.ru'."}, '未定义类型：学生')
+                    'main.ru': declaration + " 尽取 外言 'models.ru'."}, '未定义类型：学生')
                 self.assert_engines({'models.ru': SHAPE,
-                    'main.ru': "尽 取 外言 'models.ru'. " + declaration + ' 显 1.'}, '1\n')
+                    'main.ru': "尽取 外言 'models.ru'. " + declaration + ' 显 1.'}, '1\n')
 
     def test_imported_function_annotation_is_resolved_before_empty_array_match(self):
         declaration = '算 接 值 为 学生 阵 阵: 得 1. 法 '
         self.assert_rejected_engines({'models.ru': SHAPE,
-            'main.ru': declaration + "显 接 [[]]. 尽 取 外言 'models.ru'."}, '未定义类型：学生')
+            'main.ru': declaration + "显 接 [[]]. 尽取 外言 'models.ru'."}, '未定义类型：学生')
         self.assert_engines({'models.ru': SHAPE,
-            'main.ru': declaration + "尽 取 外言 'models.ru'. 显 接 [[]]."}, '1\n')
+            'main.ru': declaration + "尽取 外言 'models.ru'. 显 接 [[]]."}, '1\n')
 
     def test_shape_value_uses_have_precise_diagnostics(self):
         for name, expression in VALUE_USES:
@@ -212,8 +212,8 @@ class ShapeTypeTests(unittest.TestCase):
     def test_imported_shapes_and_instance_factories(self):
         self.assert_engines({
             'models.ru': SHAPE + '算 制 年 为 数: 得 新 学生 年龄:年. 法',
-            'relay.ru': "尽 取 外言 'models.ru'.",
-            'main.ru': "尽 取 外言 'relay.ru'. 模 取 外言 'models.ru'. "
+            'relay.ru': "尽取 外言 'models.ru'.",
+            'main.ru': "尽取 外言 'relay.ru'. 模 取 外言 'models.ru'. "
                        '形 高生 如 学生: 象 算 查 物 为 学生: 得 物 其 年龄. 法 '
                        '显 查 (新 高生 年龄:18). 显 查 (模 其 制 19).',
         }, '18\n19\n')
@@ -272,8 +272,8 @@ class ShapeTypeTests(unittest.TestCase):
     def test_shared_imported_type_override_remains_valid(self):
         self.assert_engines({
             'types.ru': SHAPE,
-            'base.ru': "尽 取 外言 'types.ru'. 形 父: 算 查 值 为 学生: 得 值 其 年龄. 法 象",
-            'main.ru': "尽 取 外言 'base.ru'. 形 子 如 父: 算 查 值 为 学生: 得 (值 其 年龄)+1. 法 象 "
+            'base.ru': "尽取 外言 'types.ru'. 形 父: 算 查 值 为 学生: 得 值 其 年龄. 法 象",
+            'main.ru': "尽取 外言 'base.ru'. 形 子 如 父: 算 查 值 为 学生: 得 (值 其 年龄)+1. 法 象 "
                        '显 (新 子) 其 查 (新 学生 年龄:18).',
         }, '19\n')
 
@@ -329,7 +329,7 @@ class ShapeTypeTests(unittest.TestCase):
     def test_builtin_array_override_identity_across_modules(self):
         self.assert_engines({
             'base.ru': '形 父: 算 查 值 为 件 阵: 得 值 其 量. 法 象',
-            'main.ru': "尽 取 外言 'base.ru'. "
+            'main.ru': "尽取 外言 'base.ru'. "
                        '形 子 如 父: 算 查 值 为 件 阵: 得 值 其 量+1. 法 象 '
                        '显 (新 子) 其 查 [(新 件)].',
         }, '2\n')
@@ -337,7 +337,7 @@ class ShapeTypeTests(unittest.TestCase):
     def test_same_spelled_imported_shape_conflicts_with_local_declaration(self):
         with tempfile.TemporaryDirectory() as folder:
             graph = self.graph(folder, {'base.ru': SHAPE,
-                'main.ru': "尽 取 外言 'base.ru'. " + SHAPE})
+                'main.ru': "尽取 外言 'base.ru'. " + SHAPE})
             for backend in (Interpreter, Compiler, JSCompiler):
                 with self.subTest(backend=backend.__name__):
                     with self.assertRaises(RuError) as caught:

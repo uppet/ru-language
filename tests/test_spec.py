@@ -59,7 +59,7 @@ class SpecificationExamples(unittest.TestCase):
         self.assertIn("每次实际进入块都创建新的词法子环境", specification)
         self.assertIn("直接绑定只属于该环境", specification)
         self.assertIn("块不引入新的函数、过程或循环边界", specification)
-        self.assertIn("`尽 取 外言` 是导入语句，仍须使用 `取`", specification)
+        self.assertIn("`尽取 外言` 是独立导入语句，`尽取` 是一个完整关键字", specification)
         self.assertIn("连续的 `：=`", specification)
         self.assertNotIn("未把花括号当作用域块", specification)
         source = (ROOT / "examples" / "scoped_blocks.ru").read_text(encoding="utf-8")
@@ -69,7 +69,7 @@ class SpecificationExamples(unittest.TestCase):
         JSCompiler(program, "scoped_blocks.ru").compile()
 
     def test_map_teaching_terms_match_named_arguments(self):
-        for name in ("README.md", "rulang/language-spec.md",
+        for name in ("docs/language-guide.md", "rulang/language-spec.md",
                      "docs/maps-facts-migration.md", "emacs/README.md",
                      "rushu/README.md"):
             with self.subTest(document=name):
