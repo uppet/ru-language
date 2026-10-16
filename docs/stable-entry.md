@@ -2,7 +2,7 @@
 
 ## 取得同一套工具链
 
-当前稳定组合为 **如 0.20.0、语言规范 0.20.0、如书 0.8.8**，均来自语言仓库的 `main`。`wip` 正在开发如／规范 0.21.0 的 Windows x64 C 原生后端；如书保持 0.8.8，如言扩展保持 0.8.4。它尚未取代本页的稳定组合，新增接口与 Windows 验证状态须分别核对；学习与普通使用从 `main` 开始。`main` 是经过验证的稳定使用入口，语言本身仍处于原型阶段，不表示永久冻结语法。
+当前稳定组合为 **如 0.20.0、语言规范 0.20.0、如书 0.8.8**，均来自语言仓库的 `main`。`wip` 正在开发如／规范 0.21.1 的 Windows x64 C 原生后端；如书保持 0.8.8，如言扩展保持 0.8.4。它尚未取代本页的稳定组合，新增接口与 Windows 验证状态须分别核对；学习与普通使用从 `main` 开始。`main` 是经过验证的稳定使用入口，语言本身仍处于原型阶段，不表示永久冻结语法。
 
 需要已安装 Python 3.10+ 和 Git。仓库现已公开，可直接获取源码。全新安装：
 
@@ -61,7 +61,7 @@ python3 -c "import rushu; print(rushu.__version__)"
 
 如 0.20.0 的 `如:密` 与随附三方库 `如见` 目前仅支持 **Windows x64 本地 Python**，须在审阅代码后使用 `run --allow-native` 显式启用。`check --target python` 可在其他受支持的开发宿主检查源码和导入图，不加载 DLL。C 原生库后端尚未提供；C、Node.js、browser-js 目标拒绝原生依赖，如书与 REPL 也不能启用。权限和生命周期边界见[原生库指南](native-library.md)。
 
-`wip` 的 0.21.0 开发接口另增加 `check --target c --allow-native` 与 `build --allow-native`：静态确定有限 ABI 签名，再用 Windows x64 C 工具链生成不需要 Python／libffi 的独立程序。C 默认仍拒绝原生依赖，JavaScript、如书与 REPL 的边界不变。生成／检查 C 的宿主不等于程序运行平台，不代表 Linux、macOS 或 Android 原生执行已经可用。当前开发文档不等于 Windows CI、真实窗口验收或发布通过。
+`wip` 的 0.21.1 沿用自 0.21.0 引入的 `check --target c --allow-native` 与 `build --allow-native`：静态确定有限 ABI 签名，再用 Windows x64 C 工具链生成不需要 Python／libffi 的独立程序。C 默认仍拒绝原生依赖，JavaScript、如书与 REPL 的边界不变。生成／检查 C 的宿主不等于程序运行平台，不代表 Linux、macOS 或 Android 原生执行已经可用。0.21.0 已通过 [Windows x64 GCC CI](https://github.com/uppet/ru-language/actions/runs/38851331303) 的独立 `.exe`、DLL／回调及如见窗口自动化检查；Windows Clang 与可见窗口的人工交互验收仍未完成，也尚未取代 `main` 稳定版。
 
 如书生成从不自动运行；已收到的完整源码即使目标检查未通过，仍保留用于审阅与修改。请求失败不替换当前草稿。Python 检查通过不表示 browser-js 可用，browser-js 检查通过也不保证运行正确、安全或达到请求帧率。不支持的浏览器能力不会悄悄回退到 Python。普通 `ru check` 不是如书图形目标检查器。
 
@@ -82,7 +82,7 @@ python3 ru ruguan-prompt --target browser-js -o ruguan-browser-system.txt
 - 可通过 `--cc gcc` 或 `CC=gcc` 指定编译器；参数通过 argv 传递，不经过 shell
 - 仓库初始化验证：Linux x86-64、Python 3.12.3、GCC 13.3.0；位置调用更新验证：Linux x86-64、Python 3.12.14、GCC 14.2.0。各次记录见 `VALIDATION.md`
 - 仓库只保存源码；`bin/`、`dist/` 由 `make examples` 或 `ru build` 在本机生成。原生程序依赖构建时的目标架构和系统库，应在目标系统重新构建
-- Windows：可在已有 WSL 中按上述命令使用。也提供 `ru.cmd`，可通过 `py -3 ru repl` 运行 Python 前端；Python 解释器对 Windows 控制台使用 Unicode 输出（含 `add.ru` 中文输入提示），重定向输出保持 UTF-8，无需修改系统代码页。Windows 原生 Clang/GCC 编译以及 `.exe` **未实测**，不承诺即开即用
+- Windows：可在已有 WSL 中按上述命令使用。也提供 `ru.cmd`，可通过 `py -3 ru repl` 运行 Python 前端；Python 解释器对 Windows 控制台使用 Unicode 输出（含 `add.ru` 中文输入提示），重定向输出保持 UTF-8，无需修改系统代码页。上述 0.21.0 CI 已验证 Windows x64 上的 GCC 编译与真实 `.exe` 执行；Windows Clang、其他 Windows 架构及可见 GUI 人工交互仍未验证
 - macOS、其他架构和 Python 3.10/3.11 未在本次环境实测
 
 如需研究静态输出，工具链支持时可使用 `--cc "gcc -static"`；静态库、目标平台兼容性及第三方库再分发义务由该工具链决定。默认构建使用动态链接。

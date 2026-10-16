@@ -4,7 +4,7 @@
 
 **[首页的小程序](../README.md) → [打开如书](stable-entry.md#取得同一套工具链) → [入门小路](first-steps.md) → 选一个小作品。**
 
-本目录随所在分支更新，当前 `main` 对应如 0.20.0。使用接口前先核对[版本与执行目标](stable-entry.md)；`wip` 正在开发如／规范 0.21.0；本目录中的 C 原生新增接口不能用于 0.20.0 稳定版。
+本目录随所在分支更新，当前 `main` 对应如 0.20.0。使用接口前先核对[版本与执行目标](stable-entry.md)；`wip` 正在开发如／规范 0.21.1；本目录中的 C 原生新增接口不能用于 0.20.0 稳定版。
 
 ## 学习与小作品
 
@@ -33,7 +33,7 @@
 - [浏览器 JS 执行](browser-js.md)：与默认 Python 会话的区别和保护边界
 - [如是我言](generation.md)：可选生成、凭据配置、审阅与输出保护
 - [生成诊断](generation-diagnostics.md) · [离线提示词导出](prompt-export.md)
-- [原生库与随附如见](native-library.md)：Windows x64 Python，以及 0.21.0 开发版的独立 C 目标；先读权限、静态签名与生命周期边界
+- [原生库与随附如见](native-library.md)：Windows x64 Python，以及自 0.21.0 引入的独立 C 目标；先读权限、静态签名与生命周期边界
 
 ## 更新旧程序
 

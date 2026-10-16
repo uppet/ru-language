@@ -24,7 +24,7 @@ class Compiler:
     def __init__(self, program, source_name='<源码>', modules=None, full_runtime=False, allow_native=False):
         self.full_runtime = full_runtime
         self.allow_native = bool(allow_native)
-        from .modules import import_nodes, load_module_graph
+        from .modules import ModuleGraph, import_nodes, load_module_graph
         if modules is None and any(import_nodes(program)):
             modules = load_module_graph(source_name, program)
         from .native_runtime import _native_nodes, reject_native_backend
@@ -43,7 +43,12 @@ class Compiler:
         self.native_plan = None
         if self.native_enabled:
             from .native_c import NativeCPlan
-            self.native_plan = NativeCPlan(self.modules)
+            # The ABI planner diagnoses imported call sites too. Preserve the
+            # original text instead of letting CLI excerpts fall back to root.
+            native_modules = ModuleGraph(self.root)
+            native_modules.update(self.modules)
+            native_modules.sources = self.source_texts
+            self.native_plan = NativeCPlan(native_modules)
         from .c_runtime import walk_nodes
         self.can_panic = self.native_enabled or full_runtime or any(n.kind in ('panic', 'try') for n in walk_nodes(self.modules))
         self.counter = 0
@@ -86,7 +91,10 @@ class Compiler:
                 # Validate the complete graph above before rebuilding its semantic
                 # indexes: omitted exports must not hide declaration conflicts.
                 source_texts = self.source_texts
-                self.__init__(program, source_name, modules=pruned, full_runtime=True, allow_native=allow_native)
+                pruned_modules = ModuleGraph(self.root)
+                pruned_modules.update(pruned)
+                pruned_modules.sources = source_texts
+                self.__init__(program, source_name, modules=pruned_modules, full_runtime=True, allow_native=allow_native)
                 self.source_texts = source_texts
                 self.full_runtime = False
                 self.can_panic = self.native_enabled or any(n.kind in ('panic', 'try') for n in walk_nodes(self.modules))

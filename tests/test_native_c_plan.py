@@ -442,6 +442,171 @@ class NativeCAnalysisTests(unittest.TestCase):
         """)
         self.assertIn(NativeCSignature('f64', ()), value.signatures)
 
+    def test_repeated_helper_fanout_and_loops_have_bounded_static_work(self):
+        # A generic fixed-ABI graph: repeated scalar helpers have no reason to
+        # rediscover the same bodies exponentially. This is independently
+        # generated test data, not an application source fixture.
+        source = PREFIX + """
+            签甲 取 密 其 签名 (密 其 i32) ([密 其 i32]) 'cdecl'.
+            签乙 取 密 其 签名 (密 其 无值) ([密 其 指针, 密 其 f64]) 'win64'.
+            算 层0 值: 得 值 + 1. 法
+        """
+        for level in range(1, 9):
+            source += f'算 层{level} 值: 循 3 次\n'
+            for branch in range(4):
+                source += f'局{branch} 取 层{level - 1} 值.\n'
+            source += '环 得 局0. 法\n'
+        source += '循 10 次 层8 7. 层8 7. 环'
+        first, second = plan(source), plan(source)
+        self.assertEqual(first.signatures, (
+            NativeCSignature('i32', ('i32',)),
+            NativeCSignature('无值', ('指针', 'f64'))))
+        self.assertEqual(first.signatures, second.signatures)
+        self.assertEqual(first._steps, second._steps)
+        self.assertEqual(first._function_evaluations, second._function_evaluations)
+        self.assertGreater(first._summary_hits, 0)
+        self.assertLess(first._steps, 5000)
+        self.assertLess(first._function_evaluations, 500)
+        generated = first.emit_c()
+        self.assertIn('if (result == 5 && argc == 1 && params != NULL && params[0] == 5) return 0;', generated)
+        self.assertIn('if (result == 0 && argc == 2 && params != NULL && params[0] == 13 && params[1] == 12) return 1;', generated)
+
+    def test_cached_capture_read_is_invalidated_by_rebinding(self):
+        value = plan(PREFIX + """
+            算 外:
+                型 取 密 其 i32.
+                算 取型: 得 型. 法
+                算 改型: 型 取 密 其 f64. 得 空. 法
+                取型. 取型. 取型.
+                改型.
+                得 密 其 签名 (取型) ([]) 'cdecl'.
+            法
+            外.
+        """)
+        self.assertEqual(set(value.signatures), {
+            NativeCSignature('i32', ()), NativeCSignature('f64', ())})
+        self.assertGreater(value._summary_hits, 0)
+
+    def test_changing_body_is_not_cached_at_its_exit_revision(self):
+        value = plan(PREFIX + """
+            算 外:
+                型 取 密 其 i32.
+                算 读后改:
+                    旧 取 型.
+                    型 取 密 其 f64.
+                    得 旧.
+                法
+                读后改.
+                得 密 其 签名 (读后改) ([]) 'cdecl'.
+            法
+            外.
+        """)
+        self.assertEqual(set(value.signatures), {
+            NativeCSignature('i32', ()), NativeCSignature('f64', ())})
+
+    def test_cached_array_projection_is_invalidated_by_alias_mutation(self):
+        for mutation in ("别名 其 增 (密 其 f64).", "别名[0] 取 密 其 f64."):
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(RuError, '无法静态确定'):
+                plan(PREFIX + """
+                    算 首 参数: 得 参数[0]. 法
+                    参数们 取 [密 其 i32]. 别名 取 参数们.
+                    首 参数们. 首 参数们. 首 参数们.
+                """ + mutation + "S 取 密 其 签名 (首 参数们) ([]) 'cdecl'.")
+
+    def test_cached_callback_is_revisited_after_late_capture_change(self):
+        value = plan(PREFIX + """
+            算 外:
+                型 取 密 其 i32.
+                算 回 值:
+                    S 取 密 其 签名 型 ([]) 'cdecl'.
+                    得 0.
+                法
+                回 0. 回 0. 回 0.
+                签 取 密 其 签名 (密 其 i32) ([密 其 i32]) 'cdecl'.
+                回调 取 密 其 回调 签 (算 回) 0.
+                型 取 密 其 f64.
+                得 回调.
+            法
+            外.
+        """)
+        self.assertIn(NativeCSignature('f64', ()), value.signatures)
+        self.assertEqual(value.callback_signatures, {NativeCSignature('i32', ('i32',))})
+        self.assertGreater(value._summary_hits, 0)
+
+    def test_cached_array_return_does_not_hide_late_method_effects(self):
+        with self.assertRaisesRegex(RuError, '无法静态确定'):
+            plan(PREFIX + """
+                参数们 取 [密 其 i32].
+                算 参数列: 得 参数们. 法
+                参数列. 参数列. 参数列.
+                形 工具:
+                    算 同 对方: 参数们 其 增 (密 其 f64). 得 真. 法
+                象
+                签 取 密 其 签名 (密 其 i32) (参数列) 'cdecl'.
+            """)
+
+    def test_unknown_callable_escape_invalidates_cached_capture_read(self):
+        value = plan(PREFIX + """
+            算 外:
+                型 取 密 其 i32.
+                算 取型: 得 型. 法
+                算 改型: 型 取 密 其 f64. 得 空. 法
+                F 取 算 改型.
+                取型. 取型. 取型.
+                未知 F.
+                得 密 其 签名 (取型) ([]) 'cdecl'.
+            法
+            外.
+        """)
+        self.assertIn(NativeCSignature('f64', ()), value.signatures)
+        self.assertGreater(value._summary_hits, 0)
+
+    def test_unknown_escape_rechecks_cached_signature_constructor(self):
+        with self.assertRaisesRegex(RuError, '无法静态确定'):
+            plan(PREFIX + """
+                算 造 型: 得 密 其 签名 型 ([]) 'cdecl'. 法
+                F 取 算 造.
+                F (密 其 i32). F (密 其 i32). F (密 其 i32).
+                未知 F.
+            """)
+
+    def test_call_summary_eviction_is_bounded_and_semantics_preserving(self):
+        source = PREFIX + """
+            算 取型 型: 得 型. 法
+            取型 (密 其 i32). 取型 (密 其 i32).
+            取型 (密 其 f64). 取型 (密 其 f64).
+            取型 (密 其 u8). 取型 (密 其 u8).
+            S 取 密 其 签名 (取型 (密 其 i32)) ([]) 'cdecl'.
+            T 取 密 其 签名 (取型 (密 其 f64)) ([]) 'cdecl'.
+        """
+        expected = plan(source).signatures
+        with patch('rulang.native_c.MAX_CALL_SUMMARIES', 2):
+            value = plan(source)
+        self.assertLessEqual(len(value._call_summaries), 2)
+        self.assertEqual(value.signatures, expected)
+
+    def test_large_summary_footprints_are_not_cached_or_truncated(self):
+        source = PREFIX + """
+            S 取 密 其 签名 (密 其 i32) ([]) 'cdecl'.
+            算 叶 值: 得 值 + 1. 法
+            算 枝 值: 得 叶 值. 法
+            算 树 值: 得 枝 值. 法
+            树 7. 树 7. 树 7. 树 7.
+        """
+        expected = plan(source).signatures
+        with patch('rulang.native_c.MAX_SUMMARY_FUNCTIONS', 2):
+            value = plan(source)
+        self.assertEqual(value.signatures, expected)
+        self.assertGreater(value._summary_hits, 0)
+        self.assertTrue(all(len(summary[2]) <= 2 for summary in value._call_summaries.values()))
+        root = next(fn for fn in value._functions if fn.node.data.get('name') == '树')
+        branch = next(fn for fn in value._functions if fn.node.data.get('name') == '枝')
+        cached_nodes = {key[0][1] for key in value._call_summaries}
+        self.assertIn(id(branch.node), cached_nodes)
+        # The cached branch's leaf dependency must propagate into the parent;
+        # truncating it would incorrectly allow the three-function root entry.
+        self.assertNotIn(id(root.node), cached_nodes)
+
     def test_generated_platform_guard_excludes_arm64ec(self):
         source = plan(PREFIX).emit_c()
         self.assertIn('defined(_M_ARM64)', source)

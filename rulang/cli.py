@@ -153,7 +153,11 @@ def build(program, source_path, output, cc=None, emit_c=None, modules=None, targ
     # Compile beside the destination, then replace atomically only on success.
     with tempfile.TemporaryDirectory(prefix=".ru-build-", dir=output.parent) as temp:
         temp = Path(temp)
-        cfile, binary = temp / "program.c", temp / ("program.exe" if os.name == "nt" else "program")
+        # Use an explicit executable suffix even on a POSIX build host. MinGW
+        # otherwise appends .exe to -o program, leaving no file at that path.
+        # Native POSIX compilers accept this temporary name too; the published
+        # destination remains exactly the path selected by the caller.
+        cfile, binary = temp / "program.c", temp / "program.exe"
         cfile.write_text(generated, encoding="utf-8")
         invocation = command + ["-std=c99", "-O2", "-Wall", "-Wextra", "-Wno-unused-function", str(cfile), "-o", str(binary), "-lm"]
         try:

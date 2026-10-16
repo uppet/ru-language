@@ -29,6 +29,8 @@ RAW_FIELDS = {name: ('p' if name == '指针' else name if name in ('f32', 'f64')
 MAX_CALLBACKS = 1024
 MAX_SIGNATURES = 1024
 MAX_STATIC_ALTERNATIVES = 128
+MAX_CALL_SUMMARIES = 4096
+MAX_SUMMARY_FUNCTIONS = 256
 
 
 @dataclass(frozen=True)
@@ -75,7 +77,8 @@ class _Opaque:
 
 
 class _Env:
-    def __init__(self, parent=None, kind="module"):
+    def __init__(self, changed, parent=None, kind="module"):
+        self._changed = changed
         self.values = {}
         self.parent = parent
         self.kind = kind
@@ -86,6 +89,16 @@ class _Env:
         if self.parent is not None:
             return self.parent.get(name)
         return NATIVE if name == '__密' else UNKNOWN
+
+    def put(self, name, value, join=False):
+        if name in self.values:
+            old = self.values[name]
+            if join:
+                value = _merge(old, value)
+            if _same(old, value):
+                return
+        self.values[name] = value
+        self._changed()
 
     def bind(self, name, value):
         # Match env_bind: a function updates captured local cells, while a
@@ -100,8 +113,7 @@ class _Env:
                     target = outer
                     break
                 outer = outer.parent
-        target.values[name] = (_merge(target.values[name], value)
-                               if name in target.values else value)
+        target.put(name, value, join=True)
 
 
 class _Function:
@@ -160,6 +172,11 @@ class NativeCPlan:
         self.sources = getattr(modules, 'sources', {})
         self.signatures = []
         self.callback_signatures = set()
+        self._revision = 0
+        self._call_summaries = {}
+        self._summary_frames = []
+        self._summary_hits = 0
+        self._function_evaluations = 0
         self._module_values = {}
         self._loading = set()
         self._functions = []
@@ -219,6 +236,11 @@ class NativeCPlan:
         self.signatures = tuple(self.signatures)
         self.callback_signatures = frozenset(self.callback_signatures)
 
+    def _changed(self):
+        # Every abstract cell/container change invalidates all call summaries.
+        # No-op joins must not advance this stamp: stable bodies are reusable.
+        self._revision += 1
+
     def _error(self, node, message):
         path = self._path
         if path == self._native_path:
@@ -258,8 +280,9 @@ class NativeCPlan:
         key = (site, id(parent), kind)
         if site is not None and key in self._scope_cache:
             return self._scope_cache[key]
-        env = _Env(parent, kind)
+        env = _Env(self._changed, parent, kind)
         self._envs.append(env)
+        self._changed()
         if site is not None:
             self._scope_cache[key] = env
         return env
@@ -270,6 +293,7 @@ class NativeCPlan:
             value = _Function(node, env, self._path, declared)
             self._function_cache[key] = value
             self._functions.append(value)
+            self._changed()
         return self._function_cache[key]
 
     def _state(self):
@@ -295,7 +319,7 @@ class NativeCPlan:
     def _block(self, body, env):
         for node in body:
             if node.kind == 'function':
-                env.values[node.data['name']] = self._function(node, env)
+                env.put(node.data['name'], self._function(node, env))
         returns = []
         for node in body:
             d, kind = node.data, node.kind
@@ -304,7 +328,8 @@ class NativeCPlan:
             elif kind == 'import_all':
                 imported = self._expr(d['expr'], env)
                 if isinstance(imported, _Module):
-                    env.values.update(imported.env.values)
+                    for name, value in imported.env.values.items():
+                        env.put(name, value)
             elif kind == 'return':
                 returns.append(self._expr(d.get('expr'), env))
             elif kind == 'function':
@@ -380,10 +405,14 @@ class NativeCPlan:
             key = (id(node), id(env))
             if key not in self._array_cache:
                 self._array_cache[key] = _Array(items)
+                self._changed()
             else:
                 value = self._array_cache[key]
                 if value.items is not None:
-                    value.items = tuple(_merge(old, new) for old, new in zip(value.items, items))
+                    merged = tuple(_merge(old, new) for old, new in zip(value.items, items))
+                    if not all(_same(old, new) for old, new in zip(value.items, merged)):
+                        value.items = merged
+                        self._changed()
             return self._array_cache[key]
         if kind == 'function_literal':
             return self._function(node, env, False)
@@ -453,9 +482,13 @@ class NativeCPlan:
         key = (id(node), id(env))
         if key not in self._opaque_cache:
             self._opaque_cache[key] = _Opaque(values)
+            self._changed()
         else:
             value = self._opaque_cache[key]
-            value.values = tuple(_merge(old, new) for old, new in zip(value.values, values))
+            merged = tuple(_merge(old, new) for old, new in zip(value.values, values))
+            if not all(_same(old, new) for old, new in zip(value.values, merged)):
+                value.values = merged
+                self._changed()
         return self._opaque_cache[key]
 
     def _arguments(self, args, env):
@@ -499,7 +532,9 @@ class NativeCPlan:
             visited.add(id(item))
             if isinstance(item, _Array):
                 children = item.items or ()
-                item.items = None
+                if item.items is not None:
+                    item.items = None
+                    self._changed()
                 for child in children:
                     self._invalidate(child, node, visited)
             elif isinstance(item, _Opaque):
@@ -511,13 +546,19 @@ class NativeCPlan:
             elif isinstance(item, _Operation) and item.name in ('签名', '回调', '类型'):
                 self._unresolved(node, '传给未知调用的原生描述符构造器')
             elif isinstance(item, _Function):
-                self._deferred_functions[(id(item.node), id(item.env))] = item
+                self._defer(item)
                 self._invoke(item, [(None, UNKNOWN) for _ in item.node.data['params']], node)
                 outer = item.env
                 while outer is not None and outer.kind != 'module':
                     for child in tuple(outer.values.values()):
                         self._invalidate(child, node, visited)
                     outer = outer.parent
+
+    def _defer(self, function):
+        key = (id(function.node), id(function.env))
+        if key not in self._deferred_functions:
+            self._deferred_functions[key] = function
+            self._changed()
 
     def _context_key(self, value):
         if isinstance(value, _Choice):
@@ -643,6 +684,8 @@ class NativeCPlan:
         names = [name for name, _ in function.node.data['params']]
         actuals = self._bind(function.node.data.get('name', '<匿名>'), args, names, node)
         self._called.add(id(function.node))
+        if self._summary_frames:
+            self._summary_frames[-1].add(id(function.node))
         if id(function.node) in self._active:
             if self._pure_scalar_recursion(function):
                 # Even a proven scalar body must not erase argument provenance
@@ -651,20 +694,48 @@ class NativeCPlan:
                     self._invalidate(value, node)
                 return UNKNOWN
             self._error(node, 'C 原生后端无法证明此递归路径与原生描述符无关；仅支持无捕获、无容器或成员访问、仅有标量运算与直接自调用的递归函数；请将其他递归改为迭代')
-        self._active.add(id(function.node))
         context = tuple(self._context_key(actuals[name]) for name in names)
+        key = (self._context_key(function), context)
+        summary = self._call_summaries.get(key)
+        if (summary is not None and summary[0] == self._revision and
+                not self._active.intersection(summary[2])):
+            # The body was stable at precisely this state. Its effects and
+            # discovered signatures already persist in the shared analysis.
+            # Descendant calls must not hide a newly active recursive edge.
+            if self._summary_frames:
+                self._summary_frames[-1].update(summary[2])
+            self._summary_hits += 1
+            return summary[1]
+        self._active.add(id(function.node))
         env = self._environment(function.env, 'function', (id(function.node), context))
         for name, value in actuals.items():
             # Parameters always create local cells, even when a captured
             # binding has the same name. Calls share a conservative summary.
-            env.values[name] = _merge(env.values[name], value) if name in env.values else value
+            env.put(name, value, join=True)
         previous = self._path
         self._call_sites.append((previous, node))
         self._path = function.path
+        revision = self._revision
+        dependencies = {id(function.node)}
+        self._summary_frames.append(dependencies)
+        self._function_evaluations += 1
         try:
             values = self._block(function.node.data['body'], env)
-            return _merge(*values) if values else UNKNOWN
+            result = _merge(*values) if values else UNKNOWN
+            # A body may read a capture, then widen it. Its return is not a
+            # summary of the resulting state until a later stable evaluation.
+            # Bound each retained recursion footprint as well as entry count.
+            # A larger footprint may still be analyzed, but never truncated
+            # into an unsound reusable summary.
+            if self._revision == revision and len(dependencies) <= MAX_SUMMARY_FUNCTIONS:
+                if key not in self._call_summaries and len(self._call_summaries) >= MAX_CALL_SUMMARIES:
+                    del self._call_summaries[next(iter(self._call_summaries))]
+                self._call_summaries[key] = (revision, result, frozenset(dependencies))
+            return result
         finally:
+            self._summary_frames.pop()
+            if self._summary_frames:
+                self._summary_frames[-1].update(dependencies)
             self._path = previous
             self._call_sites.pop()
             self._active.remove(id(function.node))
@@ -704,7 +775,10 @@ class NativeCPlan:
                         if candidate_path != self._native_path:
                             origin_path, origin = candidate_path, candidate
                             break
-                self._signature_inputs[(id(params), result.name, id(node))] = (params, result.name, origin_path, origin)
+                input_key = (id(params), result.name, id(node))
+                if input_key not in self._signature_inputs:
+                    self._changed()
+                self._signature_inputs[input_key] = (params, result.name, origin_path, origin)
                 if len(params.items) > 64:
                     self._error(node, '签名参数须为不超过 64 项的阵')
                 possibilities = [_alternatives(item) for item in params.items]
@@ -723,18 +797,21 @@ class NativeCPlan:
                         if len(self.signatures) >= MAX_SIGNATURES:
                             self._error(node, 'C 原生签名数量超过 1024 上限')
                         self.signatures.append(signature)
+                        self._changed()
                     results.append(signature)
             return _merge(*results)
         if name == '回调':
             values = self._bind(name, args, ['签名', '算', '失败值'], node)
             signatures = self._require_signatures(values['签名'], node, '原生回调签名')
-            self.callback_signatures.update(signatures)
+            if not self.callback_signatures.issuperset(signatures):
+                self.callback_signatures.update(signatures)
+                self._changed()
             # Callback bodies can themselves contain native signature sites.
             callback = values['算']
             for signature in signatures:
                 for fn in _alternatives(callback):
                     if isinstance(fn, _Function):
-                        self._deferred_functions[(id(fn.node), id(fn.env))] = fn
+                        self._defer(fn)
                         self._invoke(fn, [(None, UNKNOWN) for _ in signature.params], node)
             return UNKNOWN
         return UNKNOWN
