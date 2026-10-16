@@ -131,9 +131,10 @@ class NativeCAnalysisTests(unittest.TestCase):
                 plan(PREFIX + source)
 
     def test_error_location_points_to_user_call_not_stdlib_forwarder(self):
+        source_path = str(Path('/tmp/user_abi.ru').resolve())
         with self.assertRaises(RuError) as caught:
-            plan(PREFIX + "\nS 取 密 其 签名 (密 其 i32) (读) 'cdecl'.", '/tmp/user_abi.ru')
-        self.assertEqual(caught.exception.source_name, '/tmp/user_abi.ru')
+            plan(PREFIX + "\nS 取 密 其 签名 (密 其 i32) (读) 'cdecl'.", source_path)
+        self.assertEqual(caught.exception.source_name, source_path)
         self.assertEqual(caught.exception.line, 2)
 
     def test_dynamic_selection_from_finite_type_array(self):

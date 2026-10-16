@@ -1,4 +1,4 @@
-"""Keep the stable entry and target distinction tied to installed packages."""
+"""Keep stable release claims distinct from the current development packages."""
 from pathlib import Path
 import re
 import unittest
@@ -13,7 +13,22 @@ ROOT = Path(__file__).resolve().parents[1]
 class StableEntryDocsTests(unittest.TestCase):
     def test_current_entry_versions_match_packages(self):
         entry = (ROOT / 'docs/stable-entry.md').read_text(encoding='utf-8')
-        self.assertIn(f'如 {rulang.__version__}、语言规范 {rulang.__version__}、如书 {rushu.__version__}', entry)
+        changelog = (ROOT / 'CHANGELOG.md').read_text(encoding='utf-8')
+        release_pattern = r'(\d+\.\d+\.\d+)／如书(?:保持 )?(\d+\.\d+\.\d+)'
+        stable = re.findall(r'^# ' + release_pattern + r'（main 稳定版）$',
+                            changelog, re.MULTILINE)
+        self.assertEqual(len(stable), 1, 'exactly one release must identify current main')
+        stable_ru, stable_rushu = stable[0]
+        self.assertIn(f'如 {stable_ru}、语言规范 {stable_ru}、如书 {stable_rushu}', entry)
+        # The newest entry follows this checkout; an older labeled main release
+        # must not force wip package versions back or silently age out its docs.
+        current = re.match(r'^# ' + release_pattern + r'（', changelog)
+        self.assertIsNotNone(current, 'the changelog starts with the current toolchain')
+        self.assertEqual(current.groups(), (rulang.__version__, rushu.__version__))
+        self.assertLessEqual(tuple(map(int, stable_ru.split('.'))),
+                             tuple(map(int, rulang.__version__.split('.'))))
+        if stable_ru != rulang.__version__:
+            self.assertIn(f'`wip` 正在开发如／规范 {rulang.__version__}', entry)
         readme = (ROOT / 'README.md').read_text(encoding='utf-8')
         self.assertIn('[安装、版本与更新](docs/stable-entry.md)', readme)
         notebook = (ROOT / 'rushu/README.md').read_text(encoding='utf-8')
