@@ -5,7 +5,7 @@
 先按 [稳定版安装与更新](stable-entry.md) 取得 `main` 上的稳定工具链（版本组合见入口页），再选一个入口，按顺序练习。需要本仓库和 Python 3.10+；本页不用生成服务、账号或 API key。离线前须已取得仓库和 Python。
 
 - **如书**：仓库根目录运行 `python3 -m rushu`，打开终端完整地址（含启动令牌）；把每题放入普通代码格，按 Shift + Enter。不要添加「如是我言」生成标记。
-- **VS Code**：打开仓库文件夹，保存 UTF-8 的 `first.ru`，在集成终端运行 `python3 ru run first.ru`。普通文本编辑即可；也可使用独立的如言扩展 0.7.0，但仍需配置本机如工具链。
+- **VS Code**：打开仓库文件夹，保存 UTF-8 的 `first.ru`，在集成终端运行 `python3 ru run first.ru`。普通文本编辑即可；也可使用独立的如言扩展 0.8.4，但仍需配置本机如工具链。
 - **CLI**：把题目存为 `first.ru` 后运行 `python3 ru run first.ru`；也可用 `python3 ru repl`。Windows 使用 `py -3` 替代 `python3`。
 
 如书默认 Python 格共享本书会话。勾选「JS 加速」的 browser-js 格每次独立运行，不继承前格变量；本页每题本身完整，可放在一格中运行。CLI `--target js` 是 Node.js，不能用来启动如观画布。

@@ -2,7 +2,7 @@
 
 先按[安装与更新](stable-entry.md)准备工具链。以下命令在仓库根目录执行；Windows 可把 `python3` 换成 `py -3`。如书画布的入口见[如书说明](../rushu/README.md)，它与下面的 C／Node.js 程序目标不同。
 
-本页包含当前开发树的命令。`--allow-native` 和 `check --target python` 自如 0.20.0 提供，尚未发布到 `main`；稳定版使用者不要照用这两项。具体组合见[版本说明](stable-entry.md)。
+本页对应 `main` 上的如 0.20.0。`--allow-native` 和 `check --target python` 已随本版提供；原生执行仍仅限 Windows x64 本地 Python，C 原生库后端尚未提供。具体组合见[版本说明](stable-entry.md)。
 
 ## 常用命令
 

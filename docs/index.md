@@ -4,7 +4,7 @@
 
 **[首页的小程序](../README.md) → [打开如书](stable-entry.md#取得同一套工具链) → [入门小路](first-steps.md) → 选一个小作品。**
 
-本目录随所在分支更新。高级指南中的新功能可能只在开发版可用，先核对[版本与执行目标](stable-entry.md)，再使用标有新版本的接口。
+本目录随所在分支更新，当前 `main` 对应如 0.20.0。使用接口前先核对[版本与执行目标](stable-entry.md)；`wip` 用于后续开发，可能与稳定版不同。
 
 ## 学习与小作品
 
@@ -33,13 +33,13 @@
 - [浏览器 JS 执行](browser-js.md)：与默认 Python 会话的区别和保护边界
 - [如是我言](generation.md)：可选生成、凭据配置、审阅与输出保护
 - [生成诊断](generation-diagnostics.md) · [离线提示词导出](prompt-export.md)
-- [原生库与随附如见](native-library.md)：开发版功能，先读权限、目标与生命周期边界
+- [原生库与随附如见](native-library.md)：当前限 Windows x64 本地 Python，先读权限与生命周期边界
 
 ## 更新旧程序
 
 先备份自己的源码和书本，再按需要阅读：
 
-- [全量导入连写迁移](import-all-migration.md)：开发版的 `尽取 外言`
+- [全量导入连写迁移](import-all-migration.md)：如 0.20.0 的 `尽取 外言`
 - [标准模块导入名](standard-module-imports-migration.md)：`如:观` 与 `如:竞`
 - [事实与典](maps-facts-migration.md)：真值、目与相、成员调用
 - [阵与典遍历](array-sort-map.md)：`逐位` 与 `逐目`
@@ -50,8 +50,8 @@
 - [开发、构建与同步清单](development.md)
 - [已知问题与设计审查](language-review-tracker.md)
 - [实际验证记录](../VALIDATION.md)：历史实测与平台范围
-- [稳定版 0.18.1 验证](stabilization-generation-validation.md)
-- 开发版：[如观 0.19.8 验证](ruguan-0.19.8-validation.md) · [原生库 0.20.0 验证](native-0.20.0-validation.md)
+- [0.18.1 稳定化验证](stabilization-generation-validation.md)（历史记录）
+- 分项记录：[如观 0.19.8 验证](ruguan-0.19.8-validation.md) · [原生库 0.20.0 验证](native-0.20.0-validation.md)
 - [第三方算法与许可说明](third-party-notices.md)
 
 [返回首页](../README.md)
