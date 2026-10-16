@@ -31,6 +31,7 @@ MAX_SIGNATURES = 1024
 MAX_STATIC_ALTERNATIVES = 128
 MAX_CALL_SUMMARIES = 4096
 MAX_SUMMARY_FUNCTIONS = 256
+MAX_SUMMARY_DEPENDENCIES = 256
 
 
 @dataclass(frozen=True)
@@ -68,29 +69,53 @@ LIBRARY = object()
 class _Array:
     def __init__(self, items):
         self.items = tuple(items)
+        self._version = 0
 
 
 class _Opaque:
     """Reachable values in an object whose member semantics are not modeled."""
     def __init__(self, values):
         self.values = tuple(values)
+        self._version = 0
 
 
 class _Env:
-    def __init__(self, changed, parent=None, kind="module"):
+    def __init__(self, changed, observed, parent=None, kind="module", fixed=()):
         self._changed = changed
+        self._observed = observed
+        self._version = 0
         self.values = {}
+        self.local_origins = {}
         self.parent = parent
         self.kind = kind
+        self.fixed_locals = frozenset(fixed)
 
     def get(self, name):
+        # A missing name is a dependency too: a later local binding can shadow
+        # the parent value that this lookup currently returns.
+        self._observed(self)
         if name in self.values:
-            return self.values[name]
+            value = self.values[name]
+            if self.kind != 'module' and name not in self.fixed_locals:
+                # Abstract scopes are reused; runtime function/block scopes are
+                # fresh. Before a local's bind runs on another entry, this read
+                # may still resolve to an ancestor. Preserve that live alias,
+                # including reads first discovered through a later callable.
+                outer = self.parent
+                while outer is not None:
+                    self._observed(outer)
+                    if name in outer.values:
+                        return _merge(value, outer.get(name))
+                    outer = outer.parent
+                if name == '__密':
+                    return _merge(value, NATIVE)
+            return value
         if self.parent is not None:
             return self.parent.get(name)
         return NATIVE if name == '__密' else UNKNOWN
 
     def put(self, name, value, join=False):
+        self._observed(self)
         if name in self.values:
             old = self.values[name]
             if join:
@@ -98,21 +123,28 @@ class _Env:
             if _same(old, value):
                 return
         self.values[name] = value
-        self._changed()
+        self._changed(self)
 
-    def bind(self, name, value):
+    def bind(self, name, value, node=None):
         # Match env_bind: a function updates captured local cells, while a
         # block/rescue shadows and module bindings are never rebound by a
         # function. Join old/new possibilities conservatively; source-order
         # overwrites alone are insufficient for loops and reentrant closures.
         target = self
+        self._observed(self)
         if name not in self.values and self.kind == 'function':
             outer = self.parent
             while outer is not None and outer.kind != 'module':
+                self._observed(outer)
                 if name in outer.values:
                     target = outer
                     break
                 outer = outer.parent
+            if target is self:
+                # A future invocation has a fresh runtime scope. Retaining this
+                # abstract local is safe only while it cannot become a capture.
+                # This metadata accompanies the versioned insertion below.
+                self.local_origins[name] = node
         target.put(name, value, join=True)
 
 
@@ -125,6 +157,37 @@ class _Function:
 class _Module:
     def __init__(self, env):
         self.env = env
+
+
+class _SummaryFrame:
+    """Bounded evidence for one body; incomplete evidence is never reusable."""
+    def __init__(self, function):
+        self.functions = {id(function.node)}
+        self.dependencies = {}
+        self.complete = True
+
+    def observe(self, owner, version=None):
+        if not self.complete or owner in self.dependencies:
+            return
+        if len(self.dependencies) >= MAX_SUMMARY_DEPENDENCIES:
+            self.complete = False
+            return
+        # Retain the first read, even if a later write changes this owner.
+        self.dependencies[owner] = owner._version if version is None else version
+
+    def add_function(self, function):
+        if function not in self.functions:
+            if len(self.functions) >= MAX_SUMMARY_FUNCTIONS:
+                self.complete = False
+            else:
+                self.functions.add(function)
+
+    def include(self, dependencies, functions, complete=True):
+        self.complete = self.complete and complete
+        for owner, version in dependencies:
+            self.observe(owner, version)
+        for function in functions:
+            self.add_function(function)
 
 
 def _alternatives(value):
@@ -236,10 +299,54 @@ class NativeCPlan:
         self.signatures = tuple(self.signatures)
         self.callback_signatures = frozenset(self.callback_signatures)
 
-    def _changed(self):
-        # Every abstract cell/container change invalidates all call summaries.
-        # No-op joins must not advance this stamp: stable bodies are reusable.
+    def _changed(self, owner=None):
+        # The global stamp only proves that a completed body had no effects.
+        # Reuse depends on the owners it observed, not unrelated local writes.
+        if owner is not None:
+            owner._version += 1
         self._revision += 1
+
+    def _observe(self, owner):
+        if self._summary_frames:
+            self._summary_frames[-1].observe(owner)
+
+    def _observe_value(self, value):
+        """Keep live alias owners, without freezing a closure's whole graph.
+
+        Function/module values retain their live environments. Their eventual
+        reads and escapes record the cells they actually inspect; merely
+        returning a function must not depend on every unrelated module value.
+        """
+        if not self._summary_frames:
+            return
+        frame = self._summary_frames[-1]
+        pending, visited = [value], set()
+        while pending and frame.complete:
+            item = pending.pop()
+            if isinstance(item, _Choice):
+                pending.extend(item.values)
+                continue
+            if not isinstance(item, (_Array, _Opaque, _Function, _Module, _Env)):
+                continue
+            if item in visited:
+                continue
+            if len(visited) >= MAX_SUMMARY_DEPENDENCIES:
+                frame.complete = False
+                break
+            visited.add(item)
+            if isinstance(item, _Function):
+                pending.append(item.env)
+            elif isinstance(item, _Module):
+                pending.append(item.env)
+            else:
+                self._observe(item)
+                if isinstance(item, _Env):
+                    if item.parent is not None:
+                        pending.append(item.parent)
+                elif isinstance(item, _Array):
+                    pending.extend(item.items or ())
+                else:
+                    pending.extend(item.values)
 
     def _error(self, node, message):
         path = self._path
@@ -276,11 +383,12 @@ class NativeCPlan:
             self._loading.remove(path)
         return module
 
-    def _environment(self, parent=None, kind='module', site=None):
+    def _environment(self, parent=None, kind='module', site=None, body=(), fixed=()):
         key = (site, id(parent), kind)
         if site is not None and key in self._scope_cache:
             return self._scope_cache[key]
-        env = _Env(self._changed, parent, kind)
+        fixed = set(fixed) | {node.data['name'] for node in body if node.kind == 'function'}
+        env = _Env(self._changed, self._observe, parent, kind, fixed)
         self._envs.append(env)
         self._changed()
         if site is not None:
@@ -324,10 +432,11 @@ class NativeCPlan:
         for node in body:
             d, kind = node.data, node.kind
             if kind == 'bind':
-                env.bind(d['name'], self._expr(d['expr'], env))
+                env.bind(d['name'], self._expr(d['expr'], env), node)
             elif kind == 'import_all':
                 imported = self._expr(d['expr'], env)
                 if isinstance(imported, _Module):
+                    self._observe(imported.env)
                     for name, value in imported.env.values.items():
                         env.put(name, value)
             elif kind == 'return':
@@ -345,7 +454,8 @@ class NativeCPlan:
                 returns.extend(self._block(d['no'], env))
             elif kind == 'try':
                 returns.extend(self._block(d['body'], env))
-                rescue = self._environment(env, 'block', (id(node), 'rescue'))
+                rescue = self._environment(env, 'block', (id(node), 'rescue'),
+                                           d['rescue'], (d['reason'],))
                 rescue.bind(d['reason'], UNKNOWN)
                 returns.extend(self._block(d['rescue'], rescue))
             elif kind == 'loop':
@@ -358,7 +468,7 @@ class NativeCPlan:
                 else:
                     self._unresolved(node, '循环携带的原生描述符（静态数据流未收敛）')
             elif kind == 'scope':
-                scope = self._environment(env, 'block', id(node))
+                scope = self._environment(env, 'block', id(node), d['body'])
                 returns.extend(self._block(d['body'], scope))
             elif kind == 'assign':
                 self._expr(d['expr'], env)
@@ -397,9 +507,7 @@ class NativeCPlan:
             value = env.get(d['name'])
             if kind == 'call':
                 return self._invoke(value, self._arguments(d['args'], env), node)
-            if not reference and isinstance(value, _Function) and value.declared:
-                return self._invoke(value, [], node)
-            return value
+            return value if reference else self._implicit(value, node)
         if kind == 'array':
             items = tuple(self._expr(item, env) for item in d['items'])
             key = (id(node), id(env))
@@ -408,11 +516,13 @@ class NativeCPlan:
                 self._changed()
             else:
                 value = self._array_cache[key]
+                self._observe(value)
                 if value.items is not None:
                     merged = tuple(_merge(old, new) for old, new in zip(value.items, items))
                     if not all(_same(old, new) for old, new in zip(value.items, merged)):
                         value.items = merged
-                        self._changed()
+                        self._changed(value)
+            self._observe(self._array_cache[key])
             return self._array_cache[key]
         if kind == 'function_literal':
             return self._function(node, env, False)
@@ -465,6 +575,8 @@ class NativeCPlan:
     def _index(self, receiver, index):
         values = []
         for item in _alternatives(receiver):
+            if isinstance(item, _Array):
+                self._observe(item)
             for position in _alternatives(index):
                 if isinstance(item, _Array) and item.items is not None:
                     if isinstance(position, (int, float)):
@@ -485,10 +597,12 @@ class NativeCPlan:
             self._changed()
         else:
             value = self._opaque_cache[key]
+            self._observe(value)
             merged = tuple(_merge(old, new) for old, new in zip(value.values, values))
             if not all(_same(old, new) for old, new in zip(value.values, merged)):
                 value.values = merged
-                self._changed()
+                self._changed(value)
+        self._observe(self._opaque_cache[key])
         return self._opaque_cache[key]
 
     def _arguments(self, args, env):
@@ -497,14 +611,24 @@ class NativeCPlan:
     def _bind(self, name, args, names, node):
         return bind_arguments(name, args, names, lambda text: self._error(node, text))
 
+    def _implicit(self, value, node):
+        # An ancestor/local union may contain declared functions alongside
+        # ordinary values. Each declaration still has its zero-argument call
+        # semantics; references and returned callable aliases remain values.
+        if isinstance(value, _Choice):
+            return _merge(*(self._implicit(item, node) for item in value.values))
+        if isinstance(value, _Function) and value.declared:
+            return self._invoke(value, [], node)
+        return value
+
     def _member(self, receiver, name, args, node, reference):
         if isinstance(receiver, _Module):
             value = receiver.env.get(name)
             if reference:
                 return value
-            if args or (isinstance(value, _Function) and value.declared):
+            if args:
                 return self._invoke(value, args, node)
-            return value
+            return self._implicit(value, node)
         if receiver is NATIVE or receiver is LIBRARY:
             operation = _Operation(name, receiver)
             return operation if reference else self._invoke(operation, args, node)
@@ -531,16 +655,19 @@ class NativeCPlan:
                 continue
             visited.add(id(item))
             if isinstance(item, _Array):
+                self._observe(item)
                 children = item.items or ()
                 if item.items is not None:
                     item.items = None
-                    self._changed()
+                    self._changed(item)
                 for child in children:
                     self._invalidate(child, node, visited)
             elif isinstance(item, _Opaque):
+                self._observe(item)
                 for child in item.values:
                     self._invalidate(child, node, visited)
             elif isinstance(item, _Module):
+                self._observe(item.env)
                 for child in tuple(item.env.values.values()):
                     self._invalidate(child, node, visited)
             elif isinstance(item, _Operation) and item.name in ('签名', '回调', '类型'):
@@ -550,6 +677,7 @@ class NativeCPlan:
                 self._invoke(item, [(None, UNKNOWN) for _ in item.node.data['params']], node)
                 outer = item.env
                 while outer is not None and outer.kind != 'module':
+                    self._observe(outer)
                     for child in tuple(outer.values.values()):
                         self._invalidate(child, node, visited)
                     outer = outer.parent
@@ -561,6 +689,7 @@ class NativeCPlan:
             self._changed()
 
     def _context_key(self, value):
+        self._observe_value(value)
         if isinstance(value, _Choice):
             return ('choice', tuple(self._context_key(v) for v in value.values))
         if isinstance(value, _Function):
@@ -568,6 +697,32 @@ class NativeCPlan:
         if isinstance(value, (_Array, _Opaque, _Module)):
             return (type(value).__name__, id(value))
         return value
+
+    def _check_capture_targets(self, function, context):
+        key = ((id(function.node), context), id(function.env), 'function')
+        env = self._scope_cache.get(key)
+        if env is None:
+            return
+        self._observe(env)
+        if not env.local_origins:
+            return
+        # Parameters and direct declarations establish local cells on every
+        # entry. Other source-created function locals come from bind: import-all
+        # is top-level-only, and nested declaration blocks have their own envs.
+        outer = env.parent
+        while outer is not None and outer.kind != 'module':
+            self._observe(outer)
+            for name, origin in env.local_origins.items():
+                if name not in env.fixed_locals and name in outer.values:
+                    previous = self._path
+                    self._path = function.path
+                    try:
+                        self._error(origin or function.node,
+                                    f'C 原生后端无法静态确定随调用改变的捕获绑定「{name}」；'
+                                    '请在首次调用前初始化外层同名变量，或为局部变量使用不同名字')
+                    finally:
+                        self._path = previous
+            outer = outer.parent
 
     def _pure_scalar_recursion(self, function):
         """Prove a narrow self-recursive body cannot affect native ABI flow.
@@ -598,6 +753,7 @@ class NativeCPlan:
         # An apparent local bind could target an enclosing captured cell.
         outer = function.env
         while outer is not None and outer.kind != 'module':
+            self._observe(outer)
             if (local_names - parameters) & outer.values.keys():
                 return False
             outer = outer.parent
@@ -685,7 +841,7 @@ class NativeCPlan:
         actuals = self._bind(function.node.data.get('name', '<匿名>'), args, names, node)
         self._called.add(id(function.node))
         if self._summary_frames:
-            self._summary_frames[-1].add(id(function.node))
+            self._summary_frames[-1].add_function(id(function.node))
         if id(function.node) in self._active:
             if self._pure_scalar_recursion(function):
                 # Even a proven scalar body must not erase argument provenance
@@ -695,19 +851,25 @@ class NativeCPlan:
                 return UNKNOWN
             self._error(node, 'C 原生后端无法证明此递归路径与原生描述符无关；仅支持无捕获、无容器或成员访问、仅有标量运算与直接自调用的递归函数；请将其他递归改为迭代')
         context = tuple(self._context_key(actuals[name]) for name in names)
+        # Reusing a historical local after a parent introduces the same name
+        # could hide a newly captured write or a read before that write. Reject
+        # this unsupported scope transition before any cached body can skip it.
+        self._check_capture_targets(function, context)
         key = (self._context_key(function), context)
         summary = self._call_summaries.get(key)
-        if (summary is not None and summary[0] == self._revision and
+        if (summary is not None and
+                all(owner._version == version for owner, version in summary[0]) and
                 not self._active.intersection(summary[2])):
-            # The body was stable at precisely this state. Its effects and
-            # discovered signatures already persist in the shared analysis.
+            # The body's observed state is unchanged. Its effects and discovered
+            # signatures already persist in the shared analysis.
             # Descendant calls must not hide a newly active recursive edge.
             if self._summary_frames:
-                self._summary_frames[-1].update(summary[2])
+                self._summary_frames[-1].include(summary[0], summary[2])
             self._summary_hits += 1
             return summary[1]
         self._active.add(id(function.node))
-        env = self._environment(function.env, 'function', (id(function.node), context))
+        env = self._environment(function.env, 'function', (id(function.node), context),
+                                function.node.data['body'], names)
         for name, value in actuals.items():
             # Parameters always create local cells, even when a captured
             # binding has the same name. Calls share a conservative summary.
@@ -716,26 +878,35 @@ class NativeCPlan:
         self._call_sites.append((previous, node))
         self._path = function.path
         revision = self._revision
-        dependencies = {id(function.node)}
-        self._summary_frames.append(dependencies)
+        frame = _SummaryFrame(function)
+        self._summary_frames.append(frame)
+        # The cached scope can also be reached by an escaped closure. Observe
+        # it even if this particular body never reads any of its own bindings.
+        self._observe(env)
+        self._observe_value(function)
+        for value in actuals.values():
+            self._observe_value(value)
         self._function_evaluations += 1
         try:
             values = self._block(function.node.data['body'], env)
             result = _merge(*values) if values else UNKNOWN
+            self._observe_value(result)
             # A body may read a capture, then widen it. Its return is not a
             # summary of the resulting state until a later stable evaluation.
             # Bound each retained recursion footprint as well as entry count.
             # A larger footprint may still be analyzed, but never truncated
             # into an unsound reusable summary.
-            if self._revision == revision and len(dependencies) <= MAX_SUMMARY_FUNCTIONS:
+            if self._revision == revision and frame.complete:
                 if key not in self._call_summaries and len(self._call_summaries) >= MAX_CALL_SUMMARIES:
                     del self._call_summaries[next(iter(self._call_summaries))]
-                self._call_summaries[key] = (revision, result, frozenset(dependencies))
+                self._call_summaries[key] = (tuple(frame.dependencies.items()), result,
+                                             frozenset(frame.functions))
             return result
         finally:
             self._summary_frames.pop()
             if self._summary_frames:
-                self._summary_frames[-1].update(dependencies)
+                self._summary_frames[-1].include(frame.dependencies.items(), frame.functions,
+                                                frame.complete)
             self._path = previous
             self._call_sites.pop()
             self._active.remove(id(function.node))
@@ -767,6 +938,8 @@ class NativeCPlan:
             result_types = _alternatives(values['返回'])
             results = []
             for result, params in product(result_types, _alternatives(values['参数'])):
+                if isinstance(params, _Array):
+                    self._observe(params)
                 if not isinstance(result, _Type) or not isinstance(params, _Array) or params.items is None:
                     self._unresolved(node, '原生签名的返回类型或参数阵')
                 origin_path, origin = self._path, node

@@ -487,6 +487,420 @@ class NativeCAnalysisTests(unittest.TestCase):
             NativeCSignature('i32', ()), NativeCSignature('f64', ())})
         self.assertGreater(value._summary_hits, 0)
 
+    def test_unrelated_local_writes_do_not_restart_shared_helper_graph(self):
+        # Each caller creates its own local cells/arrays, but all callers use
+        # the same helper contexts. A global invalidation stamp repeats the
+        # whole graph after every unrelated write and exceeds the normal cap.
+        source = PREFIX + """
+            S 取 密 其 签名 (密 其 i32) ([密 其 f64]) 'cdecl'.
+            算 层0 值: 得 值 + 1. 法
+        """
+        for level in range(1, 40):
+            source += f'算 层{level} 值: ' + f'层{level - 1} 值. ' * 7
+            source += f'得 层{level - 1} 值. 法\n'
+        for caller in range(100):
+            source += f'算 调用{caller}: '
+            for branch in range(4):
+                source += f'局{branch} 取 [{branch}]. 层39 7. '
+            source += '得 0. 法\n'
+        source += '算 入口: ' + ' '.join(f'调用{i}.' for i in range(100)) + ' 得 0. 法 入口.'
+        first, second = plan(source), plan(source)
+        self.assertEqual(first.signatures, (NativeCSignature('i32', ('f64',)),))
+        self.assertEqual(first.signatures, second.signatures)
+        self.assertEqual(first._steps, second._steps)
+        self.assertEqual(first._function_evaluations, second._function_evaluations)
+        self.assertLess(first._steps, 30000)
+        self.assertLess(first._function_evaluations, 1000)
+
+    def test_dependency_overflow_propagates_through_cached_children(self):
+        source = PREFIX + """
+            S 取 密 其 签名 (密 其 i32) ([]) 'cdecl'.
+            算 叶 值: 得 值 + 1. 法
+            算 枝 值: 得 叶 值. 法
+            算 树 值: 得 枝 值. 法
+            树 7. 树 7. 树 7. 树 7.
+        """
+        expected = plan(source).signatures
+        with patch('rulang.native_c.MAX_SUMMARY_DEPENDENCIES', 3):
+            value = plan(source)
+        self.assertEqual(value.signatures, expected)
+        self.assertTrue(all(len(summary[0]) <= 3 for summary in value._call_summaries.values()))
+        branch = next(fn for fn in value._functions if fn.node.data.get('name') == '枝')
+        root = next(fn for fn in value._functions if fn.node.data.get('name') == '树')
+        cached_nodes = {key[0][1] for key in value._call_summaries}
+        self.assertIn(id(branch.node), cached_nodes)
+        # Own scope + module + branch scope + leaf scope cannot fit. The leaf
+        # dependency must propagate even when the branch itself was a hit.
+        self.assertNotIn(id(root.node), cached_nodes)
+
+    def test_cached_transitive_footprint_cannot_bypass_active_recursion(self):
+        value = plan(PREFIX + """
+            算 叶: 得 密 其 i32. 法
+            算 枝: 得 叶. 法
+            算 树: 得 枝. 法
+            树. 树. 树. 树.
+        """)
+        leaf = next(fn for fn in value._functions if fn.node.data.get('name') == '叶')
+        root = next(fn for fn in value._functions if fn.node.data.get('name') == '树')
+        self.assertIn(id(root.node), {key[0][1] for key in value._call_summaries})
+        value._active.add(id(leaf.node))
+        try:
+            with self.assertRaisesRegex(RuError, '无法证明此递归路径'):
+                value._invoke(root, [], root.node)
+        finally:
+            value._active.remove(id(leaf.node))
+
+    def test_dependency_cache_matches_analysis_without_summary_hits(self):
+        class WithoutSummaryHits(NativeCPlan):
+            def _invoke(self, function, args, node):
+                self._call_summaries.clear()
+                return super()._invoke(function, args, node)
+
+        cases = {
+            'missing_parent_binding': ("""
+                算 外:
+                    算 取型: 得 型. 法
+                    取型. 取型. 取型.
+                    型 取 密 其 i32.
+                    得 密 其 签名 (取型) ([]) 'cdecl'.
+                法 外.
+            """, {NativeCSignature('i32', ())}),
+            'nested_cached_capture': ("""
+                算 外:
+                    型 取 密 其 i32.
+                    算 叶: 得 型. 法
+                    算 枝: 得 叶. 法
+                    枝. 枝. 枝.
+                    型 取 密 其 f64.
+                    得 密 其 签名 (枝) ([]) 'cdecl'.
+                法 外.
+            """, {NativeCSignature('i32', ()), NativeCSignature('f64', ())}),
+            'nested_cached_array': ("""
+                参数们 取 [密 其 i32].
+                算 叶: 得 参数们[0]. 法
+                算 枝: 得 叶. 法
+                枝. 枝. 枝. 参数们 其 增 (密 其 f64).
+                S 取 密 其 签名 (枝) ([]) 'cdecl'.
+            """, None),
+            'returned_closure_array': ("""
+                算 造:
+                    参数们 取 [密 其 i32].
+                    算 首: 得 参数们[0]. 法
+                    得 [算 首, 参数们].
+                法
+                包 取 造. F 取 包[0]. 参数们 取 包[1].
+                算 用: 得 F(). 法
+                用. 用. 用. 参数们 其 增 (密 其 f64).
+                S 取 密 其 签名 (用) ([]) 'cdecl'.
+            """, None),
+            'opaque_alias_gains_child': ("""
+                算 外:
+                    甲 取 [密 其 i32]. 乙 取 [密 其 f64]. 当前 取 甲.
+                    算 包: 得 当前 对 0. 法
+                    算 触碰 值: 未知 值. 得 空. 法
+                    袋 取 包. 触碰 袋. 触碰 袋. 触碰 袋.
+                    当前 取 乙. 包. 触碰 袋.
+                    得 密 其 签名 (密 其 i32) 乙 'cdecl'.
+                法 外.
+            """, None),
+            'late_callback_capture': ("""
+                算 外:
+                    型 取 密 其 i32.
+                    算 回 值: S 取 密 其 签名 型 ([]) 'cdecl'. 得 0. 法
+                    回 0. 回 0. 回 0.
+                    签 取 密 其 签名 (密 其 i32) ([密 其 i32]) 'cdecl'.
+                    回调 取 密 其 回调 签 (算 回) 0.
+                    型 取 密 其 f64. 得 回调.
+                法 外.
+            """, {NativeCSignature('i32', ()), NativeCSignature('f64', ()),
+                  NativeCSignature('i32', ('i32',))}),
+            'read_before_write': ("""
+                算 外:
+                    型 取 密 其 i32.
+                    算 读后改: 旧 取 型. 型 取 密 其 f64. 得 旧. 法
+                    读后改. 得 密 其 签名 (读后改) ([]) 'cdecl'.
+                法 外.
+            """, {NativeCSignature('i32', ()), NativeCSignature('f64', ())}),
+            'unknown_callable_escape': ("""
+                算 外:
+                    型 取 密 其 i32.
+                    算 取型: 得 型. 法
+                    算 改型: 型 取 密 其 f64. 得 空. 法
+                    F 取 算 改型. 取型. 取型. 取型. 未知 F.
+                    得 密 其 签名 (取型) ([]) 'cdecl'.
+                法 外.
+            """, {NativeCSignature('i32', ()), NativeCSignature('f64', ())}),
+        }
+        for name, (source, expected) in cases.items():
+            with self.subTest(case=name):
+                outcomes = []
+                for plan_type in (NativeCPlan, WithoutSummaryHits):
+                    graph = load_module_graph('/tmp/native_dependency_' + name + '.ru', parse(PREFIX + source))
+                    try:
+                        value = plan_type(graph)
+                    except RuError as error:
+                        self.assertIsNone(expected, error.message)
+                        self.assertEqual(error.category, '原生编译错误')
+                        self.assertIn('无法静态确定', error.message)
+                        outcomes.append((error.category, error.message))
+                    else:
+                        self.assertIsNotNone(expected)
+                        self.assertEqual(set(value.signatures), expected)
+                        outcomes.append((value.signatures, value.callback_signatures))
+                self.assertEqual(outcomes[0], outcomes[1])
+
+    def test_reused_local_cannot_hide_a_later_capture_target(self):
+        cases = {
+            'write': """
+                算 外:
+                    算 改:
+                        型 取 密 其 f64.
+                        得 空.
+                    法
+                    改. 改. 改.
+                    型 取 密 其 i32.
+                    改.
+                    得 密 其 签名 型 ([]) 'cdecl'.
+                法 外.
+            """,
+            'read_before_write': """
+                型 取 密 其 i32.
+                算 外:
+                    算 改:
+                        旧 取 型.
+                        型 取 密 其 f64.
+                        得 旧.
+                    法
+                    改. 改. 改.
+                    型 取 密 其 u8.
+                    得 密 其 签名 (改) ([]) 'cdecl'.
+                法 外.
+            """,
+            'warmed_transitive_caller': """
+                算 外:
+                    算 改:
+                        型 取 密 其 f64.
+                        得 空.
+                    法
+                    算 枝: 得 改. 法
+                    枝. 枝. 枝.
+                    型 取 密 其 i32.
+                    枝.
+                    得 密 其 签名 型 ([]) 'cdecl'.
+                法 外.
+            """,
+        }
+        for name, body in cases.items():
+            source = PREFIX + body
+            with self.subTest(case=name), self.assertRaisesRegex(
+                    RuError, '随调用改变的捕获绑定「型」') as caught:
+                plan(source)
+            self.assertEqual(caught.exception.category, '原生编译错误')
+            self.assertEqual(caught.exception.source_name, str(Path('/tmp/native_c_plan.ru').resolve()))
+            self.assertEqual(caught.exception.line, next(
+                index for index, line in enumerate(source.splitlines(), 1)
+                if '型 取 密 其 f64.' in line))
+            self.assertIn('首次调用前初始化外层同名变量', caught.exception.message)
+
+    def test_stable_capture_and_guaranteed_local_shadows_remain_supported(self):
+        cases = [
+            ("""
+                算 外:
+                    型 取 密 其 i32.
+                    算 改: 型 取 密 其 f64. 得 空. 法
+                    改. 改. 改.
+                    得 密 其 签名 型 ([]) 'cdecl'.
+                法 外.
+            """, {NativeCSignature('i32', ()), NativeCSignature('f64', ())}),
+            ("""
+                算 外:
+                    算 用 型: 得 型. 法
+                    用 (密 其 i32). 用 (密 其 i32). 用 (密 其 i32).
+                    型 取 密 其 f64.
+                    得 密 其 签名 (用 (密 其 i32)) ([]) 'cdecl'.
+                法 外.
+            """, {NativeCSignature('i32', ())}),
+            ("""
+                算 外:
+                    算 用:
+                        算 型: 得 密 其 f64. 法
+                        得 型.
+                    法
+                    用. 用. 用.
+                    型 取 密 其 i32.
+                    得 密 其 签名 (用) ([]) 'cdecl'.
+                法 外.
+            """, {NativeCSignature('f64', ())}),
+        ]
+        for source, expected in cases:
+            with self.subTest(source=source):
+                self.assertEqual(set(plan(PREFIX + source).signatures), expected)
+
+    def test_reused_scopes_retain_possible_ancestor_reads(self):
+        class WithoutSummaryHits(NativeCPlan):
+            def _invoke(self, function, args, node):
+                self._call_summaries.clear()
+                return super()._invoke(function, args, node)
+
+        cases = {
+            'block': """
+                型 取 密 其 i32.
+                循 2 次
+                    段:
+                        S 取 密 其 签名 型 ([]) 'cdecl'.
+                        型 取 密 其 f64.
+                    落.
+                    型 取 密 其 u8.
+                环
+            """,
+            'delayed_first_read': """
+                算 外:
+                    型 取 密 其 i32.
+                    算 忽略 回: 得 密 其 i32. 法
+                    算 调用 回: 得 回(). 法
+                    F 取 算 忽略.
+                    循 2 次
+                        段:
+                            算 G: 得 型. 法
+                            S 取 密 其 签名 (F (算 G)) ([]) 'cdecl'.
+                            型 取 密 其 f64.
+                        落.
+                        F 取 算 调用. 型 取 密 其 u8.
+                    环
+                    得 空.
+                法 外.
+            """,
+            'function_module_read': """
+                型 取 密 其 i32.
+                算 F:
+                    S 取 密 其 签名 型 ([]) 'cdecl'.
+                    型 取 密 其 f64. 得 空.
+                法
+                F. 型 取 密 其 u8. F.
+            """,
+            'conditional_local': """
+                型 取 密 其 i32.
+                算 F 条件:
+                    若 条件 则 型 取 密 其 f64. 然
+                    得 密 其 签名 型 ([]) 'cdecl'.
+                法
+                F 真. 型 取 密 其 u8. F 假.
+            """,
+            'zero_iteration_local': """
+                型 取 密 其 i32.
+                算 F:
+                    循 0 次 型 取 密 其 f64. 环
+                    得 密 其 签名 型 ([]) 'cdecl'.
+                法
+                F. 型 取 密 其 u8. F.
+            """,
+            'rescue': """
+                型 取 密 其 i32.
+                循 2 次
+                    试 卒 'x'.
+                    救 原因
+                        S 取 密 其 签名 型 ([]) 'cdecl'.
+                        型 取 密 其 f64.
+                    终
+                    型 取 密 其 u8.
+                环
+            """,
+        }
+        expected = {NativeCSignature(name, ()) for name in ('i32', 'f64', 'u8')}
+        for name, source in cases.items():
+            with self.subTest(case=name):
+                outcomes = []
+                for plan_type in (NativeCPlan, WithoutSummaryHits):
+                    graph = load_module_graph('/tmp/native_scope_' + name + '.ru', parse(PREFIX + source))
+                    value = plan_type(graph)
+                    self.assertEqual(set(value.signatures), expected)
+                    outcomes.append((value.signatures, value.callback_signatures))
+                self.assertEqual(outcomes[0], outcomes[1])
+
+    def test_late_ancestor_read_keeps_mutable_array_alias(self):
+        with self.assertRaisesRegex(RuError, '无法静态确定'):
+            plan(PREFIX + """
+                参数们 取 [密 其 i32].
+                算 忽略 回: 得 []. 法
+                算 调用 回: 得 回(). 法
+                F 取 算 忽略.
+                循 2 次
+                    段:
+                        算 G: 得 参数们. 法
+                        S 取 密 其 签名 (密 其 i32) (F (算 G)) 'cdecl'.
+                        参数们 取 [密 其 f64].
+                    落.
+                    F 取 算 调用. 参数们 其 增 (密 其 u8).
+                环
+            """)
+
+    def test_scope_entry_shadows_and_bind_first_blocks_remain_supported(self):
+        value = plan(PREFIX + """
+            型 取 密 其 i32.
+            原因 取 [密 其 i32].
+            循 2 次
+                段:
+                    型 取 密 其 f64.
+                    S 取 密 其 签名 型 ([]) 'cdecl'.
+                落.
+                段:
+                    算 型: 得 密 其 u8. 法
+                    S 取 密 其 签名 (型) ([]) 'cdecl'.
+                落.
+                试 卒 'x'. 救 原因 未知 原因. 终
+            环
+            T 取 密 其 签名 (密 其 i32) 原因 'cdecl'.
+        """)
+        self.assertEqual(set(value.signatures), {
+            NativeCSignature('i32', ()), NativeCSignature('f64', ()),
+            NativeCSignature('u8', ()), NativeCSignature('i32', ('i32',))})
+
+    def test_reused_local_preserves_implicit_native_root_binding(self):
+        # The planner only creates abstract library values here; no DLL loads.
+        value = plan("""
+            型 取 __密 其 类型 'i32'.
+            算 F:
+                S 取 __密 其 签名 型 ([]) 'cdecl'.
+                __密 取 __密 其 系统库 'unused.dll'.
+                得 空.
+            法
+            F. 型 取 __密 其 类型 'u8'. F.
+        """)
+        self.assertEqual(set(value.signatures), {
+            NativeCSignature('i32', ()), NativeCSignature('u8', ())})
+
+    def test_implicit_calls_in_ancestor_choices_keep_declared_effects(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'dep.ru').write_text(PREFIX + """
+                参数们 取 [密 其 i32].
+                算 调整:
+                    得 密 其 签名 (参数们[0]) ([]) 'cdecl'.
+                法
+            """, encoding='utf-8')
+            # Imported declarations can share a name with an ordinary local.
+            # On the later fresh call, its zero-arg invocation must still run.
+            with self.assertRaisesRegex(RuError, '无法静态确定'):
+                plan("""
+                    尽取 外言 './dep.ru'.
+                    算 F: 调整. 调整 取 0. 得 空. 法
+                    F. 参数们[0] 取 密 其 f64. F.
+                """, str(root / 'main.ru'))
+            (root / 'wrapper.ru').write_text("""
+                尽取 外言 './dep.ru'.
+                调整. 调整 取 0.
+            """, encoding='utf-8')
+            prefix = """
+                M 取 外言 './wrapper.ru'.
+                参数们 取 M 其 参数们.
+                参数们[0] 取 __密 其 类型 'f64'.
+            """
+            with self.assertRaisesRegex(RuError, '无法静态确定'):
+                plan(prefix + 'M 其 调整.', str(root / 'main.ru'))
+            # Taking a reference must not implicitly call either candidate.
+            value = plan(prefix + 'F 取 算 M 其 调整.', str(root / 'main.ru'))
+            self.assertEqual(value.signatures, (NativeCSignature('i32', ()),))
+
     def test_changing_body_is_not_cached_at_its_exit_revision(self):
         value = plan(PREFIX + """
             算 外:
