@@ -1,6 +1,6 @@
 """Published code assets use complete-statement punctuation without new syntax."""
 import importlib.util
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import shutil
 import unittest
 
@@ -13,12 +13,47 @@ assets = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(assets)
 
 
+class StatementStyleAssetLabelTests(unittest.TestCase):
+    def test_posix_and_windows_labels_share_repository_identity(self):
+        for path_type, root in ((PurePosixPath, '/checkout'),
+                                (PureWindowsPath, r'C:\checkout'),
+                                (PureWindowsPath, r'\\server\share\checkout')):
+            for relative in ('examples/hello.ru', 'rushu/examples/example.rushu.json',
+                             'docs/language-review-tracker.md', 'rulang/stdlib/密.ru'):
+                with self.subTest(root=root, relative=relative):
+                    base = path_type(root)
+                    self.assertEqual(assets.asset_label(base / relative, base), relative)
+
+    def test_historical_exception_matches_only_its_exact_document(self):
+        prefix = 'docs/language-review-tracker.md:'
+        for path_type, root in ((PurePosixPath, '/checkout'),
+                                (PureWindowsPath, r'C:\checkout')):
+            base = path_type(root)
+            for relative, expected in (
+                    ('docs/language-review-tracker.md', True),
+                    ('docs/language-review-tracker.md.copy', False),
+                    ('docs/nested/language-review-tracker.md', False),
+                    ('other/language-review-tracker.md', False)):
+                with self.subTest(root=root, relative=relative):
+                    label = assets.asset_label(base / relative, base) + ':fence:4'
+                    self.assertEqual(label.startswith(prefix), expected)
+
+    def test_asset_outside_checkout_is_not_relabelled_as_inside(self):
+        for path, root in (
+                (PurePosixPath('/other/source.ru'), PurePosixPath('/checkout')),
+                (PureWindowsPath(r'C:\other\source.ru'), PureWindowsPath(r'C:\checkout')),
+                (PureWindowsPath(r'D:\checkout\source.ru'), PureWindowsPath(r'C:\checkout'))):
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                assets.asset_label(path, root)
+
+
 @unittest.skipUnless(shutil.which('node'), 'Node loads the actual notebook templates')
 class StatementStyleAssetsTests(unittest.TestCase):
     def test_complete_published_sources_parse_without_style_warnings(self):
         checked, historical = 0, 0
         for label, source in assets.sources(ROOT):
             with self.subTest(asset=label):
+                self.assertNotIn('\\', label)
                 try:
                     parse(source)
                 except RuError:

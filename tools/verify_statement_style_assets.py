@@ -29,20 +29,25 @@ def semantic(value):
     return value
 
 
+def asset_label(path, root):
+    """Serialize repository-relative asset identity consistently on every host."""
+    return path.relative_to(root).as_posix()
+
+
 def sources(root):
     for directory in ('examples', 'rushu/examples', 'rulang/stdlib', 'rulang/thirdparty'):
         for path in sorted((root / directory).rglob('*.ru')):
-            yield str(path.relative_to(root)), path.read_text(encoding='utf-8')
+            yield asset_label(path, root), path.read_text(encoding='utf-8')
     docs = list((root / 'docs').rglob('*.md'))
     docs += [root / p for p in ('README.md', 'rulang/language-spec.md', 'emacs/README.md', 'rushu/README.md', 'examples/wish.md')]
     docs += list((root / 'rulang/thirdparty').rglob('*.md'))
     for path in sorted(docs):
         for index, match in enumerate(re.finditer(r'^```ru[^\n]*\n(.*?)^```\s*$', path.read_text(encoding='utf-8'), re.M | re.S)):
-            yield f'{path.relative_to(root)}:fence:{index}', match[1]
+            yield f'{asset_label(path, root)}:fence:{index}', match[1]
     for path in sorted((root / 'rushu/examples').rglob('*.rushu.json')):
         for index, cell in enumerate(json.loads(path.read_text(encoding='utf-8'))['cells']):
             if cell['type'] == 'code':
-                yield f'{path.relative_to(root)}:cell:{index}', cell['source']
+                yield f'{asset_label(path, root)}:cell:{index}', cell['source']
     script = """
 import {templates,createTemplateBook} from './rushu/static/templates.mjs';
 console.log(JSON.stringify(templates.map(t=>[t.id,createTemplateBook(t.id)])));
