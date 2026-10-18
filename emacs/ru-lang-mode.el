@@ -585,7 +585,7 @@ Intervening comments are ignored."
       (when (and (member (ru-lang--token-text token) '("段" "落"))
                  (eq (ru-lang--token-face token) 'font-lock-keyword-face))
         (put-text-property start end 'help-echo
-                           "段: … 落.：独立词法作用域，与语句位置的 { … } 等价。每次进入创建新局部环境，落后必须有句点。"))
+                           "段: … 落.：独立词法作用域，与语句位置的 { … }. 等价。每次进入创建新局部环境；完整语句统一加句点，落后句点必需，花括号末点兼容省略。"))
       (when (eq (ru-lang--token-kind token) 'name)
         (when-let ((help (cdr (assoc (ru-lang--token-text token) ru-lang--token-help))))
           (put-text-property start end 'help-echo help)))

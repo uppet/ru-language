@@ -2,7 +2,7 @@
 
 先按[安装与更新](stable-entry.md)准备工具链。以下命令在仓库根目录执行；Windows 可把 `python3` 换成 `py -3`。如书画布的入口见[如书说明](../rushu/README.md)，它与下面的 C／Node.js 程序目标不同。
 
-本页对应 `wip` 上如 0.21.6，包含自 0.21.0 引入的 C 原生后端开发接口；当前 `main` 稳定版仍为如 0.20.0，只提供 Windows x64 本地 Python 原生执行。C 原生命令须使用 0.21.0 或更新的工具链，源码路径映射须使用 0.21.2 或更新版本；不能据此认定 Windows 验证或发布已完成。具体组合见[版本说明](stable-entry.md)。
+本页对应 `wip` 上如 0.21.7，包含自 0.21.0 引入的 C 原生后端开发接口；当前 `main` 稳定版仍为如 0.20.0，只提供 Windows x64 本地 Python 原生执行。C 原生命令须使用 0.21.0 或更新的工具链，源码路径映射须使用 0.21.2 或更新版本；不能据此认定 Windows 验证或发布已完成。具体组合见[版本说明](stable-entry.md)。
 
 ## 常用命令
 
@@ -26,6 +26,20 @@ python3 ru generate intent.md      # 明确请求在线生成；先配置提供�
 python3 ru generate intent.md --target js -o draft.js
 python3 -m rulang --help           # 模块入口也可用
 ```
+
+## 完整语句的书写检查
+
+新代码统一在完整语句末尾写 `.` 或 `。`，包括命名算／作、形、若、循、试／救以及语句花括号块。匿名算／作、典和阵仍是表达式，只有外层语句需要句点；`形 名:`、`试:`、`救 原因:` 统一写出已有的可选冒号。
+
+旧程序省略块末句点仍能解析运行。自 0.21.7 起，CLI `check`／`build` 在既有语法和编译检查通过后，将书写提示以 `文件:行:列: warning:` 格式写入标准错误；不改变成功退出码，也不混入程序输出或生成源码。需要把缺点作为失败时使用严格检查：
+
+```sh
+python3 ru check source.ru --strict-style
+python3 ru check source.ru --target python --strict-style
+python3 ru build source.ru -o app --strict-style
+```
+
+严格检查只针对缺少的语句结束句点，将同类提示标为 `error` 并返回退出码 `1`；失败时不写构建产物。它不把省略可选冒号当作错误，也不改变求值、作用域或类型规则。`run`、REPL、生成命令与如书执行本轮不新增书写提示；编译器 Python API 也不自动输出这些 CLI 诊断。
 
 ## 原生调用的单独授权
 

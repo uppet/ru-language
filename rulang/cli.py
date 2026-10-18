@@ -12,7 +12,7 @@ import time
 from . import __version__
 from .compiler import Compiler
 from .diagnostics import diagnostic, display_text
-from .frontend import Incomplete, RuError, parse, validate
+from .frontend import Incomplete, RuError, parse, validate, style_issues
 from .interpreter import Interpreter
 from .io_runtime import read_stream_line
 from .modules import load_module_graph, read_source, reject_generation_document
@@ -93,6 +93,25 @@ def report(error, name, source=""):
         print("  " + display_text(lines[error.line-1]), file=sys.stderr)
 
 
+def report_style(modules, *, strict=False):
+    """Inspect the unpruned source graph after successful compilation/validation.
+
+    The loader canonicalizes import identities, so repeated imports produce
+    one diagnostic set. Never read files again or modify the supplied AST.
+    """
+    failed = False
+    for path, source in modules.sources.items():
+        for issue in style_issues(source):
+            print(diagnostic(issue, path, severity="error" if strict else "warning")["formatted"],
+                  file=sys.stderr)
+            failed = True
+    return failed and strict
+
+
+class _StyleRejected(Exception):
+    """The complete style diagnostic set has already been printed."""
+
+
 def compiler_command(selected, windows=None):
     """Accept an executable path verbatim, or a quoted compiler command."""
     if os.path.isfile(selected):
@@ -107,7 +126,7 @@ def compiler_command(selected, windows=None):
     return parts
 
 
-def build(program, source_path, output, cc=None, emit_c=None, modules=None, target="c", full_runtime=False, allow_native=False, source_prefix_maps=()):
+def build(program, source_path, output, cc=None, emit_c=None, modules=None, target="c", full_runtime=False, allow_native=False, source_prefix_maps=(), style_check=None):
     if target not in ("c", "js"):
         raise RuError("编译目标须为 c 或 js", category="编译错误")
     if target == "js" and (cc is not None or emit_c is not None):
@@ -129,6 +148,8 @@ def build(program, source_path, output, cc=None, emit_c=None, modules=None, targ
     if target == "js":
         from .js_compiler import JSCompiler
         generated = JSCompiler(program, str(source_path), modules=modules, full_runtime=full_runtime).compile()
+        if style_check is not None:
+            style_check()
         output.parent.mkdir(parents=True, exist_ok=True)
         # Generation does not invoke Node or run user code. Publish only the
         # complete artifact, preserving any previous output on compile failure.
@@ -142,6 +163,8 @@ def build(program, source_path, output, cc=None, emit_c=None, modules=None, targ
         return output, "JavaScript (Node.js)"
     generated = Compiler(program, str(source_path), modules=modules, full_runtime=full_runtime, allow_native=allow_native,
                          source_prefix_maps=source_prefix_maps).compile()
+    if style_check is not None:
+        style_check()
     if emit_c:
         cpath.parent.mkdir(parents=True, exist_ok=True)
         cpath.write_text(generated, encoding="utf-8")
@@ -245,6 +268,7 @@ def make_parser():
         p = sub.add_parser(name, help=help_text)
         p.add_argument("source")
         if name == "check":
+            p.add_argument("--strict-style", action="store_true", help="将缺少完整语句结束句点的书写提示作为错误；默认只在标准错误提示")
             p.add_argument("--target", choices=("c", "python"), default="c", help="c（默认）检查可编译性；python 仅解析和验证模块，不执行代码或加载 DLL")
             p.add_argument("--allow-native", action="store_true", help="允许静态检查 Windows x64 原生 C 编译；不执行代码或加载 DLL")
         if name == "run":
@@ -252,6 +276,7 @@ def make_parser():
             p.add_argument("args", nargs=argparse.REMAINDER, help="传给元初的外参；可使用 -- 分隔")
     p = sub.add_parser("build", help="编译为独立原生程序或 Node.js JavaScript")
     p.add_argument("source")
+    p.add_argument("--strict-style", action="store_true", help="将缺少完整语句结束句点的书写提示作为错误；默认只在标准错误提示")
     p.add_argument("-o", "--output", help="输出路径；C 默认去掉源文件扩展名，JS 默认为同名 .js")
     p.add_argument("--target", choices=("c", "js"), default="c", help="编译目标：c（默认）或 js（Node.js）")
     p.add_argument("--cc", help="C 编译器（默认依次查找 clang、gcc、cc；也支持 CC 环境变量）")
@@ -344,6 +369,9 @@ def main(argv=None):
         program = parse(source)
         modules = load_module_graph(name, program)
         modules.sources[modules.root] = source
+        def check_style():
+            if report_style(modules, strict=args.strict_style):
+                raise _StyleRejected()
         if args.command in ("run", "generate"):
             interpreter = Interpreter(allow_native=args.command == "run" and args.allow_native)
             interpreter.execute(program, source_path=modules.root, modules=modules)
@@ -355,18 +383,21 @@ def main(argv=None):
                 Compiler(program, modules.root, modules=modules, allow_native=args.allow_native).compile()
             elif args.allow_native:
                 raise RuError("check --allow-native 只用于 C 目标；Python 源码检查无需授予原生能力", category="能力错误")
+            check_style()
             print(f"检查通过：{name}" + ("（Python 模块语法验证；未执行代码或加载 DLL）" if args.target == "python" else ""))
         elif args.command == "build":
             output = args.output or (str(Path(args.source).with_suffix(".js")) if args.target == "js"
                                      else str(Path(args.source).with_suffix("")) + (".exe" if os.name == "nt" else ""))
             result, compiler = build(program, args.source, output, args.cc, args.emit_c,
                                      modules=modules, target=args.target, full_runtime=args.full_runtime, allow_native=args.allow_native,
-                                     source_prefix_maps=args.source_prefix_map)
+                                     source_prefix_maps=args.source_prefix_map, style_check=check_style)
             if args.target == "js":
                 print(f"已编译：{result}\n运行目标：{compiler}；未执行")
             else:
                 print(f"已编译：{result}\nC 编译器：{compiler}")
         return 0
+    except _StyleRejected:
+        return 1
     except RuError as error:
         report(error, name, source)
         return 1

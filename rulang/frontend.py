@@ -16,6 +16,15 @@ class Incomplete(RuError):
 
 
 @dataclass
+class StyleIssue:
+    message: str
+    line: int
+    col: int
+    code: str = "missing-statement-dot"
+    category: str = "书写规范"
+
+
+@dataclass
 class Token:
     kind: str
     value: str
@@ -158,11 +167,22 @@ class Parser:
                   "<": 40, "<=": 40, ">": 40, ">=": 40,
                   "+": 50, "-": 50, "*": 60, "/": 60, "%": 60}
 
-    def __init__(self, source):
+    def __init__(self, source, *, collect_style=False):
         self.tokens, self.i = lex(source), 0
         self.depth = 0
         self.call_allowed = True
         self.callable_cache = {}
+        self.missing_dots = {} if collect_style else None
+
+    def statement_end(self, item, closing):
+        """Track optional terminators outside the semantic AST.
+
+        Speculative/cached parses may record abandoned nodes. The style pass
+        reports only records reachable from the final successful parse.
+        """
+        if self.accept(".") is None and self.missing_dots is not None:
+            self.missing_dots[id(item)] = (item, closing)
+        return item
 
     @property
     def current(self):
@@ -262,9 +282,9 @@ class Parser:
         self.expect(":")
         end = "法" if kind == "算" else "为"
         body = self.parse((end,))
-        self.expect(end)
-        self.accept(".")
-        return node("function", t, name=name, params=params, body=body, procedure=kind == "作")
+        closing = self.expect(end)
+        return self.statement_end(node("function", t, name=name, params=params, body=body,
+                                       procedure=kind == "作"), closing)
 
     def literal(self, token):
         return self.callable_parse("literal", lambda: self._literal(token))
@@ -306,9 +326,9 @@ class Parser:
                 self.expect("为")
                 fields.append((field, self.type_name()))
                 self.expect(".")
-        self.expect("象")
-        self.accept(".")
-        return node("type", t, name=name, parent=parent, fields=fields, methods=methods)
+        closing = self.expect("象")
+        return self.statement_end(node("type", t, name=name, parent=parent, fields=fields,
+                                       methods=methods), closing)
 
     def statement(self):
         t = self.current
@@ -323,9 +343,8 @@ class Parser:
             return node("scope", t, body=body)
         if self.accept("{"):
             body = self.parse(("}",))
-            self.expect("}")
-            self.accept(".")
-            return node("scope", t, body=body)
+            closing = self.expect("}")
+            return self.statement_end(node("scope", t, body=body), closing)
         if self.accept("试"):
             self.accept(":")
             body = self.parse(("救", "终"))
@@ -333,9 +352,9 @@ class Parser:
             reason = self.name().value
             self.accept(":")
             rescue = self.parse(("终",))
-            self.expect("终")
-            self.accept(".")
-            return node("try", t, body=body, reason=reason, rescue=rescue)
+            closing = self.expect("终")
+            return self.statement_end(node("try", t, body=body, reason=reason,
+                                           rescue=rescue), closing)
         if self.accept("卒"):
             expr = self.expression()
             self.expect(".")
@@ -359,9 +378,8 @@ class Parser:
             self.expect("则")
             yes = self.parse(("另", "然"))
             no = self.parse(("然",)) if self.accept("另") else []
-            self.expect("然")
-            self.accept(".")
-            return node("if", t, condition=condition, yes=yes, no=no)
+            closing = self.expect("然")
+            return self.statement_end(node("if", t, condition=condition, yes=yes, no=no), closing)
         if self.accept("循"):
             save, count = self.i, None
             try:
@@ -373,9 +391,8 @@ class Parser:
             except RuError:
                 self.i = save
             body = self.parse(("环",))
-            self.expect("环")
-            self.accept(".")
-            return node("loop", t, count=count, body=body)
+            closing = self.expect("环")
+            return self.statement_end(node("loop", t, count=count, body=body), closing)
         if (self.isv("算") or self.isv("作")) and self.definition_ahead():
             start = self.i
             try:
@@ -688,6 +705,38 @@ def parse(source, source_origin=None):
     except RuError as error:
         locate(error, source_origin)
         raise
+
+
+def style_issues(source):
+    """Return non-semantic style findings for syntactically valid source.
+
+    Positions are insertion points immediately after statement closers, in
+    one-based Unicode code points. Anonymous callables and map/array values do
+    not own optional statement terminators and therefore cannot be flagged.
+    """
+    parser = Parser(source, collect_style=True)
+    program = parser.parse()
+    if parser.current.kind != "EOF":
+        parser.fail("出现多余内容")
+    pending, seen, issues = [program], set(), []
+    while pending:
+        value = pending.pop()
+        if isinstance(value, Node):
+            if id(value) in seen:
+                continue
+            seen.add(id(value))
+            record = parser.missing_dots.get(id(value))
+            if record is not None:
+                closing = record[1]
+                issues.append(StyleIssue(
+                    f"完整语句结束后建议写句点；请在「{closing.value}」后加「.」或「。」",
+                    closing.line, closing.col + len(closing.value)))
+            pending.extend(value.data.values())
+        elif isinstance(value, dict):
+            pending.extend(value.values())
+        elif isinstance(value, (list, tuple)):
+            pending.extend(value)
+    return sorted(issues, key=lambda issue: (issue.line, issue.col, issue.code))
 
 
 EXCESS_ARGUMENT_HINT = "；若并列阵元素，请括起调用"

@@ -50,7 +50,9 @@ def display_text(value):
     return _CONTROL.sub(lambda match: short.get(match[0], f"\\u{ord(match[0]):04x}"), str(value))
 
 
-def diagnostic(error, source_name="<源码>", origin=None):
+def diagnostic(error, source_name="<源码>", origin=None, *, severity="error"):
+    if severity not in ("error", "warning"):
+        raise ValueError("unsupported diagnostic severity")
     locate(error, origin)
     name = str(getattr(error, "source_name", None) or source_name)
     provenance = getattr(error, "source_origin", None)
@@ -61,7 +63,10 @@ def diagnostic(error, source_name="<源码>", origin=None):
     # in the structured message and is escaped in the editor-facing header.
     one_line = display_text(message)
     display_name = display_text(name)
-    return {"source_name": name, "line": line, "col": col,
-            "severity": "error", "category": error.category, "message": message,
+    result = {"source_name": name, "line": line, "col": col,
+            "severity": severity, "category": error.category, "message": message,
             "source": provenance.metadata() if provenance else {"kind": "file"},
-            "formatted": (f"{display_name}:{line}:{col}" if known else display_name) + f": error: {display_text(error.category)}：{one_line}"}
+            "formatted": (f"{display_name}:{line}:{col}" if known else display_name) + f": {severity}: {display_text(error.category)}：{one_line}"}
+    if getattr(error, "code", None):
+        result["code"] = error.code
+    return result
