@@ -485,3 +485,14 @@ test('canonical import-all is one keyword, with legacy migration help and whole-
     assert.doesNotMatch(highlight(source),/tok-keyword/,source);
   }
 });
+
+
+test('package declaration is contextual and named import chains are static names',()=>{
+  const source='吾 言 工程 其 段.\n力 取 外言 工程 其 段.\n吾 取 2. 言 取 3.\n显 "吾 言 工程.". # 吾 言 其他.';
+  const model=analyze(source), names=model.tokens.filter(t=>t.kind==='name');
+  assert.equal(model.depth,0);
+  assert.deepEqual(names.filter(t=>t.text==='吾').map(t=>t.face),['keyword',null]);
+  assert.deepEqual(names.filter(t=>t.text==='言').map(t=>t.face),['keyword',null]);
+  assert.ok(names.filter(t=>t.text==='段').every(t=>t.face==='type'));
+  assert.equal(indentText(source),source);
+});

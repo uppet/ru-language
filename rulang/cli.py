@@ -301,6 +301,29 @@ def make_parser():
         p.add_argument("--target", choices=("python", "browser-js"), default="python", help="提示运行环境：默认 Python 代码格，或显式浏览器 JS 代码格")
         p.add_argument("-o", "--output", default="-", metavar="PATH", help="UTF-8 输出文件；省略或 - 为标准输出")
         p.add_argument("--force", action="store_true", help="原子替换已有普通文件；不可用于标准输出、符号链接或规范原文")
+    p = sub.add_parser("deps", help="显式同步包依赖；普通运行／检查／编译不联网")
+    commands = p.add_subparsers(dest="deps_command", required=True)
+    sync = commands.add_parser("sync", help="读取集录.ru，获取依赖并原子写入集锁.json")
+    sync.add_argument("directory", nargs="?", default=".")
+    mode = sync.add_mutually_exclusive_group()
+    mode.add_argument("--locked", action="store_true", help="要求已有 format 2 锁，精确恢复且不改锁文件")
+    mode.add_argument("--update", action="store_true", help="显式重新解析引用／版本范围，并原子更新依赖锁")
+    p = sub.add_parser("registry", help="静态包目录客户端与仅本地发布原型")
+    commands = p.add_subparsers(dest="registry_command", required=True)
+    for action in ("search", "info", "versions", "dependencies", "download"):
+        command = commands.add_parser(action)
+        command.add_argument("--registry", required=True, help="显式 HTTPS 目录 URL 或本地静态目录")
+        if action == "search":
+            command.add_argument("query", nargs="?", default="")
+        else:
+            command.add_argument("package")
+        if action in ("dependencies", "download"):
+            command.add_argument("version")
+        if action == "download":
+            command.add_argument("-o", "--output", required=True, help="新建已验证的归档文件；不覆盖已有文件")
+    publish = commands.add_parser("publish", help="仅写本地目录；不提供网络写入或部署")
+    publish.add_argument("directory", nargs="?", default=".")
+    publish.add_argument("--registry", required=True, help="本地静态目录路径")
     return parser
 
 
@@ -325,6 +348,51 @@ def main(argv=None):
         return repl()
     source, name = "", getattr(args, "source", getattr(args, "document", "<输入>"))
     try:
+        if args.command == "deps":
+            from .package_sources import sync_dependencies
+            lock = sync_dependencies(args.directory, locked=args.locked, update=args.update)
+            print(f"依赖同步完成：{len(lock['packages'])} 个来源包；锁定依赖已就绪")
+            return 0
+        if args.command == "registry":
+            import json
+            from .package_registry import client_for, publish_local
+            from .package_sources import _error
+            if args.registry_command == "publish":
+                if "://" in args.registry:
+                    raise _error("发布仅支持本地静态目录路径，不提供网络写入")
+                result = publish_local(args.directory, args.registry)
+            else:
+                client = client_for(args.registry)
+                action = args.registry_command
+                if action == "search":
+                    result = client.search(args.query)
+                elif action == "info":
+                    result = client.info(args.package)
+                elif action == "versions":
+                    result = client.versions(args.package)
+                elif action == "dependencies":
+                    result = client.dependencies(args.package, args.version)
+                else:
+                    data, result = client.download(args.package, args.version)
+                    output = Path(args.output)
+                    if output.exists() or output.is_symlink():
+                        raise _error("下载输出已存在；请指定新的文件路径")
+                    output.parent.mkdir(parents=True, exist_ok=True)
+                    with tempfile.NamedTemporaryFile(prefix=".ru-download-", dir=output.parent, delete=False) as stream:
+                        temporary = Path(stream.name)
+                        stream.write(data)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                    try:
+                        # Hard-link publish is atomic and refuses a concurrent
+                        # destination, unlike replace which could overwrite it.
+                        os.link(temporary, output)
+                    finally:
+                        temporary.unlink(missing_ok=True)
+                    print(f"已校验并下载：{output}")
+                    return 0
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
         if args.command in ("rushu-prompt", "ruguan-prompt"):
             result = export_prompt(args.command.removesuffix("-prompt"), args.output, force=args.force, runtime_target=args.target)
             if args.output == "-":

@@ -310,7 +310,7 @@ class Interpreter:
         validate(program, self.functions, self.types)
         if modules is None:
             from .modules import import_nodes, load_module_graph
-            if any(import_nodes(program)):
+            if any(import_nodes(program)) or (source_path is not None and any(n.kind == "module_decl" for n in program)):
                 modules = load_module_graph(source_path or self.source_path or str(Path.cwd() / "<REPL>"), program)
         check_native_imports(self, program, modules)
         if source_path is not None:
@@ -474,7 +474,7 @@ class Interpreter:
     def block(self, statements, scope, echo=False):
         for n in statements:
             d = n.data
-            if n.kind == "function":
+            if n.kind in ("function", "module_decl"):
                 continue
             if n.kind == "type":
                 self.resolve_type(self.types[d["name"]])

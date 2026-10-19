@@ -1568,3 +1568,26 @@
       (search-forward "尽取")
       (should-not (eq (get-text-property (1- (point)) 'face) 'font-lock-keyword-face))
       (should-not (get-text-property (1- (point)) 'help-echo)))))
+
+
+(ert-deftest ru-lang-package-names-are-contextual ()
+  (ru-lang-test--buffer
+      "吾 言 工程 其 段.\n力 取 外言 工程 其 段.\n吾 取 2. 言 取 3.\n"
+    (ru-lang--ensure-cache)
+    (let ((tokens (append ru-lang--tokens nil)))
+      (should (equal (mapcar #'ru-lang--token-face
+                            (cl-remove-if-not (lambda (token) (equal (ru-lang--token-text token) "吾")) tokens))
+                     '(font-lock-keyword-face nil)))
+      (should (equal (mapcar #'ru-lang--token-face
+                            (cl-remove-if-not (lambda (token) (equal (ru-lang--token-text token) "段")) tokens))
+                     '(font-lock-type-face font-lock-type-face))))))
+
+(ert-deftest ru-lang-package-import-help-preserves-native-platform-gates ()
+  (let ((help (cdr (assoc "外言" ru-lang--token-help))))
+    (should (string-match-p "Windows x64" help))
+    (should (string-match-p "Python run --allow-native" help))
+    (should (string-match-p "C build --allow-native" help))
+    (should (string-match-p "如书、Node 和浏览器不可用" help))
+    (should (string-match-p "不是通用跨平台 FFI" help))
+    (should (string-match-p "ru deps sync" help))
+    (should-not (string-match-p "如书/C/Node/浏览器不可用" help))))

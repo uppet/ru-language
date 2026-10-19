@@ -37,6 +37,11 @@ def asset_label(path, root):
 def sources(root):
     for directory in ('examples', 'rushu/examples', 'rulang/stdlib', 'rulang/thirdparty'):
         for path in sorted((root / directory).rglob('*.ru')):
+            if path.name == '集录.ru':
+                # Manifests are static data, not executable statement assets.
+                from rulang.packages import load_manifest
+                load_manifest(path)
+                continue
             yield asset_label(path, root), path.read_text(encoding='utf-8')
     docs = list((root / 'docs').rglob('*.md'))
     docs += [root / p for p in ('README.md', 'rulang/language-spec.md', 'emacs/README.md', 'rushu/README.md', 'examples/wish.md')]

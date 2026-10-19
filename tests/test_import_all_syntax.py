@@ -134,7 +134,9 @@ class ImportAllSyntaxTests(unittest.TestCase):
         for target in ('cli', 'rushu', 'ruguan', 'rushu-browser-js', 'ruguan-browser-js'):
             with self.subTest(target=target):
                 prompt = generation_system_prompt(target)
-                self.assertIn("'尽取' '外言' 字符串", prompt)
+                self.assertIn("'尽取' '外言' 外言目标", prompt)
+                self.assertRegex(prompt, r"外言目标\s*= 字符串 \| 模块名")
+                self.assertRegex(prompt, r"模块名\s*= 名称 \{ '其' 名称 \}")
                 self.assertIn('旧式 `尽 取 外言` 已停用', prompt)
                 self.assertIn('单字 `尽` 继续保留用于迁移诊断', prompt)
                 self.assertNotIn("'尽' '取' '外言'", prompt)

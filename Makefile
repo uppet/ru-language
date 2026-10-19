@@ -3,6 +3,7 @@ EMACS ?= emacs
 test:
 	python3 -m unittest discover -s tests -v
 examples:
+	python3 ru build examples/packages/应用/main.ru -o bin/packages --emit-c dist/packages.c
 	python3 ru build examples/array_traversal.ru -o bin/array_traversal --emit-c dist/array_traversal.c
 	python3 ru build examples/array_sort_map.ru -o bin/array_sort_map --emit-c dist/array_sort_map.c
 	python3 ru build examples/practical_libraries.ru -o bin/practical_libraries --emit-c dist/practical_libraries.c
@@ -36,6 +37,8 @@ examples:
 	python3 ru build examples/contest_stable_records.ru -o bin/contest_stable_records --emit-c dist/contest_stable_records.c
 # Standalone CommonJS outputs; Node is needed only to syntax-check/run them.
 examples-js:
+	python3 ru build examples/packages/应用/main.ru --target js -o dist/packages.js
+	node --check dist/packages.js
 	@set -e; for source in examples/*.ru; do \
 		output="dist/$$(basename "$$source" .ru).js"; \
 		python3 ru build "$$source" --target js -o "$$output"; \

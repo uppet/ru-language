@@ -330,8 +330,37 @@ class Parser:
         return self.statement_end(node("type", t, name=name, parent=parent, fields=fields,
                                        methods=methods), closing)
 
+    def module_declaration_ahead(self):
+        # Only the complete contextual spelling claims 吾/言; neither is a keyword.
+        if not (self.isv("吾") and self.peek().kind == "NAME" and self.peek().value == "言"):
+            return False
+        offset = 2
+        while True:
+            token = self.peek(offset)
+            if token.kind != "NAME" or token.value in KEYWORDS:
+                return False
+            offset += 1
+            token = self.peek(offset)
+            if token.kind == "OP" and token.value == ".":
+                return True
+            if token.kind != "NAME" or token.value != "其":
+                return False
+            offset += 1
+
+    def module_name(self):
+        parts = [self.name().value]
+        while self.accept("其"):
+            parts.append(self.name().value)
+        return tuple(parts)
+
     def statement(self):
         t = self.current
+        if self.module_declaration_ahead():
+            self.pop()
+            self.pop()
+            name = self.module_name()
+            self.expect(".")
+            return node("module_decl", t, name=name)
         # These delimiters are contextual: 段/落 remain ordinary names elsewhere,
         # notably the established 其 段 member and bindings named 段 or 落.
         if self.isv("段") and self.peek().kind == "OP" and self.peek().value == ":":
@@ -614,10 +643,11 @@ class Parser:
             else:
                 left = self.reference(t)
         elif t.value == "外言":
-            path = self.pop()
-            if path.kind != "STRING":
-                self.fail("「外言」后须为文件路径字符串字面量", path)
-            left = node("import", t, path=path.value)
+            if self.current.kind == "STRING":
+                left = node("import", t, path=self.pop().value)
+            else:
+                name = self.module_name()
+                left = node("import", t, path=" 其 ".join(name), name=name)
         elif t.value == "新":
             name = self.name().value
             args = self.call_arguments(allow=True)
@@ -796,6 +826,10 @@ def validate(program, existing_functions=(), existing_types=()):
     def error(n, message):
         raise at_token(RuError(message, n.token.line, n.token.col), n.token)
 
+    declarations = [n for n in program if n.kind == "module_decl"]
+    if len(declarations) > 1:
+        error(declarations[1], "模块声明「吾 言」只能出现一次")
+
     has_imports = any(n.kind == "import_all" for n in program)
     known_types = set(type_nodes) | set(existing_types) | BUILTIN_TYPES | {"数", "句", "阵", "对", "空", "算", "作", "典", "事实"}
     known_bindings = {n.data["name"] for n in program if n.kind == "bind"}
@@ -888,7 +922,10 @@ def validate(program, existing_functions=(), existing_types=()):
             bindings = bindings | local_bindings(stmts)
         for n in stmts:
             d = n.data
-            if n.kind == "function":
+            if n.kind == "module_decl":
+                if not top:
+                    error(n, "模块声明「吾 言」只能用于顶层")
+            elif n.kind == "function":
                 if not declaration_scope:
                     error(n, "函数／过程只能直接定义在模块、函数、方法、段或救的正文中")
                 check_function(n, method, visible_functions, bindings, method_definitions)

@@ -1,6 +1,6 @@
 """Resolve local imports once, with a deterministic, self-contained module graph.
 
-Imports are string literals, resolved relative to the file containing them.
+Imports are string paths or static named module chains in package manifests.
 The interpreter and both compilers use this loader. Both compilers lower all
 resolved modules into standalone outputs that need no source files at runtime.
 """
@@ -92,6 +92,10 @@ def reject_generation_document(source):
 
 
 def read_source(path):
+    if Path(path).name == "集录.ru":
+        error = RuError("集录.ru 是静态包清单，不能作为源码执行；依赖同步请用 ru deps sync", category="包错误")
+        error.suppress_source = True
+        raise error
     source = Path(path).read_text(encoding="utf-8-sig")
     reject_generation_document(source)
     return source
@@ -130,6 +134,8 @@ def load_module_graph(source_path, program=None):
     """
     root = str(Path(source_path).resolve())
     graph, active = ModuleGraph(root), []
+    from .packages import PackageResolver
+    packages = PackageResolver(root)
 
     def visit(path, supplied=None, origin=None, origin_path=None):
         if path in active:
@@ -159,13 +165,20 @@ def load_module_graph(source_path, program=None):
                 graph.sources[path] = source
                 supplied = parse(source)
             validate(supplied)
+            packages.check_declaration(path, supplied)
             graph[path] = supplied
             for imported in import_nodes(supplied):
                 requested = imported.data["path"]
                 try:
-                    resolved = resolve_import(requested, path)
+                    if "name" in imported.data:
+                        resolved = packages.named(imported.data["name"], path)
+                    else:
+                        resolved = resolve_import(requested, path)
+                        if requested not in STANDARD_MODULES and requested not in BUNDLED_THIRD_PARTY_MODULES:
+                            resolved = packages.path(resolved, path)
                 except RuError as error:
-                    error.line, error.col = imported.token.line, imported.token.col
+                    if not hasattr(error, "source_name"):
+                        error.line, error.col = imported.token.line, imported.token.col
                     raise
                 imported.data["resolved"] = resolved
                 visit(resolved, origin=imported, origin_path=path)

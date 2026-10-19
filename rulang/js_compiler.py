@@ -114,7 +114,7 @@ class JSCompiler(Compiler):
     def block(self, statements, function=False):
         for n in statements:
             d, kind, loc = n.data, n.kind, self.loc(n)
-            if kind == 'function':
+            if kind in ('function', 'module_decl'):
                 continue
             if kind == 'type':
                 self.line(f'R.resolve(m.types[{js(d["name"])}]);')

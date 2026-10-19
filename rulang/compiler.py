@@ -29,7 +29,7 @@ class Compiler:
         if self.source_path_mapper and type(self) is not Compiler:
             raise RuError('源码路径映射只适用于 C 编译目标', category='编译错误')
         from .modules import ModuleGraph, import_nodes, load_module_graph
-        if modules is None and any(import_nodes(program)):
+        if modules is None and (any(import_nodes(program)) or any(n.kind == "module_decl" for n in program)):
             modules = load_module_graph(source_name, program)
         from .native_runtime import _native_nodes, reject_native_backend
         self.native_enabled = bool(list(_native_nodes((program, modules))))
@@ -533,7 +533,7 @@ class Compiler:
     def block(self, statements, function=False):
         for n in statements:
             d, ln = n.data, n.token.line
-            if n.kind == 'function':
+            if n.kind in ('function', 'module_decl'):
                 continue
             if n.kind == 'type':
                 self.line(f'ru_class_ready(&{self.type_ids[id(n)]}, {ln});')

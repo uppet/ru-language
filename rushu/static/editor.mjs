@@ -99,9 +99,24 @@ function headerKind(tokens,index,allowIncomplete) {
        (after?.kind==='name' && !KEYWORDS.has(after.text) && (allowIncomplete || (third?.kind==='name' && third.text==='为')))))) return 'named';
   return null;
 }
+function moduleTokens(tokens, index, declaration=false) {
+  const code=tokens.slice(index).filter(t=>t.kind!=='comment');
+  if(declaration && code[1]?.text!=='言') return null;
+  const marked=declaration?[code[0],code[1]]:[];
+  let i=declaration?2:1;
+  while(true) {
+    const token=code[i];
+    if(token?.kind!=='name'||KEYWORDS.has(token.text)) return null;
+    marked.push(token); i++;
+    if(code[i]?.kind==='name'&&code[i].text==='其') { i++; continue; }
+    if(declaration && (code[i]?.kind!=='punct'||code[i].text!=='.')) return null;
+    return marked;
+  }
+}
 export function analyze(source) {
   const tokens = lex(source), stack=[], blocks=[], lines=[], nexts=[], sourceLines=source.split('\n');
   let next, previous, rescueBinding, callableName, statementStart=true, index=0;
+  const moduleFaces=new Map();
   for (let i=tokens.length-1;i>=0;i--) { nexts[i]=next; if(tokens[i].kind!=='comment') next=tokens[i]; }
   let offset=0;
   for (const line of sourceLines) {
@@ -109,6 +124,10 @@ export function analyze(source) {
     const stringLine=index>0 && ['string','comment'].includes(tokens[index-1].kind) && tokens[index-1].end>offset;
     while (tokens[index] && tokens[index].start<=end) {
       const token=tokens[index], {text,kind}=token, next=nexts[index], binding=token===rescueBinding;
+      if(kind==='name' && ((statementStart&&text==='吾')||text==='外言')) {
+        const declaration=text==='吾', marked=moduleTokens(tokens,index,declaration);
+        marked?.forEach((value,i)=>moduleFaces.set(value,declaration&&i<2?'keyword':'type'));
+      }
       const callable=['算','作'].includes(text), callableType=callable&&previous==='为';
       const definition=callable&&!callableType ? headerKind(tokens,index,statementStart) : null;
       const top=stack.at(-1), code=kind!=='comment'&&kind!=='string';
@@ -139,6 +158,7 @@ export function analyze(source) {
             ['形','如','新'].includes(previous)||(previous==='为'&&!statementStart)||TYPES.has(text)?'type':
             KEYWORDS.has(text)?'keyword':BUILTINS.has(text)?'builtin':null;
         }
+        if(moduleFaces.has(token)) token.face=moduleFaces.get(token);
         if(kind==='punct'&&text===':=') token.face='keyword';
         if(token===callableName) callableName=null;
         if(callable&&!callableType&&definition!=='literal'&&next?.kind==='name'&&!KEYWORDS.has(next.text)) callableName=next;
@@ -152,6 +172,9 @@ export function analyze(source) {
 }
 export const ASSIGNMENT_HELP = '取（词法规则）：函数内先更新当前局部，否则更新最近已有的非模块捕获绑定；未找到则新建当前局部，不隐式改写模块变量。直接救正文中的取写救局部；直接段／花括号作用域块中的取写块局部（含其中的若、循、试正文）；闭包共享捕获绑定，可更新捕获的块局部。:= 与取完全等价。参数属于本次调用局部。此提示不判断具体名称的运行时绑定。';
 export const TOKEN_HELP = {
+  '吾': '吾 言 工程 其 力学.：可选顶层一次模块声明。吾、言仍是普通名称，只在完整声明中识别。名称按包的正式根校验。',
+  '言': '与吾组成完整模块声明：吾 言 工程 其 力学.；其他位置仍为普通名称。',
+  '外言': '外言既接受原有字符串路径，也接受静态模块名：外言 工程 其 力学。整个其链属于模块名，不读取变量。包由集录.ru声明；缺远程依赖时显式 ru deps sync，运行和检查不联网。browser-js仍只允许固定标准库，不读取本机包。',
   '尽取': "尽取：模块顶层全量导入。写作 尽取 外言 '如:数学'.，尽取须连写，不能替换成 :=。旧 尽 取 已停用并给出迁移提示；单字尽继续保留。保留原有静态解析、导出和名称冲突规则，长名称尽取值不拆分。此提示不检查此处语义。",
   '尽': "旧语法 尽 取 外言 已停用；请改用 尽取 外言 '文件.ru'.，尽取须连写。单字尽继续保留用于迁移诊断，没有兼容别名。",
   '取': ASSIGNMENT_HELP, ':=': ASSIGNMENT_HELP,

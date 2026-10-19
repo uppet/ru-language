@@ -107,3 +107,5 @@ python3 ru repl
 - [开发与验证](docs/development.md) · [变更记录](CHANGELOG.md) · [实际验证记录](VALIDATION.md)
 
 从一行 `显 '你好，如'.` 开始，也很好。
+
+开发版 `wip` 的包系统见[包与具名模块](docs/packages.md)：`吾 言 工程 其 力学.`、静态集录与显式依赖同步；`main` 稳定版尚不包含此功能。

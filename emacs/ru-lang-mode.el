@@ -361,10 +361,46 @@ Intervening comments are ignored."
                                          (equal (ru-lang--token-text third) "为")))))))
           'named))))))
 
+(defun ru-lang--module-name-tokens (tokens index declaration)
+  "Return contextual package name tokens, or nil for an incomplete spelling."
+  (catch 'invalid
+    (let ((cursor index) marked value)
+      (cl-labels ((next-code ()
+                    (while (and (< cursor (length tokens))
+                                (eq (ru-lang--token-kind (aref tokens cursor)) 'comment))
+                      (setq cursor (1+ cursor)))
+                    (when (< cursor (length tokens))
+                      (prog1 (aref tokens cursor) (setq cursor (1+ cursor))))))
+        (setq value (next-code))
+        (when declaration
+          (push value marked)
+          (setq value (next-code))
+          (unless (and value (eq (ru-lang--token-kind value) 'name)
+                       (equal (ru-lang--token-text value) "言"))
+            (throw 'invalid nil))
+          (push value marked))
+        (setq value (next-code))
+        (while value
+          (unless (and (eq (ru-lang--token-kind value) 'name)
+                       (not (member (ru-lang--token-text value) ru-lang--keywords)))
+            (throw 'invalid nil))
+          (push value marked)
+          (setq value (next-code))
+          (if (and value (eq (ru-lang--token-kind value) 'name)
+                   (equal (ru-lang--token-text value) "其"))
+              (setq value (next-code))
+            (when (and declaration
+                       (not (and value (eq (ru-lang--token-kind value) 'punct)
+                                 (equal (ru-lang--token-text value) "."))))
+              (throw 'invalid nil))
+            (throw 'invalid (nreverse marked))))
+        nil))))
+
 (defun ru-lang--analyze ()
   "Compute block pairs and desired line depths from `ru-lang--tokens'."
   (let ((tokens ru-lang--tokens) (stack nil) (blocks nil) (structures nil) (indents nil)
         (statement-start t) (line (point-min)) (index 0) previous rescue-binding callable-name
+        (module-faces (make-hash-table :test #'eq))
         (next-tokens (make-vector (length ru-lang--tokens) nil)) next-code)
     (cl-loop for i downfrom (1- (length tokens)) to 0 do
              (aset next-tokens i next-code)
@@ -424,6 +460,14 @@ Intervening comments are ignored."
                                          (member text '("则" "另")))
                                     (and (equal (ru-lang--block-kind top) "试")
                                          (equal text "救") statement-start)))))
+              (when (and (eq kind 'name)
+                         (or (and statement-start (equal text "吾")) (equal text "外言")))
+                (let ((position 0) (declaration (equal text "吾")))
+                  (dolist (part (ru-lang--module-name-tokens tokens index declaration))
+                    (puthash part (if (and declaration (< position 2))
+                                      'font-lock-keyword-face 'font-lock-type-face)
+                             module-faces)
+                    (setq position (1+ position)))))
               (unless (eq kind 'comment)
                 ;; A try or rescue header permits an optional colon, but a
                 ;; named argument inside its body must not start a statement.
@@ -514,6 +558,8 @@ Intervening comments are ignored."
                               (member text ru-lang--types)) 'font-lock-type-face)
                          ((member text ru-lang--keywords) 'font-lock-keyword-face)
                          ((member text ru-lang--builtins) 'font-lock-builtin-face))))
+                (when (gethash token module-faces)
+                  (setf (ru-lang--token-face token) (gethash token module-faces)))
                 (when (and (eq kind 'punct) (equal text ":="))
                   (setf (ru-lang--token-face token) 'font-lock-keyword-face))
                 (when (eq token callable-name) (setq callable-name nil))
@@ -543,9 +589,11 @@ Intervening comments are ignored."
   "取（词法规则）：函数内先更新当前局部，否则更新最近已有的非模块捕获绑定；未找到则新建当前局部，不隐式改写模块变量。直接救正文中的取写救局部；直接段／花括号作用域块中的取写块局部（含其中的若、循、试正文）；闭包共享捕获绑定，可更新捕获的块局部。:= 与取完全等价。参数属于本次调用局部。此提示不判断具体名称的运行时绑定。")
 
 (defconst ru-lang--token-help
-  '(("尽取" . "尽取：模块顶层全量导入。写作 尽取 外言 '如:数学'.，尽取须连写，不能替换成 :=。旧 尽 取 已停用并给出迁移提示；单字尽继续保留。保留原有静态解析、导出和名称冲突规则，长名称尽取值不拆分。此提示不检查此处语义。")
+  '(("吾" . "吾 言 工程 其 力学.：可选顶层一次模块声明；吾、言仍为普通名称。正式根来自集录.ru，消费者别名不改变作者声明。")
+    ("言" . "与吾组成完整模块声明：吾 言 工程 其 力学.；其他位置仍为普通名称。")
+    ("尽取" . "尽取：模块顶层全量导入。写作 尽取 外言 '如:数学'.，尽取须连写，不能替换成 :=。旧 尽 取 已停用并给出迁移提示；单字尽继续保留。保留原有静态解析、导出和名称冲突规则，长名称尽取值不拆分。此提示不检查此处语义。")
     ("尽" . "旧语法 尽 取 外言 已停用；请改用 尽取 外言 '文件.ru'.，尽取须连写。单字尽继续保留用于迁移诊断，没有兼容别名。")
-    ("外言" . "外言：如竞用 外言 '如:竞'，如观用 外言 '如:观'。旧导入名如竞、如观、如:竞赛已移除，无兼容别名；产品名不变。如观需支持画布的如书宿主，普通 CLI 不显示画布。如:密是标准原生库；如见是随附三方 Win32 库。二者仅 Windows x64 本地 Python 显式 run --allow-native 可用，如书/C/Node/浏览器不可用。check --target python 只验证不执行。此提示不解析模块或执行源码。")
+    ("外言" . "外言：字符串路径或静态模块名（外言 工程 其 力学）；完整其链属于模块名，不求值。集录.ru 声明依赖，ru deps sync 显式获取，运行和检查不联网。如竞用 外言 '如:竞'，如观用 外言 '如:观'。旧导入名如竞、如观、如:竞赛已移除，无兼容别名；产品名不变。如观需支持画布的如书宿主，普通 CLI 不显示画布。如:密是标准原生库；如见是随附三方 Win32 库。二者仅 Windows x64 显式启用原生权限的 Python run --allow-native 或 C build --allow-native 路径可用；如书、Node 和浏览器不可用，也不是通用跨平台 FFI。check 只验证不执行。此提示不解析模块或执行源码。")
     ("典" . "典：键值映射。字面量 {目: 相, 目: 相}，表达式位置的空典 {}；语句位置的 {} 是作用域块。也可写 典: 目 对 相. 成。支持全角｛｝和尾逗号。")
     ("成" . "成：结束典字面量；外层语句的句点另写。")
     ("对" . "对：二元素对；在典字面量中分隔目与相。")
