@@ -18,7 +18,38 @@ def integrate_runtime(source):
     types = (directory / 'native_types.h').read_text(encoding='utf-8')
     platform = (directory / 'native_platform_win64.h').read_text(encoding='utf-8')
     source = _replace(source, 'RU_MODULE, RU_ENV };', 'RU_MODULE, RU_ENV, RU_NATIVE };')
-    source = _replace(source, 'struct RuHeap { size_t roots;', 'struct RuHeap { size_t permanent_roots; size_t roots;')
+    source = _replace(source, 'struct RuHeap { size_t roots;', 'struct RuHeap { RuHeap *transient_prev, *transient_next; size_t permanent_roots; size_t roots;')
+    source = _replace(source, 'static RuHeap *ru_heap;', 'static RuHeap *ru_heap;\nstatic RuHeap *ru_transient_roots;')
+    source = _replace(source, 'static Val v_copy(Val v)', '''/* An allocation-free index of heaps with roots > permanent_roots.
+ * The index is not a GC root set: permanently rooted heaps may be absent. */
+static void rn_transient_link(RuHeap *heap)
+{
+    heap->transient_prev = NULL; heap->transient_next = ru_transient_roots;
+    if (ru_transient_roots) ru_transient_roots->transient_prev = heap;
+    ru_transient_roots = heap;
+}
+static void rn_transient_unlink(RuHeap *heap)
+{
+    if (heap->transient_prev) heap->transient_prev->transient_next = heap->transient_next;
+    else if (ru_transient_roots == heap) ru_transient_roots = heap->transient_next;
+    else return; /* Already unlisted, including zero-root GC victims. */
+    if (heap->transient_next) heap->transient_next->transient_prev = heap->transient_prev;
+    heap->transient_prev = NULL; heap->transient_next = NULL;
+}
+static Val v_copy(Val v)''')
+    source = _replace(source, '++v.heap->roots;', '''if (v.heap->roots == v.heap->permanent_roots) rn_transient_link(v.heap);
+        ++v.heap->roots;''')
+    source = _replace(source, '--v.heap->roots;', '''--v.heap->roots;
+        if (v.heap->roots == v.heap->permanent_roots) rn_transient_unlink(v.heap);''')
+    source = _replace(source, 'h->kind=kind; h->roots=1; h->next=ru_heap; ru_heap=h; ++ru_live;',
+                      'h->kind=kind; h->roots=1; h->next=ru_heap; ru_heap=h; ++ru_live;\n    rn_transient_link(h);')
+    source = _replace(source, '--env->gc.roots; return;', '''--env->gc.roots;
+        if (env->gc.roots == env->gc.permanent_roots) rn_transient_unlink(&env->gc);
+        return;''')
+    source = _replace(source, 'static void ru_heap_dispose(RuHeap *heap)\n{',
+                      'static void ru_heap_dispose(RuHeap *heap)\n{\n    rn_transient_unlink(heap);')
+    source = _replace(source, 'if(ru_failed) for(h=ru_heap;h;h=h->next) h->roots=0;',
+                      'if(ru_failed) for(h=ru_heap;h;h=h->next) { rn_transient_unlink(h); h->roots=0; }')
     source = _replace(source, 'typedef struct RuScratch { void *data;', 'typedef struct RuScratch { void (*cleanup)(void *); void *data;')
     source = _replace(source, 'entry->data = NULL; entry->next = ru_scratch;', 'entry->cleanup = free; entry->data = NULL; entry->next = ru_scratch;')
     source = _replace(source, 'free(entry->data); free(entry); return;', 'entry->cleanup(entry->data); free(entry); return;')
@@ -39,8 +70,10 @@ def integrate_runtime(source):
     source = _replace(source, 'static void ru_panic_raise(Val reason, int line, int col)', '''/* Persistent roots belong to escaped state, never to an abandoned call frame. */
 static Val v_pin(Val value)
 {
-    value = v_copy(value);
-    if (value.heap) ++value.heap->permanent_roots;
+    if (value.heap) {
+        if (value.heap->roots == SIZE_MAX) ru_fail(0, "值引用过多");
+        ++value.heap->roots; ++value.heap->permanent_roots;
+    }
     return value;
 }
 static void v_unpin(Val value)
@@ -48,8 +81,9 @@ static void v_unpin(Val value)
     if (value.heap) {
         if (!value.heap->permanent_roots) ru_fail(0, "内部错误：永久根计数失衡");
         --value.heap->permanent_roots;
+        if (!value.heap->roots) ru_fail(0, "内部错误：值的根计数失衡");
+        --value.heap->roots;
     }
-    v_drop(value);
 }
 static void *ru_native_scratch_realloc(void *data, size_t size)
 {

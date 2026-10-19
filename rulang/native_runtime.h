@@ -550,10 +550,11 @@ static RuNativeTrap *rn_trap_new(void)
     RuNativeTrap *trap = (RuNativeTrap *)calloc(1, sizeof(*trap));
     RuHeap *heap; size_t count = 0;
     if (!trap) return NULL;
-    for (heap = ru_heap; heap; heap = heap->next) if (heap->roots > heap->permanent_roots) ++count;
+    for (heap = ru_transient_roots; heap; heap = heap->transient_next) ++count;
+    if (count > SIZE_MAX / sizeof(*trap->roots)) { free(trap); return NULL; }
     trap->roots = (RuNativeRoot *)malloc((count ? count : 1) * sizeof(*trap->roots));
     if (!trap->roots) { free(trap); return NULL; }
-    for (heap = ru_heap; heap; heap = heap->next) if (heap->roots > heap->permanent_roots) {
+    for (heap = ru_transient_roots; heap; heap = heap->transient_next) {
         trap->roots[trap->root_count].heap = heap;
         trap->roots[trap->root_count++].transient = heap->roots - heap->permanent_roots;
     }
@@ -568,11 +569,14 @@ static void rn_trap_restore(RuNativeTrap *trap)
     /* Persistent roots have changed legitimately during the callback; restore
      * only abandoned frame roots. Entry transient roots keep their heaps alive. */
     ru_panic_clear();
+    ru_transient_roots = NULL;
     for (heap = ru_heap; heap; heap = heap->next) {
         RuNativeRoot key, *saved; key.heap = heap; key.transient = 0;
         saved = (RuNativeRoot *)bsearch(&key, trap->roots, trap->root_count, sizeof(*trap->roots), rn_root_compare);
         heap->roots = heap->permanent_roots + (saved ? saved->transient : 0);
         heap->mark = 0;
+        heap->transient_prev = NULL; heap->transient_next = NULL;
+        if (heap->roots > heap->permanent_roots) rn_transient_link(heap);
     }
     while (ru_scratch != (RuScratch *)trap->scratch) ru_scratch_free(ru_scratch->data);
     ru_call_depth = trap->call_depth; ru_source = trap->source;
