@@ -83,7 +83,7 @@ class _Opaque:
 
 
 class _Env:
-    def __init__(self, changed, observed, parent=None, kind="module", fixed=()):
+    def __init__(self, changed, observed, parent=None, kind="module", fixed=(), private=False):
         self._changed = changed
         self._observed = observed
         self._version = 0
@@ -92,6 +92,7 @@ class _Env:
         self.parent = parent
         self.kind = kind
         self.fixed_locals = frozenset(fixed)
+        self.private = private
 
     def get(self, name):
         # A missing name is a dependency too: a later local binding can shadow
@@ -170,6 +171,15 @@ class _SummaryFrame:
         self.complete = True
 
     def observe(self, owner, version=None):
+        # A scope with no nested function/literal/method anywhere in its body
+        # cannot escape to a child callable that writes it independently. Its
+        # contents on re-entry are determined by this call context and external
+        # owners still tracked below. Keeping every such child scope creates
+        # false fanout overflow.
+        # The global revision still prevents caching the evaluation that changes
+        # any local state; arrays, objects, captures and modules are never elided.
+        if isinstance(owner, _Env) and owner.private:
+            return
         if not self.complete or owner in self.dependencies:
             return
         if len(self.dependencies) >= MAX_SUMMARY_DEPENDENCIES:
@@ -271,6 +281,7 @@ class NativeCPlan:
         self._functions = []
         self._function_cache = {}
         self._scope_cache = {}
+        self._private_body_cache = {}
         self._array_cache = {}
         self._opaque_cache = {}
         self._envs = []
@@ -414,12 +425,33 @@ class NativeCPlan:
         if site is not None and key in self._scope_cache:
             return self._scope_cache[key]
         fixed = set(fixed) | {node.data['name'] for node in body if node.kind == 'function'}
-        env = _Env(self._changed, self._observe, parent, kind, fixed)
+        env = _Env(self._changed, self._observe, parent, kind, fixed,
+                   kind != 'module' and self._private_body(body))
         self._envs.append(env)
         self._changed()
         if site is not None:
             self._scope_cache[key] = env
         return env
+
+    def _private_body(self, body):
+        """Prove that no callable can retain this scope or a descendant scope."""
+        key = id(body)
+        if key not in self._private_body_cache:
+            pending = [body]
+            private = True
+            while pending:
+                value = pending.pop()
+                if isinstance(value, Node):
+                    if value.kind in ('function', 'function_literal', 'type'):
+                        private = False
+                        break
+                    pending.append(value.data)
+                elif isinstance(value, dict):
+                    pending.extend(value.values())
+                elif isinstance(value, (tuple, list)):
+                    pending.extend(value)
+            self._private_body_cache[key] = private
+        return self._private_body_cache[key]
 
     def _function(self, node, env, declared=True):
         key = (id(node), id(env))

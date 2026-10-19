@@ -2,7 +2,8 @@
 import tempfile
 import unittest
 
-from test_runtime_pruning import CC, FIXTURE, build, generate, run
+import test_runtime_pruning as pruning
+from test_runtime_pruning import CC, build, generate, run
 
 
 @unittest.skipUnless(CC, 'C compiler unavailable')
@@ -117,7 +118,9 @@ class ArrayInterfacesNativeTests(unittest.TestCase):
                            error='阵的逐位回调须为接受两个参数的算或作')
 
     def test_unrelated_runtime_keeps_existing_size(self):
-        generated = generate(FIXTURE.read_text(encoding='utf-8'), source_name='/p1010.ru')
+        # Reuse the established fixed-label budget proof: the unmodified
+        # default output must differ only in its source identity assignments.
+        generated = pruning.RuntimeGenerationTests.p1010_budget_source(self)
         for function in ('v_array_sort', 'ru_array_before', 'v_array_transform', 'v_array_each', 'ru_array_algorithm'):
             self.assertNotIn(function, generated)
         self.assertLess(len(generated.encode('utf-8')), 50_000)

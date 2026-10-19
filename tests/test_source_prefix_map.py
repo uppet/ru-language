@@ -157,6 +157,31 @@ class SourcePrefixMapTests(unittest.TestCase):
             self.assertIn(cstr(literal), code, 'explicit mappings must not redact user string values')
 
     @unittest.skipUnless(CC, 'a C99 compiler is required')
+    def test_unmapped_long_source_paths_retain_runtime_diagnostics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve() / ('long-source-location-' * 4)
+            root.mkdir()
+            entry, child = root / 'entry.ru', root / 'child.ru'
+            child.write_text("作 失败:\n卒 'failure'.\n为.\n", encoding='utf-8')
+            entry.write_text("模 取 外言 'child.ru'. 模 其 失败.", encoding='utf-8')
+            graph = load_module_graph(entry)
+            for full in (False, True):
+                with self.subTest(full=full):
+                    code = Compiler(graph[graph.root], graph.root, modules=graph,
+                                    full_runtime=full).compile()
+                    self.assertIn('ru_source = ' + cstr(str(child)), code)
+                    self.assertIn('ru_source = ' + cstr(str(entry)), code)
+                    cfile, binary = root / 'program.c', root / 'program.exe'
+                    cfile.write_text(code, encoding='utf-8')
+                    built = subprocess.run([CC, '-std=c99', str(cfile), '-o', str(binary), '-lm'],
+                                           capture_output=True, text=True, timeout=60)
+                    self.assertEqual(built.returncode, 0, built.stderr)
+                    result = subprocess.run([str(binary)], text=True, capture_output=True, timeout=20)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertIn(str(child) + ':2:', result.stderr)
+                    self.assertIn('failure', result.stderr)
+
+    @unittest.skipUnless(CC, 'a C99 compiler is required')
     def test_cli_build_maps_runtime_import_labels_and_panic_locations(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()

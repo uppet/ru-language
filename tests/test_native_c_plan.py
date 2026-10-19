@@ -765,9 +765,9 @@ class NativeCAnalysisTests(unittest.TestCase):
     def test_dependency_overflow_propagates_through_cached_children(self):
         source = PREFIX + """
             S 取 密 其 签名 (密 其 i32) ([]) 'cdecl'.
-            算 叶 值: 得 值 + 1. 法
-            算 枝 值: 得 叶 值. 法
-            算 树 值: 得 枝 值. 法
+            算 叶 值: 叶阵 取 [值]. 得 叶阵[0] + 1. 法
+            算 枝 值: 枝阵 取 [值]. 得 叶 (枝阵[0]). 法
+            算 树 值: 树阵 取 [值]. 得 枝 (树阵[0]). 法
             树 7. 树 7. 树 7. 树 7.
         """
         expected = plan(source).signatures
@@ -779,9 +779,130 @@ class NativeCAnalysisTests(unittest.TestCase):
         root = next(fn for fn in value._functions if fn.node.data.get('name') == '树')
         cached_nodes = {key[0][1] for key in value._call_summaries}
         self.assertIn(id(branch.node), cached_nodes)
-        # Own scope + module + branch scope + leaf scope cannot fit. The leaf
-        # dependency must propagate even when the branch itself was a hit.
+        # Module + root array + branch array + leaf array cannot fit. Unlike
+        # private lexical scopes, live array owners remain dependencies. The
+        # leaf dependency must propagate even when the branch itself was a hit.
         self.assertNotIn(id(root.node), cached_nodes)
+
+    def test_private_scope_fanout_does_not_consume_live_owner_budget(self):
+        # Distinct scalar contexts create private analysis scopes, but no
+        # closure can mutate them. This is unrelated to any application fixture.
+        source = PREFIX + "S 取 密 其 签名 (密 其 i32) ([]) 'cdecl'.\n"
+        source += '算 叶 值: 局 取 值 + 1. 得 局. 法\n'
+        source += '算 树: ' + ''.join(f'叶 {i}. ' for i in range(270)) + '得 0. 法\n'
+        source += '树. ' * 15
+        value = plan(source)
+        root = next(fn for fn in value._functions if fn.node.data.get('name') == '树')
+        self.assertEqual(value.signatures, (NativeCSignature('i32', ()),))
+        self.assertIn(id(root.node), {key[0][1] for key in value._call_summaries})
+        self.assertLess(value._steps, 4000)
+        self.assertTrue(all(len(summary[0]) <= native_c.MAX_SUMMARY_DEPENDENCIES
+                            for summary in value._call_summaries.values()))
+
+    def test_private_scope_elision_preserves_expression_work_limit(self):
+        value = NativeCPlan.__new__(NativeCPlan)
+        statement = parse('显 1.')[0]
+        with self.assertRaisesRegex(RuError, '超过复杂度上限'):
+            value.__init__({'/tmp/native_budget.ru': [statement] * 200001})
+        self.assertEqual(value._steps, 200001)
+        self.assertEqual(native_c.MAX_SUMMARY_DEPENDENCIES, 256)
+        self.assertEqual(native_c.MAX_SUMMARY_FUNCTIONS, 256)
+        self.assertEqual(native_c.MAX_CALL_SUMMARIES, 4096)
+
+    def test_private_scope_elision_matches_conservative_scope_dependencies(self):
+        class ConservativeScopes(NativeCPlan):
+            def _private_body(self, body):
+                return False
+
+        cases = [
+            """
+                型 取 密 其 i32.
+                算 用: 旧 取 型. 型 取 密 其 f64. 得 旧. 法
+                用. 用. 用. 型 取 密 其 u8.
+                S 取 密 其 签名 (用) ([]) 'cdecl'.
+            """,
+            """
+                算 外:
+                    型 取 密 其 i32.
+                    算 取型: 得 型. 法
+                    算 改: 型 取 密 其 f64. 得 空. 法
+                    取型. 取型. 取型. 未知 (算 改).
+                    得 密 其 签名 (取型) ([]) 'cdecl'.
+                法 外.
+            """,
+            """
+                算 外:
+                    算 写: 型 取 密 其 f64. 得 空. 法
+                    写. 写. 写. 型 取 密 其 i32. 写.
+                法 外.
+            """,
+            """
+                算 造:
+                    参数 取 [密 其 i32].
+                    算 首: 得 参数[0]. 法
+                    得 [算 首, 参数].
+                法
+                包 取 造. F 取 包[0]. 参数 取 包[1].
+                算 用: 得 F(). 法
+                用. 用. 用. 参数 其 增 (密 其 f64).
+                S 取 密 其 签名 (用) ([]) 'cdecl'.
+            """,
+            """
+                算 首 参数: 得 参数[0]. 法
+                参数 取 [密 其 i32]. 首 参数. 首 参数. 首 参数.
+                参数[0] 取 密 其 f64.
+                S 取 密 其 签名 (首 参数) ([]) 'cdecl'.
+            """,
+            """
+                算 外:
+                    型 取 密 其 i32.
+                    算 回 值: S 取 密 其 签名 型 ([]) 'cdecl'. 得 0. 法
+                    回 0. 回 0. 回 0.
+                    签 取 密 其 签名 (密 其 i32) ([密 其 i32]) 'cdecl'.
+                    C 取 密 其 回调 签 (算 回) 0.
+                    型 取 密 其 f64. 得 C.
+                法 外.
+            """,
+            """
+                算 递归 值: 得 递归 值. 法
+                递归 (密 其 i32).
+            """,
+        ]
+        for index, source in enumerate(cases):
+            with self.subTest(case=index):
+                outcomes = []
+                for plan_type in (NativeCPlan, ConservativeScopes):
+                    graph = load_module_graph('/tmp/native_private_scope.ru', parse(PREFIX + source))
+                    try:
+                        value = plan_type(graph)
+                    except RuError as error:
+                        outcomes.append((error.category, error.message, error.source_name,
+                                         error.line, error.col))
+                    else:
+                        outcomes.append((value.signatures, value.callback_signatures, value.emit_c()))
+                self.assertEqual(outcomes[0], outcomes[1])
+
+    def test_private_scope_proof_searches_all_nested_ast_containers(self):
+        # The proof must find closures before that path is evaluated. A child
+        # block's lexical parent is retained by its callable too.
+        value = NativeCPlan.__new__(NativeCPlan)
+        value._private_body_cache = {}
+        bodies = [
+            ('得 0.', True),
+            ('段: 局 取 1. 落. 得 0.', True),
+            ('算 子: 得 0. 法 得 0.', False),
+            ('若 真 则 段: 算 子: 得 0. 法 落. 然 得 0.', False),
+            ('循 0 次 F 取 算: 得 0. 法. 环 得 0.', False),
+            ("试 卒 'x'. 救 原因 F 取 算: 得 0. 法. 终 得 0.", False),
+            ('得 [算: 得 0. 法].', False),
+            ('形 工具: 算 同 对方: 得 真. 法 象 得 0.', False),
+        ]
+        # Keep parsed bodies alive, just as the resolved source graph does.
+        parsed = [(parse('算 外: ' + body + ' 法')[0].data['body'], expected)
+                  for body, expected in bodies]
+        for body, expected in parsed:
+            with self.subTest(body=body):
+                self.assertEqual(value._private_body(body), expected)
 
     def test_cached_transitive_footprint_cannot_bypass_active_recursion(self):
         value = plan(PREFIX + """
