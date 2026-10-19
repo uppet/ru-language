@@ -4,7 +4,7 @@
 
 **[首页的小程序](../README.md) → [打开如书](stable-entry.md#取得同一套工具链) → [入门小路](first-steps.md) → 选一个小作品。**
 
-本目录随所在分支更新，当前 `main` 对应如 0.20.0。使用接口前先核对[版本与执行目标](stable-entry.md)；`wip` 正在开发如／规范 0.22.0；本目录中的 C 原生新增接口不能用于 0.20.0 稳定版。
+本目录对应 `main` 上的如 0.22.0／如书 0.8.8，包含包与具名模块、Windows x64 C 原生后端。使用接口前先核对[版本与执行目标](stable-entry.md)。
 
 ## 学习与小作品
 
@@ -29,6 +29,7 @@
 
 - [安装、安全更新与环境](stable-entry.md)
 - [命令行、REPL 与独立程序](command-line.md)
+- [包与具名模块](packages.md) · [包目录本地原型](package-registry.md) · [编辑器配套清单](package-tooling.md)
 - [Emacs 编辑支持](../emacs/README.md) · [如言 VS Code 扩展](https://github.com/uppet/ru-vscode)
 - [浏览器 JS 执行](browser-js.md)：与默认 Python 会话的区别和保护边界
 - [如是我言](generation.md)：可选生成、凭据配置、审阅与输出保护
@@ -51,9 +52,7 @@
 - [已知问题与设计审查](language-review-tracker.md)
 - [实际验证记录](../VALIDATION.md)：历史实测与平台范围
 - [0.18.1 稳定化验证](stabilization-generation-validation.md)（历史记录）
-- 分项记录：[如观 0.19.8 验证](ruguan-0.19.8-validation.md) · [原生库 0.20.0 验证](native-0.20.0-validation.md)
+- 分项记录：[包系统 0.22.0 验证](package-0.22.0-validation.md) · [如观 0.19.8 验证](ruguan-0.19.8-validation.md) · [原生库 0.20.0 验证](native-0.20.0-validation.md)
 - [第三方算法与许可说明](third-party-notices.md)
 
 [返回首页](../README.md)
-
-包系统 0.22.0 开发版：[包与具名模块](packages.md)、[目录本地原型](package-registry.md)、[工具影响清单](package-tooling.md)。

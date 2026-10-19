@@ -93,6 +93,7 @@ python3 ru repl
 - 想处理更多数据：[阵的排序与另成](docs/array-sort-map.md) · [语言用法参考](docs/language-guide.md)
 - 想让模型帮忙起草程序：[如是我言](docs/generation.md)，可选；生成后先审阅，再运行
 - 想把程序交给别人运行：[命令行与独立程序](docs/command-line.md)
+- 想把多个文件组织成一个项目：[包与具名模块](docs/packages.md)
 
 完整的学习、工具与进阶入口都在[文档导航](docs/index.md)。
 
@@ -102,10 +103,8 @@ python3 ru repl
 
 只运行你信任的代码。如书和普通本地执行都有真实的文件访问权限，不能当作运行陌生程序的安全沙箱。
 
-- [安装、版本与更新](docs/stable-entry.md)：稳定入口与开发版本的区别
+- [安装、版本与更新](docs/stable-entry.md)：当前版本、执行目标与安全更新
 - [语言规范](rulang/language-spec.md)：当前实现规则的完整说明
 - [开发与验证](docs/development.md) · [变更记录](CHANGELOG.md) · [实际验证记录](VALIDATION.md)
 
 从一行 `显 '你好，如'.` 开始，也很好。
-
-开发版 `wip` 的包系统见[包与具名模块](docs/packages.md)：`吾 言 工程 其 力学.`、静态集录与显式依赖同步；`main` 稳定版尚不包含此功能。

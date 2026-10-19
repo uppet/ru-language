@@ -2,9 +2,9 @@
 
 如见随工具链一起发布，但属于第三方库，暂不成为如语言本身的一部分。精确导入名是 `外言 '如见'`，没有冒号。它使用通用标准库 `如:密`；不使用 `ffi.ru`，也没有 Python GUI 专用运行时。长期方向是跨平台 GUI 库，但当前只实现 Win32 驱动；如:密保留通用原生适配边界，后续其他平台驱动需分别实现和验证。
 
-运行平台当前仅为 **Windows x64**。如 0.20.0 稳定版通过本地 Python 解释器运行；如 0.21.0 开发版增加显式启用的 C 后端，可构建不需要 Python／libffi 的独立 Windows `.exe`。需要可用的 Windows 桌面；未显示的真实窗口仍需要窗口站/桌面。32 位 Windows、Windows ARM64、Linux、macOS、Android、Node.js、浏览器及如书执行均不支持。
+运行平台当前仅为 **Windows x64**。如 0.22.0 可通过本地 Python 解释器运行，也可使用自 0.21.0 引入、显式启用的 C 后端，可构建不需要 Python／libffi 的独立 Windows `.exe`。需要可用的 Windows 桌面；未显示的真实窗口仍需要窗口站/桌面。32 位 Windows、Windows ARM64、Linux、macOS、Android、Node.js、浏览器及如书执行均不支持。
 
-本页新增 C 命令对应 0.21.0 开发版，不表示已发布或 Windows 验证已完成。源码／静态签名检查不执行 DLL 或创建窗口，不能代替 Windows 上的运行验证。
+本页命令适用于如 0.22.0，实际回归及待验项见[本版验证记录](../../../docs/package-0.22.0-validation.md)。源码／静态签名检查不执行 DLL 或创建窗口，不能代替 Windows 上的运行验证。
 
 ## 运行
 

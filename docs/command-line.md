@@ -2,7 +2,7 @@
 
 先按[安装与更新](stable-entry.md)准备工具链。以下命令在仓库根目录执行；Windows 可把 `python3` 换成 `py -3`。如书画布的入口见[如书说明](../rushu/README.md)，它与下面的 C／Node.js 程序目标不同。
 
-本页对应 `wip` 上如 0.22.0，包含自 0.21.0 引入的 C 原生后端开发接口；当前 `main` 稳定版仍为如 0.20.0，只提供 Windows x64 本地 Python 原生执行。C 原生命令须使用 0.21.0 或更新的工具链，源码路径映射须使用 0.21.2 或更新版本；不能据此认定 Windows 验证或发布已完成。具体组合见[版本说明](stable-entry.md)。
+本页对应 `main` 上的如 0.22.0，包含包依赖同步、Windows x64 C 原生后端、源码路径映射和句点书写检查。原生能力须显式启用，执行平台与实测范围见[版本说明](stable-entry.md)。
 
 ## 常用命令
 
@@ -140,4 +140,4 @@ node dist/hello.js
 
 [返回文档导航](index.md)
 
-包系统 0.22.0 开发版：[包与具名模块](packages.md)、[目录本地原型](package-registry.md)、[工具影响清单](package-tooling.md)。
+包依赖与目录命令：[包与具名模块](packages.md)、[目录本地原型](package-registry.md)、[工具影响清单](package-tooling.md)。

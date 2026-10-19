@@ -2,7 +2,7 @@
 
 ## 取得同一套工具链
 
-当前稳定组合为 **如 0.20.0、语言规范 0.20.0、如书 0.8.8**，均来自语言仓库的 `main`。`wip` 正在开发如／规范 0.22.0 的 Windows x64 C 原生后端；如书保持 0.8.8，如言扩展保持 0.8.4。它尚未取代本页的稳定组合，新增接口与 Windows 验证状态须分别核对；学习与普通使用从 `main` 开始。`main` 是经过验证的稳定使用入口，语言本身仍处于原型阶段，不表示永久冻结语法。
+当前稳定组合为 **如 0.22.0、语言规范 0.22.0、如书 0.8.8**，均来自语言仓库的 `main`；如言 VS Code 扩展配套版本为 **0.8.6**。本版包含包与具名模块，以及显式启用的 Windows x64 C 原生后端。学习与普通使用从 `main` 开始；`wip` 用于后续开发。语言仍处于原型阶段，不表示永久冻结语法，各平台实测范围见下文及[验证记录](../VALIDATION.md)。
 
 需要已安装 Python 3.10+ 和 Git。仓库现已公开，可直接获取源码。全新安装：
 
@@ -16,7 +16,7 @@ python3 -m rushu
 
 Windows 可把 `python3` 换成 `py -3`。打开终端打印的完整本机地址，保留其中的启动令牌。如书启动、离线编辑及 Python／浏览器 JS 执行均不需要 npm；只有 CLI JavaScript 产物执行需要 Node.js 18+。
 
-独立的[如言 VS Code 扩展](https://github.com/uppet/ru-vscode) **0.8.4** 配套如 0.20.0，支持连写的 `尽取` 及原生库接口提示；已有旧版扩展时请同步更新。扩展与语言仓库分别发布，扩展不内置解释器。其“运行当前文件”走普通 CLI，不是如书画布入口。把扩展的 `ru.cliPath` 指向本机语言仓库的 `ru` 文件，解释器路径指向已安装的 Python；普通文本编辑加终端命令同样可用。
+独立的[如言 VS Code 扩展](https://github.com/uppet/ru-vscode) **0.8.6** 配套如 0.22.0，支持连写的 `尽取`、包语法与原生库接口提示；已有旧版扩展时请同步更新。扩展与语言仓库分别发布，扩展不内置解释器。其“运行当前文件”走普通 CLI，不是如书画布入口。把扩展的 `ru.cliPath` 指向本机语言仓库的 `ru` 文件，解释器路径指向已安装的 Python；普通文本编辑加终端命令同样可用。
 
 启动后继续[入门小路](first-steps.md)。只想运行 `.ru` 文件时，可用 `python3 ru run examples/hello.ru`；交互输入用 `python3 ru repl`。
 
@@ -49,7 +49,7 @@ python3 -c "import rushu; print(rushu.__version__)"
 
 从较旧版本升级时，按 [标准模块导入迁移](standard-module-imports-migration.md) 改用 `如:观`、`如:竞`，并查看 [阵与典遍历](array-sort-map.md)。保存书本不会自动迁移源码，也不打包外部模块。需要可重复结果时重启 Python 会话并按顺序运行；本次补丁不改变会话重定义规则。
 
-## 稳定版 0.20.0 的执行与生成检查对照
+## 稳定版 0.22.0 的执行与生成检查对照
 
 | 入口 | 状态与宿主 | 生成结果检查 |
 | --- | --- | --- |
@@ -57,11 +57,13 @@ python3 -c "import rushu; print(rushu.__version__)"
 | 如书显式 JS 加速（browser-js） | 每次新 Worker，不共享前格或 Python 变量；提供如观画布，帧率请求 1～60 | 同一浏览器编译器的能力／模块检查，只允许随附标准库；编译后丢弃产物，不执行源码 |
 | CLI `run`／REPL | Python；REPL 可保留状态；不提供如观画布 | `generate` 默认 `--target ru`，检查源码及本地依赖，默认保存后不执行 |
 | CLI `build --target js`／`generate --target js` | Node.js 18+ 独立 CommonJS 程序；不是浏览器，不提供如观画布 | 生成时先检查如源码再本地编译为 Node.js 产物，默认不执行 |
-| CLI `build`（默认 C） | C99 编译器生成的独立程序；不提供如观画布，不支持如:密／如见 | 构建不运行；在线生成如源码后可另行构建 |
+| CLI `build`（默认 C） | C99 编译器生成的独立程序；不提供如观画布；Windows x64 原生依赖须另行显式启用 | 构建不运行；在线生成如源码后可另行构建 |
 
-如 0.20.0 的 `如:密` 与随附三方库 `如见` 目前仅支持 **Windows x64 本地 Python**，须在审阅代码后使用 `run --allow-native` 显式启用。`check --target python` 可在其他受支持的开发宿主检查源码和导入图，不加载 DLL。C 原生库后端尚未提供；C、Node.js、browser-js 目标拒绝原生依赖，如书与 REPL 也不能启用。权限和生命周期边界见[原生库指南](native-library.md)。
+`如:密` 与随附三方库 `如见` 目前仅支持 **Windows x64 本地 Python 或 C 独立程序**。审阅源码后，Python 文件执行须使用 `run --allow-native`；C 检查与构建分别使用 `check --target c --allow-native` 与 `build --allow-native`，并满足有限静态 ABI 签名约束。两者默认均关闭原生能力；Node.js、browser-js、如书与 REPL 不能启用。`check --target python` 可在受支持的开发宿主检查源码和导入图，不加载 DLL。权限和生命周期边界见[原生库指南](native-library.md)。
 
-`wip` 的 0.22.0 沿用自 0.21.0 引入的 `check --target c --allow-native` 与 `build --allow-native`：静态确定有限 ABI 签名，再用 Windows x64 C 工具链生成不需要 Python／libffi 的独立程序。C 默认仍拒绝原生依赖，JavaScript、如书与 REPL 的边界不变。生成／检查 C 的宿主不等于程序运行平台，不代表 Linux、macOS 或 Android 原生执行已经可用。0.21.0 已通过 [Windows x64 GCC CI](https://github.com/uppet/ru-language/actions/runs/38851331303) 的独立 `.exe`、DLL／回调及如见窗口自动化检查；Windows Clang 与可见窗口的人工交互验收仍未完成，也尚未取代 `main` 稳定版。
+C 原生后端用 Windows x64 C 工具链生成不需要 Python／libffi 的独立程序，仍依赖 Windows 与所调用的 DLL。生成／检查 C 的宿主不等于程序运行平台，不代表 Linux、macOS 或 Android 原生执行已经可用。0.21.0 已通过 [Windows x64 GCC CI](https://github.com/uppet/ru-language/actions/runs/38851331303) 的独立 `.exe`、DLL／回调及如见窗口自动化检查；本版实际回归及待验项见[0.22.0 验证记录](package-0.22.0-validation.md)。Windows Clang 与可见窗口的人工交互验收仍未完成。
+
+[包与具名模块](packages.md)可在 Python、C 与 Node.js 使用；依赖须显式执行 `ru deps sync` 获取，普通运行、检查与构建不自动联网。如书 Python 使用本机已有依赖，书本不打包依赖文件；browser-js 仍只允许随附标准库。当前没有默认公共包目录或网络发布服务。
 
 如书生成从不自动运行；已收到的完整源码即使目标检查未通过，仍保留用于审阅与修改。请求失败不替换当前草稿。Python 检查通过不表示 browser-js 可用，browser-js 检查通过也不保证运行正确、安全或达到请求帧率。不支持的浏览器能力不会悄悄回退到 Python。普通 `ru check` 不是如书图形目标检查器。
 
