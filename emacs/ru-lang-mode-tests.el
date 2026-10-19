@@ -1591,3 +1591,52 @@
     (should (string-match-p "不是通用跨平台 FFI" help))
     (should (string-match-p "ru deps sync" help))
     (should-not (string-match-p "如书/C/Node/浏览器不可用" help))))
+
+(ert-deftest ru-lang-package-declaration-help-requires-complete-context ()
+  (dolist (source '("吾 言 工程 其 力学."
+                    "吾 # 声明间的注释\n言 工程 其 力学。"))
+    (ru-lang-test--buffer source
+      (font-lock-ensure)
+      (dolist (word '("吾" "言"))
+        (goto-char (point-min))
+        (search-forward word)
+        (should (eq (get-text-property (1- (point)) 'face)
+                    'font-lock-keyword-face))
+        (should (string-match-p "模块声明"
+                                (get-text-property (1- (point)) 'help-echo))))))
+  (dolist (source '("吾 取 1. 言 取 2."
+                    "算 吾 言: 得 言. 法."
+                    "显 对象 其 吾. 显 对象@言."
+                    "力 取 外言 吾 其 言."
+                    "吾 (言) 工程."
+                    "吾 言 工程"
+                    "显 '吾 言 工程.'. # 吾 言 工程."))
+    (ru-lang-test--buffer source
+      (font-lock-ensure)
+      ;; Match whole names: the final character of 外言 is not ordinary 言.
+      (seq-doseq (token ru-lang--tokens)
+        (when (or (member (ru-lang--token-text token) '("吾" "言"))
+                  (memq (ru-lang--token-kind token) '(string comment)))
+          (let ((position (ru-lang--token-start token)))
+            (should-not (eq (get-text-property position 'face)
+                            'font-lock-keyword-face))
+            (should-not (get-text-property position 'help-echo))))))))
+
+(ert-deftest ru-lang-package-help-refontification-clears-old-declaration ()
+  (ru-lang-test--buffer "吾 言 工程."
+    (font-lock-ensure)
+    (goto-char (point-min))
+    (search-forward "言")
+    (should (get-text-property (1- (point)) 'help-echo))
+    ;; Replacing only the leading word leaves the old 言 property in place
+    ;; until the normal syntax/font-lock refresh clears it.
+    (goto-char (point-min))
+    (delete-char 1)
+    (insert "显")
+    (font-lock-flush)
+    (font-lock-ensure)
+    (goto-char (point-min))
+    (search-forward "言")
+    (should-not (eq (get-text-property (1- (point)) 'face)
+                    'font-lock-keyword-face))
+    (should-not (get-text-property (1- (point)) 'help-echo))))

@@ -46,7 +46,7 @@ class PackageManifestTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.path = Path(self.temp.name) / '集录.ru'
+        self.path = Path(self.temp.name).resolve() / '集录.ru'
 
     def test_static_manifest_and_relative_public_names(self):
         manifest = self.load("典: '名' 对 '工程'. '版' 对 '1.0.0'. '公开' 对 ['力学', '流体/管道']. 成.")
@@ -56,6 +56,18 @@ class PackageManifestTests(unittest.TestCase):
 
     def test_explicit_map_paths_are_manifest_relative(self):
         manifest = self.load("{'名':'工程', '版':'1.0.0', '公开':{'力学':'src/力学.ru'}}.")
+        self.assertEqual(manifest.public[('工程', '力学')], self.path.parent / 'src/力学.ru')
+
+    def test_manifest_path_alias_retains_canonical_public_identity(self):
+        from rulang.packages import load_manifest
+        original = self.load("{'名':'工程','公开':['力学','流体/管道']}.")
+        parent = self.path.parent / 'spelling-parent'
+        parent.mkdir()
+        alias = parent / '..' / '集录.ru'
+        manifest = load_manifest(alias)
+        self.assertEqual(manifest.path, self.path)
+        self.assertEqual(manifest.root, self.path.parent)
+        self.assertEqual(manifest.public, original.public)
         self.assertEqual(manifest.public[('工程', '力学')], self.path.parent / 'src/力学.ru')
 
     def test_manifest_never_evaluates_code_and_reports_positions(self):

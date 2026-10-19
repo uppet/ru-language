@@ -19,7 +19,7 @@ class PortableLockTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.app = self.root / 'work/app'
         self.cache = self.root / 'cache-one'
         self.descriptor = {'目录': 'https://example.test/registry', '包': '库', '版': '>=1.0.0 <3.0.0'}
@@ -101,12 +101,17 @@ class PortableLockTests(unittest.TestCase):
         self.assertEqual(load_manifest(cached).version, '1.0.0')
 
     def test_current_environment_cache_is_used_after_move(self):
-        self.sync()
-        new_cache = self.root / 'current-cache'
+        lock = self.sync()
+        # A lexical alias reproduces the Windows temporary-path spelling issue
+        # on any host: the package resolver returns canonical filesystem paths.
+        (self.root / 'cache-parent').mkdir()
+        new_cache = self.root / 'cache-parent' / '..' / 'current-cache'
         with patch.dict(os.environ, {'RU_PACKAGE_CACHE': str(new_cache)}):
             sync_dependencies(self.app, locked=True)
             cached = resolve_cached_dependency(load_manifest(self.app), '别名', self.descriptor)
-        self.assertTrue(cached.is_relative_to(new_cache))
+        self.assertEqual(cached, new_cache.resolve() / lock['packages'][0]['cache_key'] / 'package')
+        self.assertFalse(cached.is_relative_to(self.cache.resolve()))
+        self.assertEqual(load_manifest(cached).version, '1.0.0')
 
     def test_missing_lock_and_mutually_exclusive_modes_fail_without_fetch(self):
         with self.assertRaisesRegex(RuError, '锁'):
@@ -296,7 +301,7 @@ class AdditionalLockSafetyTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.app, self.cache = self.root / 'app', self.root / 'cache'
         manifest(self.app, dependencies="典: '甲' 对 典: 'Git' 对 'https://example.test/repo'. '引用' 对 'main'. 成. 成")
         fixture = self.root / 'fixture'
@@ -543,6 +548,322 @@ class GitLockedRestoreTests(unittest.TestCase):
                 sync_dependencies(app, cache_dir=cache, locked=True)
             self.assertEqual(calls, ['a' * 40])
             self.assertEqual((app / '集锁.json').read_bytes(), before)
+
+
+class CanonicalTreeHashTests(unittest.TestCase):
+    def test_tree_digest_does_not_depend_on_host_path_ordering(self):
+        from pathlib import PurePosixPath, PureWindowsPath
+        from rulang.package_sources import _tree_hash
+
+        class PosixOrderPath(type(Path())):
+            def __lt__(self, other):
+                return PurePosixPath(self.as_posix()) < PurePosixPath(other.as_posix())
+
+        class WindowsOrderPath(type(Path())):
+            def __lt__(self, other):
+                return PureWindowsPath(self.as_posix()) < PureWindowsPath(other.as_posix())
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            contents = {'a.ru': b'A', 'B.ru': b'B',
+                        'a/下.ru': '下'.encode('utf-8'), 'B/上.ru': '上'.encode('utf-8'),
+                        '工/力学.ru': '力'.encode('utf-8'), 'α/β.ru': '量'.encode('utf-8')}
+            for name, data in contents.items():
+                (root / name).parent.mkdir(parents=True, exist_ok=True)
+                (root / name).write_bytes(data)
+            # Use the real hashing routine with real files. Only Path ordering
+            # differs, just as pathlib ordering differs on Windows and POSIX.
+            with patch('rulang.package_sources.Path', PosixOrderPath):
+                posix = _tree_hash(root)
+            with patch('rulang.package_sources.Path', WindowsOrderPath):
+                windows = _tree_hash(root)
+            expected = hashlib.sha256()
+            for name in sorted(contents):
+                expected.update(name.encode('utf-8') + b'\0')
+                expected.update(hashlib.sha256(contents[name]).digest() + b'\0')
+            self.assertEqual(posix, expected.hexdigest())
+            self.assertEqual(windows, expected.hexdigest())
+            legacy_windows = hashlib.sha256()
+            for name in sorted(contents, key=PureWindowsPath):
+                legacy_windows.update(name.encode('utf-8') + b'\0')
+                legacy_windows.update(hashlib.sha256(contents[name]).digest() + b'\0')
+            self.assertNotEqual(legacy_windows.hexdigest(), expected.hexdigest())
+            (root / 'a.ru').write_bytes(b'changed bytes')
+            self.assertNotEqual(_tree_hash(root), expected.hexdigest())
+
+
+class Public022TreeHashCompatibilityTests(unittest.TestCase):
+    # Emitted by unmodified public 0ca43a83 sync_dependencies using the exact
+    # files below. Windows digests came from that same public routine with
+    # native Path comparison replaced by PureWindowsPath comparison only.
+    PUBLIC_LOCKS = json.loads(r'''{
+  "git": {
+    "edges": [
+      {
+        "alias": "Lib",
+        "descriptor": {
+          "Git": "https://example.test/lib",
+          "引用": "main"
+        },
+        "identity": "git:https://example.test/lib#",
+        "owner": "root"
+      }
+    ],
+    "format": 2,
+    "owners": {
+      "remote:8066774e9a2ce5a40c616a1c3ed4edaa11ec2ae42a98a0aede4ad1a540119a2d": {
+        "locator": {
+          "cache_key": "8066774e9a2ce5a40c616a1c3ed4edaa11ec2ae42a98a0aede4ad1a540119a2d",
+          "kind": "cache",
+          "path": "."
+        },
+        "manifest_sha256": "a1cd9e3f1992db68302b87575d8163b126b56bd748b85d2241275f251a3bc2a4"
+      },
+      "root": {
+        "locator": {
+          "kind": "project"
+        },
+        "manifest_sha256": "c20fdc5f121abfa33d0f599a30c7cf8a3057b2bbfd1ba81c14b2528ad5bc1ea5"
+      }
+    },
+    "packages": [
+      {
+        "cache_key": "8066774e9a2ce5a40c616a1c3ed4edaa11ec2ae42a98a0aede4ad1a540119a2d",
+        "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "identity": "git:https://example.test/lib#",
+        "kind": "git",
+        "mutable": false,
+        "name": "Lib",
+        "owner": "remote:8066774e9a2ce5a40c616a1c3ed4edaa11ec2ae42a98a0aede4ad1a540119a2d",
+        "subdir": "",
+        "tree_sha256": "68238c25114d83269e288c1b0506ae0e0ebf7106c0d1ddc12f28a47f5b557621",
+        "url": "https://example.test/lib",
+        "version": "1.0.0"
+      }
+    ]
+  },
+  "registry": {
+    "edges": [
+      {
+        "alias": "Lib",
+        "descriptor": {
+          "包": "Lib",
+          "版": ">=1.0.0 <3.0.0",
+          "目录": "https://example.test/registry"
+        },
+        "identity": "registry:https://example.test/registry#Lib",
+        "owner": "root"
+      }
+    ],
+    "format": 2,
+    "owners": {
+      "remote:7053c61bdd7d56b53451c04e4f104a18bd071e351b3a393e2b1de2d658818f5a": {
+        "locator": {
+          "cache_key": "7053c61bdd7d56b53451c04e4f104a18bd071e351b3a393e2b1de2d658818f5a",
+          "kind": "cache",
+          "path": "."
+        },
+        "manifest_sha256": "a1cd9e3f1992db68302b87575d8163b126b56bd748b85d2241275f251a3bc2a4"
+      },
+      "root": {
+        "locator": {
+          "kind": "project"
+        },
+        "manifest_sha256": "e74cb83c25e7c7cf3b14f434a086b914394d9649f6a910a49377c45321a63fde"
+      }
+    },
+    "packages": [
+      {
+        "cache_key": "7053c61bdd7d56b53451c04e4f104a18bd071e351b3a393e2b1de2d658818f5a",
+        "identity": "registry:https://example.test/registry#Lib",
+        "kind": "registry",
+        "mutable": false,
+        "name": "Lib",
+        "owner": "remote:7053c61bdd7d56b53451c04e4f104a18bd071e351b3a393e2b1de2d658818f5a",
+        "sha256": "777d58ed020c157107ed0c2bd1a29e5da03677def60510e397719695e51b443b",
+        "tree_sha256": "68238c25114d83269e288c1b0506ae0e0ebf7106c0d1ddc12f28a47f5b557621",
+        "url": "https://example.test/registry",
+        "version": "1.0.0"
+      }
+    ]
+  }
+}''')
+    WINDOWS_DIGEST = '1a644fdd45a039952b64d190f1eb9221dfababe0666562b2fea66b192e5fa49b'
+    FILES = {'集录.ru': "{'名':'Lib','版':'1.0.0','公开':['a']}.\n".encode(),
+             'src/a.ru': b'A', 'src/a/x.ru': b'x', 'src/B.ru': b'B', 'src/B/y.ru': b'y',
+             'src/工/力学.ru': '力'.encode(), 'src/α/β.ru': '量'.encode()}
+
+    def fixture(self, root, kind, flavor, cached=True):
+        import io
+        import tarfile
+        app, cache = root / 'app', root / 'cache'
+        app.mkdir()
+        lock = copy.deepcopy(self.PUBLIC_LOCKS[kind])
+        if flavor == 'windows':
+            lock['packages'][0]['tree_sha256'] = self.WINDOWS_DIGEST
+        descriptor = lock['edges'][0]['descriptor']
+        # Preserve the original manifest declaration order, independent of
+        # the sorted JSON keys in the emitted lock fixture.
+        descriptor = {key: descriptor[key] for key in
+                      (('Git', '引用') if kind == 'git' else ('目录', '包', '版'))}
+        (app / '集录.ru').write_bytes((json.dumps({'名': 'App', '依赖': {'Lib': descriptor}},
+            ensure_ascii=False, separators=(',', ':')) + '.\n').encode())
+        (app / '集锁.json').write_bytes((json.dumps(lock, ensure_ascii=False, sort_keys=True, indent=2) + '\n').encode())
+        stream = io.BytesIO()
+        with tarfile.open(fileobj=stream, mode='w') as archive:
+            for name, data in sorted(self.FILES.items()):
+                member = tarfile.TarInfo(name)
+                member.size = len(data)
+                archive.addfile(member, io.BytesIO(data))
+        data = stream.getvalue()
+        if kind == 'registry':
+            self.assertEqual(hashlib.sha256(data).hexdigest(), lock['packages'][0]['sha256'])
+        if cached:
+            safe_extract_archive(data, cache / lock['packages'][0]['cache_key'] / 'package')
+        return app, cache, lock, data
+
+    def transport(self, data):
+        outer = self
+        class Client:
+            def versions(self, name):
+                outer.fail('locked restore must not query versions')
+            def download(self, name, version):
+                outer.assertEqual((name, version), ('Lib', '1.0.0'))
+                return data, {'sha256': hashlib.sha256(data).hexdigest()}
+        def fetch(descriptor, staging):
+            self.assertEqual(descriptor['引用'], 'a' * 40)
+            safe_extract_archive(data, staging)
+            return 'a' * 40
+        return (patch('rulang.package_sources._fetch_git', side_effect=fetch),
+                patch('rulang.package_registry.RegistryClient', return_value=Client()))
+
+    def test_public_legacy_locks_restore_without_byte_changes_or_reselection(self):
+        for kind in ('git', 'registry'):
+            for flavor in ('posix', 'windows'):
+                with self.subTest(kind=kind, flavor=flavor), tempfile.TemporaryDirectory() as temporary:
+                    root = Path(temporary).resolve()
+                    app, cache, lock, data = self.fixture(root, kind, flavor)
+                    before = (app / '集锁.json').read_bytes()
+                    with patch('rulang.package_sources._fetch_git', side_effect=AssertionError('cache hit fetched')), \
+                         patch('rulang.package_registry.RegistryClient', side_effect=AssertionError('cache hit downloaded')):
+                        sync_dependencies(app, cache_dir=cache)
+                        sync_dependencies(app, cache_dir=cache, locked=True)
+                        resolve_cached_dependency(load_manifest(app), 'Lib', lock['edges'][0]['descriptor'], cache_dir=cache)
+                    shutil.move(app, root / 'moved')
+                    app = root / 'moved'
+                    shutil.rmtree(cache)
+                    git, registry = self.transport(data)
+                    with git, registry:
+                        restored = sync_dependencies(app, cache_dir=root / 'new-cache', locked=True)
+                    self.assertEqual(restored, lock)
+                    self.assertEqual((app / '集锁.json').read_bytes(), before)
+
+    def test_new_locks_tag_canonical_hash_and_do_not_accept_legacy_digest(self):
+        from rulang.package_sources import _tree_hash
+        for kind in ('git', 'registry'):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as temporary:
+                app, cache, legacy, data = self.fixture(Path(temporary).resolve(), kind, 'posix')
+                git, registry = self.transport(data)
+                # Fresh selection needs the branch and version-list interfaces.
+                def fetch(descriptor, staging):
+                    safe_extract_archive(data, staging)
+                    return 'a' * 40
+                with patch('rulang.package_sources._fetch_git', side_effect=fetch), registry as client:
+                    client.return_value.versions = lambda name: ['1.0.0']
+                    lock = sync_dependencies(app, cache_dir=cache, update=True)
+                record = lock['packages'][0]
+                self.assertEqual(record['tree_hash_algorithm'], 'relative-posix-v1')
+                self.assertEqual(record['tree_sha256'], _tree_hash(cache / record['cache_key'] / 'package'))
+                self.assertNotEqual(record['tree_sha256'], legacy['packages'][0]['tree_sha256'])
+                record['tree_sha256'] = legacy['packages'][0]['tree_sha256']
+                before = json.dumps(lock, ensure_ascii=False).encode()
+                (app / '集锁.json').write_bytes(before)
+                git, registry = self.transport(data)
+                with git, registry, self.assertRaises(RuError):
+                    sync_dependencies(app, cache_dir=cache, locked=True)
+                self.assertEqual((app / '集锁.json').read_bytes(), before)
+
+    def test_unknown_tag_or_extra_field_fails_before_transport(self):
+        for mutation in ({'tree_hash_algorithm': 'unknown'}, {'tree_hash_algorithm': None},
+                         {'tree_hash_algorithm': 'relative-posix-v1', 'extra': 1}):
+            for cached in (False, True):
+                with self.subTest(mutation=mutation, cached=cached), tempfile.TemporaryDirectory() as temporary:
+                    app, cache, lock, data = self.fixture(Path(temporary).resolve(), 'git', 'posix', cached)
+                    lock['packages'][0].update(mutation)
+                    before = json.dumps(lock, ensure_ascii=False).encode()
+                    (app / '集锁.json').write_bytes(before)
+                    with patch('rulang.package_sources._fetch_git', side_effect=AssertionError('invalid lock fetched')), \
+                         self.assertRaises(RuError):
+                        sync_dependencies(app, cache_dir=cache, locked=True)
+                    self.assertEqual((app / '集锁.json').read_bytes(), before)
+
+    def test_legacy_wrong_digest_or_changed_bytes_cannot_restore(self):
+        for flavor in ('posix', 'windows'):
+            for mutation in ('expected', 'bytes'):
+                with self.subTest(flavor=flavor, mutation=mutation), tempfile.TemporaryDirectory() as temporary:
+                    app, cache, lock, data = self.fixture(Path(temporary).resolve(), 'git', flavor)
+                    record = lock['packages'][0]
+                    source = cache / record['cache_key'] / 'package/src/a.ru'
+                    if mutation == 'expected':
+                        record['tree_sha256'] = 'f' * 64
+                    else:
+                        source.write_bytes(b'changed')
+                    before = json.dumps(lock, ensure_ascii=False).encode()
+                    (app / '集锁.json').write_bytes(before)
+                    original = source.read_bytes()
+                    def fetch(descriptor, staging):
+                        safe_extract_archive(data, staging)
+                        if mutation == 'bytes':
+                            (staging / 'src/a.ru').write_bytes(b'changed')
+                        return 'a' * 40
+                    with patch('rulang.package_sources._fetch_git', side_effect=fetch), self.assertRaises(RuError):
+                        sync_dependencies(app, cache_dir=cache, locked=True)
+                    self.assertEqual(source.read_bytes(), original)
+                    self.assertEqual((app / '集锁.json').read_bytes(), before)
+
+    def test_untagged_lock_does_not_accept_a_third_canonical_digest(self):
+        expected = hashlib.sha256()
+        for name, data in sorted(self.FILES.items()):
+            expected.update(name.encode() + b'\0' + hashlib.sha256(data).digest() + b'\0')
+        for kind in ('git', 'registry'):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as temporary:
+                app, cache, lock, data = self.fixture(Path(temporary).resolve(), kind, 'posix')
+                self.assertNotEqual(expected.hexdigest(), lock['packages'][0]['tree_sha256'])
+                self.assertNotEqual(expected.hexdigest(), self.WINDOWS_DIGEST)
+                lock['packages'][0]['tree_sha256'] = expected.hexdigest()
+                before = json.dumps(lock, ensure_ascii=False).encode()
+                (app / '集锁.json').write_bytes(before)
+                git, registry = self.transport(data)
+                with git, registry, self.assertRaises(RuError):
+                    sync_dependencies(app, cache_dir=cache, locked=True)
+                self.assertEqual((app / '集锁.json').read_bytes(), before)
+
+    def test_missing_lock_fresh_resolution_writes_algorithm_tag(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            app, cache, lock, data = self.fixture(Path(temporary).resolve(), 'git', 'posix', cached=False)
+            (app / '集锁.json').unlink()
+            def fetch(descriptor, staging):
+                self.assertEqual(descriptor['引用'], 'main')
+                safe_extract_archive(data, staging)
+                return 'a' * 40
+            with patch('rulang.package_sources._fetch_git', side_effect=fetch):
+                result = sync_dependencies(app, cache_dir=cache)
+            self.assertEqual(result['packages'][0]['tree_hash_algorithm'], 'relative-posix-v1')
+
+    def test_legacy_validation_reads_each_file_once(self):
+        from rulang.package_sources import _tree_matches
+        with tempfile.TemporaryDirectory() as temporary:
+            app, cache, lock, data = self.fixture(Path(temporary).resolve(), 'git', 'windows')
+            record = lock['packages'][0]
+            root = cache / record['cache_key'] / 'package'
+            actual_open, reads = Path.open, []
+            def tracked_open(path, *args, **kwargs):
+                if args and args[0] == 'rb':
+                    reads.append(path.relative_to(root).as_posix())
+                return actual_open(path, *args, **kwargs)
+            with patch.object(Path, 'open', tracked_open):
+                self.assertTrue(_tree_matches(root, record))
+            self.assertCountEqual(reads, self.FILES)
 
 
 if __name__ == '__main__':

@@ -634,7 +634,13 @@ Intervening comments are ignored."
                  (eq (ru-lang--token-face token) 'font-lock-keyword-face))
         (put-text-property start end 'help-echo
                            "段: … 落.：独立词法作用域，与语句位置的 { … }. 等价。每次进入创建新局部环境；完整语句统一加句点，落后句点必需，花括号末点兼容省略。"))
-      (when (eq (ru-lang--token-kind token) 'name)
+      (when (and (eq (ru-lang--token-kind token) 'name)
+                 ;; 吾/言 remain ordinary names outside a complete declaration.
+                 ;; Their contextual faces are assigned by the module analyzer;
+                 ;; looking up help by spelling alone leaks it onto variables,
+                 ;; member names and static module-name segments.
+                 (or (not (member (ru-lang--token-text token) '("吾" "言")))
+                     (eq (ru-lang--token-face token) 'font-lock-keyword-face)))
         (when-let ((help (cdr (assoc (ru-lang--token-text token) ru-lang--token-help))))
           (put-text-property start end 'help-echo help)))
       (when (eq (ru-lang--token-face token) 'font-lock-builtin-face)

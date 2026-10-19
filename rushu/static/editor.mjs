@@ -208,6 +208,7 @@ const PRACTICAL_MEMBER_HELP = {
   '查': '内置阵：查 值，按相等协议从初始浅快照返回首个位置，未找到为空。典：查 目:，按目返回相。用户同名方法按其声明。'
 };
 export function tokenHelp(token) {
+  if(['吾','言'].includes(token.text) && token.face!=='keyword') return null;
   if(token.face==='builtin' && PRACTICAL_MEMBER_HELP[token.text]) return PRACTICAL_MEMBER_HELP[token.text];
   if(token.open==='段'||token.close==='段') return '段: … 落.：独立词法作用域，与语句位置的 { … } 等价。每次进入创建新局部环境，落后必须有句点。';
   return token.kind === 'name'||token.text===':=' ? TOKEN_HELP[token.text] || null : null;

@@ -13,7 +13,7 @@ import io
 import json
 import os
 import posixpath
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 import re
 import shutil
 import signal
@@ -33,6 +33,8 @@ MAX_ARCHIVE_BYTES = 32 * 1024 * 1024
 MAX_UNPACKED_BYTES = 64 * 1024 * 1024
 MAX_FILE_BYTES = 16 * 1024 * 1024
 MAX_ENTRIES = 4096
+MAX_ARCHIVE_DEPTH = 64
+TREE_HASH_ALGORITHM = 'relative-posix-v1'
 MAX_PACKAGES = 256
 MAX_GIT_BYTES = 128 * 1024 * 1024
 VERSION = r'(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)'
@@ -249,6 +251,8 @@ def _archive_name(name):
     parts = tuple(part for part in name.split('/') if part not in ('', '.'))
     if not parts:
         return None
+    if len(parts) > MAX_ARCHIVE_DEPTH:
+        raise _error('包归档路径层级超过限制')
     # Windows strips trailing dots/spaces and has reserved device names.
     for part in parts:
         if part.endswith(('.', ' ')) or re.fullmatch(r'(?i)(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?', part):
@@ -263,11 +267,12 @@ def safe_extract_archive(data, destination):
     destination = Path(destination)
     if destination.is_symlink() or (destination.exists() and any(destination.iterdir())):
         raise _error('归档目标必须为空目录')
-    destination.mkdir(parents=True, exist_ok=True)
-    seen, total, count = {}, 0, 0
+    existed, started, complete = destination.exists(), False, False
+    # Each implicit directory is a node too; spelling is fixed at first use.
+    children, nodes, total, count = {}, [], 0, 0
 
     def target(name, size, directory):
-        nonlocal total, count
+        nonlocal total, count, started
         count += 1
         if count > MAX_ENTRIES or size < 0 or size > MAX_FILE_BYTES:
             raise _error('包归档条目或单个文件超过限制')
@@ -279,16 +284,31 @@ def safe_extract_archive(data, destination):
             if not directory:
                 raise _error('包归档文件名为空')
             return None
-        key = name.casefold()
-        if key in seen:
-            raise _error('包归档含重复覆盖或大小写冲突')
-        for parent in PurePosixPath(key).parents:
-            if str(parent) in seen and not seen[str(parent)]:
-                raise _error('包归档文件与目录冲突')
-        if not directory and any(previous.startswith(key + '/') for previous in seen):
-            raise _error('包归档文件与目录冲突')
-        seen[key] = directory
-        path = destination.joinpath(*name.split('/'))
+        parts, parent = name.split('/'), -1
+        for index, part in enumerate(parts):
+            key = (parent, part.casefold())
+            node_id = children.get(key)
+            final = index == len(parts) - 1
+            if node_id is None:
+                if len(nodes) >= MAX_ENTRIES:
+                    raise _error('包归档含隐式目录在内的条目超过限制')
+                node_id = len(nodes)
+                children[key] = node_id
+                nodes.append([part, 'directory' if final and directory else 'file' if final else None])
+            else:
+                spelling, kind = nodes[node_id]
+                if spelling != part:
+                    raise _error('包归档目录前缀或文件含大小写冲突')
+                if final:
+                    if directory and kind is None:
+                        nodes[node_id][1] = 'directory'
+                    else:
+                        raise _error('包归档含重复覆盖或文件与目录冲突')
+                elif kind == 'file':
+                    raise _error('包归档文件与目录冲突')
+            parent = node_id
+        path = destination.joinpath(*parts)
+        started = True
         if directory:
             path.mkdir(parents=True, exist_ok=True)
         else:
@@ -345,10 +365,17 @@ def safe_extract_archive(data, destination):
                     if item.isfile():
                         with archive.extractfile(item) as stream:
                             copy(stream, path, item.size)
+        destination.mkdir(parents=True, exist_ok=True)
+        complete = True
     except RuError:
         raise
     except (tarfile.TarError, zipfile.BadZipFile, lzma.LZMAError, OSError, ValueError, RuntimeError, EOFError, NotImplementedError, OverflowError):
         raise _error('包归档无效或不安全') from None
+    finally:
+        if not complete and started and destination.is_dir():
+            shutil.rmtree(destination)
+            if existed:
+                destination.mkdir()
 
 
 def _sha(data):
@@ -399,10 +426,9 @@ def _atomic_json(path, value):
         temp.unlink(missing_ok=True)
 
 
-def _tree_hash(root):
+def _tree_digests(root, algorithm):
     root = Path(root)
-    digest = hashlib.sha256()
-    files, total, entries = [], 0, 0
+    files, payloads, total, entries = [], [], 0, 0
     for parent, directories, names in os.walk(root, followlinks=False):
         entries += len(directories) + len(names)
         if entries > MAX_ENTRIES:
@@ -418,17 +444,39 @@ def _tree_hash(root):
             files.append(path)
             if len(files) > MAX_ENTRIES:
                 raise _error('包缓存超过安全条目限制')
-    for path in sorted(files):
+    for path in files:
         with path.open('rb') as stream:
             data = stream.read(MAX_FILE_BYTES + 1)
         total += len(data)
         if len(data) > MAX_FILE_BYTES or total > MAX_UNPACKED_BYTES:
             raise _error('包缓存超过安全大小限制')
-        digest.update(str(path.relative_to(root)).replace(os.sep, '/').encode('utf-8'))
-        digest.update(b'\0')
-        digest.update(hashlib.sha256(data).digest())
-        digest.update(b'\0')
-    return digest.hexdigest()
+        payloads.append((path.relative_to(root).as_posix(), hashlib.sha256(data).digest()))
+    # Untagged public 0.22 locks used native pathlib component ordering.
+    # Read/validate bytes once, then compose exactly the two historical orders.
+    keys = (PurePosixPath, PureWindowsPath) if algorithm is None else (str,)
+    results = []
+    for key in keys:
+        digest = hashlib.sha256()
+        for name, file_digest in sorted(payloads, key=lambda item: key(item[0])):
+            digest.update(name.encode('utf-8') + b'\0' + file_digest + b'\0')
+        results.append(digest.hexdigest())
+    return results
+
+
+def _tree_algorithm(record):
+    if 'tree_hash_algorithm' not in record:
+        return None
+    if record['tree_hash_algorithm'] != TREE_HASH_ALGORITHM:
+        raise _error('远程依赖锁的源码树摘要算法未知')
+    return TREE_HASH_ALGORITHM
+
+
+def _tree_hash(root):
+    return _tree_digests(root, TREE_HASH_ALGORITHM)[0]
+
+
+def _tree_matches(root, record):
+    return record['tree_sha256'] in _tree_digests(root, _tree_algorithm(record))
 
 
 def _cache_dir(cache_dir=None):
@@ -526,6 +574,7 @@ def _record_cache_key(record):
         if record.get('mutable') is not False or not isinstance(record.get('name'), str) or not record['name']:
             raise ValueError()
         _version(record.get('version'))
+        _tree_algorithm(record)
         if record.get('kind') == 'git':
             subdir = _subdir(record.get('subdir'))
             identity = 'git:' + _git_identity(record.get('url')) + '#' + subdir
@@ -554,7 +603,7 @@ def _validate_cached(record, cache):
     from .packages import load_manifest
     key = _record_cache_key(record)
     root = cache / key / 'package'
-    if root.parent.is_symlink() or root.is_symlink() or not root.is_dir() or _tree_hash(root) != record['tree_sha256']:
+    if root.parent.is_symlink() or root.is_symlink() or not root.is_dir() or not _tree_matches(root, record):
         raise _error('远程依赖缓存缺失或已改变；请运行 ru deps sync')
     try:
         manifest = load_manifest(root)
@@ -703,7 +752,7 @@ def _ensure_locked_cache(record, cache):
                 raise _lock_error('目录归档 SHA-256 与原依赖锁不符')
             safe_extract_archive(data, staging)
         _check_downloaded_manifest(record, staging, metadata)
-        if _tree_hash(staging) != record['tree_sha256']:
+        if not _tree_matches(staging, record):
             raise _lock_error('下载源码树 SHA-256 与原依赖锁不符')
         return _publish_cache(temporary, record, cache)
 
@@ -778,7 +827,7 @@ class _LockedGraph:
             else:
                 common = {'identity', 'kind', 'url', 'mutable', 'name', 'version', 'cache_key', 'tree_sha256', 'owner'}
                 required = common | ({'commit', 'subdir'} if kind == 'git' else {'sha256'})
-                if set(record) != required:
+                if set(record) not in (required, required | {'tree_hash_algorithm'}):
                     raise _lock_error('远程依赖锁含缺失或未知字段')
                 _record_cache_key(record)
                 expected = {'kind': 'cache', 'cache_key': record['cache_key'], 'path': '.'}
@@ -1048,7 +1097,8 @@ def _resolve_new(root, cache):
                         if record['kind'] == 'git':
                             record.update(name=child.name, version=child.version)
                         _check_downloaded_manifest(record, staging, metadata)
-                        record.update(cache_key=key, tree_sha256=_tree_hash(staging))
+                        record.update(cache_key=key, tree_sha256=_tree_hash(staging),
+                                      tree_hash_algorithm=TREE_HASH_ALGORITHM)
                         child = load_manifest(_publish_cache(temporary, record, cache))
                 locator = {'kind': 'cache', 'cache_key': record['cache_key'], 'path': '.'}
                 child_id = register(child, locator)

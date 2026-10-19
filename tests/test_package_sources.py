@@ -112,6 +112,71 @@ class Archives(unittest.TestCase):
             safe_extract_archive(tar_bytes([('large', b'1234')]), Path(temp) / 'out')
 
 
+class ArchivePrefixSafetyTests(unittest.TestCase):
+    def archive(self, kind, names):
+        stream = io.BytesIO()
+        if kind == 'tar':
+            with tarfile.open(fileobj=stream, mode='w') as archive:
+                for name in names:
+                    item = tarfile.TarInfo(name)
+                    if name.endswith('/'):
+                        item.type = tarfile.DIRTYPE
+                        archive.addfile(item)
+                    else:
+                        item.size = 1
+                        archive.addfile(item, io.BytesIO(b'x'))
+        else:
+            with zipfile.ZipFile(stream, mode='w') as archive:
+                for name in names:
+                    archive.writestr(name, b'' if name.endswith('/') else b'x')
+        return stream.getvalue()
+
+    def test_every_implicit_prefix_has_one_case_spelling(self):
+        for kind in ('tar', 'zip'):
+            for names in [('A/x.ru', 'a/y.ru'), ('A/', 'a/y.ru'),
+                          ('root/A/x.ru', 'root/a/y.ru'), ('Σ/x.ru', 'σ/y.ru')]:
+                for order in (names, names[::-1]):
+                    with self.subTest(kind=kind, names=order), tempfile.TemporaryDirectory() as temporary:
+                        out = Path(temporary) / 'out'
+                        with self.assertRaises(RuError):
+                            safe_extract_archive(self.archive(kind, order), out)
+                        self.assertFalse(out.exists(), 'rejected extraction left a partial staging tree')
+
+    def test_same_spelling_implicit_and_explicit_directories_are_compatible(self):
+        for kind in ('tar', 'zip'):
+            for names in [('A/x.ru', 'A/', 'A/y.ru'), ('A/', 'A/x.ru', 'A/y.ru'),
+                          ('root/A/x.ru', 'root/', 'root/A/', 'root/A/y.ru')]:
+                with self.subTest(kind=kind, names=names), tempfile.TemporaryDirectory() as temporary:
+                    out = Path(temporary) / 'out'
+                    safe_extract_archive(self.archive(kind, names), out)
+                    self.assertEqual(len([p for p in out.rglob('*') if p.is_file()]), 2)
+
+    def test_duplicate_entries_and_file_parent_conflicts_remain_rejected(self):
+        for kind in ('tar', 'zip'):
+            for names in [('A/', 'A/'), ('A/x.ru', 'A/x.ru'), ('A/x.ru', 'A'), ('A', 'A/x.ru')]:
+                with self.subTest(kind=kind, names=names), tempfile.TemporaryDirectory() as temporary:
+                    with self.assertRaises(RuError):
+                        safe_extract_archive(self.archive(kind, names), Path(temporary) / 'out')
+
+    def test_deep_member_is_rejected_before_any_mkdir(self):
+        for kind in ('tar', 'zip'):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as temporary:
+                out = Path(temporary) / 'out'
+                data = self.archive(kind, ['/'.join(['a'] * 1000) + '/x.ru'])
+                with patch.object(Path, 'mkdir', side_effect=AssertionError('deep member reached mkdir')):
+                    with self.assertRaises(RuError):
+                        safe_extract_archive(data, out)
+                self.assertFalse(out.exists())
+
+    def test_implicit_nodes_count_towards_entry_bound(self):
+        for kind in ('tar', 'zip'):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as temporary:
+                out = Path(temporary) / 'out'
+                with patch('rulang.package_sources.MAX_ENTRIES', 3), self.assertRaises(RuError):
+                    safe_extract_archive(self.archive(kind, ['a/b/c/x.ru']), out)
+                self.assertFalse(out.exists())
+
+
 class TransportTests(unittest.TestCase):
     def test_https_redirect_cannot_downgrade_or_add_credentials(self):
         from rulang.package_sources import _SecureRedirect
@@ -208,7 +273,7 @@ class GraphAndGitTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.cache = self.root / 'cache'
 
     def archive(self, name='库', version='1.0.0', dependencies='典: 成'):
@@ -355,7 +420,7 @@ class LockBindingReviewTests(unittest.TestCase):
         self.copy = copy.deepcopy
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.app = self.root / 'app'
         self.cache = self.root / 'cache'
         self.descriptor = {'目录': 'https://example.test/registry', '包': '库', '版': '1.0.0'}

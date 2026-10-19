@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {lex,analyze,highlight,indentText,enterEdit,indentSelection,needsAutoDedent} from '../static/editor.mjs';
+import {lex,analyze,highlight,tokenHelp,indentText,enterEdit,indentSelection,needsAutoDedent} from '../static/editor.mjs';
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../..');
 
 test('longest Unicode names; reserved word substrings are ordinary names',()=>{
@@ -495,4 +495,24 @@ test('package declaration is contextual and named import chains are static names
   assert.deepEqual(names.filter(t=>t.text==='言').map(t=>t.face),['keyword',null]);
   assert.ok(names.filter(t=>t.text==='段').every(t=>t.face==='type'));
   assert.equal(indentText(source),source);
+});
+
+test('package declaration help excludes ordinary names, members and static module segments',()=>{
+  for(const source of ['吾 言 工程 其 力学.','吾 # 声明间的注释\n言 工程 其 力学。']) {
+    for(const token of analyze(source).tokens.filter(t=>['吾','言'].includes(t.text))) {
+      assert.equal(token.face,'keyword');
+      assert.match(tokenHelp(token),/模块声明/);
+    }
+  }
+  for(const source of ['吾 取 1. 言 取 2.','算 吾 言: 得 言. 法.',
+    '显 对象 其 吾. 显 对象@言.','力 取 外言 吾 其 言.',
+    '吾 (言) 工程.','吾 言 工程',"显 '吾 言 工程.'. # 吾 言 工程."]) {
+    for(const token of analyze(source).tokens.filter(t=>['吾','言'].includes(t.text))) {
+      assert.notEqual(token.face,'keyword',source);
+      assert.equal(tokenHelp(token),null,source);
+    }
+    assert.doesNotMatch(highlight(source),/data-help="(?:吾 言|与吾)/,source);
+  }
+  assert.match(tokenHelp(analyze('尽取 外言 吾 其 言.').tokens[0]),/尽取须连写/);
+  assert.match(tokenHelp(analyze('尽 取 外言 吾 其 言.').tokens[0]),/已停用/);
 });
