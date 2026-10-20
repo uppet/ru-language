@@ -108,3 +108,7 @@ python3 ru repl
 - [开发与验证](docs/development.md) · [变更记录](CHANGELOG.md) · [实际验证记录](VALIDATION.md)
 
 从一行 `显 '你好，如'.` 开始，也很好。
+
+## 许可证
+
+本项目自有代码与文档（包括如见实验库）采用 [MIT License](LICENSE)。第三方代码、数据与既有声明不在本次 MIT 授权范围内，仍保留各自原有许可；参见[第三方说明](docs/third-party-notices.md)。

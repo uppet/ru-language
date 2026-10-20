@@ -1,5 +1,9 @@
 # 第三方算法与许可说明
 
+本项目自有代码与文档采用根目录 [MIT License](../LICENSE)。本授权不改变任何第三方代码、数据或文档的许可，也不替其作者授予新权利。下列 PCG32 派生部分继续适用 Apache-2.0，不能仅凭本项目 MIT 许可分发。
+
+`rulang/thirdparty/如见/` 是本项目自有的内置实验库，采用项目 MIT 许可；目录名表示它不属于语言核心或标准库，不表示其代码来自其他权利人。
+
 ## PCG32
 
 `rulang/practical_runtime.py`、`rulang/practical_runtime.h`、`rulang/runtime.js` 中的 PCG32 XSH-RR 初始化、状态更新及有界拒绝采样遵循 Melissa O'Neill 的 PCG 参考实现。
