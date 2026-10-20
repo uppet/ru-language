@@ -75,7 +75,7 @@ def interpreted(source):
     return out.getvalue()
 
 
-def native(source, folder, stem='case', flags=(), modules=None, source_path=None):
+def native(source, folder, stem='case', flags=(), modules=None, source_path=None, env=None):
     path = Path(folder).resolve() / (stem + '.c')
     binary = Path(folder).resolve() / stem
     program = modules[str(Path(source_path).resolve())] if modules is not None else parse(source)
@@ -83,8 +83,9 @@ def native(source, folder, stem='case', flags=(), modules=None, source_path=None
     result = subprocess.run([CC, '-std=c99', '-O2', '-g', '-Wall', '-Wextra', '-Werror', '-Wno-unused-function', '-pedantic', *flags, str(path), '-lm', '-o', str(binary)], capture_output=True, text=True)
     if result.returncode:
         raise AssertionError(result.stderr)
+    run_env = env if env is not None else os.environ
     return subprocess.run([str(binary)], capture_output=True, text=True, timeout=40,
-                          env={**os.environ, 'RU_GC_THRESHOLD': '1', 'RU_GC_STATS': '1',
+                          env={**run_env, 'RU_GC_THRESHOLD': '1', 'RU_GC_STATS': '1',
                                'ASAN_OPTIONS': 'detect_leaks=1:halt_on_error=1'})
 
 
@@ -306,13 +307,25 @@ class PanicTests(unittest.TestCase):
                 capture_output=True, text=True, timeout=30)
             if supported.returncode:
                 self.skipTest('Selected C compiler cannot link ASan/UBSan: ' + supported.stderr)
+            libasan = subprocess.run(
+                [CC, '-print-file-name=libasan.so'],
+                capture_output=True, text=True, timeout=10).stdout.strip()
+            preload_env = None
+            if libasan and libasan != 'libasan.so':
+                preload_env = {**os.environ, 'LD_PRELOAD': libasan}
             result = native(STRESS, folder, flags=flags)
+            if result.returncode and 'ASan runtime does not come first' in result.stderr:
+                # Recompile with explicit LD_PRELOAD so the runtime loads first.
+                if preload_env is None:
+                    self.skipTest('ASan runtime cannot be preloaded on this host')
+                result = native(STRESS, folder, flags=flags, env=preload_env)
             # Some managed executors run under ptrace, where LeakSanitizer
             # itself cannot start. Keep ASan/UBSan enabled and separately check
             # the runtime's exact zero-root/live-heap accounting there.
             if 'LeakSanitizer does not work under ptrace' in result.stderr:
+                rerun_env = preload_env if preload_env else os.environ.copy()
                 result = subprocess.run([str(Path(folder).resolve() / 'case')], capture_output=True,
-                    text=True, timeout=40, env={**os.environ, 'RU_GC_THRESHOLD': '1',
+                    text=True, timeout=40, env={**rerun_env, 'RU_GC_THRESHOLD': '1',
                     'RU_GC_STATS': '1', 'ASAN_OPTIONS': 'detect_leaks=0:halt_on_error=1'})
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout, '底返\n')

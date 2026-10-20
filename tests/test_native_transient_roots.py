@@ -565,6 +565,69 @@ static Val test_callback_code(Env *env, Val self, int line, Val *args)
         self.assertEqual(result.stdout, 'seeded-transitions-ok\n')
         self.assertEqual(result.stderr, '')
 
+    def test_many_transient_roots_stress_index_and_snapshot(self):
+        def instrument(source):
+            start, end = function_span(source, 'rn_trap_new')
+            snapshot = source[start:end]
+            snapshot, count = re.subn(
+                r'(for\s*\(heap\s*=\s*ru_transient_roots;\s*)heap(\s*;)',
+                r'\1heap && (++test_snapshot_visits, 1)\2', snapshot)
+            self.assertEqual(count, 2, 'expected exactly two transient-root passes')
+            return (source[:start] + 'static size_t test_snapshot_visits;\n' +
+                    snapshot + source[end:])
+
+        result = self.build_and_run(r'''
+    Val *values, graph, child, pinned;
+    RuNativeTrap *trap;
+    size_t i, transient_total, visits, heaps_before;
+    enum { COUNT = 2048 };
+    test_begin();
+    values = (Val *)malloc(COUNT * sizeof(*values));
+    assert(values);
+    /* Interleave: transient-rooted strings, one permanent-only anchor,
+     * and a graph-only container so the heap mixes all three kinds. */
+    graph = v_array(0, NULL, 0);
+    for (i = 0; i < COUNT; ++i) {
+        Val item;
+        values[i] = v_str("stress-value");
+        child = v_str("stress-graph-only");
+        item = v_append(graph, child, 0);
+        v_drop(item); v_drop(child);
+    }
+    pinned = v_str("stress-permanent-only");
+    v_pin(pinned); v_drop(pinned);
+    assert(test_oracle() == COUNT + 1);
+    assert(ru_transient_roots && !ru_transient_roots->transient_prev);
+    /* Walk the chain end-to-end: exactly COUNT+1 nodes, no cycles. */
+    { RuHeap *node; size_t chain_len = 0;
+      for (node = ru_transient_roots; node; node = node->transient_next) ++chain_len;
+      assert(chain_len == COUNT + 1); }
+    transient_total = test_oracle();
+    test_snapshot_visits = 0;
+    trap = rn_trap_new(); test_snapshot(trap);
+    visits = test_snapshot_visits;
+    heaps_before = ru_live;
+    assert(trap->root_count == transient_total);
+    assert(visits == 2 * transient_total);
+    assert(heaps_before > COUNT * 2);
+    printf("count=%zu heaps=%zu visits=%zu\n", transient_total, heaps_before, visits);
+    /* Drop half the transient roots while the trap is live. */
+    for (i = 0; i < COUNT; i += 2) v_drop(values[i]);
+    assert(test_oracle() == COUNT / 2 + 1);
+    /* Restore revives the dropped roots from the trap snapshot. */
+    rn_trap_restore(trap); test_snapshot(trap);
+    assert(trap->root_count == transient_total);
+    test_free_trap(trap);
+    /* Clean up: restore revived even-index roots; drop everything. */
+    for (i = 0; i < COUNT; ++i) v_drop(values[i]);
+    v_drop(graph);
+    v_unpin(pinned);
+    free(values);
+    test_end(); puts("many-transient-roots-ok");
+''', transform=instrument)
+        self.assertEqual(result.stdout, 'count=2049 heaps=4098 visits=4098\nmany-transient-roots-ok\n')
+        self.assertEqual(result.stderr, '')
+
     def test_formatter_allocation_failure_clears_graph_only_marks_before_gc(self):
         def instrument(source):
             start, end = function_span(source, 'ru_native_scratch_realloc')

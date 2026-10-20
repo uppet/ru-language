@@ -19,7 +19,12 @@ def integrate_runtime(source):
     platform = (directory / 'native_platform_win64.h').read_text(encoding='utf-8')
     source = _replace(source, 'RU_MODULE, RU_ENV };', 'RU_MODULE, RU_ENV, RU_NATIVE };')
     source = _replace(source, 'struct RuHeap { size_t roots;', 'struct RuHeap { RuHeap *transient_prev, *transient_next; size_t permanent_roots; size_t roots;')
-    source = _replace(source, 'static RuHeap *ru_heap;', 'static RuHeap *ru_heap;\nstatic RuHeap *ru_transient_roots;')
+    # Pin the native-enabled layout: two pointer fields (2×8 on x64) plus two
+    # size_t fields (2×8) must equal 48 bytes.  A silent drift here breaks the
+    # transient-root index offsets without any compile-time diagnostic.  Use a
+    # negative-array-size typedef, not _Static_assert, because native tests
+    # compile with strict C99 -pedantic where C11 _Static_assert is rejected.
+    source = _replace(source, 'static RuHeap *ru_heap;', '/* Native layout contract: transient links + permanent/total root counts. */\n#if defined(_WIN64) || defined(__x86_64__)\ntypedef char ru_native_heap_layout_check[sizeof(RuHeap) == 48 ? 1 : -1];\n#endif\nstatic RuHeap *ru_heap;\nstatic RuHeap *ru_transient_roots;')
     source = _replace(source, 'static Val v_copy(Val v)', '''/* An allocation-free index of heaps with roots > permanent_roots.
  * The index is not a GC root set: permanently rooted heaps may be absent. */
 static void rn_transient_link(RuHeap *heap)
