@@ -1,0 +1,64 @@
+name: Mi kernel prototype (not product integration)
+
+on:
+  push:
+    branches: [mi-perf-prototype]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mi-kernel-prototype-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  semantic-and-cost:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+      CC: gcc
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Verify Python
+        run: python --version
+      - name: Verify C compiler
+        run: gcc --version
+      - name: Verify Node.js
+        run: node -e "console.log(process.version); if (Number(process.versions.node.split('.')[0]) < 18) process.exit(1)"
+      - name: Generate kernels
+        run: python experiments/mi_kernel/generate.py
+      - name: Verify exact committed kernels
+        run: git diff --exit-code -- experiments/mi_kernel/generated
+      - name: C and JS oracle checks (Linux additionally requires UBSan)
+        run: python experiments/mi_kernel/test_kernel.py
+      - name: Ordinary Ru C and JS correctness
+        run: python experiments/mi_kernel/verify_baseline.py
+      - name: Existing FFI descriptor regressions
+        run: python -m unittest discover -s tests -p "test_native_c_plan.py" -v
+      - name: Existing FFI anchor regressions
+        run: python -m unittest discover -s tests -p "test_native_anchors.py" -v
+      - name: Record host-specific end-to-end costs (not GUI performance)
+        run: python experiments/mi_kernel/benchmark_baseline.py --bytes 65536 --repetitions 4 --samples 9
+      - name: Upload experiment evidence, including partial results on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: mi-kernel-${{ matrix.os }}-${{ github.sha }}
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            experiments/mi_kernel/semantic-results.json
+            experiments/mi_kernel/benchmark-output/
+            experiments/mi_kernel/generated/
+            experiments/mi_kernel/provenance.json
