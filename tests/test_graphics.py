@@ -272,23 +272,21 @@ class GraphicsTests(unittest.TestCase):
         gc.collect()
         self.assertIsNone(reference())
 
-    def test_posix_limit_and_existing_trace_restored_after_callback(self):
+    def test_callback_never_tightens_process_address_space_limit(self):
         try:
             import resource
         except ImportError:
             self.skipTest('POSIX resource limits unavailable')
         if not hasattr(resource, 'RLIMIT_AS'):
             self.skipTest('RLIMIT_AS unavailable')
-        original_limit = resource.getrlimit(resource.RLIMIT_AS)
         original_trace = sys.gettrace()
-        self.canvas("图 其 每帧 (作 帧: 图 其 线 0 0 1 1. 为).")
-        self.host.handle({'type': 'frame'})
-        self.assertEqual(resource.getrlimit(resource.RLIMIT_AS), original_limit)
-        self.assertIs(sys.gettrace(), original_trace)
-        self.run_ru("图 其 每帧 (作 帧: 显 未定义. 为).")
-        with self.assertRaises(RuError):
+        with patch.object(resource, 'setrlimit') as setter:
+            self.canvas("图 其 每帧 (作 帧: 图 其 线 0 0 1 1. 为).")
             self.host.handle({'type': 'frame'})
-        self.assertEqual(resource.getrlimit(resource.RLIMIT_AS), original_limit)
+            self.run_ru("图 其 每帧 (作 帧: 显 未定义. 为).")
+            with self.assertRaises(RuError):
+                self.host.handle({'type': 'frame'})
+        setter.assert_not_called()
         self.assertIs(sys.gettrace(), original_trace)
 
     def test_local_same_named_module_is_not_reserved(self):

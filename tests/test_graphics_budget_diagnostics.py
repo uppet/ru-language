@@ -3,6 +3,7 @@ import contextlib
 import hashlib
 import io
 import math
+import os
 from pathlib import Path
 import sys
 import unittest
@@ -199,43 +200,82 @@ class GraphicsBudgetDiagnosticsTests(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), '')
         self.assertEqual(stderr.getvalue().splitlines()[0], detail['formatted'])
 
-    def test_host_already_above_ceiling_keeps_trace_budget_only(self):
-        # A long-lived session may already use more address space than the
-        # per-callback budget (reserved arenas count against RLIMIT_AS).
-        # Lowering the ceiling below current usage would fail the next
-        # allocation inside the callback, so the ceiling is skipped and the
-        # portable trace budget remains the only guard.
+    def test_callback_never_tightens_process_address_space_limit(self):
+        # Process-wide quotas belong at the session boundary; the callback
+        # guard is the portable trace budget only, so handle() must not
+        # touch RLIMIT_AS at all (no tightening, no restore, no restore-failure
+        # mode), whatever the ambient process usage is.
         try:
             import resource
         except ImportError:
             self.skipTest('POSIX resource limits unavailable')
         if not hasattr(resource, 'RLIMIT_AS'):
             self.skipTest('RLIMIT_AS unavailable')
-        with patch('rulang.graphics_runtime._address_space_used', return_value=600 * 1024 * 1024), \
-             patch.object(resource, 'getrlimit', return_value=(-1, -1)), \
-             patch.object(resource, 'setrlimit') as setter:
-            self.handle_samples(count=1, started=0., sampled=0.5)
-        setter.assert_not_called()
-        self.assertIsNotNone(self.host.canvas)
+        for used in (0, 600 * 1024 * 1024):
+            with self.subTest(used=used):
+                with patch('rulang.graphics_runtime._address_space_used', return_value=used), \
+                     patch.object(resource, 'setrlimit') as setter:
+                    self.handle_samples(count=1, started=0., sampled=0.5)
+                setter.assert_not_called()
+                self.assertIsNotNone(self.host.canvas)
 
-    def test_resource_restore_failure_preserves_budget_error(self):
+
+class AddressSpaceLimitTests(unittest.TestCase):
+    def setUp(self):
         try:
             import resource
         except ImportError:
             self.skipTest('POSIX resource limits unavailable')
         if not hasattr(resource, 'RLIMIT_AS'):
             self.skipTest('RLIMIT_AS unavailable')
+        self.resource = resource
+
+    def test_unset_environment_is_a_no_op(self):
+        from rulang.graphics_runtime import install_address_space_limit
+        with patch.dict(os.environ, {}, clear=True), \
+             patch.object(self.resource, 'setrlimit') as setter:
+            self.assertIsNone(install_address_space_limit())
+        setter.assert_not_called()
+
+    def test_explicit_bytes_set_soft_and_hard_quota_once(self):
+        from rulang.graphics_runtime import install_address_space_limit
         with patch('rulang.graphics_runtime._address_space_used', return_value=0), \
-             patch.object(resource, 'getrlimit', return_value=(-1, -1)), \
-             patch.object(resource, 'setrlimit', side_effect=[None, ValueError('not allowed')]) as setter:
-            with self.assertRaises(RuError) as caught:
-                self.handle_samples(sampled=1.25)
-        self.assertIn('时间预算', caught.exception.message)
-        self.assertNotIn('恢复系统内存', caught.exception.message)
-        self.assertEqual(setter.call_count, 2)
-        self.assertEqual(setter.call_args_list[0].args[1], (512 * 1024 * 1024, -1))
-        self.assertEqual(setter.call_args_list[1].args[1], (-1, -1))
-        self.assert_closed_with(caught.exception.message)
+             patch.object(self.resource, 'setrlimit') as setter:
+            self.assertEqual(install_address_space_limit(1024), 1024)
+        setter.assert_called_once_with(self.resource.RLIMIT_AS, (1024, 1024))
+
+    def test_environment_value_supports_binary_suffixes(self):
+        from rulang.graphics_runtime import install_address_space_limit
+        with patch.dict(os.environ, {'RULANG_ADDRESS_SPACE_LIMIT': '512M'}), \
+             patch.object(self.resource, 'setrlimit') as setter:
+            self.assertEqual(install_address_space_limit(), 512 * 1024 * 1024)
+        setter.assert_called_once_with(self.resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
+
+    def test_unparsable_environment_value_fails_loudly(self):
+        from rulang.frontend import RuError
+        from rulang.graphics_runtime import install_address_space_limit
+        with patch.dict(os.environ, {'RULANG_ADDRESS_SPACE_LIMIT': 'lots'}), \
+             patch.object(self.resource, 'setrlimit') as setter:
+            with self.assertRaisesRegex(RuError, '无法解析'):
+                install_address_space_limit()
+        setter.assert_not_called()
+
+    def test_quota_below_current_usage_fails_loudly(self):
+        from rulang.frontend import RuError
+        from rulang.graphics_runtime import install_address_space_limit
+        with patch('rulang.graphics_runtime._address_space_used', return_value=600 * 1024 * 1024), \
+             patch.object(self.resource, 'setrlimit') as setter:
+            with self.assertRaisesRegex(RuError, '已高于请求的上限'):
+                install_address_space_limit(512 * 1024 * 1024)
+        setter.assert_not_called()
+
+    def test_non_positive_quota_rejected(self):
+        from rulang.frontend import RuError
+        from rulang.graphics_runtime import install_address_space_limit
+        with patch.object(self.resource, 'setrlimit') as setter:
+            with self.assertRaises(RuError):
+                install_address_space_limit(0)
+        setter.assert_not_called()
 
 
 class GraphicsBudgetPromptTests(unittest.TestCase):

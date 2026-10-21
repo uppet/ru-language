@@ -7,6 +7,7 @@ This is resource accounting for trusted local code, not a security sandbox.
 import json
 from dataclasses import dataclass
 import math
+import os
 import re
 import secrets
 import sys
@@ -88,6 +89,54 @@ def _address_space_used():
     except (OSError, ValueError, IndexError):
         pass
     return 0
+
+
+_ADDRESS_SPACE_LIMIT_ENV = "RULANG_ADDRESS_SPACE_LIMIT"
+_LIMIT_SUFFIXES = {"": 1, "K": 1024, "M": 1024 ** 2, "G": 1024 ** 3}
+
+
+def _parse_limit_bytes(text):
+    """Parse '1048576'／'512M'／'2G' style byte counts (binary suffixes)."""
+    match = re.fullmatch(r"\s*(\d+)\s*([A-Za-z]{0,3})\s*", text)
+    if not match:
+        raise RuError(f"无法解析地址空间上限 {text!r}；示例：512M、2G、1048576", category="能力错误")
+    suffix = match.group(2).upper()
+    suffix = {"B": "", "KB": "K", "MB": "M", "GB": "G", "KIB": "K", "MIB": "M", "GIB": "G"}.get(suffix, suffix)
+    if suffix not in _LIMIT_SUFFIXES:
+        raise RuError(f"无法解析地址空间上限 {text!r}；后缀只支持 K／M／G", category="能力错误")
+    return int(match.group(1)) * _LIMIT_SUFFIXES[suffix]
+
+
+def install_address_space_limit(limit_bytes=None):
+    """Set a permanent session address-space quota (POSIX ``RLIMIT_AS``).
+
+    Session spawners run one isolated process per session and call this once
+    at startup, or set ``RULANG_ADDRESS_SPACE_LIMIT`` (e.g. ``1G``) in its
+    environment. The quota covers the whole session process and cannot be
+    raised afterwards; exhausting it terminates the session instead of the
+    host application. ``GraphicsHost`` callbacks never tighten the process
+    limit: their guard is the portable time／line／allocation budget only.
+    Returns the quota in bytes, or None when neither argument nor
+    environment configures one (a no-op).
+    """
+    if limit_bytes is None:
+        raw = os.environ.get(_ADDRESS_SPACE_LIMIT_ENV)
+        if raw is None:
+            return None
+        limit_bytes = _parse_limit_bytes(raw)
+    if isinstance(limit_bytes, bool) or not isinstance(limit_bytes, int) or limit_bytes <= 0:
+        raise RuError("地址空间上限须为正整数字节数", category="能力错误")
+    try:
+        import resource
+    except ImportError:
+        resource = None
+    if resource is None or not hasattr(resource, "RLIMIT_AS"):
+        raise RuError("地址空间上限仅在支持 RLIMIT_AS 的 POSIX 系统可用；Windows 会话请改用 Job Object 等进程级机制", category="能力错误")
+    used = _address_space_used()
+    if used and used >= limit_bytes:
+        raise RuError(f"当前进程地址空间约 {used // 1024 // 1024} MiB，已高于请求的上限 {limit_bytes // 1024 // 1024} MiB；请调大配额或先排查异常内存映射", category="能力错误")
+    resource.setrlimit(resource.RLIMIT_AS, (limit_bytes, limit_bytes))
+    return limit_bytes
 
 
 def _json(value):
@@ -411,30 +460,11 @@ class GraphicsHost:
                     remaining = 128
                     check()
             return trace
+        # The callback layer guards time, work and allocation with the
+        # portable trace budget above. Process-wide resource quotas belong
+        # at the session boundary: session spawners set them once at process
+        # startup via install_address_space_limit, never per callback here.
         old_trace = sys.gettrace()
-        old_limit = None
-        # A single host operation may allocate before Python's next trace line.
-        # POSIX's address-space ceiling complements the portable allocation
-        # budget. Restore the caller's setting after this callback.
-        try:
-            import resource
-            if hasattr(resource, "RLIMIT_AS"):
-                old_limit = resource.getrlimit(resource.RLIMIT_AS)
-                finite = [value for value in old_limit if value != resource.RLIM_INFINITY]
-                ceiling = min([512 * 1024 * 1024] + finite)
-                # Long-lived host processes may already sit above this
-                # per-callback budget: address space includes reserved arenas
-                # that count against RLIMIT_AS without touching memory.
-                # Lowering the ceiling below current usage would fail the
-                # very next allocation inside the callback, so keep the
-                # portable trace budget as the only guard in that case.
-                if _address_space_used() < ceiling:
-                    resource.setrlimit(resource.RLIMIT_AS, (ceiling, old_limit[1]))
-                else:
-                    old_limit = None
-        except (ImportError, OSError, ValueError):
-            old_limit = None
-        callback_error = False
         previous_phase, self.phase = self.phase, "event"
         try:
             sys.settrace(trace)
@@ -443,22 +473,11 @@ class GraphicsHost:
             if self.canvas:
                 self.canvas.check_balanced()
         except BaseException:
-            callback_error = True
             self.close()
             raise
         finally:
             self.phase = previous_phase
             sys.settrace(old_trace)
-            if old_limit is not None:
-                try:
-                    resource.setrlimit(resource.RLIMIT_AS, old_limit)
-                except (OSError, ValueError):
-                    # Some hosts permit lowering a soft limit but reject raising
-                    # it again. Keep the protective ceiling, never hide the
-                    # original callback error, and report an actionable failure.
-                    self.close()
-                    if not callback_error:
-                        self.interpreter.fail(node, "如观无法恢复系统内存上限；保护性限制仍生效，已关闭交互，请重启会话")
         if self.canvas is canvas:
             if not canvas.commands and kind != "frame":
                 canvas.commands, canvas.command_bytes = previous, previous_bytes
