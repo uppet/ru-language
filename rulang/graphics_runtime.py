@@ -139,6 +139,36 @@ def install_address_space_limit(limit_bytes=None):
     return limit_bytes
 
 
+def memory_protection_status():
+    """Report which memory-protection tier this process actually has.
+
+    Hosts surface this so users see the real boundary instead of an assumed
+    one: either a POSIX ``RLIMIT_AS`` quota configured at session startup,
+    or an explicit degraded note (external cgroup／Windows Job Object, or
+    RSS 预警 which cannot stop a single large allocation). The portable
+    callback budgets are always active regardless.
+    """
+    try:
+        import resource
+    except ImportError:
+        resource = None
+    if resource is None or not hasattr(resource, "RLIMIT_AS"):
+        return {"mechanism": None, "quota_bytes": None, "cooperative_budgets": True,
+                "degraded": True,
+                "detail": "无 POSIX RLIMIT_AS；进程级内存边界请用 Windows Job Object 或 cgroup 配置，"
+                          "RSS 轮询只能预警，挡不住瞬时大分配"}
+    soft, _hard = resource.getrlimit(resource.RLIMIT_AS)
+    if soft != resource.RLIM_INFINITY:
+        return {"mechanism": "rlimit_as", "quota_bytes": soft, "cooperative_budgets": True,
+                "degraded": False,
+                "detail": "POSIX RLIMIT_AS 地址空间配额全程生效；耗尽会终止本会话进程"}
+    return {"mechanism": None, "quota_bytes": None, "cooperative_budgets": True,
+            "degraded": True,
+            "detail": "RLIMIT_AS 未配置；当前只有回调级合作式预算与硬看门狗。"
+                      "建议会话启动时设置 RULANG_ADDRESS_SPACE_LIMIT，"
+                      "或由外部 cgroup／Job Object 负责进程级配额"}
+
+
 def _json(value):
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
@@ -356,7 +386,6 @@ class GraphicsHost:
         if not tracemalloc.is_tracing():
             tracemalloc.start(1)
             self.owns_tracing = True
-        self.memory_start = tracemalloc.get_traced_memory()[0]
         self.canvas = Canvas(self, width, height, origin)
         instance = Instance(_TYPES["canvas"], {})
         instance.graphics_canvas = self.canvas
@@ -428,6 +457,10 @@ class GraphicsHost:
         previous_bytes = canvas.command_bytes
         canvas.commands, canvas.command_bytes = [], 2
         started = time.monotonic()
+        # Sample the allocation baseline per callback so the budget measures
+        # this callback's net growth. Slow growth across many callbacks is
+        # covered by the session-level address-space quota instead.
+        self.memory_start = tracemalloc.get_traced_memory()[0]
         deadline, lines = started + MAX_CALLBACK_SECONDS, 0
         remaining = 128
         def check():

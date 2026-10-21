@@ -1,6 +1,8 @@
 # 0.22.1／如书保持 0.8.8（wip 性能修复，尚未发布到 main）
 
 - 重构如观宿主的进程内存保护：不再在每次事件回调前把整进程 RLIMIT_AS 临时收紧到 512 MiB——该绝对上限会误伤地址空间已较大的长会话宿主（VSZ 含预留未触碰的映射），恢复失败还会遗留保护性限制并要求重启会话。回调层只保留可移植的 1 秒／50 万跟踪行／64 MiB 分配预算，配合 10 秒硬看门狗。会话进程（如书已按会话隔离）现可在启动时调用 `install_address_space_limit` 或设置环境变量 `RULANG_ADDRESS_SPACE_LIMIT`（如 `1G`）设定全程生效、软／硬上限同值且不可再提高的地址空间配额；配额耗尽终止并重启隔离会话而非宿主，配额低于当前进程用量时在启动即报错，而不是拖成运行期随机 MemoryError。（`rulang/graphics_runtime.py`）
+- 回调分配预算改为按回调采样基线：64 MiB 预算现在度量该次回调的净增长，不再把创建画布以来的累计增长算作一次回调的分配；跨回调的缓慢增长由会话级地址空间配额兜底。新增 `memory_protection_status`，宿主可报告当前内存防护层级，未配置配额的平台得到明确降级说明（Linux cgroup／Windows Job Object／RSS 轮询只能预警），不再假装所有平台的“内存 MB”语义相同。（`rulang/graphics_runtime.py`）
+- 件 全量读取新增 256 MiB 预检：先按文件大小拒绝再分配内存，不再读完超大文件才发现失败；解释器与 C 运行时行为一致，恰好在边界值时仍允许读取。（`rulang/io_runtime.py`、`rulang/io_runtime.h`）
 
 - 新增随附第三方界面库「如UI」（`rulang/thirdparty/如UI/如UI.ru`，如见渠道分发）：文、钮、滑、选、列、行、叠、滚、充、占、间、应用.页、应用.提示共 13 词，声明式控件 + 自动排版 + 命中格表，绘制走如观 2D 命令流，同一源码在 Python 解释器与浏览器 JS 运行时产出逐命令一致的命令流（`tests/test_ruui.py` 8 例双后端比对）。
 - 新增 `ru build --target ui`：把如UI 程序编译为单文件自包含交互网页（内嵌浏览器运行时、2D 画布宿主、rAF 帧循环与鼠标事件转发），浏览器打开即可交互；默认输出同名 `.html`，与 `--cc`／`--emit-c`／`--allow-native` 互斥（`rulang/app_builder.py`，产物级冒烟见 `tests/test_ruui_app.py`）。

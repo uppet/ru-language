@@ -61,6 +61,33 @@ class CheckedIOTests(unittest.TestCase):
                 if not gc_stress:
                     self.assertEqual(diagnostic, "")
 
+    def test_oversized_file_read_is_rejected_before_reading(self):
+        def setup(path):
+            # Sparse: occupies no disk, but st_size reports the full length.
+            with open(path/'huge', 'wb') as stream:
+                stream.truncate(io_runtime.MAX_FILE_READ_BYTES + 4096)
+        def source(path):
+            return f"""
+文档 取 新 件 路径:{quote(path/'huge')}.
+应 取 文档 其 读. 显 应 其 结果. 显 (应 其 错误信息 其 含 '超过单次读取上限').
+"""
+        self.engines(source, "失败\n真\n", setup=setup)
+
+    def test_file_read_limit_boundary_is_strictly_greater_than(self):
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp)/'edge'
+            path.write_bytes(b'abcd')
+            source = (f"文档 取 新 件 路径:{quote(path)}. 应 取 文档 其 读. "
+                      "显 应 其 结果. 显 应 其 值.")
+            with mock.patch.object(io_runtime, 'MAX_FILE_READ_BYTES', 4):
+                output = io.StringIO()
+                Interpreter(io.StringIO(), output).execute(parse(source))
+            self.assertEqual(output.getvalue(), '成功\nabcd\n')
+            with mock.patch.object(io_runtime, 'MAX_FILE_READ_BYTES', 3):
+                output = io.StringIO()
+                Interpreter(io.StringIO(), output).execute(parse(source))
+            self.assertEqual(output.getvalue(), '失败\n空\n')
+
     def test_file_roundtrip_append_truncate_delete(self):
         def source(path):
             return f"""

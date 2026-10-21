@@ -9,6 +9,7 @@
 #include <windows.h>
 #define ru_io_close _close
 #define ru_io_fdopen _fdopen
+#define ru_io_fileno _fileno
 #define ru_io_fstat _fstat64
 #define ru_io_statbuf struct _stat64
 #define RU_IO_NONBLOCK 0
@@ -23,6 +24,7 @@
 #define ru_io_open open
 #define ru_io_close close
 #define ru_io_fdopen fdopen
+#define ru_io_fileno fileno
 #define ru_io_fstat fstat
 #define ru_io_stat stat
 #define ru_io_statbuf struct stat
@@ -30,6 +32,9 @@
 #define RU_IO_NONBLOCK O_NONBLOCK
 #define RU_IO_BINARY 0
 #endif
+
+/* Full-file reads are pre-checked against this before any allocation. */
+#define RU_IO_MAX_FILE_READ ((off_t)256 * 1024 * 1024)
 
 #ifdef _WIN32
 /* Convert strict UTF-8 to Windows wide APIs; never use the active ANSI codepage. */
@@ -478,8 +483,20 @@ static int ru_io_member(Val receiver, const char *name, size_t argc, const char 
     else if (directory) *out = ru_io_list(path.s->data, line);
     else if (writing || !strcmp(name, "读")) {
         stream = ru_io_open_regular(path.s->data, writing, append.n != 0, &error);
+        if (stream && !writing) {
+            /* Pre-check what a full read would allocate; never read a giant
+               file into memory only to fail afterwards. */
+            ru_io_statbuf status;
+            if (ru_io_fstat(ru_io_fileno(stream), &status) == 0 &&
+                status.st_size > RU_IO_MAX_FILE_READ) {
+                fclose(stream);
+                stream = NULL;
+                error = EFBIG;
+                message = "文件超过单次读取上限 256 MiB；请分块或按行读取";
+            }
+        }
         *out = stream ? (writing ? ru_io_write(stream, 1, content, line) : ru_io_read(stream, 1, 0, line)) :
-                       ru_io_result(v_null(), error, name, NULL, line);
+                       ru_io_result(v_null(), error, name, message, line);
     } else if (!strcmp(name, "在")) {
         errno = 0;
         if (ru_io_stat(path.s->data, &status) == 0)
