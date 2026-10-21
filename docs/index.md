@@ -15,6 +15,7 @@
 - [如书使用说明](../rushu/README.md)：代码格、输入、保存、重启和书本历史
 - [文本、数学与随机](practical-libraries.md)：从整理名单到可复现的骰子
 - [如观](ruguan-guide.md)：先画柱状图，再试动画、鼠标和键盘
+- [如UI](ruui-guide.md)：声明式控件与排版，`ru build --target ui` 产出自包含交互网页
 - [如竞](contest-library.md)：四道完整练习，以及生成 C 的提交流程
 - [源码例子](../examples/) · [如书示例](../rushu/examples/)
 

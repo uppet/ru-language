@@ -127,8 +127,14 @@ def compiler_command(selected, windows=None):
 
 
 def build(program, source_path, output, cc=None, emit_c=None, modules=None, target="c", full_runtime=False, allow_native=False, source_prefix_maps=(), style_check=None):
-    if target not in ("c", "js"):
-        raise RuError("编译目标须为 c 或 js", category="编译错误")
+    if target not in ("c", "js", "ui"):
+        raise RuError("编译目标须为 c、js 或 ui", category="编译错误")
+    if target == "ui" and (cc is not None or emit_c is not None):
+        raise RuError("如UI 网页目标不能使用 --cc 或 --emit-c", category="编译错误")
+    if target == "ui" and allow_native:
+        raise RuError("--allow-native 只适用于 C 编译目标", category="能力错误")
+    if target == "ui" and source_prefix_maps:
+        raise RuError("源码路径映射只适用于 C 编译目标", category="编译错误")
     if target == "js" and (cc is not None or emit_c is not None):
         raise RuError("JavaScript 目标不能使用 --cc 或 --emit-c", category="编译错误")
     if source_prefix_maps and target != 'c':
@@ -161,6 +167,20 @@ def build(program, source_path, output, cc=None, emit_c=None, modules=None, targ
                 os.fsync(stream.fileno())
             os.replace(script, output)
         return output, "JavaScript (Node.js)"
+    if target == "ui":
+        from .app_builder import build_app_html
+        generated = build_app_html(source_path.read_text(encoding="utf-8"), title=source_path.stem)
+        if style_check is not None:
+            style_check()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix=".ru-build-", dir=output.parent) as temp:
+            page = Path(temp) / "app.html"
+            with page.open("w", encoding="utf-8", newline="\n") as stream:
+                stream.write(generated)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(page, output)
+        return output, "如UI 网页（自包含 HTML）"
     generated = Compiler(program, str(source_path), modules=modules, full_runtime=full_runtime, allow_native=allow_native,
                          source_prefix_maps=source_prefix_maps).compile()
     if style_check is not None:
@@ -278,7 +298,7 @@ def make_parser():
     p.add_argument("source")
     p.add_argument("--strict-style", action="store_true", help="将缺少完整语句结束句点的书写提示作为错误；默认只在标准错误提示")
     p.add_argument("-o", "--output", help="输出路径；C 默认去掉源文件扩展名，JS 默认为同名 .js")
-    p.add_argument("--target", choices=("c", "js"), default="c", help="编译目标：c（默认）或 js（Node.js）")
+    p.add_argument("--target", choices=("c", "js", "ui"), default="c", help="编译目标：c（默认）、js（Node.js）或 ui（如UI 自包含网页，浏览器打开即交互）")
     p.add_argument("--cc", help="C 编译器（默认依次查找 clang、gcc、cc；也支持 CC 环境变量）")
     p.add_argument("--emit-c", metavar="PATH", help="额外保存可审阅的独立 C99 源码")
     p.add_argument("--full-runtime", action="store_true", help="保留完整运行时及已导入标准库声明，供诊断对比")
@@ -455,12 +475,15 @@ def main(argv=None):
             print(f"检查通过：{name}" + ("（Python 模块语法验证；未执行代码或加载 DLL）" if args.target == "python" else ""))
         elif args.command == "build":
             output = args.output or (str(Path(args.source).with_suffix(".js")) if args.target == "js"
+                                     else str(Path(args.source).with_suffix(".html")) if args.target == "ui"
                                      else str(Path(args.source).with_suffix("")) + (".exe" if os.name == "nt" else ""))
             result, compiler = build(program, args.source, output, args.cc, args.emit_c,
                                      modules=modules, target=args.target, full_runtime=args.full_runtime, allow_native=args.allow_native,
                                      source_prefix_maps=args.source_prefix_map, style_check=check_style)
             if args.target == "js":
                 print(f"已编译：{result}\n运行目标：{compiler}；未执行")
+            elif args.target == "ui":
+                print(f"已编译：{result}\n运行目标：{compiler}；未执行。用浏览器打开即可交互。")
             else:
                 print(f"已编译：{result}\nC 编译器：{compiler}")
         return 0

@@ -2,6 +2,10 @@
 
 - 修复如观宿主在长会话中误触内存上限的问题：事件回调的地址空间保护下限以当前用量为参照，进程地址空间（含已预留未触碰的竞技场映射）超过每回调预算时不再下调 RLIMIT_AS，避免下一次分配立即 MemoryError；可移植的逐行分配预算检查保持不变，仍覆盖降级场景。
 
+- 新增随附第三方界面库「如UI」（`rulang/thirdparty/如UI/如UI.ru`，如见渠道分发）：文、钮、滑、选、列、行、叠、滚、充、占、间、应用.页、应用.提示共 13 词，声明式控件 + 自动排版 + 命中格表，绘制走如观 2D 命令流，同一源码在 Python 解释器与浏览器 JS 运行时产出逐命令一致的命令流（`tests/test_ruui.py` 8 例双后端比对）。
+- 新增 `ru build --target ui`：把如UI 程序编译为单文件自包含交互网页（内嵌浏览器运行时、2D 画布宿主、rAF 帧循环与鼠标事件转发），浏览器打开即可交互；默认输出同名 `.html`，与 `--cc`／`--emit-c`／`--allow-native` 互斥（`rulang/app_builder.py`，产物级冒烟见 `tests/test_ruui_app.py`）。
+- 新增示例 `examples/ruui-counter.ru`、`examples/ruui-quiz.ru` 与指南 `docs/ruui-guide.md`（词表、最小骨架与七条已验证写法约束）。
+
 - 显式启用的 Windows x64 C 原生后端维护瞬时根非零链，回调入口只枚举真实瞬时根并为每次回调独立拍摄快照；保留原排序、全堆错误恢复和 mark 清零，不缓存跨回调快照。
 - native-enabled heap 增加两个内部链接，x64 实测每个 heap 增加 16 字节；普通非原生 C 不增加字段或执行开销。包语法、锁格式、ABI 与授权边界不变。
 - 规范版本标头与四份提示词导出随工具链更新；如书、Emacs 与 VS Code 无新语法要求。设计与验收范围见[瞬时根索引设计](docs/native-transient-roots-design.md)，host 机制收益不能代替真实应用对照。
