@@ -55,6 +55,48 @@ jobs:
         run: emacs --version
       - name: Byte-compile and run ERT
         run: make test-emacs
+  llvm-aot:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.10"
+      - name: Install matching LLVM 14 tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y clang-14 llvm-14
+      - name: Prepare project-local Windows LLVM 14
+        if: runner.os == 'Windows'
+        run: python tools/prepare_workspace.py --with-llvm
+      - name: Check tools, native AOT and Ru self-compilation
+        run: |
+          python -c "from rulang.llvm_toolchain import LLVMToolchain; print(LLVMToolchain().version)"
+          python -m unittest discover -s tests -p test_toolchain_environment.py -v
+          python -m unittest discover -s tests -p test_bootstrap_verifier.py -v
+          python -m unittest discover -s tests -p test_prepare_workspace.py -v
+          python -m unittest discover -s tests -p test_llvm.py -v
+          python tools/bootstrap.py verify
+      - name: Bootstrap from Windows Git Bash with POSIX search paths
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          export INCLUDE='C:/msys64/usr/include/:C:/msys64/include/:'
+          export LIB='C:/msys64/usr/lib/:'
+          export CPATH='/usr/include:/mingw64/include'
+          unset PYTHONUTF8 PYTHONIOENCODING
+          python tools/prepare_workspace.py --with-llvm
+          python tools/bootstrap.py verify --directory bin/bootstrap/git-bash
+          python tools/bootstrap.py build examples/hello.ru --compiler bin/bootstrap/git-bash/stage3.exe -o bin/hello-git-bash.exe
+          ./bin/hello-git-bash.exe
   windows-console:
     runs-on: windows-latest
     timeout-minutes: 20

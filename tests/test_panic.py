@@ -300,6 +300,11 @@ class PanicTests(unittest.TestCase):
     def test_native_sanitizer_stress(self):
         with tempfile.TemporaryDirectory() as folder:
             flags = ('-fsanitize=address,undefined', '-fno-omit-frame-pointer')
+            if sys.platform.startswith('linux'):
+                # LLVM 14 ASan PIE startup can segfault even for an empty C
+                # main on the WSL host. Keep this ownership stress test on a
+                # fixed image while retaining ASan/UBSan and leak checks.
+                flags += ('-fno-pie', '-no-pie')
             probe = Path(folder).resolve() / 'sanitizer-probe.c'
             probe.write_text('int main(void) { return 0; }\n', encoding='utf-8')
             supported = subprocess.run(

@@ -8,6 +8,8 @@
 
 本版包含 `另若` 条件链支持；功能分支合入前请以实际 `main` 的版本为准。当前[语言规范](../rulang/language-spec.md)描述本版，历史验收报告仍保留各自版本。
 
+`bs` 的 0.23.0 实验工作线提供 [LLVM AOT](llvm-aot.md) 和[自编译链](bootstrap.md)：直接 LLVM IR、独立原生产物与首批 Dart AOT 对照测量；[M4 固定点与逐代回归](bootstrap-m4-validation.md) 已在 Windows／WSL 验收，可用 `python3 tools/bootstrap.py verify` 重跑。独立如言前端仍有明确的语言范围，尚未接入如书编译内核。
+
 ## 学习与小作品
 
 - [入门小路](first-steps.md)：显示、赋值、循环、判断、函数和阵

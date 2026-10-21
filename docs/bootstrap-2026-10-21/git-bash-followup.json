@@ -1,0 +1,91 @@
+{
+  "date": "2026-10-21",
+  "scope": "Windows Git Bash SDK environment repair; targeted verification, not a new full-suite snapshot",
+  "root_cause": {
+    "INCLUDE": "c:/msys64/usr/include/:c:/msys64/usr/lib/gcc/x86_64-pc-msys/13.3.0/include/c++/:",
+    "LIB": "c:/msys64/usr/lib/:",
+    "format": "POSIX colon lists override native MSVC/Windows SDK search; use valid Windows semicolon lists or omit"
+  },
+  "checks": {
+    "git_bash_cli": {
+      "shell": "S:/Apps/Git/bin/bash.exe --login -i",
+      "reads_original_startup_files": true,
+      "PYTHONUTF8": null,
+      "PYTHONIOENCODING": null,
+      "preparation": true,
+      "three_generations": true,
+      "native_build_and_run": true,
+      "stage0_llvm_build_and_run": true
+    },
+    "cmd_exe": {
+      "preparation": true,
+      "native_build_and_run": true
+    },
+    "git_bash_tests": {
+      "run": 43,
+      "passed": 42,
+      "skipped": 1,
+      "skip_reason": "Clang 14 ASan runtime not installed"
+    },
+    "wsl_tests": {
+      "run": 43,
+      "passed": 42,
+      "skipped": 1,
+      "skip_reason": "Windows SDK environment regression"
+    },
+    "wsl_c_build_and_compiler_command_tests": {
+      "run": 6,
+      "passed": 6
+    }
+  },
+  "example": {
+    "path": "examples/factorial.ru",
+    "sha256": "ca5de4830d37545b1b3eaf95fe40b4b3c9586505433a0e549afebd90ba048d3f",
+    "stdout": "3628800\n720\n5040\n40320\n",
+    "edited_by_this_fix": false
+  },
+  "git_bash_bootstrap": {
+    "platform": "win32",
+    "triple": "x86_64-pc-windows-msvc19.51.36260",
+    "llvm": "clang version 14.0.6",
+    "source_sha256": "02d276dc6e1eee732a8141fdc458226e96aab9ffcaa9a222dd7aaf4520076d73",
+    "stage0_seconds": 10.110000000000582,
+    "stages": [
+      {
+        "source_ir_sha256": "cae30b4dedb2e7bc85336f8c333377b66c86e0619568a03f44a887496e5490fa",
+        "metadata_sha256": "95a4561c86cec4f862436f8273e05882197954b1812ca1d8264f0728098f6863",
+        "binary_sha256": "8713c7314788410734fc0fce3a7b6253f22b5edd7421fb2a8ae21ab162ad6270",
+        "frontend_seconds": 5.764999999999418,
+        "seconds": 16.35899999999674
+      },
+      {
+        "source_ir_sha256": "cae30b4dedb2e7bc85336f8c333377b66c86e0619568a03f44a887496e5490fa",
+        "metadata_sha256": "95a4561c86cec4f862436f8273e05882197954b1812ca1d8264f0728098f6863",
+        "binary_sha256": "5782563481a1fb987c920ff037966d6c571ca9601ddae0c9f0984770be7f9b60",
+        "frontend_seconds": 5.764999999999418,
+        "seconds": 16.186999999990803
+      }
+    ],
+    "fixed_point": true
+  },
+  "source_sha256": {
+    "rulang/toolchain_environment.py": "55480f308e6239ce0020408e4df2c420cdcb515a687ed7b717196f23dc3c1696",
+    "rulang/llvm_toolchain.py": "63972ae7efe9fd1c78ccd4493e47ef45a6e58959a9b06596f72224654fecffa4",
+    "rulang/cli.py": "6bc21a21244b47b0332d2759658ce3e44f000dcde0e739cde34ea6041033368d",
+    "tools/bootstrap.py": "4f09cf9effc168b77d2be95c930f511358d3efe1d4bf6e65420dcb7ac7141fe3",
+    "tools/prepare_workspace.py": "c73b35d0d767435feac83842e0ccb39eaeb80d6fec1923dae59c2e4d6e66e3c2",
+    "tests/test_toolchain_environment.py": "437983bcc37cac2a69a4e7d81b0728f220018117a32d4e3ec7147986f3fc60cd",
+    "tests/test_llvm.py": "4bb984eae9a1ec5e9b3e13190afaa76aa13ed9db78b0a3f8871ce8992db97feb",
+    "tests/test_bootstrap.py": "aef0aed9789df6cf672f14f149f354c82d36338adaa9af4408c3fd013748dfda",
+    "tests/test_prepare_workspace.py": "6a73b7b399fb4319fa009101558cc36c2b8a9299307f66b22f56edb307faa994",
+    ".github/workflows/ci.yml": "3f2ef8139e270fd013ba60916353a8c8081813a4cf46c8b23e7a029f54ee4b95"
+  },
+  "log_sha256": {
+    "include-matrix.log": "f30b289177f440bdc2361576f8cd90534953da32cb69f18604aa820fd7be8d78",
+    "verify.log": "4f3744284fa70598570a12a69a1d6708ef174018cbcea519edc47fc198820c55",
+    "cmd-verify.log": "f9c7358e51612508ea29db8c6d8913b623a07f29332e8a34948ba67ce0b0a1c7",
+    "linux-tests.log": "4f8e6ab571fded7f921f352c7aa1e5959107d8ebbbc944cc12f4e03a89d7acde",
+    "windows-tests.log": "0ad1b287c5669aa725ed2961c86a4bea006309957a284831b43606f7da3d2584"
+  },
+  "remote_ci_executed": false
+}

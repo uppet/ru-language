@@ -1,3 +1,13 @@
+# 0.23.0／如书保持 0.8.9（bs LLVM AOT 实验开发，尚未发布到 main）
+
+- 新增直接 AST → LLVM IR 的实验性 `build --target llvm`，首个目标为 Linux x86-64／LLVM 14；链接单一动态值/GC运行时，生成独立原生程序。函数/闭包、控制流、集合、对象、静态模块、受检查 I/O 和显式卒沿用现有语义；不开放图形、原生 DLL 或如书 AOT 会话。
+- 补充 Windows x86-64／MSVC ABI 的 LLVM 14 原生构建；`python3 tools/prepare_workspace.py --with-llvm` 可显式下载固定工具到 `.build_tools` 并验证真实编译、链接和运行。常规构建不下载；项目内工具不提交，也不改全局 PATH。
+- 修复 Windows Git Bash 启动文件导出 POSIX 格式 `INCLUDE`／`LIB` 等路径时，自举和 LLVM 构建找不到 SDK 头文件／库的问题；只过滤工具子进程中的无效路径列表，保留正常 VS 环境，并补齐预备／自举脚本的 UTF-8 诊断输出。
+- 新增 `bootstrap/compiler.ru` 的如言词法／解析／语义与直接 LLVM 编译前端，`tools/bootstrap.py` 构建三代原生编译器并比较自身 IR／描述符固定点；支持范围、Python 宿主驱动与 Windows／WSL 验收见 [首次自编译](docs/bootstrap.md)。完整 Python 前端与如书内核继续保留。
+- 增加 `tools/bootstrap.py verify` 的 M4 验收：重新构建三代，各代执行相同语义／模块／错误回归，比较精确前端固定点及仅归一 Windows PE 时间戳的二进制，冻结输入／产物校验值并记录逐项结果；失败、跳过或漏跑均不能通过。
+- `--emit-llvm` 保存包含运行时的独立可复编 `.ll`；增加同版本工具检查、IR 验证、输出路径保护、失败保留旧产物与 `check --target llvm` 的无工具源码检查。
+- 增加真实 LLVM 执行与差分回归、独立产物验证、LLVM 专项 CI，以及如言 C／LLVM／Dart 原生 AOT 的可重复测量工具。首批 M1 验收是功能与测量闭环，未据此宣称性能对齐或自举完成；后续首次自编译另行验收，见 [LLVM AOT](docs/llvm-aot.md)。
+
 # 0.23.0／如书0.8.9（main 稳定版）
 
 - 新增完整关键字 `另若`：同一条件链可写多个后续分支及可选末尾 `另`，只用一个 `然.` 收尾；依序惰性求值并执行首个命中分支。旧 `另 若` 仍为嵌套，不改变收尾层级。

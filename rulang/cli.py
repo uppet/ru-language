@@ -126,9 +126,13 @@ def compiler_command(selected, windows=None):
     return parts
 
 
-def build(program, source_path, output, cc=None, emit_c=None, modules=None, target="c", full_runtime=False, allow_native=False, source_prefix_maps=(), style_check=None):
-    if target not in ("c", "js"):
-        raise RuError("编译目标须为 c 或 js", category="编译错误")
+def build(program, source_path, output, cc=None, emit_c=None, modules=None, target="c", full_runtime=False, allow_native=False, source_prefix_maps=(), style_check=None, emit_llvm=None, llvm_clang=None):
+    if target not in ("c", "js", "llvm"):
+        raise RuError("编译目标须为 c、js 或 llvm", category="编译错误")
+    if target != 'llvm' and (emit_llvm is not None or llvm_clang is not None):
+        raise RuError('--emit-llvm 和 --llvm-clang 只适用于 LLVM 目标', category='编译错误')
+    if target == 'llvm' and (cc is not None or emit_c is not None or allow_native):
+        raise RuError('LLVM AOT M1 不支持 --cc、--emit-c 或 --allow-native；编译器请用 --llvm-clang 指定', category='能力错误')
     if target == "js" and (cc is not None or emit_c is not None):
         raise RuError("JavaScript 目标不能使用 --cc 或 --emit-c", category="编译错误")
     if source_prefix_maps and target != 'c':
@@ -141,6 +145,10 @@ def build(program, source_path, output, cc=None, emit_c=None, modules=None, targ
     source_paths = {Path(path).resolve() for path in modules} | {source_path}
     if output in source_paths:
         raise RuError("输出路径不能覆盖源文件或外言依赖", category="编译错误")
+    if target == 'llvm':
+        from .llvm_toolchain import build_llvm
+        return build_llvm(program, source_path, output, modules=modules, clang=llvm_clang,
+                          emit_llvm=emit_llvm, full_runtime=full_runtime, style_check=style_check)
     if emit_c:
         cpath = Path(emit_c).resolve()
         if cpath in source_paths or cpath == output:
@@ -170,8 +178,14 @@ def build(program, source_path, output, cc=None, emit_c=None, modules=None, targ
         cpath.write_text(generated, encoding="utf-8")
     selected = cc or os.environ.get("CC")
     command = compiler_command(selected) if selected else None
+    compiler_environment = None
     if not command:
         found = next((shutil.which(c) for c in ("clang", "gcc", "cc") if shutil.which(c)), None)
+        if found is None and sys.platform == 'win32':
+            from .llvm_toolchain import find_clang
+            from .toolchain_environment import llvm_environment
+            found = find_clang()
+            compiler_environment = llvm_environment()
         if not found:
             raise RuError("未找到 C 编译器。请安装 Clang/GCC，或用 --cc 指定路径；REPL 和 ru run 不需要 C 编译器。", category="编译错误")
         command = [found]
@@ -185,9 +199,12 @@ def build(program, source_path, output, cc=None, emit_c=None, modules=None, targ
         # destination remains exactly the path selected by the caller.
         cfile, binary = temp / "program.c", temp / "program.exe"
         cfile.write_text(generated, encoding="utf-8")
-        invocation = command + ["-std=c99", "-O2", "-Wall", "-Wextra", "-Wno-unused-function", str(cfile), "-o", str(binary), "-lm"]
+        invocation = command + ["-std=c99", "-O2", "-Wall", "-Wextra", "-Wno-unused-function", str(cfile), "-o", str(binary)]
+        if sys.platform != 'win32':
+            invocation.append('-lm')
         try:
-            completed = subprocess.run(invocation, capture_output=True, text=True, timeout=120)
+            completed = subprocess.run(invocation, capture_output=True, text=True,
+                                       env=compiler_environment, timeout=120)
         except FileNotFoundError:
             raise RuError(f"找不到编译器：{command[0]}", category="编译错误") from None
         except subprocess.TimeoutExpired:
@@ -260,7 +277,7 @@ def repl():
 
 
 def make_parser():
-    parser = argparse.ArgumentParser(prog="ru", description=f"如 {__version__}：中文关键词语言，带 REPL、C99 原生与 JavaScript 编译后端")
+    parser = argparse.ArgumentParser(prog="ru", description=f"如 {__version__}：中文关键词语言，带 REPL、C99、LLVM AOT 与 JavaScript 编译后端")
     parser.add_argument("--version", action="version", version=f"如 {__version__}")
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("repl", help="启动保留状态的多行 REPL")
@@ -269,7 +286,7 @@ def make_parser():
         p.add_argument("source")
         if name == "check":
             p.add_argument("--strict-style", action="store_true", help="将缺少完整语句结束句点的书写提示作为错误；默认只在标准错误提示")
-            p.add_argument("--target", choices=("c", "python"), default="c", help="c（默认）检查可编译性；python 仅解析和验证模块，不执行代码或加载 DLL")
+            p.add_argument("--target", choices=("c", "python", "llvm"), default="c", help="c（默认）或 llvm 检查可编译性；python 仅解析和验证模块，不执行代码或加载 DLL")
             p.add_argument("--allow-native", action="store_true", help="允许静态检查 Windows x64 原生 C 编译；不执行代码或加载 DLL")
         if name == "run":
             p.add_argument("--allow-native", action="store_true", help="信任本地原生代码，开启 Windows x64 ABI；须放在源文件路径之前")
@@ -278,9 +295,11 @@ def make_parser():
     p.add_argument("source")
     p.add_argument("--strict-style", action="store_true", help="将缺少完整语句结束句点的书写提示作为错误；默认只在标准错误提示")
     p.add_argument("-o", "--output", help="输出路径；C 默认去掉源文件扩展名，JS 默认为同名 .js")
-    p.add_argument("--target", choices=("c", "js"), default="c", help="编译目标：c（默认）或 js（Node.js）")
+    p.add_argument("--target", choices=("c", "js", "llvm"), default="c", help="编译目标：c（默认）、js（Node.js）或 llvm（LLVM 14 / Linux、Windows x86-64 AOT）")
     p.add_argument("--cc", help="C 编译器（默认依次查找 clang、gcc、cc；也支持 CC 环境变量）")
     p.add_argument("--emit-c", metavar="PATH", help="额外保存可审阅的独立 C99 源码")
+    p.add_argument("--emit-llvm", metavar="PATH", help="仅 LLVM：保存已链接运行时、验证并优化的独立 .ll，可由 clang-14 复编")
+    p.add_argument("--llvm-clang", metavar="COMMAND", help="仅 LLVM：指定 LLVM 14 Clang（也可设置 RU_LLVM_CLANG）")
     p.add_argument("--full-runtime", action="store_true", help="保留完整运行时及已导入标准库声明，供诊断对比")
     p.add_argument("--allow-native", action="store_true", help="信任原生代码，编译含 Windows x64 ABI 的独立程序；默认关闭，产物不依赖 Python")
     p.add_argument("--source-prefix-map", action="append", default=[], metavar="OLD=NEW",
@@ -344,6 +363,10 @@ def main(argv=None):
         parser.error("--target js 不能使用 --cc 或 --emit-c")
     if args.command == 'build' and args.target == 'js' and args.source_prefix_map:
         parser.error('--source-prefix-map 只适用于 --target c')
+    if args.command == 'build' and args.target != 'llvm' and (args.emit_llvm is not None or args.llvm_clang is not None):
+        parser.error('--emit-llvm 和 --llvm-clang 只适用于 --target llvm')
+    if args.command == 'build' and args.target == 'llvm' and (args.cc is not None or args.emit_c is not None or args.allow_native or args.source_prefix_map):
+        parser.error('LLVM AOT M1 不支持 --cc、--emit-c、--allow-native 或 --source-prefix-map；编译器请用 --llvm-clang 指定')
     if args.command in (None, "repl"):
         return repl()
     source, name = "", getattr(args, "source", getattr(args, "document", "<输入>"))
@@ -449,6 +472,9 @@ def main(argv=None):
         elif args.command == "check":
             if args.target == "c":
                 Compiler(program, modules.root, modules=modules, allow_native=args.allow_native).compile()
+            elif args.target == 'llvm' and not args.allow_native:
+                from .llvm_compiler import LLVMCompiler
+                LLVMCompiler(program, modules.root, modules=modules).compile()
             elif args.allow_native:
                 raise RuError("check --allow-native 只用于 C 目标；Python 源码检查无需授予原生能力", category="能力错误")
             check_style()
@@ -458,9 +484,13 @@ def main(argv=None):
                                      else str(Path(args.source).with_suffix("")) + (".exe" if os.name == "nt" else ""))
             result, compiler = build(program, args.source, output, args.cc, args.emit_c,
                                      modules=modules, target=args.target, full_runtime=args.full_runtime, allow_native=args.allow_native,
-                                     source_prefix_maps=args.source_prefix_map, style_check=check_style)
+                                     source_prefix_maps=args.source_prefix_map, style_check=check_style,
+                                     emit_llvm=args.emit_llvm, llvm_clang=args.llvm_clang)
             if args.target == "js":
                 print(f"已编译：{result}\n运行目标：{compiler}；未执行")
+            elif args.target == 'llvm':
+                host = 'Windows' if sys.platform == 'win32' else 'Linux'
+                print(f'已编译：{result}\nLLVM 工具链：{compiler}；{host} x86-64；未执行')
             else:
                 print(f"已编译：{result}\nC 编译器：{compiler}")
         return 0

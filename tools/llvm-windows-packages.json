@@ -1,0 +1,50 @@
+[
+  {
+    "name": "llvm-tools",
+    "filename": "llvm-tools-14.0.6-hf00eed6_0.tar.bz2",
+    "url": "https://conda.anaconda.org/conda-forge/win-64/llvm-tools-14.0.6-hf00eed6_0.tar.bz2",
+    "sha256": "8fe57ccbaa712bb0ae8b0606fb84cadb7c903b49b085c105ea74147bbc8027cd",
+    "size": 328096926,
+    "license": "Apache-2.0 WITH LLVM-exception"
+  },
+  {
+    "name": "clang-14",
+    "filename": "clang-14-14.0.6-default_h66ee7f4_0.tar.bz2",
+    "url": "https://conda.anaconda.org/conda-forge/win-64/clang-14-14.0.6-default_h66ee7f4_0.tar.bz2",
+    "sha256": "914cc7a376b2165425e8b25e0035d14e8fc3e70b1d536af4d8ee4cb493915584",
+    "size": 34665723,
+    "license": "Apache-2.0 WITH LLVM-exception"
+  },
+  {
+    "name": "clang",
+    "filename": "clang-14.0.6-h8e541a6_0.tar.bz2",
+    "url": "https://conda.anaconda.org/conda-forge/win-64/clang-14.0.6-h8e541a6_0.tar.bz2",
+    "sha256": "87ca7d4505ec35b3700f824eec867c59274beeb73f31c08929bf10cfd2ed0ad7",
+    "size": 101234916,
+    "license": "Apache-2.0 WITH LLVM-exception"
+  },
+  {
+    "name": "libzlib",
+    "filename": "libzlib-1.2.12-h8ffe710_2.tar.bz2",
+    "url": "https://conda.anaconda.org/conda-forge/win-64/libzlib-1.2.12-h8ffe710_2.tar.bz2",
+    "sha256": "e88ff9ab754e58a76162532e9d671637870a1dec9387fdda63a7841fc6a3b4c0",
+    "size": 69611,
+    "license": "Zlib"
+  },
+  {
+    "name": "libxml2",
+    "filename": "libxml2-2.9.14-hf5bbc77_2.tar.bz2",
+    "url": "https://conda.anaconda.org/conda-forge/win-64/libxml2-2.9.14-hf5bbc77_2.tar.bz2",
+    "sha256": "ba0105126b0d14d797b1e9ff777eeb0bbb76460b7a237cd93491a35a98430ddd",
+    "size": 3624013,
+    "license": "MIT"
+  },
+  {
+    "name": "libiconv",
+    "filename": "libiconv-1.16-he774522_0.tar.bz2",
+    "url": "https://conda.anaconda.org/conda-forge/win-64/libiconv-1.16-he774522_0.tar.bz2",
+    "sha256": "4572b34ed4b737772ec88adc6455285db77568b6b566e46d7ef96ee1c4d57696",
+    "size": 696749,
+    "license": "GPL and LGPL"
+  }
+]

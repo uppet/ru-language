@@ -1,0 +1,955 @@
+{
+  "format": 1,
+  "milestone": "M4",
+  "platform": "win32",
+  "scope": "Declared native bootstrap frontend profile; not full Python frontend/package parity",
+  "m4_complete": true,
+  "gates": {
+    "source_ir_and_abi_fixed_point": true,
+    "native_binary_fixed_point": true,
+    "same_nonempty_suite_for_each_stage": true,
+    "every_planned_case_ran": true,
+    "every_case_passed_without_skips": true,
+    "test_runner_success_without_skips": true,
+    "inputs_unchanged": true,
+    "artifacts_unchanged_during_tests": true
+  },
+  "bootstrap": {
+    "platform": "win32",
+    "triple": "x86_64-pc-windows-msvc19.51.36260",
+    "llvm": "clang version 14.0.6",
+    "source_sha256": "02d276dc6e1eee732a8141fdc458226e96aab9ffcaa9a222dd7aaf4520076d73",
+    "stage0_seconds": 12.687000000005355,
+    "stages": [
+      {
+        "source_ir_sha256": "cae30b4dedb2e7bc85336f8c333377b66c86e0619568a03f44a887496e5490fa",
+        "metadata_sha256": "95a4561c86cec4f862436f8273e05882197954b1812ca1d8264f0728098f6863",
+        "binary_sha256": "248c005e9910331620f050f1abf49c69bf6f4359ff81c7e9c44e4b0e0ed7955f",
+        "frontend_seconds": 8.452999999994063,
+        "seconds": 20.85899999999674
+      },
+      {
+        "source_ir_sha256": "cae30b4dedb2e7bc85336f8c333377b66c86e0619568a03f44a887496e5490fa",
+        "metadata_sha256": "95a4561c86cec4f862436f8273e05882197954b1812ca1d8264f0728098f6863",
+        "binary_sha256": "1aaccaa584a2d0eaf9184aafb52067702d332acece78de28ab306170c90f030c",
+        "frontend_seconds": 8.406000000002678,
+        "seconds": 20.843000000008033
+      }
+    ],
+    "fixed_point": true
+  },
+  "native_comparison": {
+    "raw_equal": false,
+    "raw_sha256": [
+      "248c005e9910331620f050f1abf49c69bf6f4359ff81c7e9c44e4b0e0ed7955f",
+      "1aaccaa584a2d0eaf9184aafb52067702d332acece78de28ab306170c90f030c"
+    ],
+    "normalized_equal": true,
+    "normalized_sha256": [
+      "fe6228eeed63d87a750adc876d58dc33950ea8ce488fd3cf49477fcc8e2455bd",
+      "fe6228eeed63d87a750adc876d58dc33950ea8ce488fd3cf49477fcc8e2455bd"
+    ],
+    "normalization": [
+      [
+        {
+          "field": "IMAGE_FILE_HEADER.TimeDateStamp",
+          "offset": 256,
+          "value": 1792587241
+        },
+        {
+          "field": "IMAGE_DEBUG_DIRECTORY[0].TimeDateStamp",
+          "offset": 1382436,
+          "value": 1792587241
+        }
+      ],
+      [
+        {
+          "field": "IMAGE_FILE_HEADER.TimeDateStamp",
+          "offset": 256,
+          "value": 1792587262
+        },
+        {
+          "field": "IMAGE_DEBUG_DIRECTORY[0].TimeDateStamp",
+          "offset": 1382436,
+          "value": 1792587262
+        }
+      ]
+    ]
+  },
+  "planned_cases_by_stage": {
+    "1": [
+      "test_callable_reference_ambiguity_comments_and_reexports",
+      "test_checked_unicode_file_io_and_standard_input",
+      "test_closures_recursion_and_argument_evaluation_order",
+      "test_compile_error_locations_and_capability_boundaries",
+      "test_dependency_errors_are_checked_before_execution",
+      "test_entry_arguments_independent_ir_and_deleted_source",
+      "test_invalid_assignment_does_not_evaluate_rhs",
+      "test_lazy_modules_failure_cache_scope_and_panic",
+      "test_native_frontend_runs_in_empty_directory_without_python_or_project",
+      "test_numeric_precision_truth_unicode_and_containers",
+      "test_objects_inheritance_and_shared_identity",
+      "test_ordinary_errors_are_not_rescued_and_preserve_origin",
+      "test_practical_array",
+      "test_practical_cyclic",
+      "test_practical_equality",
+      "test_practical_fixed",
+      "test_practical_math",
+      "test_practical_negative_zero",
+      "test_practical_panic",
+      "test_practical_pcg_golden",
+      "test_practical_references",
+      "test_practical_replace",
+      "test_practical_rng_identity",
+      "test_practical_shuffle",
+      "test_practical_snapshot",
+      "test_practical_split",
+      "test_practical_trim",
+      "test_receiver_selection_precedes_argument_mutation",
+      "test_relative_module_diamond_aliases_and_owner_scope",
+      "test_root_and_imported_source_aliases_cannot_be_overwritten",
+      "test_self_compilation_reaches_exact_native_frontend_fixed_point",
+      "test_short_circuit_procedures_loop_unwind_and_panic_order",
+      "test_source_errors_and_llvm_failure_preserve_previous_artifacts"
+    ],
+    "2": [
+      "test_callable_reference_ambiguity_comments_and_reexports",
+      "test_checked_unicode_file_io_and_standard_input",
+      "test_closures_recursion_and_argument_evaluation_order",
+      "test_compile_error_locations_and_capability_boundaries",
+      "test_dependency_errors_are_checked_before_execution",
+      "test_entry_arguments_independent_ir_and_deleted_source",
+      "test_invalid_assignment_does_not_evaluate_rhs",
+      "test_lazy_modules_failure_cache_scope_and_panic",
+      "test_native_frontend_runs_in_empty_directory_without_python_or_project",
+      "test_numeric_precision_truth_unicode_and_containers",
+      "test_objects_inheritance_and_shared_identity",
+      "test_ordinary_errors_are_not_rescued_and_preserve_origin",
+      "test_practical_array",
+      "test_practical_cyclic",
+      "test_practical_equality",
+      "test_practical_fixed",
+      "test_practical_math",
+      "test_practical_negative_zero",
+      "test_practical_panic",
+      "test_practical_pcg_golden",
+      "test_practical_references",
+      "test_practical_replace",
+      "test_practical_rng_identity",
+      "test_practical_shuffle",
+      "test_practical_snapshot",
+      "test_practical_split",
+      "test_practical_trim",
+      "test_receiver_selection_precedes_argument_mutation",
+      "test_relative_module_diamond_aliases_and_owner_scope",
+      "test_root_and_imported_source_aliases_cannot_be_overwritten",
+      "test_self_compilation_reaches_exact_native_frontend_fixed_point",
+      "test_short_circuit_procedures_loop_unwind_and_panic_order",
+      "test_source_errors_and_llvm_failure_preserve_previous_artifacts"
+    ],
+    "3": [
+      "test_callable_reference_ambiguity_comments_and_reexports",
+      "test_checked_unicode_file_io_and_standard_input",
+      "test_closures_recursion_and_argument_evaluation_order",
+      "test_compile_error_locations_and_capability_boundaries",
+      "test_dependency_errors_are_checked_before_execution",
+      "test_entry_arguments_independent_ir_and_deleted_source",
+      "test_invalid_assignment_does_not_evaluate_rhs",
+      "test_lazy_modules_failure_cache_scope_and_panic",
+      "test_native_frontend_runs_in_empty_directory_without_python_or_project",
+      "test_numeric_precision_truth_unicode_and_containers",
+      "test_objects_inheritance_and_shared_identity",
+      "test_ordinary_errors_are_not_rescued_and_preserve_origin",
+      "test_practical_array",
+      "test_practical_cyclic",
+      "test_practical_equality",
+      "test_practical_fixed",
+      "test_practical_math",
+      "test_practical_negative_zero",
+      "test_practical_panic",
+      "test_practical_pcg_golden",
+      "test_practical_references",
+      "test_practical_replace",
+      "test_practical_rng_identity",
+      "test_practical_shuffle",
+      "test_practical_snapshot",
+      "test_practical_split",
+      "test_practical_trim",
+      "test_receiver_selection_precedes_argument_mutation",
+      "test_relative_module_diamond_aliases_and_owner_scope",
+      "test_root_and_imported_source_aliases_cannot_be_overwritten",
+      "test_self_compilation_reaches_exact_native_frontend_fixed_point",
+      "test_short_circuit_procedures_loop_unwind_and_panic_order",
+      "test_source_errors_and_llvm_failure_preserve_previous_artifacts"
+    ]
+  },
+  "tests_run": 99,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "stages": {
+    "1": [
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_callable_reference_ambiguity_comments_and_reexports",
+        "stage": 1,
+        "case": "test_callable_reference_ambiguity_comments_and_reexports",
+        "status": "passed",
+        "seconds": 2.202999999994063
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_checked_unicode_file_io_and_standard_input",
+        "stage": 1,
+        "case": "test_checked_unicode_file_io_and_standard_input",
+        "status": "passed",
+        "seconds": 2.7810000000026776
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_closures_recursion_and_argument_evaluation_order",
+        "stage": 1,
+        "case": "test_closures_recursion_and_argument_evaluation_order",
+        "status": "passed",
+        "seconds": 2.4060000000026776
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_compile_error_locations_and_capability_boundaries",
+        "stage": 1,
+        "case": "test_compile_error_locations_and_capability_boundaries",
+        "status": "passed",
+        "seconds": 0.125
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_dependency_errors_are_checked_before_execution",
+        "stage": 1,
+        "case": "test_dependency_errors_are_checked_before_execution",
+        "status": "passed",
+        "seconds": 0.09399999999732245
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_entry_arguments_independent_ir_and_deleted_source",
+        "stage": 1,
+        "case": "test_entry_arguments_independent_ir_and_deleted_source",
+        "status": "passed",
+        "seconds": 2.4060000000026776
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_invalid_assignment_does_not_evaluate_rhs",
+        "stage": 1,
+        "case": "test_invalid_assignment_does_not_evaluate_rhs",
+        "status": "passed",
+        "seconds": 2.1410000000032596
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_lazy_modules_failure_cache_scope_and_panic",
+        "stage": 1,
+        "case": "test_lazy_modules_failure_cache_scope_and_panic",
+        "status": "passed",
+        "seconds": 2.4219999999913853
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_native_frontend_runs_in_empty_directory_without_python_or_project",
+        "stage": 1,
+        "case": "test_native_frontend_runs_in_empty_directory_without_python_or_project",
+        "status": "passed",
+        "seconds": 0.32800000000861473
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_numeric_precision_truth_unicode_and_containers",
+        "stage": 1,
+        "case": "test_numeric_precision_truth_unicode_and_containers",
+        "status": "passed",
+        "seconds": 2.812999999994645
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_objects_inheritance_and_shared_identity",
+        "stage": 1,
+        "case": "test_objects_inheritance_and_shared_identity",
+        "status": "passed",
+        "seconds": 2.7810000000026776
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_ordinary_errors_are_not_rescued_and_preserve_origin",
+        "stage": 1,
+        "case": "test_ordinary_errors_are_not_rescued_and_preserve_origin",
+        "status": "passed",
+        "seconds": 5.73399999999674
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_array",
+        "stage": 1,
+        "case": "test_practical_array",
+        "status": "passed",
+        "seconds": 3.3439999999973224
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_cyclic",
+        "stage": 1,
+        "case": "test_practical_cyclic",
+        "status": "passed",
+        "seconds": 3.2189999999973224
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_equality",
+        "stage": 1,
+        "case": "test_practical_equality",
+        "status": "passed",
+        "seconds": 3.25
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_fixed",
+        "stage": 1,
+        "case": "test_practical_fixed",
+        "status": "passed",
+        "seconds": 3.312000000005355
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_math",
+        "stage": 1,
+        "case": "test_practical_math",
+        "status": "passed",
+        "seconds": 3.3439999999973224
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_negative_zero",
+        "stage": 1,
+        "case": "test_practical_negative_zero",
+        "status": "passed",
+        "seconds": 3.2030000000086147
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_panic",
+        "stage": 1,
+        "case": "test_practical_panic",
+        "status": "passed",
+        "seconds": 3.437999999994645
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_pcg_golden",
+        "stage": 1,
+        "case": "test_practical_pcg_golden",
+        "status": "passed",
+        "seconds": 3.264999999999418
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_references",
+        "stage": 1,
+        "case": "test_practical_references",
+        "status": "passed",
+        "seconds": 3.2810000000026776
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_replace",
+        "stage": 1,
+        "case": "test_practical_replace",
+        "status": "passed",
+        "seconds": 3.360000000000582
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_rng_identity",
+        "stage": 1,
+        "case": "test_practical_rng_identity",
+        "status": "passed",
+        "seconds": 3.3439999999973224
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_shuffle",
+        "stage": 1,
+        "case": "test_practical_shuffle",
+        "status": "passed",
+        "seconds": 3.327999999994063
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_snapshot",
+        "stage": 1,
+        "case": "test_practical_snapshot",
+        "status": "passed",
+        "seconds": 3.3430000000080327
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_split",
+        "stage": 1,
+        "case": "test_practical_split",
+        "status": "passed",
+        "seconds": 3.2660000000032596
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_trim",
+        "stage": 1,
+        "case": "test_practical_trim",
+        "status": "passed",
+        "seconds": 3.2659999999887077
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_receiver_selection_precedes_argument_mutation",
+        "stage": 1,
+        "case": "test_receiver_selection_precedes_argument_mutation",
+        "status": "passed",
+        "seconds": 2.2030000000086147
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_relative_module_diamond_aliases_and_owner_scope",
+        "stage": 1,
+        "case": "test_relative_module_diamond_aliases_and_owner_scope",
+        "status": "passed",
+        "seconds": 2.6560000000026776
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_root_and_imported_source_aliases_cannot_be_overwritten",
+        "stage": 1,
+        "case": "test_root_and_imported_source_aliases_cannot_be_overwritten",
+        "status": "passed",
+        "seconds": 0.046999999991385266
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_self_compilation_reaches_exact_native_frontend_fixed_point",
+        "stage": 1,
+        "case": "test_self_compilation_reaches_exact_native_frontend_fixed_point",
+        "status": "passed",
+        "seconds": 0.0
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_short_circuit_procedures_loop_unwind_and_panic_order",
+        "stage": 1,
+        "case": "test_short_circuit_procedures_loop_unwind_and_panic_order",
+        "status": "passed",
+        "seconds": 2.3439999999973224
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_source_errors_and_llvm_failure_preserve_previous_artifacts",
+        "stage": 1,
+        "case": "test_source_errors_and_llvm_failure_preserve_previous_artifacts",
+        "status": "passed",
+        "seconds": 0.2649999999994179
+      }
+    ],
+    "2": [
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_callable_reference_ambiguity_comments_and_reexports",
+        "stage": 2,
+        "case": "test_callable_reference_ambiguity_comments_and_reexports",
+        "status": "passed",
+        "seconds": 2.0940000000118744
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_checked_unicode_file_io_and_standard_input",
+        "stage": 2,
+        "case": "test_checked_unicode_file_io_and_standard_input",
+        "status": "passed",
+        "seconds": 2.7189999999973224
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_closures_recursion_and_argument_evaluation_order",
+        "stage": 2,
+        "case": "test_closures_recursion_and_argument_evaluation_order",
+        "status": "passed",
+        "seconds": 2.375
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_compile_error_locations_and_capability_boundaries",
+        "stage": 2,
+        "case": "test_compile_error_locations_and_capability_boundaries",
+        "status": "passed",
+        "seconds": 0.10899999999674037
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_dependency_errors_are_checked_before_execution",
+        "stage": 2,
+        "case": "test_dependency_errors_are_checked_before_execution",
+        "status": "passed",
+        "seconds": 0.09399999999732245
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_entry_arguments_independent_ir_and_deleted_source",
+        "stage": 2,
+        "case": "test_entry_arguments_independent_ir_and_deleted_source",
+        "status": "passed",
+        "seconds": 2.3280000000086147
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_invalid_assignment_does_not_evaluate_rhs",
+        "stage": 2,
+        "case": "test_invalid_assignment_does_not_evaluate_rhs",
+        "status": "passed",
+        "seconds": 1.937999999994645
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_lazy_modules_failure_cache_scope_and_panic",
+        "stage": 2,
+        "case": "test_lazy_modules_failure_cache_scope_and_panic",
+        "status": "passed",
+        "seconds": 2.1710000000020955
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_native_frontend_runs_in_empty_directory_without_python_or_project",
+        "stage": 2,
+        "case": "test_native_frontend_runs_in_empty_directory_without_python_or_project",
+        "status": "passed",
+        "seconds": 0.3289999999979045
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_numeric_precision_truth_unicode_and_containers",
+        "stage": 2,
+        "case": "test_numeric_precision_truth_unicode_and_containers",
+        "status": "passed",
+        "seconds": 2.5460000000020955
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_objects_inheritance_and_shared_identity",
+        "stage": 2,
+        "case": "test_objects_inheritance_and_shared_identity",
+        "status": "passed",
+        "seconds": 2.5789999999979045
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_ordinary_errors_are_not_rescued_and_preserve_origin",
+        "stage": 2,
+        "case": "test_ordinary_errors_are_not_rescued_and_preserve_origin",
+        "status": "passed",
+        "seconds": 5.7960000000020955
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_array",
+        "stage": 2,
+        "case": "test_practical_array",
+        "status": "passed",
+        "seconds": 3.6719999999913853
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_cyclic",
+        "stage": 2,
+        "case": "test_practical_cyclic",
+        "status": "passed",
+        "seconds": 3.860000000000582
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_equality",
+        "stage": 2,
+        "case": "test_practical_equality",
+        "status": "passed",
+        "seconds": 3.9060000000026776
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_fixed",
+        "stage": 2,
+        "case": "test_practical_fixed",
+        "status": "passed",
+        "seconds": 3.9060000000026776
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_math",
+        "stage": 2,
+        "case": "test_practical_math",
+        "status": "passed",
+        "seconds": 4.0
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_negative_zero",
+        "stage": 2,
+        "case": "test_practical_negative_zero",
+        "status": "passed",
+        "seconds": 3.672000000005937
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_panic",
+        "stage": 2,
+        "case": "test_practical_panic",
+        "status": "passed",
+        "seconds": 3.8439999999973224
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_pcg_golden",
+        "stage": 2,
+        "case": "test_practical_pcg_golden",
+        "status": "passed",
+        "seconds": 4.0939999999973224
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_references",
+        "stage": 2,
+        "case": "test_practical_references",
+        "status": "passed",
+        "seconds": 4.312000000005355
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_replace",
+        "stage": 2,
+        "case": "test_practical_replace",
+        "status": "passed",
+        "seconds": 4.296999999991385
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_rng_identity",
+        "stage": 2,
+        "case": "test_practical_rng_identity",
+        "status": "passed",
+        "seconds": 4.0939999999973224
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_shuffle",
+        "stage": 2,
+        "case": "test_practical_shuffle",
+        "status": "passed",
+        "seconds": 4.264999999999418
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_snapshot",
+        "stage": 2,
+        "case": "test_practical_snapshot",
+        "status": "passed",
+        "seconds": 5.313000000009197
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_split",
+        "stage": 2,
+        "case": "test_practical_split",
+        "status": "passed",
+        "seconds": 4.686999999990803
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_trim",
+        "stage": 2,
+        "case": "test_practical_trim",
+        "status": "passed",
+        "seconds": 4.328000000008615
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_receiver_selection_precedes_argument_mutation",
+        "stage": 2,
+        "case": "test_receiver_selection_precedes_argument_mutation",
+        "status": "passed",
+        "seconds": 3.6719999999913853
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_relative_module_diamond_aliases_and_owner_scope",
+        "stage": 2,
+        "case": "test_relative_module_diamond_aliases_and_owner_scope",
+        "status": "passed",
+        "seconds": 3.25
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_root_and_imported_source_aliases_cannot_be_overwritten",
+        "stage": 2,
+        "case": "test_root_and_imported_source_aliases_cannot_be_overwritten",
+        "status": "passed",
+        "seconds": 0.06300000000919681
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_self_compilation_reaches_exact_native_frontend_fixed_point",
+        "stage": 2,
+        "case": "test_self_compilation_reaches_exact_native_frontend_fixed_point",
+        "status": "passed",
+        "seconds": 0.0
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_short_circuit_procedures_loop_unwind_and_panic_order",
+        "stage": 2,
+        "case": "test_short_circuit_procedures_loop_unwind_and_panic_order",
+        "status": "passed",
+        "seconds": 2.9839999999967404
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_source_errors_and_llvm_failure_preserve_previous_artifacts",
+        "stage": 2,
+        "case": "test_source_errors_and_llvm_failure_preserve_previous_artifacts",
+        "status": "passed",
+        "seconds": 0.3279999999940628
+      }
+    ],
+    "3": [
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_callable_reference_ambiguity_comments_and_reexports",
+        "stage": 3,
+        "case": "test_callable_reference_ambiguity_comments_and_reexports",
+        "status": "passed",
+        "seconds": 2.860000000000582
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_checked_unicode_file_io_and_standard_input",
+        "stage": 3,
+        "case": "test_checked_unicode_file_io_and_standard_input",
+        "status": "passed",
+        "seconds": 3.514999999999418
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_closures_recursion_and_argument_evaluation_order",
+        "stage": 3,
+        "case": "test_closures_recursion_and_argument_evaluation_order",
+        "status": "passed",
+        "seconds": 3.1410000000032596
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_compile_error_locations_and_capability_boundaries",
+        "stage": 3,
+        "case": "test_compile_error_locations_and_capability_boundaries",
+        "status": "passed",
+        "seconds": 0.15600000000267755
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_dependency_errors_are_checked_before_execution",
+        "stage": 3,
+        "case": "test_dependency_errors_are_checked_before_execution",
+        "status": "passed",
+        "seconds": 0.125
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_entry_arguments_independent_ir_and_deleted_source",
+        "stage": 3,
+        "case": "test_entry_arguments_independent_ir_and_deleted_source",
+        "status": "passed",
+        "seconds": 3.110000000000582
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_invalid_assignment_does_not_evaluate_rhs",
+        "stage": 3,
+        "case": "test_invalid_assignment_does_not_evaluate_rhs",
+        "status": "passed",
+        "seconds": 2.577999999994063
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_lazy_modules_failure_cache_scope_and_panic",
+        "stage": 3,
+        "case": "test_lazy_modules_failure_cache_scope_and_panic",
+        "status": "passed",
+        "seconds": 3.0160000000032596
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_native_frontend_runs_in_empty_directory_without_python_or_project",
+        "stage": 3,
+        "case": "test_native_frontend_runs_in_empty_directory_without_python_or_project",
+        "status": "passed",
+        "seconds": 0.40600000000267755
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_numeric_precision_truth_unicode_and_containers",
+        "stage": 3,
+        "case": "test_numeric_precision_truth_unicode_and_containers",
+        "status": "passed",
+        "seconds": 3.6410000000032596
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_objects_inheritance_and_shared_identity",
+        "stage": 3,
+        "case": "test_objects_inheritance_and_shared_identity",
+        "status": "passed",
+        "seconds": 3.4839999999967404
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_ordinary_errors_are_not_rescued_and_preserve_origin",
+        "stage": 3,
+        "case": "test_ordinary_errors_are_not_rescued_and_preserve_origin",
+        "status": "passed",
+        "seconds": 7.485000000000582
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_array",
+        "stage": 3,
+        "case": "test_practical_array",
+        "status": "passed",
+        "seconds": 4.4060000000026776
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_cyclic",
+        "stage": 3,
+        "case": "test_practical_cyclic",
+        "status": "passed",
+        "seconds": 3.952999999994063
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_equality",
+        "stage": 3,
+        "case": "test_practical_equality",
+        "status": "passed",
+        "seconds": 4.375
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_fixed",
+        "stage": 3,
+        "case": "test_practical_fixed",
+        "status": "passed",
+        "seconds": 4.7810000000026776
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_math",
+        "stage": 3,
+        "case": "test_practical_math",
+        "status": "passed",
+        "seconds": 4.375
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_negative_zero",
+        "stage": 3,
+        "case": "test_practical_negative_zero",
+        "status": "passed",
+        "seconds": 3.9689999999973224
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_panic",
+        "stage": 3,
+        "case": "test_practical_panic",
+        "status": "passed",
+        "seconds": 4.375
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_pcg_golden",
+        "stage": 3,
+        "case": "test_practical_pcg_golden",
+        "status": "passed",
+        "seconds": 4.2810000000026776
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_references",
+        "stage": 3,
+        "case": "test_practical_references",
+        "status": "passed",
+        "seconds": 4.0310000000026776
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_replace",
+        "stage": 3,
+        "case": "test_practical_replace",
+        "status": "passed",
+        "seconds": 4.14100000000326
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_rng_identity",
+        "stage": 3,
+        "case": "test_practical_rng_identity",
+        "status": "passed",
+        "seconds": 4.390999999988708
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_shuffle",
+        "stage": 3,
+        "case": "test_practical_shuffle",
+        "status": "passed",
+        "seconds": 4.453000000008615
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_snapshot",
+        "stage": 3,
+        "case": "test_practical_snapshot",
+        "status": "passed",
+        "seconds": 4.25
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_split",
+        "stage": 3,
+        "case": "test_practical_split",
+        "status": "passed",
+        "seconds": 4.2189999999973224
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_trim",
+        "stage": 3,
+        "case": "test_practical_trim",
+        "status": "passed",
+        "seconds": 4.187000000005355
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_receiver_selection_precedes_argument_mutation",
+        "stage": 3,
+        "case": "test_receiver_selection_precedes_argument_mutation",
+        "status": "passed",
+        "seconds": 3.125
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_relative_module_diamond_aliases_and_owner_scope",
+        "stage": 3,
+        "case": "test_relative_module_diamond_aliases_and_owner_scope",
+        "status": "passed",
+        "seconds": 3.8439999999973224
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_root_and_imported_source_aliases_cannot_be_overwritten",
+        "stage": 3,
+        "case": "test_root_and_imported_source_aliases_cannot_be_overwritten",
+        "status": "passed",
+        "seconds": 0.06199999999080319
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_self_compilation_reaches_exact_native_frontend_fixed_point",
+        "stage": 3,
+        "case": "test_self_compilation_reaches_exact_native_frontend_fixed_point",
+        "status": "passed",
+        "seconds": 0.0
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_short_circuit_procedures_loop_unwind_and_panic_order",
+        "stage": 3,
+        "case": "test_short_circuit_procedures_loop_unwind_and_panic_order",
+        "status": "passed",
+        "seconds": 3.125
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_source_errors_and_llvm_failure_preserve_previous_artifacts",
+        "stage": 3,
+        "case": "test_source_errors_and_llvm_failure_preserve_previous_artifacts",
+        "status": "passed",
+        "seconds": 0.32800000000861473
+      }
+    ]
+  },
+  "input_sha256": {
+    "bootstrap\\compiler.ru": "02d276dc6e1eee732a8141fdc458226e96aab9ffcaa9a222dd7aaf4520076d73",
+    "bootstrap\\validation\\practical.json": "8baa2d0f03e48f13b6534308dabad83775c5a80d6fc7649ed14428dd7baa7f21",
+    "rulang\\__init__.py": "7b63cfa4bbaff40460a15db91cd38f4b5bb2fe71fe045089c7a7aaffaaa837ec",
+    "rulang\\__main__.py": "79ee6f134c5c5193377cf9b189cbdcc3e2095e49ba9cec310114441c15a917c4",
+    "rulang\\browser_compiler.py": "90dd82e50069a0a387da922b8cfd8df73537cd09876c41129705a0d9efeb6f57",
+    "rulang\\c_runtime.py": "b98c4f53caf1ebf04f1b1a7e1b39df4addd651bd018ed8e51d9f95714b6a067d",
+    "rulang\\cli.py": "6bc21a21244b47b0332d2759658ce3e44f000dcde0e739cde34ea6041033368d",
+    "rulang\\compiler.py": "145ffdc8fa4256cfbb716c840a47dc1a753fe14f68cdd2a2467dc23229c9acde",
+    "rulang\\contest_runtime.h": "780b65bfa634f1a03d6630bac0d854f792006dbc249929de262fb31b11700889",
+    "rulang\\contest_runtime.py": "d6e05a04d735ce81be8d4039985bd458d49e82b52a16056fb8f835908505f2c9",
+    "rulang\\diagnostics.py": "418f087f0003510739e64eecfe9b0885f05cb8a02eb810be1796b792af393a73",
+    "rulang\\frontend.py": "d60c79005c89781a419ac2a9994778073a3472bff8ce060b138b55a6c7ca7d46",
+    "rulang\\generation.py": "054c7e312a6f133bc09ec67a4c3611ce39d7d0c950a20662cdb24138372d7c65",
+    "rulang\\generation_trace.py": "287790991e3b55701025f1fe060d349aedf9a65fb5eff94da5ce03e3552035bd",
+    "rulang\\graphics_runtime.py": "69b5541540ba4b881086714398d0de3a553d61003e7cc3d2688931d8a28bbc40",
+    "rulang\\interpreter.py": "945e94a10dcad513381cca36b59bdb21d52d579d15749aa4e8685be9e55018ec",
+    "rulang\\io_runtime.h": "dce1243e6614bdf5bd639893cc1da2e2bed448ddcda83584a3275822ad5ab1f0",
+    "rulang\\io_runtime.py": "208f36f98cdbdeadaad0fd12b775301ffba4b56a18ce2401121af031dd044ec0",
+    "rulang\\js_compiler.py": "67d71e021418910a19a3211523d45ebc086558924e8986a6642c166d0648b1b6",
+    "rulang\\llvm_compiler.py": "b2d55ddf83913eb93a2f2f33ca819b9c42ebdc9a15c08ec8b82cc6870d1c568c",
+    "rulang\\llvm_runtime.h": "bf14b43aaee63e2bf5c2b854c366acbbd231ab1b1357a4c3f7dbe1dbf348222d",
+    "rulang\\llvm_toolchain.py": "63972ae7efe9fd1c78ccd4493e47ef45a6e58959a9b06596f72224654fecffa4",
+    "rulang\\modules.py": "ffef254c938d86a1836097b5393aeebc3f2d392b83c3b34409e9cc3ad9ffd9fa",
+    "rulang\\native_c.py": "312ef1f558ee780aa1464db20de88ab863afbaf870ec7ba0a19421228f639e6d",
+    "rulang\\native_c_runtime.py": "4a41d1e22de75566ade2b31602d1250c1ee476674a4e53d89e48a3c734ae7f73",
+    "rulang\\native_platform_win64.h": "99d065cf90b233b8e510d7b99be5c054284e0ecdb7913e5625f742d87f176a7d",
+    "rulang\\native_runtime.h": "1d20982db46d169952f3741d14646a1366739cd975b143d43edac5a64053af37",
+    "rulang\\native_runtime.py": "e816b8bbb1be446c861055a525c96db242eb2c582142cf6eef88039d4ef58813",
+    "rulang\\native_types.h": "be17a8b043a9d79552e25467f4631f5b7d5c3f7e49bcee1a1f024b5e2a9ae07b",
+    "rulang\\package_registry.py": "138c86a32aeddb82b453ce2e6468bb12aa3b85cad149aef48b5473615354fc44",
+    "rulang\\package_sources.py": "576adcb95ab267e863a8d376e04ea36c47174edc0816d7f48165b1879ec56510",
+    "rulang\\packages.py": "d0ed091cad8d0fe0a03200ca4b447ca2507ede0bc8038e68cb576103bc3401af",
+    "rulang\\practical_runtime.h": "cbc94456fe7ecb24876fa51f364e5860bc55fbd9631a82d0f44a712205a50ca6",
+    "rulang\\practical_runtime.py": "dcaa7cc23c6fcacad83c151f9927763218c00ab9dea837145572cb72c829b70a",
+    "rulang\\prompts.py": "2f75a96db8e99d83d302d2ac187e17f05a56147199efdc6c1f042e15b9b0859b",
+    "rulang\\runtime.h": "0f262dc72cdb3798af6303bb36c6c2f8723e6cbd2782bd43cb64ab09769fee82",
+    "rulang\\source_paths.py": "16cafcda6b876fcd678ee7bf68d6c0571dea6d73f677dc3c9968a526179a28d6",
+    "rulang\\stdlib\\如竞.ru": "9f00d06b16c1726ad86191487500fef2f0149bee1ef89ea4e000b48dae50159f",
+    "rulang\\stdlib\\如观.ru": "525fbb61f278bc5344f54944a98427bfd206f984b160c076a0fda923d761e935",
+    "rulang\\stdlib\\密.ru": "174a64c1c03499469ad825429db98577a314958cfb070d8c87bd03c4ca23700d",
+    "rulang\\stdlib\\数学.ru": "feeaf47b7cd3a83770146fc8de0b077f17cd84efac1a07949e6a4c058a92a12b",
+    "rulang\\stdlib\\文本.ru": "0219caa759fbc654f12da5eedf7ef91a09aef512fba00ca3b2dcafd7978f4dad",
+    "rulang\\stdlib\\随机.ru": "7f14bf1b958c794b6fe7de17514fc6150a0a5ee85162577305d58fcd5cde135a",
+    "rulang\\stdlib_pruning.py": "962924db98f826120d469806a4cc624fec20bdc18f0baa0639283dd911b7ee28",
+    "rulang\\thirdparty\\如见\\win32.ru": "2de4cc6ebc3c211ef0743839a7d98fe8941a3d25fc39ca436914a1edd5c8de43",
+    "rulang\\thirdparty\\如见\\如见.ru": "0bd4513fd0fdba7e86384d40300bcee5fd51a8202290a1298d6e6d93d499d288",
+    "rulang\\toolchain_environment.py": "55480f308e6239ce0020408e4df2c420cdcb515a687ed7b717196f23dc3c1696",
+    "tests\\test_bootstrap.py": "0d85d06b0fd0b5cabfbcca96f8d420ecb6580eed0c5c65aa8bec150d543081e3",
+    "tools\\bootstrap.py": "4fe697728e9f36dc51f2449edfeee1413f8dcdc101f290a97ec06267615d1509",
+    "tools\\bootstrap_compare.py": "cf2803da4307b148b7afab961e0ecbbbbbeee3856067fdb16e088fa63ac26847",
+    "tools\\bootstrap_verify.py": "4293f379a819d3557239eefc33a9fd46f95fd2d03f3cef6f2737a63d7f60aa19"
+  },
+  "artifact_sha256": {
+    "S:\\bld\\ru-toy\\bin\\bootstrap\\win32\\stage1.exe": "779765fadd0384ba16867106f6548d0d4c79be8d4e66c794a7a0635329603a37",
+    "S:\\bld\\ru-toy\\bin\\bootstrap\\win32\\stage2.exe": "248c005e9910331620f050f1abf49c69bf6f4359ff81c7e9c44e4b0e0ed7955f",
+    "S:\\bld\\ru-toy\\bin\\bootstrap\\win32\\stage3.exe": "1aaccaa584a2d0eaf9184aafb52067702d332acece78de28ab306170c90f030c",
+    "S:\\bld\\ru-toy\\bin\\bootstrap\\win32\\stage2.ll": "f3851336058dbfe1c96e0a77f55281ae37cd7aff4100a2c68a9c0e9a447b7f80",
+    "S:\\bld\\ru-toy\\bin\\bootstrap\\win32\\stage3.ll": "73ebdb7e822aead3aef35eb9772a7057f6a14c55340056a80d3df5c1cca564d3",
+    "S:\\bld\\ru-toy\\bin\\bootstrap\\win32\\stage2.exe.frontend.ll": "cae30b4dedb2e7bc85336f8c333377b66c86e0619568a03f44a887496e5490fa",
+    "S:\\bld\\ru-toy\\bin\\bootstrap\\win32\\stage2.exe.metadata.c": "95a4561c86cec4f862436f8273e05882197954b1812ca1d8264f0728098f6863",
+    "S:\\bld\\ru-toy\\bin\\bootstrap\\win32\\stage3.exe.frontend.ll": "cae30b4dedb2e7bc85336f8c333377b66c86e0619568a03f44a887496e5490fa",
+    "S:\\bld\\ru-toy\\bin\\bootstrap\\win32\\stage3.exe.metadata.c": "95a4561c86cec4f862436f8273e05882197954b1812ca1d8264f0728098f6863"
+  }
+}

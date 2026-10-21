@@ -1,0 +1,7 @@
+{
+  "changed_file": "tests/test_panic.py",
+  "only_changed_function": "PanicTests.test_native_sanitizer_stress",
+  "other_ast_identical": true,
+  "linux_retest_shard": 0,
+  "other_code_and_fixtures_unchanged": 264
+}

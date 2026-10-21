@@ -1,0 +1,116 @@
+{
+  "date": "2026-10-21",
+  "milestone": "M4",
+  "full_regression": {
+    "linux": {
+      "run": 1846,
+      "passed": 1799,
+      "skipped": 47,
+      "failures": 0,
+      "errors": 0,
+      "shards": [
+        {
+          "run": 616,
+          "passed": 601,
+          "skipped": 15,
+          "failures": 0,
+          "errors": 0,
+          "seconds": 577.565,
+          "log_sha256": "fbea7fa2419f4eb19511ad36cc6b268595b26293b91b0a507b29caeb4ab08442",
+          "shard": 0,
+          "shards": 3,
+          "collection_count": 1846,
+          "collection_sha256": "4a02a5a6c41c011bc580282367afd4a587dd35fe3cdbe48fbf1a536069f8fe31"
+        },
+        {
+          "run": 615,
+          "passed": 600,
+          "skipped": 15,
+          "failures": 0,
+          "errors": 0,
+          "seconds": 496.828,
+          "log_sha256": "01a8e02eb52de8ecc183e2939ed8d73f611425ebb81e3a4d31689b65388c6991",
+          "shard": 1,
+          "shards": 3,
+          "collection_count": 1846,
+          "collection_sha256": "4a02a5a6c41c011bc580282367afd4a587dd35fe3cdbe48fbf1a536069f8fe31"
+        },
+        {
+          "run": 615,
+          "passed": 598,
+          "skipped": 17,
+          "failures": 0,
+          "errors": 0,
+          "seconds": 550.289,
+          "log_sha256": "7b1bcdd52e1cb4eb1f6ab278345f51b59c11808563be6099ee6de574ebee304a",
+          "shard": 2,
+          "shards": 3,
+          "collection_count": 1846,
+          "collection_sha256": "4a02a5a6c41c011bc580282367afd4a587dd35fe3cdbe48fbf1a536069f8fe31"
+        }
+      ]
+    },
+    "windows": {
+      "run": 1804,
+      "passed": 1612,
+      "skipped": 192,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 748.797,
+      "log_sha256": "6ee80b1293c064cccf01fad323b0c6d7f9957e0d820b916b91cb44721dd3e30e"
+    }
+  },
+  "acceptance": {
+    "linux": {
+      "run": 99,
+      "passed": 99,
+      "skipped": 0,
+      "failures": 0,
+      "errors": 0,
+      "stage_counts": {
+        "1": 33,
+        "2": 33,
+        "3": 33
+      },
+      "report_sha256": "5e6479df4f8551d84abde2afa742987a68187cf5e00033244187073232eb492d"
+    },
+    "windows": {
+      "run": 99,
+      "passed": 99,
+      "skipped": 0,
+      "failures": 0,
+      "errors": 0,
+      "stage_counts": {
+        "1": 33,
+        "2": 33,
+        "3": 33
+      },
+      "report_sha256": "946c037be144f5cb4e2e7d51afc19757c3d31ab2fd4d115fd4de02a07e9d74d3"
+    }
+  },
+  "verifier_negative_controls": {
+    "linux": {
+      "run": 7,
+      "passed": 7,
+      "skipped": 0,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 0.008,
+      "log_sha256": "3adb76774bac4aa61e36d09395c279fc4b9f31bf6388cdfe5a06233e7863c6c8"
+    },
+    "windows": {
+      "run": 7,
+      "passed": 7,
+      "skipped": 0,
+      "failures": 0,
+      "errors": 0,
+      "seconds": 0.001,
+      "log_sha256": "2b3c5d4fa482717064a77d412452e4031325db726203e21b754986ef58ff8540"
+    }
+  },
+  "same_51_inputs_across_hosts": true,
+  "same_33_cases_across_all_generations_and_hosts": true,
+  "frozen_code_files": 325,
+  "frozen_code_unchanged": true,
+  "remote_ci_executed": false
+}

@@ -1,0 +1,24 @@
+{
+  "platform": "win32",
+  "triple": "x86_64-pc-windows-msvc19.51.36260",
+  "llvm": "clang version 14.0.6",
+  "source_sha256": "02d276dc6e1eee732a8141fdc458226e96aab9ffcaa9a222dd7aaf4520076d73",
+  "stage0_seconds": 10.281000000002678,
+  "stages": [
+    {
+      "source_ir_sha256": "cae30b4dedb2e7bc85336f8c333377b66c86e0619568a03f44a887496e5490fa",
+      "metadata_sha256": "95a4561c86cec4f862436f8273e05882197954b1812ca1d8264f0728098f6863",
+      "binary_sha256": "4a280e33bc12b197fc28f7d72a6e508fc6fcc8b7c4c70c8dad47d5f7fce0a9b4",
+      "frontend_seconds": 5.422000000005937,
+      "seconds": 15.468999999997322
+    },
+    {
+      "source_ir_sha256": "cae30b4dedb2e7bc85336f8c333377b66c86e0619568a03f44a887496e5490fa",
+      "metadata_sha256": "95a4561c86cec4f862436f8273e05882197954b1812ca1d8264f0728098f6863",
+      "binary_sha256": "1a093a57679d27a8a4a8c0d050a8f5727ac580c562288c38ca58bb1dc5430c82",
+      "frontend_seconds": 5.342999999993481,
+      "seconds": 15.5
+    }
+  ],
+  "fixed_point": true
+}

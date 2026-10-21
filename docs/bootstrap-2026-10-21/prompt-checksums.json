@@ -1,0 +1,23 @@
+{
+  "rushu-prompt-python.txt": {
+    "sha256": "166f185f46fd86eba2655d5b4ff1b7eacfebe384ad45f41f8502024a528e40c9",
+    "bytes": 203048,
+    "contains_full_spec": true
+  },
+  "rushu-prompt-browser-js.txt": {
+    "sha256": "f8fc5599585d512b8060050d437fa282c9d61d65799e01d2547099baa2a7601c",
+    "bytes": 203239,
+    "contains_full_spec": true
+  },
+  "ruguan-prompt-python.txt": {
+    "sha256": "e58af3e7cf08fbbd7afc60bc6524b82abfe502ad17773cb1e0b72627b97dbee6",
+    "bytes": 205738,
+    "contains_full_spec": true
+  },
+  "ruguan-prompt-browser-js.txt": {
+    "sha256": "2cf82102c3abd9507efd9e0442f23ec565caf7a524d1e5a29e1bde21445831e1",
+    "bytes": 205929,
+    "contains_full_spec": true
+  },
+  "spec_sha256": "2735ecba1d58115b8699a95dc33004c5b59bc902dfcfc473fa70899cfd3d6a67"
+}

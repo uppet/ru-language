@@ -1,0 +1,83 @@
+{
+  "base_commit": "649d98c399f74f1cf0a6bb89a1989bd44c8a8f4d",
+  "linux": {
+    "tests": 1746,
+    "passed": 1700,
+    "skipped": 46,
+    "failures": 0,
+    "errors": 0,
+    "shards": [
+      {
+        "shard": 0,
+        "tests": 582,
+        "passed": 568,
+        "skipped": 14,
+        "seconds": 341.427,
+        "collection_sha256": "f45b75978e57241dfc8fcc567cf783e68c829bbf52d45cf6f41bd41eac81b755",
+        "log_sha256": "495e05a5f0b7ab6007e4e707f52433be5193dd98dbf4a97d1b62419f57f8f366"
+      },
+      {
+        "shard": 1,
+        "tests": 582,
+        "passed": 565,
+        "skipped": 17,
+        "seconds": 340.52,
+        "collection_sha256": "f45b75978e57241dfc8fcc567cf783e68c829bbf52d45cf6f41bd41eac81b755",
+        "log_sha256": "3e4022fcf88a17b2015e3f862ea7ae9b6b6b69a505ee87ee4b1c8d61ec031ca4"
+      },
+      {
+        "shard": 2,
+        "tests": 582,
+        "passed": 567,
+        "skipped": 15,
+        "seconds": 458.625,
+        "collection_sha256": "f45b75978e57241dfc8fcc567cf783e68c829bbf52d45cf6f41bd41eac81b755",
+        "log_sha256": "d4d80c906f8137609e4c7ef92c5e0bae782d0d9270115e7a530b88fea356b898"
+      }
+    ],
+    "bootstrap_tests_passed": 10
+  },
+  "windows": {
+    "tests": 1704,
+    "passed": 1512,
+    "skipped": 192,
+    "failures": 0,
+    "errors": 0,
+    "seconds": 399.136,
+    "log_sha256": "c54ac33e8cac57d42d8fa811819318a01118a87e7fcdb3592fe6f2f94bb378de",
+    "bootstrap_tests_passed": 10,
+    "llvm_passed": 23,
+    "llvm_skipped": 1,
+    "skip_reasons": {
+      "C compiler unavailable": 68,
+      "POSIX resource limits unavailable": 3,
+      "actual mode denial requires unprivileged POSIX execution; errno injection always tested": 1,
+      "requires POSIX pipes": 2,
+      "requires POSIX FIFO": 2,
+      "Clang 14 ASan runtime not installed": 1,
+      "C compiler required": 77,
+      "a local Clang/GCC C compiler is required": 3,
+      "a C compiler is required": 1,
+      "generic C state tests require POSIX GCC": 14,
+      "fixture needs official local C compiler": 1,
+      "native root-state tests require Windows x64 GCC or owned POSIX adapter GCC": 10,
+      "POSIX-only foreign-drive check": 1,
+      "POSIX pipe test": 1,
+      "C compiler and Node required": 2,
+      "A C99 compiler is required": 1,
+      "a C99 compiler is required": 2,
+      "POSIX paths are case sensitive": 1,
+      "requires a C compiler": 1
+    }
+  },
+  "test_only_followup": {
+    "file": "tests/test_panic.py",
+    "function": "PanicTests.test_native_sanitizer_stress",
+    "change": "Linux non-PIE image; ASan/UBSan remain enabled",
+    "linux_retested_shard": 0,
+    "windows_followup_tests": 12,
+    "windows_followup_skipped": 3,
+    "other_ast_identical": true,
+    "other_code_files_unchanged": 264
+  }
+}

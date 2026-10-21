@@ -10,6 +10,7 @@ htmlcov/
 # Generated native programs, C output and distribution checksums
 /bin/
 /dist/
+/.build_tools/
 /SHA256SUMS.txt
 .ru-build-*/
 *.o

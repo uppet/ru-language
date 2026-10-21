@@ -1,0 +1,875 @@
+{
+  "schema": 1,
+  "measured_at": "2026-10-21T07:52:40.467814+00:00",
+  "ru_version": "0.23.0",
+  "platform": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+  "machine": "x86_64",
+  "processor": "x86_64",
+  "dart_version": "Dart SDK version: 3.13.6 (stable) (Tue Oct 20 01:00:48 2026 -0700) on \"linux_x64\"",
+  "clang_version": "Ubuntu clang version 14.0.0-1ubuntu1.1",
+  "iterations": 1000000,
+  "repeats": 7,
+  "warmups": 2,
+  "measurement": "whole-process wall seconds including startup, computation and output; peak RSS in KiB",
+  "note": "Initial M1 baseline, not evidence of Dart-level performance; n=1 is startup-dominated.",
+  "workloads": {
+    "numeric_loop": {
+      "sources": {
+        "ru": "算 元初 外参 为 句 阵:\n次数 取 外参[0] 为 数. 累计 取 0. 位 取 0.\n循 次数 次 累计 取 (累计+位)%1000003. 位 取 位+1. 环.\n显 累计.\n得 0.\n法.\n",
+        "dart": "void main(List<String> args) { final n=int.parse(args[0]); double sum=0; for(int i=0;i<n;i++){sum=(sum+i.toDouble())%1000003.0;} print(sum.toStringAsFixed(0)); }\n"
+      },
+      "backends": {
+        "c": {
+          "compile_seconds": 0.7262162800034275,
+          "build_command": [
+            "/usr/bin/python3",
+            "ru",
+            "build",
+            "/mnt/s/bld/ru-toy/bin/aot-benchmark/numeric_loop.ru",
+            "--target",
+            "c",
+            "-o",
+            "/mnt/s/bld/ru-toy/bin/aot-benchmark/numeric_loop-c",
+            "--cc",
+            "/usr/bin/clang-14"
+          ],
+          "compiler": "/usr/bin/clang-14",
+          "artifact_bytes": 35224,
+          "artifact_sha256": "8581e5ebc43d6bd7965a2cdb288ac6fdffcabba2ca2ddff7261f0caed98fc69c",
+          "samples": {
+            "1": {
+              "expected_stdout": "0\n",
+              "raw": [
+                {
+                  "wall_seconds": 0.005436589999590069,
+                  "peak_rss_kib": 2000
+                },
+                {
+                  "wall_seconds": 0.005345144003513269,
+                  "peak_rss_kib": 2024
+                },
+                {
+                  "wall_seconds": 0.005413291000877507,
+                  "peak_rss_kib": 2024
+                },
+                {
+                  "wall_seconds": 0.005435241007944569,
+                  "peak_rss_kib": 2016
+                },
+                {
+                  "wall_seconds": 0.005497688995092176,
+                  "peak_rss_kib": 2024
+                },
+                {
+                  "wall_seconds": 0.005589925000094809,
+                  "peak_rss_kib": 2024
+                },
+                {
+                  "wall_seconds": 0.005271606991300359,
+                  "peak_rss_kib": 1932
+                }
+              ],
+              "median_seconds": 0.005435241007944569,
+              "min_seconds": 0.005271606991300359,
+              "max_seconds": 0.005589925000094809,
+              "median_peak_rss_kib": 2024
+            },
+            "1000000": {
+              "expected_stdout": "6\n",
+              "raw": [
+                {
+                  "wall_seconds": 0.11102802600362338,
+                  "peak_rss_kib": 1932
+                },
+                {
+                  "wall_seconds": 0.10989020101260394,
+                  "peak_rss_kib": 2008
+                },
+                {
+                  "wall_seconds": 0.10921475201030262,
+                  "peak_rss_kib": 2016
+                },
+                {
+                  "wall_seconds": 0.10901615599868819,
+                  "peak_rss_kib": 2024
+                },
+                {
+                  "wall_seconds": 0.10954418100300245,
+                  "peak_rss_kib": 2024
+                },
+                {
+                  "wall_seconds": 0.11005011601082515,
+                  "peak_rss_kib": 2004
+                },
+                {
+                  "wall_seconds": 0.10950647199933883,
+                  "peak_rss_kib": 1896
+                }
+              ],
+              "median_seconds": 0.10954418100300245,
+              "min_seconds": 0.10901615599868819,
+              "max_seconds": 0.11102802600362338,
+              "median_peak_rss_kib": 2008
+            }
+          }
+        },
+        "llvm": {
+          "compile_seconds": 2.025605185001041,
+          "build_command": [
+            "/usr/bin/python3",
+            "ru",
+            "build",
+            "/mnt/s/bld/ru-toy/bin/aot-benchmark/numeric_loop.ru",
+            "--target",
+            "llvm",
+            "-o",
+            "/mnt/s/bld/ru-toy/bin/aot-benchmark/numeric_loop-llvm",
+            "--llvm-clang",
+            "/usr/bin/clang-14"
+          ],
+          "compiler": "Ubuntu clang version 14.0.0-1ubuntu1.1",
+          "artifact_bytes": 53480,
+          "artifact_sha256": "db584cee0ad7847a71f309b92de57d119fa671975152b47a165fb3df8ce2f2f5",
+          "samples": {
+            "1": {
+              "expected_stdout": "0\n",
+              "raw": [
+                {
+                  "wall_seconds": 0.005718551998143084,
+                  "peak_rss_kib": 2028
+                },
+                {
+                  "wall_seconds": 0.005576636991463602,
+                  "peak_rss_kib": 2008
+                },
+                {
+                  "wall_seconds": 0.005675931999576278,
+                  "peak_rss_kib": 2028
+                },
+                {
+                  "wall_seconds": 0.005797140009235591,
+                  "peak_rss_kib": 2024
+                },
+                {
+                  "wall_seconds": 0.005705422008759342,
+                  "peak_rss_kib": 2040
+                },
+                {
+                  "wall_seconds": 0.0056949819991132244,
+                  "peak_rss_kib": 2012
+                },
+                {
+                  "wall_seconds": 0.005648293998092413,
+                  "peak_rss_kib": 2040
+                }
+              ],
+              "median_seconds": 0.0056949819991132244,
+              "min_seconds": 0.005576636991463602,
+              "max_seconds": 0.005797140009235591,
+              "median_peak_rss_kib": 2028
+            },
+            "1000000": {
+              "expected_stdout": "6\n",
+              "raw": [
+                {
+                  "wall_seconds": 0.15714109000691678,
+                  "peak_rss_kib": 1912
+                },
+                {
+                  "wall_seconds": 0.15539006399922073,
+                  "peak_rss_kib": 2024
+                },
+                {
+                  "wall_seconds": 0.1556302160024643,
+                  "peak_rss_kib": 2040
+                },
+                {
+                  "wall_seconds": 0.15778310000314377,
+                  "peak_rss_kib": 2036
+                },
+                {
+                  "wall_seconds": 0.15718609999748878,
+                  "peak_rss_kib": 2028
+                },
+                {
+                  "wall_seconds": 0.15630427599535324,
+                  "peak_rss_kib": 2040
+                },
+                {
+                  "wall_seconds": 0.15618952999648172,
+                  "peak_rss_kib": 2040
+                }
+              ],
+              "median_seconds": 0.15630427599535324,
+              "min_seconds": 0.15539006399922073,
+              "max_seconds": 0.15778310000314377,
+              "median_peak_rss_kib": 2036
+            }
+          }
+        },
+        "dart": {
+          "compile_seconds": 1.009081829994102,
+          "build_command": [
+            "/mnt/s/bld/ru-toy/.git/bs-local/toolchains/dart-sdk/bin/dart",
+            "compile",
+            "exe",
+            "/mnt/s/bld/ru-toy/bin/aot-benchmark/numeric_loop.dart",
+            "-o",
+            "/mnt/s/bld/ru-toy/bin/aot-benchmark/numeric_loop-dart"
+          ],
+          "compiler": "Dart SDK version: 3.13.6 (stable) (Tue Oct 20 01:00:48 2026 -0700) on \"linux_x64\"",
+          "artifact_bytes": 6502152,
+          "artifact_sha256": "0b5626128fa0afafabdde63849c0934dfc101584cfa0ba4a085edc037240d502",
+          "samples": {
+            "1": {
+              "expected_stdout": "0\n",
+              "raw": [
+                {
+                  "wall_seconds": 0.03502100099285599,
+                  "peak_rss_kib": 5924
+                },
+                {
+                  "wall_seconds": 0.034289802992134355,
+                  "peak_rss_kib": 6136
+                },
+                {
+                  "wall_seconds": 0.03380842700426001,
+                  "peak_rss_kib": 6016
+                },
+                {
+                  "wall_seconds": 0.034509256001911126,
+                  "peak_rss_kib": 5904
+                },
+                {
+                  "wall_seconds": 0.03436979200341739,
+                  "peak_rss_kib": 6028
+                },
+                {
+                  "wall_seconds": 0.034176266999565996,
+                  "peak_rss_kib": 6056
+                },
+                {
+                  "wall_seconds": 0.033888475998537615,
+                  "peak_rss_kib": 5928
+                }
+              ],
+              "median_seconds": 0.034289802992134355,
+              "min_seconds": 0.03380842700426001,
+              "max_seconds": 0.03502100099285599,
+              "median_peak_rss_kib": 6016
+            },
+            "1000000": {
+              "expected_stdout": "6\n",
+              "raw": [
+                {
+                  "wall_seconds": 0.04274905999773182,
+                  "peak_rss_kib": 8580
+                },
+                {
+                  "wall_seconds": 0.04287047800607979,
+                  "peak_rss_kib": 8548
+                },
+                {
+                  "wall_seconds": 0.04424280299281236,
+                  "peak_rss_kib": 8500
+                },
+                {
+                  "wall_seconds": 0.04280992801068351,
+                  "peak_rss_kib": 8724
+                },
+                {
+                  "wall_seconds": 0.0435222249943763,
+                  "peak_rss_kib": 8672
+                },
+                {
+                  "wall_seconds": 0.043108869009302,
+                  "peak_rss_kib": 8600
+                },
+                {
+                  "wall_seconds": 0.04365028199390508,
+                  "peak_rss_kib": 8576
+                }
+              ],
+              "median_seconds": 0.043108869009302,
+              "min_seconds": 0.04274905999773182,
+              "max_seconds": 0.04424280299281236,
+              "median_peak_rss_kib": 8580
+            }
+          }
+        }
+      }
+    },
+    "closure_calls": {
+      "sources": {
+        "ru": "算 造 起点 为 数: 值 取 起点. 算 加 步 为 数: 值 取 值+步. 得 值. 法. 得 算 加. 法.\n算 元初 外参 为 句 阵:\n次数 取 外参[0] 为 数. 操作 取 造 0. 累计 取 0.\n循 次数 次 累计 取 (累计+(操作 1))%1000003. 环.\n显 累计.\n得 0.\n法.\n",
+        "dart": "double Function(double) make(double x) {return (double step) {x+=step; return x;};}\nvoid main(List<String> args) { final n=int.parse(args[0]); final next=make(0); double sum=0; for(int i=0;i<n;i++){sum=(sum+next(1))%1000003.0;} print(sum.toStringAsFixed(0)); }\n"
+      },
+      "backends": {
+        "c": {
+          "compile_seconds": 0.6904562660056399,
+          "build_command": [
+            "/usr/bin/python3",
+            "ru",
+            "build",
+            "/mnt/s/bld/ru-toy/bin/aot-benchmark/closure_calls.ru",
+            "--target",
+            "c",
+            "-o",
+            "/mnt/s/bld/ru-toy/bin/aot-benchmark/closure_calls-c",
+            "--cc",
+            "/usr/bin/clang-14"
+          ],
+          "compiler": "/usr/bin/clang-14",
+          "artifact_bytes": 39824,
+          "artifact_sha256": "3122c04abe7d40e4a1213b353fb87459d137d0fb68a841118e8de7c04e96d0b3",
+          "samples": {
+            "1": {
+              "expected_stdout": "1\n",
+              "raw": [
+                {
+                  "wall_seconds": 0.005744460999267176,
+                  "peak_rss_kib": 2020
+                },
+                {
+                  "wall_seconds": 0.005569676999584772,
+                  "peak_rss_kib": 2028
+                },
+                {
+                  "wall_seconds": 0.005569905988522805,
+                  "peak_rss_kib": 2020
+                },
+                {
+                  "wall_seconds": 0.005488517010235228,
+                  "peak_rss_kib": 2036
+                },
+                {
+                  "wall_seconds": 0.00582570799451787,
+                  "peak_rss_kib": 2028
+                },
+                {
+                  "wall_seconds": 0.005616095004370436,
+                  "peak_rss_kib": 2000
+                },
+                {
+                  "wall_seconds": 0.005635192996123806,
+                  "peak_rss_kib": 2012
+                }
+              ],
+              "median_seconds": 0.005616095004370436,
+              "min_seconds": 0.005488517010235228,
+              "max_seconds": 0.00582570799451787,
+              "median_peak_rss_kib": 2020
+            },
+            "1000000": {
+              "expected_stdout": "3\n",
+              "raw": [
+                {
+                  "wall_seconds": 0.20523841099929996,
+                  "peak_rss_kib": 2140
+                },
+                {
+                  "wall_seconds": 0.2060029080021195,
+                  "peak_rss_kib": 2140
+                },
+                {
+                  "wall_seconds": 0.20743722301267553,
+                  "peak_rss_kib": 2156
+                },
+                {
+                  "wall_seconds": 0.2066740260052029,
+                  "peak_rss_kib": 2128
+                },
+                {
+                  "wall_seconds": 0.20610600301006343,
+                  "peak_rss_kib": 2148
+                },
+                {
+                  "wall_seconds": 0.20701839600224048,
+                  "peak_rss_kib": 2124
+                },
+                {
+                  "wall_seconds": 0.20545226499962155,
+                  "peak_rss_kib": 2148
+                }
+              ],
+              "median_seconds": 0.20610600301006343,
+              "min_seconds": 0.20523841099929996,
+              "max_seconds": 0.20743722301267553,
+              "median_peak_rss_kib": 2140
+            }
+          }
+        },
+        "llvm": {
+          "compile_seconds": 2.051818681997247,
+          "build_command": [
+            "/usr/bin/python3",
+            "ru",
+            "build",
+            "/mnt/s/bld/ru-toy/bin/aot-benchmark/closure_calls.ru",
+            "--target",
+            "llvm",
+            "-o",
+            "/mnt/s/bld/ru-toy/bin/aot-benchmark/closure_calls-llvm",
+            "--llvm-clang",
+            "/usr/bin/clang-14"
+          ],
+          "compiler": "Ubuntu clang version 14.0.0-1ubuntu1.1",
+          "artifact_bytes": 62168,
+          "artifact_sha256": "44d53e5895fe6f3b45df72a7f5b57a8bc4bafb4e9829c8d9af4a1db47909ecb5",
+          "samples": {
+            "1": {
+              "expected_stdout": "1\n",
+              "raw": [
+                {
+                  "wall_seconds": 0.005715642997529358,
+                  "peak_rss_kib": 2048
+                },
+                {
+                  "wall_seconds": 0.005623495002510026,
+                  "peak_rss_kib": 2048
+                },
+                {
+                  "wall_seconds": 0.005513327996595763,
+                  "peak_rss_kib": 2036
+                },
+                {
+                  "wall_seconds": 0.00576350100163836,
+                  "peak_rss_kib": 2020
+                },
+                {
+                  "wall_seconds": 0.005559175988310017,
+                  "peak_rss_kib": 2048
+                },
+                {
+                  "wall_seconds": 0.005596444985712878,
+                  "peak_rss_kib": 2016
+                },
+                {
+                  "wall_seconds": 0.005951083003310487,
+                  "peak_rss_kib": 2048
+                }
+              ],
+              "median_seconds": 0.005623495002510026,
+              "min_seconds": 0.005513327996595763,
+              "max_seconds": 0.005951083003310487,
+              "median_peak_rss_kib": 2048
+            },
+            "1000000": {
+              "expected_stdout": "3\n",
+              "raw": [
+                {
+                  "wall_seconds": 0.2796750929992413,
+                  "peak_rss_kib": 2148
+                },
+                {
+                  "wall_seconds": 0.27870213400456123,
+                  "peak_rss_kib": 2168
+                },
+                {
+                  "wall_seconds": 0.2810327320039505,
+                  "peak_rss_kib": 2176
+                },
+                {
+                  "wall_seconds": 0.2802247859945055,
+                  "peak_rss_kib": 2164
+                },
+                {
+                  "wall_seconds": 0.2808521870028926,
+                  "peak_rss_kib": 2152
+                },
+                {
+                  "wall_seconds": 0.2776488280069316,
+                  "peak_rss_kib": 2144
+                },
+                {
+                  "wall_seconds": 0.27957684600551147,
+                  "peak_rss_kib": 2176
+                }
+              ],
+              "median_seconds": 0.2796750929992413,
+              "min_seconds": 0.2776488280069316,
+              "max_seconds": 0.2810327320039505,
+              "median_peak_rss_kib": 2164
+            }
+          }
+        },
+        "dart": {
+          "compile_seconds": 1.0078541690018028,
+          "build_command": [
+            "/mnt/s/bld/ru-toy/.git/bs-local/toolchains/dart-sdk/bin/dart",
+            "compile",
+            "exe",
+            "/mnt/s/bld/ru-toy/bin/aot-benchmark/closure_calls.dart",
+            "-o",
+            "/mnt/s/bld/ru-toy/bin/aot-benchmark/closure_calls-dart"
+          ],
+          "compiler": "Dart SDK version: 3.13.6 (stable) (Tue Oct 20 01:00:48 2026 -0700) on \"linux_x64\"",
+          "artifact_bytes": 6502104,
+          "artifact_sha256": "19cf12045ab754cdbebde0b93cbaa16d950fe74b34a6b6ca05c59ab052c5fa9a",
+          "samples": {
+            "1": {
+              "expected_stdout": "1\n",
+              "raw": [
+                {
+                  "wall_seconds": 0.035089067998342216,
+                  "peak_rss_kib": 6036
+                },
+                {
+                  "wall_seconds": 0.033828822008217685,
+                  "peak_rss_kib": 5948
+                },
+                {
+                  "wall_seconds": 0.034499930989113636,
+                  "peak_rss_kib": 5976
+                },
+                {
+                  "wall_seconds": 0.03451565999421291,
+                  "peak_rss_kib": 5980
+                },
+                {
+                  "wall_seconds": 0.034480860995245166,
+                  "peak_rss_kib": 6076
+                },
+                {
+                  "wall_seconds": 0.03512883099028841,
+                  "peak_rss_kib": 5956
+                },
+                {
+                  "wall_seconds": 0.034637806995306164,
+                  "peak_rss_kib": 6076
+                }
+              ],
+              "median_seconds": 0.03451565999421291,
+              "min_seconds": 0.033828822008217685,
+              "max_seconds": 0.03512883099028841,
+              "median_peak_rss_kib": 5980
+            },
+            "1000000": {
+              "expected_stdout": "3\n",
+              "raw": [
+                {
+                  "wall_seconds": 0.04044065601192415,
+                  "peak_rss_kib": 5912
+                },
+                {
+                  "wall_seconds": 0.040663928011781536,
+                  "peak_rss_kib": 5960
+                },
+                {
+                  "wall_seconds": 0.03989658299542498,
+                  "peak_rss_kib": 5972
+                },
+                {
+                  "wall_seconds": 0.04042917500191834,
+                  "peak_rss_kib": 5996
+                },
+                {
+                  "wall_seconds": 0.0398967340006493,
+                  "peak_rss_kib": 6160
+                },
+                {
+                  "wall_seconds": 0.04099184898950625,
+                  "peak_rss_kib": 5940
+                },
+                {
+                  "wall_seconds": 0.03999228999600746,
+                  "peak_rss_kib": 6008
+                }
+              ],
+              "median_seconds": 0.04042917500191834,
+              "min_seconds": 0.03989658299542498,
+              "max_seconds": 0.04099184898950625,
+              "median_peak_rss_kib": 5972
+            }
+          }
+        }
+      }
+    },
+    "array_allocation": {
+      "sources": {
+        "ru": "算 元初 外参 为 句 阵:\n次数 取 外参[0] 为 数. 位 取 0. 累计 取 0. 保留 取 [空].\n循 次数 次\n 列 取 [位,位+1,位+2]. 保留[0] 取 列.\n 累计 取 (累计+列[1])%1000003. 位 取 位+1.\n环.\n显 累计. 显 保留[0][2].\n得 0.\n法.\n",
+        "dart": "void main(List<String> args) { final n=int.parse(args[0]); final keep=<List<double>?>[null]; double sum=0; for(int i=0;i<n;i++){final x=i.toDouble(); final row=<double>[x,x+1,x+2]; keep[0]=row; sum=(sum+row[1])%1000003.0;} print(sum.toStringAsFixed(0)); print(keep[0]![2].toStringAsFixed(0)); }\n"
+      },
+      "backends": {
+        "c": {
+          "compile_seconds": 0.6793067840044387,
+          "build_command": [
+            "/usr/bin/python3",
+            "ru",
+            "build",
+            "/mnt/s/bld/ru-toy/bin/aot-benchmark/array_allocation.ru",
+            "--target",
+            "c",
+            "-o",
+            "/mnt/s/bld/ru-toy/bin/aot-benchmark/array_allocation-c",
+            "--cc",
+            "/usr/bin/clang-14"
+          ],
+          "compiler": "/usr/bin/clang-14",
+          "artifact_bytes": 39384,
+          "artifact_sha256": "82435008336efe48e5a2d06902b8b11dd3c998d83129744d8afd2bba0c80b893",
+          "samples": {
+            "1": {
+              "expected_stdout": "1\n2\n",
+              "raw": [
+                {
+                  "wall_seconds": 0.005559495999477804,
+                  "peak_rss_kib": 1992
+                },
+                {
+                  "wall_seconds": 0.005691062004189007,
+                  "peak_rss_kib": 2012
+                },
+                {
+                  "wall_seconds": 0.005776909994892776,
+                  "peak_rss_kib": 1992
+                },
+                {
+                  "wall_seconds": 0.0056038159964373335,
+                  "peak_rss_kib": 2028
+                },
+                {
+                  "wall_seconds": 0.005585905993939377,
+                  "peak_rss_kib": 2028
+                },
+                {
+                  "wall_seconds": 0.005663923002430238,
+                  "peak_rss_kib": 2028
+                },
+                {
+                  "wall_seconds": 0.005714240993256681,
+                  "peak_rss_kib": 1996
+                }
+              ],
+              "median_seconds": 0.005663923002430238,
+              "min_seconds": 0.005559495999477804,
+              "max_seconds": 0.005776909994892776,
+              "median_peak_rss_kib": 2012
+            },
+            "1000000": {
+              "expected_stdout": "3\n1000001\n",
+              "raw": [
+                {
+                  "wall_seconds": 0.2546923680056352,
+                  "peak_rss_kib": 2120
+                },
+                {
+                  "wall_seconds": 0.2561822230054531,
+                  "peak_rss_kib": 2128
+                },
+                {
+                  "wall_seconds": 0.25828985699627083,
+                  "peak_rss_kib": 2128
+                },
+                {
+                  "wall_seconds": 0.2550740770093398,
+                  "peak_rss_kib": 2156
+                },
+                {
+                  "wall_seconds": 0.2544287670025369,
+                  "peak_rss_kib": 2152
+                },
+                {
+                  "wall_seconds": 0.2538308160001179,
+                  "peak_rss_kib": 2152
+                },
+                {
+                  "wall_seconds": 0.2558238630008418,
+                  "peak_rss_kib": 2124
+                }
+              ],
+              "median_seconds": 0.2550740770093398,
+              "min_seconds": 0.2538308160001179,
+              "max_seconds": 0.25828985699627083,
+              "median_peak_rss_kib": 2128
+            }
+          }
+        },
+        "llvm": {
+          "compile_seconds": 2.0212106880062493,
+          "build_command": [
+            "/usr/bin/python3",
+            "ru",
+            "build",
+            "/mnt/s/bld/ru-toy/bin/aot-benchmark/array_allocation.ru",
+            "--target",
+            "llvm",
+            "-o",
+            "/mnt/s/bld/ru-toy/bin/aot-benchmark/array_allocation-llvm",
+            "--llvm-clang",
+            "/usr/bin/clang-14"
+          ],
+          "compiler": "Ubuntu clang version 14.0.0-1ubuntu1.1",
+          "artifact_bytes": 57648,
+          "artifact_sha256": "76b549211da80f18b545d342fd005a9181fe9a7606af25632af12bbbfe66039f",
+          "samples": {
+            "1": {
+              "expected_stdout": "1\n2\n",
+              "raw": [
+                {
+                  "wall_seconds": 0.005945982993580401,
+                  "peak_rss_kib": 2172
+                },
+                {
+                  "wall_seconds": 0.005752240002038889,
+                  "peak_rss_kib": 2172
+                },
+                {
+                  "wall_seconds": 0.005737911997130141,
+                  "peak_rss_kib": 2172
+                },
+                {
+                  "wall_seconds": 0.0055909649963723496,
+                  "peak_rss_kib": 2044
+                },
+                {
+                  "wall_seconds": 0.005550216999836266,
+                  "peak_rss_kib": 2012
+                },
+                {
+                  "wall_seconds": 0.005536448006751016,
+                  "peak_rss_kib": 2028
+                },
+                {
+                  "wall_seconds": 0.005742299996200018,
+                  "peak_rss_kib": 2020
+                }
+              ],
+              "median_seconds": 0.005737911997130141,
+              "min_seconds": 0.005536448006751016,
+              "max_seconds": 0.005945982993580401,
+              "median_peak_rss_kib": 2044
+            },
+            "1000000": {
+              "expected_stdout": "3\n1000001\n",
+              "raw": [
+                {
+                  "wall_seconds": 0.4279513030051021,
+                  "peak_rss_kib": 2172
+                },
+                {
+                  "wall_seconds": 0.4243843750009546,
+                  "peak_rss_kib": 2136
+                },
+                {
+                  "wall_seconds": 0.42354925100516994,
+                  "peak_rss_kib": 2172
+                },
+                {
+                  "wall_seconds": 0.43184411100810394,
+                  "peak_rss_kib": 2172
+                },
+                {
+                  "wall_seconds": 0.4264334509934997,
+                  "peak_rss_kib": 2152
+                },
+                {
+                  "wall_seconds": 0.4252579070016509,
+                  "peak_rss_kib": 2156
+                },
+                {
+                  "wall_seconds": 0.42914651600585785,
+                  "peak_rss_kib": 2172
+                }
+              ],
+              "median_seconds": 0.4264334509934997,
+              "min_seconds": 0.42354925100516994,
+              "max_seconds": 0.43184411100810394,
+              "median_peak_rss_kib": 2172
+            }
+          }
+        },
+        "dart": {
+          "compile_seconds": 0.9985446759965271,
+          "build_command": [
+            "/mnt/s/bld/ru-toy/.git/bs-local/toolchains/dart-sdk/bin/dart",
+            "compile",
+            "exe",
+            "/mnt/s/bld/ru-toy/bin/aot-benchmark/array_allocation.dart",
+            "-o",
+            "/mnt/s/bld/ru-toy/bin/aot-benchmark/array_allocation-dart"
+          ],
+          "compiler": "Dart SDK version: 3.13.6 (stable) (Tue Oct 20 01:00:48 2026 -0700) on \"linux_x64\"",
+          "artifact_bytes": 6502240,
+          "artifact_sha256": "f1574628360c1cb66a1276eb0c58715f1f9d32fb4efe2aeca96cccc7ee145741",
+          "samples": {
+            "1": {
+              "expected_stdout": "1\n2\n",
+              "raw": [
+                {
+                  "wall_seconds": 0.03434288699645549,
+                  "peak_rss_kib": 5908
+                },
+                {
+                  "wall_seconds": 0.034394504997180775,
+                  "peak_rss_kib": 6068
+                },
+                {
+                  "wall_seconds": 0.03394581899920013,
+                  "peak_rss_kib": 6060
+                },
+                {
+                  "wall_seconds": 0.03447704200516455,
+                  "peak_rss_kib": 6072
+                },
+                {
+                  "wall_seconds": 0.034049606998451054,
+                  "peak_rss_kib": 5940
+                },
+                {
+                  "wall_seconds": 0.03324391000205651,
+                  "peak_rss_kib": 6088
+                },
+                {
+                  "wall_seconds": 0.033933179001905955,
+                  "peak_rss_kib": 5936
+                }
+              ],
+              "median_seconds": 0.034049606998451054,
+              "min_seconds": 0.03324391000205651,
+              "max_seconds": 0.03447704200516455,
+              "median_peak_rss_kib": 6060
+            },
+            "1000000": {
+              "expected_stdout": "3\n1000001\n",
+              "raw": [
+                {
+                  "wall_seconds": 0.048526143000344746,
+                  "peak_rss_kib": 8508
+                },
+                {
+                  "wall_seconds": 0.04956569999922067,
+                  "peak_rss_kib": 8416
+                },
+                {
+                  "wall_seconds": 0.04823558300267905,
+                  "peak_rss_kib": 8420
+                },
+                {
+                  "wall_seconds": 0.04836124900612049,
+                  "peak_rss_kib": 8636
+                },
+                {
+                  "wall_seconds": 0.049177862994838506,
+                  "peak_rss_kib": 8548
+                },
+                {
+                  "wall_seconds": 0.049091285007307306,
+                  "peak_rss_kib": 8464
+                },
+                {
+                  "wall_seconds": 0.04896415999974124,
+                  "peak_rss_kib": 8728
+                }
+              ],
+              "median_seconds": 0.04896415999974124,
+              "min_seconds": 0.04823558300267905,
+              "max_seconds": 0.04956569999922067,
+              "median_peak_rss_kib": 8508
+            }
+          }
+        }
+      }
+    }
+  }
+}
