@@ -245,7 +245,7 @@ def repl():
             report(error, "<repl>", pending)
             pending = ""
         except RecursionError:
-            report(RuError("表达式或语句结构过深，请拆分为较小的步骤"), "<repl>")
+            report(RuError("程序执行超出解释器资源上限（结构嵌套过深），请拆分为较小的步骤", category="运行错误"), "<repl>")
             pending = ""
         except (OSError, UnicodeError, ValueError) as error:
             report(RuError("输入失败：无法读取有效 UTF-8 输入", category="运行错误"), "<repl>")
@@ -470,7 +470,7 @@ def main(argv=None):
         report(error, name, source)
         return 1
     except RecursionError:
-        report(RuError("表达式或语句结构过深，请拆分为较小的步骤"), name)
+        report(RuError("程序执行超出解释器资源上限（结构嵌套过深），请拆分为较小的步骤", category="运行错误"), name)
         return 1
     except (OSError, UnicodeError) as error:
         failure = RuError(str(error), category="文件／编码错误")

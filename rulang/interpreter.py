@@ -279,11 +279,20 @@ class FailedModule:
         raise error
 
 
+# Combined expression/statement nesting budget. Legitimate programs recurse
+# far past the 128-call limit (e.g. long unary chains reach several thousand
+# levels), so this guard must stay well above real usage yet below the CPython
+# recursion ceiling; recursionlimit is raised to 20000 below to keep mixed
+# block+expr nesting (up to ~2 Python frames per level) safely inside it.
+STRUCTURE_DEPTH_LIMIT = 8000
+
+
 class Interpreter:
     def __init__(self, stdin=None, stdout=None, stderr=None, *, allow_native=False, _native_context=None):
         self.stdin, self.stdout = stdin or sys.stdin, stdout or sys.stdout
         self.stderr = sys.stderr if stderr is None else stderr
         self.global_scope, self.functions, self.depth = Scope(), {}, 0
+        self.structure_depth = 0
         self.function_values = self.global_scope.declarations
         self.types, self.function_owners = {}, {}
         self.source_path, self.modules, self.module_cache = None, {}, {}
@@ -296,8 +305,8 @@ class Interpreter:
         install_practical(self)
         install_graphics(self)
         install_native(self, _native_context, allow_native)
-        if sys.getrecursionlimit() < 10000:
-            sys.setrecursionlimit(10000)
+        if sys.getrecursionlimit() < 20000:
+            sys.setrecursionlimit(20000)
 
     def fail(self, node, message):
         error = at_token(RuError(message, node.token.line, node.token.col, "运行错误"), node.token)
@@ -472,93 +481,99 @@ class Interpreter:
         return False
 
     def block(self, statements, scope, echo=False):
-        for n in statements:
-            d = n.data
-            if n.kind in ("function", "module_decl"):
-                continue
-            if n.kind == "type":
-                self.resolve_type(self.types[d["name"]])
-            elif n.kind == "scope":
-                local = Scope(scope, "block")
-                self.hoist(d["body"], local)
-                # A lexical block is not a call boundary: enclosing control
-                # flow and REPL echo pass through unchanged.
-                self.block(d["body"], local, echo)
-            elif n.kind == "bind":
-                if scope.protected(d["name"]) or d["name"] in self.types or d["name"] in BUILTIN_NAMES:
-                    self.fail(n, "变量名不能与函数名、形名或内置名称重名")
-                scope.bind(d["name"], self.expr(d["expr"], scope))
-            elif n.kind == "assign":
-                self.assign(n, scope)
-            elif n.kind == "import_all":
-                module = self.expr(d["expr"], scope)
-                exports = module.exports()
-                conflicts = set(exports) & (set(scope.values) | set(self.functions) | set(self.types) | BUILTIN_NAMES)
-                if conflicts:
-                    self.fail(n, "导入名称冲突：" + "、".join(sorted(conflicts)))
-                for name, value in exports.items():
-                    if name in module.interpreter.functions:
-                        self.functions[name] = value.node
-                        self.function_owners[name] = value.owner
-                        self.function_values[name] = value
-                    elif name in module.interpreter.types:
-                        self.types[name] = value
-                    else:
-                        scope.values[name] = value
-            elif n.kind == "print":
-                value = self.expr(d["expr"], scope)
-                try:
-                    _write_stream(self.stdout, display(value) + "\n")
-                except (OSError, ValueError) as error:
-                    self.fail(n, "输出失败：" + str(error))
-            elif n.kind == "expr":
-                value = self.expr(d["expr"], scope)
-                if echo and not self.is_procedure(d["expr"], scope):
+        if statements and self.structure_depth >= STRUCTURE_DEPTH_LIMIT:
+            self.fail(statements[0], f"表达式或语句结构超过 {STRUCTURE_DEPTH_LIMIT} 层，请拆分为较小的步骤")
+        self.structure_depth += 1
+        try:
+            for n in statements:
+                d = n.data
+                if n.kind in ("function", "module_decl"):
+                    continue
+                if n.kind == "type":
+                    self.resolve_type(self.types[d["name"]])
+                elif n.kind == "scope":
+                    local = Scope(scope, "block")
+                    self.hoist(d["body"], local)
+                    # A lexical block is not a call boundary: enclosing control
+                    # flow and REPL echo pass through unchanged.
+                    self.block(d["body"], local, echo)
+                elif n.kind == "bind":
+                    if scope.protected(d["name"]) or d["name"] in self.types or d["name"] in BUILTIN_NAMES:
+                        self.fail(n, "变量名不能与函数名、形名或内置名称重名")
+                    scope.bind(d["name"], self.expr(d["expr"], scope))
+                elif n.kind == "assign":
+                    self.assign(n, scope)
+                elif n.kind == "import_all":
+                    module = self.expr(d["expr"], scope)
+                    exports = module.exports()
+                    conflicts = set(exports) & (set(scope.values) | set(self.functions) | set(self.types) | BUILTIN_NAMES)
+                    if conflicts:
+                        self.fail(n, "导入名称冲突：" + "、".join(sorted(conflicts)))
+                    for name, value in exports.items():
+                        if name in module.interpreter.functions:
+                            self.functions[name] = value.node
+                            self.function_owners[name] = value.owner
+                            self.function_values[name] = value
+                        elif name in module.interpreter.types:
+                            self.types[name] = value
+                        else:
+                            scope.values[name] = value
+                elif n.kind == "print":
+                    value = self.expr(d["expr"], scope)
                     try:
                         _write_stream(self.stdout, display(value) + "\n")
                     except (OSError, ValueError) as error:
                         self.fail(n, "输出失败：" + str(error))
-            elif n.kind == "panic":
-                reason = self.expr(d["expr"], scope)
-                if not isinstance(reason, str):
-                    self.fail(n, "「卒」的原因须为句")
-                error = Panic(reason, n.token)
-                self.locate_error(error)
-                raise error
-            elif n.kind == "try":
-                try:
-                    self.block(d["body"], scope)
-                except Panic as error:
-                    if scope.protected(d["reason"]) or d["reason"] in self.types or d["reason"] in BUILTIN_NAMES:
-                        self.fail(n, "救的原因名称不能与函数名、形名或内置名称重名")
-                    handler = Scope(scope, "rescue")
-                    handler.values[d["reason"]] = error.reason
-                    self.hoist(d["rescue"], handler)
-                    # Outside the protected suite: a new 卒 here propagates
-                    # to an enclosing dynamically active 试.
-                    self.block(d["rescue"], handler)
-            elif n.kind == "return":
-                raise Return(self.expr(d["expr"], scope))
-            elif n.kind == "finish":
-                raise Finish()
-            elif n.kind == "break":
-                raise Break()
-            elif n.kind == "if":
-                self.block(d["yes"] if truth(self.expr(d["condition"], scope)) else d["no"], scope)
-            elif n.kind == "loop":
-                count = None
-                if d["count"] is not None:
-                    value = self.expr(d["count"], scope)
-                    if not isinstance(value, float) or not math.isfinite(value) or value < 0 or value > 9007199254740991 or value != int(value):
-                        self.fail(n, "循环次数须为 0 至 9007199254740991 之间的整数")
-                    count = int(value)
-                i = 0
-                while count is None or i < count:
+                elif n.kind == "expr":
+                    value = self.expr(d["expr"], scope)
+                    if echo and not self.is_procedure(d["expr"], scope):
+                        try:
+                            _write_stream(self.stdout, display(value) + "\n")
+                        except (OSError, ValueError) as error:
+                            self.fail(n, "输出失败：" + str(error))
+                elif n.kind == "panic":
+                    reason = self.expr(d["expr"], scope)
+                    if not isinstance(reason, str):
+                        self.fail(n, "「卒」的原因须为句")
+                    error = Panic(reason, n.token)
+                    self.locate_error(error)
+                    raise error
+                elif n.kind == "try":
                     try:
                         self.block(d["body"], scope)
-                    except Break:
-                        break
-                    i += 1
+                    except Panic as error:
+                        if scope.protected(d["reason"]) or d["reason"] in self.types or d["reason"] in BUILTIN_NAMES:
+                            self.fail(n, "救的原因名称不能与函数名、形名或内置名称重名")
+                        handler = Scope(scope, "rescue")
+                        handler.values[d["reason"]] = error.reason
+                        self.hoist(d["rescue"], handler)
+                        # Outside the protected suite: a new 卒 here propagates
+                        # to an enclosing dynamically active 试.
+                        self.block(d["rescue"], handler)
+                elif n.kind == "return":
+                    raise Return(self.expr(d["expr"], scope))
+                elif n.kind == "finish":
+                    raise Finish()
+                elif n.kind == "break":
+                    raise Break()
+                elif n.kind == "if":
+                    self.block(d["yes"] if truth(self.expr(d["condition"], scope)) else d["no"], scope)
+                elif n.kind == "loop":
+                    count = None
+                    if d["count"] is not None:
+                        value = self.expr(d["count"], scope)
+                        if not isinstance(value, float) or not math.isfinite(value) or value < 0 or value > 9007199254740991 or value != int(value):
+                            self.fail(n, "循环次数须为 0 至 9007199254740991 之间的整数")
+                        count = int(value)
+                    i = 0
+                    while count is None or i < count:
+                        try:
+                            self.block(d["body"], scope)
+                        except Break:
+                            break
+                        i += 1
+        finally:
+            self.structure_depth -= 1
 
     def is_procedure(self, expr, scope):
         # Do not re-evaluate member receivers merely to decide REPL echo.
@@ -713,174 +728,180 @@ class Interpreter:
         return module
 
     def expr(self, n, scope):
-        d = n.data
-        if n.kind in ("number", "string", "fact"):
-            return d["value"]
-        if n.kind == "name":
-            name = d["name"]
-            if name == "读":
-                return self.call(n, name, [])
-            value, declared = self.resolve_name(n, scope)
-            return self.invoke_value(n, value, []) if declared else value
-        if n.kind == "binary":
-            op = d["op"]
-            left = self.expr(d["left"], scope)
-            if op == "且":
-                return truth(left) and truth(self.expr(d["right"], scope))
-            if op == "或":
-                return truth(left) or truth(self.expr(d["right"], scope))
-            right = self.expr(d["right"], scope)
-            if op == "对":
-                return Pair(left, right)
-            if op in ("==", "!="):
-                same = self.equals(n, left, right)
-                return same if op == "==" else not same
-            if op == "含":
-                if isinstance(left, (Instance, Module)):
-                    return self.member(n, left, "含", [(None, right)])
-                self.last_member_procedure = False
-                if not isinstance(left, str) or not isinstance(right, str):
-                    self.fail(n, "「含」需要两个句")
-                return right in left
-            if op in ("<", "<=", ">", ">="):
-                if type(left) is not type(right) or not isinstance(left, (str, float)):
-                    self.fail(n, "大小比较需要两个数或两个句" + ("；比较结果为事实，若要连续比较，请拆成两个比较并用「且」连接" if isinstance(left, bool) or isinstance(right, bool) else ""))
-                if op == "<":
-                    return left < right
-                if op == "<=":
-                    return left <= right
-                if op == ">":
-                    return left > right
-                return left >= right
-            if op == "+" and isinstance(left, str) and isinstance(right, str):
-                return left + right
-            if not isinstance(left, float) or not isinstance(right, float):
-                self.fail(n, "算术运算需要两个数；「+」也可连接两个句")
-            if op in ("/", "%") and right == 0:
-                self.fail(n, "除数不能为零")
-            if op == "+":
-                result = left + right
-            elif op == "-":
-                result = left - right
-            elif op == "*":
-                result = left * right
-            elif op == "/":
-                result = left / right
-            elif op == "%":
-                result = math.fmod(left, right)
-            else:
-                raise KeyError(op)
-            if not math.isfinite(result):
-                self.fail(n, "运算结果不是有限数")
-            return result
-        if n.kind == "index":
-            return self.get_index(n, self.expr(d["receiver"], scope), self.expr(d["index"], scope))
-        if n.kind == "member":
-            receiver = self.expr(d["receiver"], scope)
-            # A callable field/export may be rebound by an argument. Capture
-            # its value (or bound method) before evaluating those arguments.
-            if isinstance(receiver, Instance):
-                if d["name"] in receiver.type.fields and d["args"]:
-                    value = receiver.fields[d["name"]]
-                    args = [(key, self.expr(expr, scope)) for key, expr in d["args"]]
-                    result = self.invoke_value(n, value, args)
-                    self.last_member_procedure = value.node.data["procedure"]
-                    return result
-                if d["name"] in receiver.type.methods:
-                    value = self.member_reference(n, receiver, d["name"])
-                    args = [(key, self.expr(expr, scope)) for key, expr in d["args"]]
-                    result = self.invoke_value(n, value, args)
-                    self.last_member_procedure = value.node.data["procedure"]
-                    return result
-            elif isinstance(receiver, Module):
-                value = self.ordinary_value(n, receiver.exports().get(d["name"], _MISSING))
-                if value is not _MISSING and (d["args"] or d["name"] in receiver.interpreter.functions):
-                    args = [(key, self.expr(expr, scope)) for key, expr in d["args"]]
-                    result = self.invoke_value(n, value, args)
-                    self.last_member_procedure = value.node.data["procedure"]
-                    return result
-            args = [(key, self.expr(expr, scope)) for key, expr in d["args"]]
-            return self.member(n, receiver, d["name"], args)
-        if n.kind == "null":
-            return None
-        if n.kind == "map":
-            result = RuMap()
-            for key_node, value_node in d["entries"]:
-                key = self.expr(key_node, scope)
-                value = self.expr(value_node, scope)
-                self.map_put(n, result, key, value)
-            return result
-        if n.kind == "array":
-            return [self.expr(item, scope) for item in d["items"]]
-        if n.kind == "self":
-            return scope.get("其", n.token)
-        if n.kind == "import":
-            return self.import_module(n)
-        if n.kind == "call":
-            if d["name"] == "读":
-                return self.call(n, "读", [(name, self.expr(expr, scope)) for name, expr in d["args"]])
-            # Resolve the callee before arguments can mutate a captured binding.
-            value = self.resolve_name(n, scope)[0]
-            args = [(name, self.expr(expr, scope)) for name, expr in d["args"]]
-            return self.invoke_value(n, value, args)
-        if n.kind == "function_literal":
-            return Function(self, n, scope)
-        if n.kind == "function_ref":
-            value = self.callable_target(d["expr"], scope)
-            if not isinstance(value, Function) or value.node.data["procedure"] != d["procedure"]:
-                self.fail(n, "引用的算／作种类不匹配")
-            return value
-        if n.kind == "invoke":
-            if d["callee"].kind == "name" and d["callee"].data["name"] == "读":
-                return self.call(n, "读", [(name, self.expr(expr, scope)) for name, expr in d["args"]])
-            value = self.callable_target(d["callee"], scope)
-            args = [(name, self.expr(expr, scope)) for name, expr in d["args"]]
-            return self.invoke_value(n, value, args)
-        if n.kind == "new":
-            typ = self.types.get(d["name"]) or self.builtin_types.get(d["name"])
-            if typ is None:
-                self.fail(n, f"未定义形：{d['name']}；新 后须使用已声明或已尽取导入的形名")
-            if not isinstance(typ, RuType):
-                self.fail(n, f"「{d['name']}」不是形")
-            typ.owner.resolve_type(typ)
-            fields = io_new_defaults(typ)
-            if fields is None:
-                fields = {name: None for name in typ.fields}
-            provided = set()
-            for key, expr in d["args"]:
-                if key in provided:
-                    self.fail(n, f"重复的字段实参：{key}")
-                if key not in fields:
-                    self.fail(n, f"未知字段：{key}")
-                value = self.expr(expr, scope)
-                field_type, owner = typ.fields[key]
-                if value is not None and not owner.type_matches(value, field_type):
-                    self.fail(n, f"字段「{key}」须为{field_type}，实际收到{value_type_name(value)}" + owner.type_detail(value, field_type))
-                fields[key] = value
-                provided.add(key)
-            return Instance(typ, fields)
-        if n.kind == "slice":
-            receiver = self.expr(d["receiver"], scope)
-            start = None if d["start"] is None else self.expr(d["start"], scope)
-            end = None if d["end"] is None else self.expr(d["end"], scope)
-            return self.get_slice(n, receiver, start, end)
-        if n.kind == "convert":
-            value = self.expr(d["expr"], scope)
-            if d["target"] == "事实":
-                return truth(value)
-            if d["target"] == "阵":
-                return [value]
-            if d["target"] == "句":
-                return display(value)
-            return self.number_value(n, value)
-        if n.kind == "unary":
-            value = self.expr(d["expr"], scope)
-            if d["op"] == "非":
-                return not truth(value)
-            if not isinstance(value, float):
-                self.fail(n, "正负号只能用于数")
-            return value if d["op"] == "+" else -value
-        raise AssertionError(n.kind)
+        if self.structure_depth >= STRUCTURE_DEPTH_LIMIT:
+            self.fail(n, f"表达式或语句结构超过 {STRUCTURE_DEPTH_LIMIT} 层，请拆分为较小的步骤")
+        self.structure_depth += 1
+        try:
+            d = n.data
+            if n.kind in ("number", "string", "fact"):
+                return d["value"]
+            if n.kind == "name":
+                name = d["name"]
+                if name == "读":
+                    return self.call(n, name, [])
+                value, declared = self.resolve_name(n, scope)
+                return self.invoke_value(n, value, []) if declared else value
+            if n.kind == "binary":
+                op = d["op"]
+                left = self.expr(d["left"], scope)
+                if op == "且":
+                    return truth(left) and truth(self.expr(d["right"], scope))
+                if op == "或":
+                    return truth(left) or truth(self.expr(d["right"], scope))
+                right = self.expr(d["right"], scope)
+                if op == "对":
+                    return Pair(left, right)
+                if op in ("==", "!="):
+                    same = self.equals(n, left, right)
+                    return same if op == "==" else not same
+                if op == "含":
+                    if isinstance(left, (Instance, Module)):
+                        return self.member(n, left, "含", [(None, right)])
+                    self.last_member_procedure = False
+                    if not isinstance(left, str) or not isinstance(right, str):
+                        self.fail(n, "「含」需要两个句")
+                    return right in left
+                if op in ("<", "<=", ">", ">="):
+                    if type(left) is not type(right) or not isinstance(left, (str, float)):
+                        self.fail(n, "大小比较需要两个数或两个句" + ("；比较结果为事实，若要连续比较，请拆成两个比较并用「且」连接" if isinstance(left, bool) or isinstance(right, bool) else ""))
+                    if op == "<":
+                        return left < right
+                    if op == "<=":
+                        return left <= right
+                    if op == ">":
+                        return left > right
+                    return left >= right
+                if op == "+" and isinstance(left, str) and isinstance(right, str):
+                    return left + right
+                if not isinstance(left, float) or not isinstance(right, float):
+                    self.fail(n, "算术运算需要两个数；「+」也可连接两个句")
+                if op in ("/", "%") and right == 0:
+                    self.fail(n, "除数不能为零")
+                if op == "+":
+                    result = left + right
+                elif op == "-":
+                    result = left - right
+                elif op == "*":
+                    result = left * right
+                elif op == "/":
+                    result = left / right
+                elif op == "%":
+                    result = math.fmod(left, right)
+                else:
+                    raise KeyError(op)
+                if not math.isfinite(result):
+                    self.fail(n, "运算结果不是有限数")
+                return result
+            if n.kind == "index":
+                return self.get_index(n, self.expr(d["receiver"], scope), self.expr(d["index"], scope))
+            if n.kind == "member":
+                receiver = self.expr(d["receiver"], scope)
+                # A callable field/export may be rebound by an argument. Capture
+                # its value (or bound method) before evaluating those arguments.
+                if isinstance(receiver, Instance):
+                    if d["name"] in receiver.type.fields and d["args"]:
+                        value = receiver.fields[d["name"]]
+                        args = [(key, self.expr(expr, scope)) for key, expr in d["args"]]
+                        result = self.invoke_value(n, value, args)
+                        self.last_member_procedure = value.node.data["procedure"]
+                        return result
+                    if d["name"] in receiver.type.methods:
+                        value = self.member_reference(n, receiver, d["name"])
+                        args = [(key, self.expr(expr, scope)) for key, expr in d["args"]]
+                        result = self.invoke_value(n, value, args)
+                        self.last_member_procedure = value.node.data["procedure"]
+                        return result
+                elif isinstance(receiver, Module):
+                    value = self.ordinary_value(n, receiver.exports().get(d["name"], _MISSING))
+                    if value is not _MISSING and (d["args"] or d["name"] in receiver.interpreter.functions):
+                        args = [(key, self.expr(expr, scope)) for key, expr in d["args"]]
+                        result = self.invoke_value(n, value, args)
+                        self.last_member_procedure = value.node.data["procedure"]
+                        return result
+                args = [(key, self.expr(expr, scope)) for key, expr in d["args"]]
+                return self.member(n, receiver, d["name"], args)
+            if n.kind == "null":
+                return None
+            if n.kind == "map":
+                result = RuMap()
+                for key_node, value_node in d["entries"]:
+                    key = self.expr(key_node, scope)
+                    value = self.expr(value_node, scope)
+                    self.map_put(n, result, key, value)
+                return result
+            if n.kind == "array":
+                return [self.expr(item, scope) for item in d["items"]]
+            if n.kind == "self":
+                return scope.get("其", n.token)
+            if n.kind == "import":
+                return self.import_module(n)
+            if n.kind == "call":
+                if d["name"] == "读":
+                    return self.call(n, "读", [(name, self.expr(expr, scope)) for name, expr in d["args"]])
+                # Resolve the callee before arguments can mutate a captured binding.
+                value = self.resolve_name(n, scope)[0]
+                args = [(name, self.expr(expr, scope)) for name, expr in d["args"]]
+                return self.invoke_value(n, value, args)
+            if n.kind == "function_literal":
+                return Function(self, n, scope)
+            if n.kind == "function_ref":
+                value = self.callable_target(d["expr"], scope)
+                if not isinstance(value, Function) or value.node.data["procedure"] != d["procedure"]:
+                    self.fail(n, "引用的算／作种类不匹配")
+                return value
+            if n.kind == "invoke":
+                if d["callee"].kind == "name" and d["callee"].data["name"] == "读":
+                    return self.call(n, "读", [(name, self.expr(expr, scope)) for name, expr in d["args"]])
+                value = self.callable_target(d["callee"], scope)
+                args = [(name, self.expr(expr, scope)) for name, expr in d["args"]]
+                return self.invoke_value(n, value, args)
+            if n.kind == "new":
+                typ = self.types.get(d["name"]) or self.builtin_types.get(d["name"])
+                if typ is None:
+                    self.fail(n, f"未定义形：{d['name']}；新 后须使用已声明或已尽取导入的形名")
+                if not isinstance(typ, RuType):
+                    self.fail(n, f"「{d['name']}」不是形")
+                typ.owner.resolve_type(typ)
+                fields = io_new_defaults(typ)
+                if fields is None:
+                    fields = {name: None for name in typ.fields}
+                provided = set()
+                for key, expr in d["args"]:
+                    if key in provided:
+                        self.fail(n, f"重复的字段实参：{key}")
+                    if key not in fields:
+                        self.fail(n, f"未知字段：{key}")
+                    value = self.expr(expr, scope)
+                    field_type, owner = typ.fields[key]
+                    if value is not None and not owner.type_matches(value, field_type):
+                        self.fail(n, f"字段「{key}」须为{field_type}，实际收到{value_type_name(value)}" + owner.type_detail(value, field_type))
+                    fields[key] = value
+                    provided.add(key)
+                return Instance(typ, fields)
+            if n.kind == "slice":
+                receiver = self.expr(d["receiver"], scope)
+                start = None if d["start"] is None else self.expr(d["start"], scope)
+                end = None if d["end"] is None else self.expr(d["end"], scope)
+                return self.get_slice(n, receiver, start, end)
+            if n.kind == "convert":
+                value = self.expr(d["expr"], scope)
+                if d["target"] == "事实":
+                    return truth(value)
+                if d["target"] == "阵":
+                    return [value]
+                if d["target"] == "句":
+                    return display(value)
+                return self.number_value(n, value)
+            if n.kind == "unary":
+                value = self.expr(d["expr"], scope)
+                if d["op"] == "非":
+                    return not truth(value)
+                if not isinstance(value, float):
+                    self.fail(n, "正负号只能用于数")
+                return value if d["op"] == "+" else -value
+            raise AssertionError(n.kind)
+        finally:
+            self.structure_depth -= 1
 
     def special_method(self, n, value, name, arity):
         method = value.type.methods.get(name)
