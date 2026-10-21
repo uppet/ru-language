@@ -2,6 +2,7 @@ import http.client
 import io
 import json
 from pathlib import Path
+import re
 import sys
 import threading
 import unittest
@@ -17,12 +18,33 @@ from rushu.versions import version_info
 
 class VersionTests(unittest.TestCase):
     def test_native_library_versions(self):
-        self.assertEqual(ru_version, "0.22.0")
+        self.assertEqual(ru_version, "0.22.1")
         self.assertEqual(rushu_version, "0.8.8")
 
     def test_installed_versions(self):
         info = version_info()
         self.assertEqual(info, {'ru': ru_version, 'rushu': rushu_version, 'specification': ru_version})
+
+    def test_changelog_header_matches_runtime_versions(self):
+        """CHANGELOG.md first line must name the same Ru and Rushu versions as
+        the packages themselves.  This catches the drift that produced the
+        one-test gate failure at 6aa2661: __init__ bumped, changelog not."""
+        header = (ROOT / 'CHANGELOG.md').read_text(encoding='utf-8').splitlines()[0]
+        match = re.match(r'^# ([0-9]+\.[0-9]+\.[0-9]+)／如书保持 ([0-9]+\.[0-9]+\.[0-9]+)', header)
+        self.assertIsNotNone(match, 'CHANGELOG.md first line must start with "# <ru版本>／如书保持 <rushu版本>"')
+        self.assertEqual(match.group(1), ru_version)
+        self.assertEqual(match.group(2), rushu_version)
+
+    def test_specification_header_matches_runtime_version(self):
+        """language-spec.md header must agree with rulang.__version__ so the
+        如书 version panel and packaged spec never disagree with the tool."""
+        lines = (ROOT / 'rulang' / 'language-spec.md').read_text(encoding='utf-8').splitlines()
+        self.assertTrue(lines[0].startswith('# 如语言规范 '), 'spec must start with a version header')
+        spec_version = lines[0].removeprefix('# 如语言规范 ').strip()
+        self.assertEqual(spec_version, ru_version)
+        spec_lines = [line for line in lines if re.fullmatch(r'规范版本：[0-9]+\.[0-9]+\.[0-9]+', line)]
+        self.assertEqual(len(spec_lines), 1)
+        self.assertEqual(spec_lines[0], f'规范版本：{ru_version}')
 
     def test_missing_or_invalid_spec_is_unknown(self):
         with patch('rushu.versions.resources.files', side_effect=OSError):

@@ -545,15 +545,45 @@ static int rn_root_compare(const void *a, const void *b)
     uintptr_t x = (uintptr_t)((const RuNativeRoot *)a)->heap, y = (uintptr_t)((const RuNativeRoot *)b)->heap;
     return (x > y) - (x < y);
 }
+/* Trap objects stay heap-allocated: setjmp/longjmp requires that objects
+ * written between setjmp and longjmp not be non-volatile automatics of the
+ * setjmp function.  A per-process freelist recycles trap objects so the
+ * common callback path never touches calloc/free.  The freelist lives
+ * inside ru_native_callback_dispatch (function-local static) so translation
+ * units that never emit dispatch don't warn about an unused variable under
+ * -Werror.  It is safe as an ordinary global because the whole native
+ * subsystem is pinned to ru_native_thread_id.  The list is a stack linked
+ * through the trap's own `previous` field: dispatch reads the outer trap
+ * from that field before recycling the node, so the two uses never overlap.
+ * Resident memory equals peak nesting depth, not call count. */
+/* The freelist head lives behind an accessor so translation units that never
+ * emit callback dispatch don't trip -Wunused-variable under -Werror; the
+ * accessor itself is a static function, which the build already tolerates
+ * unused (-Wno-unused-function).  Keeps this header free of __attribute__ or
+ * other non-C99 extensions. */
+static RuNativeTrap **rn_trap_freelist_head(void)
+{
+    static RuNativeTrap *freelist;
+    return &freelist;
+}
 static RuNativeTrap *rn_trap_new(void)
 {
-    RuNativeTrap *trap = (RuNativeTrap *)calloc(1, sizeof(*trap));
+    RuNativeTrap **head = rn_trap_freelist_head();
+    RuNativeTrap *trap = *head;
     RuHeap *heap; size_t count = 0;
-    if (!trap) return NULL;
-    for (heap = ru_heap; heap; heap = heap->next) if (heap->roots > heap->permanent_roots) ++count;
+    if (trap) {
+        *head = trap->previous;
+        trap->root_count = 0;
+    } else {
+        trap = (RuNativeTrap *)calloc(1, sizeof(*trap));
+        if (!trap) return NULL;
+    }
+    for (heap = ru_transient_roots; heap; heap = heap->transient_next) ++count;
+    if (count > SIZE_MAX / sizeof(*trap->roots)) { trap->previous = *head; *head = trap; return NULL; }
     trap->roots = (RuNativeRoot *)malloc((count ? count : 1) * sizeof(*trap->roots));
-    if (!trap->roots) { free(trap); return NULL; }
-    for (heap = ru_heap; heap; heap = heap->next) if (heap->roots > heap->permanent_roots) {
+    if (!trap->roots) { trap->previous = *head; *head = trap; return NULL; }
+    trap->message[0] = 0;
+    for (heap = ru_transient_roots; heap; heap = heap->transient_next) {
         trap->roots[trap->root_count].heap = heap;
         trap->roots[trap->root_count++].transient = heap->roots - heap->permanent_roots;
     }
@@ -562,17 +592,28 @@ static RuNativeTrap *rn_trap_new(void)
     trap->call_depth = ru_call_depth; trap->source = ru_source;
     return trap;
 }
+static void rn_trap_release(RuNativeTrap *trap)
+{
+    RuNativeTrap **head = rn_trap_freelist_head();
+    free(trap->roots);
+    trap->roots = NULL;
+    trap->previous = *head;
+    *head = trap;
+}
 static void rn_trap_restore(RuNativeTrap *trap)
 {
     RuHeap *heap;
     /* Persistent roots have changed legitimately during the callback; restore
      * only abandoned frame roots. Entry transient roots keep their heaps alive. */
     ru_panic_clear();
+    ru_transient_roots = NULL;
     for (heap = ru_heap; heap; heap = heap->next) {
         RuNativeRoot key, *saved; key.heap = heap; key.transient = 0;
         saved = (RuNativeRoot *)bsearch(&key, trap->roots, trap->root_count, sizeof(*trap->roots), rn_root_compare);
         heap->roots = heap->permanent_roots + (saved ? saved->transient : 0);
         heap->mark = 0;
+        heap->transient_prev = NULL; heap->transient_next = NULL;
+        if (heap->roots > heap->permanent_roots) rn_transient_link(heap);
     }
     while (ru_scratch != (RuScratch *)trap->scratch) ru_scratch_free(ru_scratch->data);
     ru_call_depth = trap->call_depth; ru_source = trap->source;
@@ -614,7 +655,10 @@ static RuNativeRaw ru_native_callback_dispatch(unsigned slot_index, int signatur
     uint32_t entry_error = rn_platform_error();
     RuNativeRaw answer = slot->fallback;
     RuNative *callback;
-    RuNativeTrap *trap;
+    /* volatile: setjmp stores/restores this automatic by value; without the
+     * qualifier a longjmp back to trap->jump would leave it indeterminate
+     * (C11 7.13.1.1).  The pointed-to object is heap storage, unaffected. */
+    RuNativeTrap *volatile trap;
     /* Immutable fields only until owner thread has been verified. In
      * particular no callback object, heap, counter, or closure is read here. */
     if (rn_platform_thread() != slot->owner_thread) {
@@ -661,7 +705,7 @@ static RuNativeRaw ru_native_callback_dispatch(unsigned slot_index, int signatur
         }
         answer = trap->result;
         ru_native_trap = trap->previous; ru_source = trap->source;
-        free(trap->roots); free(trap);
+        rn_trap_release(trap);
     }
     --callback->as.callback.active; --ru_native_callback_depth;
     if (callback->closed && !callback->as.callback.active) rn_callback_detach(callback);
