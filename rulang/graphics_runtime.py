@@ -78,6 +78,18 @@ RECORDER_MEMBERS = frozenset(CANVAS_PARAMS) - frozenset(CALLBACK_NAMES) - {
     "缓存", "贴图", "帧率", "停", "继续", "关闭", "帧", "经过秒", "间隔秒"}
 
 
+def _address_space_used():
+    """Current virtual address space in bytes, or 0 when unmeasurable."""
+    try:
+        with open("/proc/self/status", encoding="ascii") as status:
+            for line in status:
+                if line.startswith("VmSize:"):
+                    return int(line.split()[1]) * 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    return 0
+
+
 def _json(value):
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
@@ -410,7 +422,16 @@ class GraphicsHost:
                 old_limit = resource.getrlimit(resource.RLIMIT_AS)
                 finite = [value for value in old_limit if value != resource.RLIM_INFINITY]
                 ceiling = min([512 * 1024 * 1024] + finite)
-                resource.setrlimit(resource.RLIMIT_AS, (ceiling, old_limit[1]))
+                # Long-lived host processes may already sit above this
+                # per-callback budget: address space includes reserved arenas
+                # that count against RLIMIT_AS without touching memory.
+                # Lowering the ceiling below current usage would fail the
+                # very next allocation inside the callback, so keep the
+                # portable trace budget as the only guard in that case.
+                if _address_space_used() < ceiling:
+                    resource.setrlimit(resource.RLIMIT_AS, (ceiling, old_limit[1]))
+                else:
+                    old_limit = None
         except (ImportError, OSError, ValueError):
             old_limit = None
         callback_error = False

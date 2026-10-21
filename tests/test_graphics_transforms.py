@@ -166,7 +166,8 @@ class GraphicsTransformTests(unittest.TestCase):
         for callback, expected in [('图 其 线 0 0 1 1.', '无法恢复系统内存上限'), ('显 未定义.', '未定义')]:
             self.run_ru('图 取 观 其 画布 10 10. 图 其 每帧 (作 帧: ' + callback + ' 为).')
             old_trace = sys.gettrace()
-            with patch.object(resource, 'getrlimit', return_value=(-1, -1)), \
+            with patch('rulang.graphics_runtime._address_space_used', return_value=0), \
+                 patch.object(resource, 'getrlimit', return_value=(-1, -1)), \
                  patch.object(resource, 'setrlimit', side_effect=[None, ValueError('not allowed')]) as setter:
                 with self.assertRaisesRegex(RuError, expected):
                     self.host.handle({'type': 'frame'})

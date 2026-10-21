@@ -199,6 +199,25 @@ class GraphicsBudgetDiagnosticsTests(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), '')
         self.assertEqual(stderr.getvalue().splitlines()[0], detail['formatted'])
 
+    def test_host_already_above_ceiling_keeps_trace_budget_only(self):
+        # A long-lived session may already use more address space than the
+        # per-callback budget (reserved arenas count against RLIMIT_AS).
+        # Lowering the ceiling below current usage would fail the next
+        # allocation inside the callback, so the ceiling is skipped and the
+        # portable trace budget remains the only guard.
+        try:
+            import resource
+        except ImportError:
+            self.skipTest('POSIX resource limits unavailable')
+        if not hasattr(resource, 'RLIMIT_AS'):
+            self.skipTest('RLIMIT_AS unavailable')
+        with patch('rulang.graphics_runtime._address_space_used', return_value=600 * 1024 * 1024), \
+             patch.object(resource, 'getrlimit', return_value=(-1, -1)), \
+             patch.object(resource, 'setrlimit') as setter:
+            self.handle_samples(count=1, started=0., sampled=0.5)
+        setter.assert_not_called()
+        self.assertIsNotNone(self.host.canvas)
+
     def test_resource_restore_failure_preserves_budget_error(self):
         try:
             import resource
@@ -206,7 +225,8 @@ class GraphicsBudgetDiagnosticsTests(unittest.TestCase):
             self.skipTest('POSIX resource limits unavailable')
         if not hasattr(resource, 'RLIMIT_AS'):
             self.skipTest('RLIMIT_AS unavailable')
-        with patch.object(resource, 'getrlimit', return_value=(-1, -1)), \
+        with patch('rulang.graphics_runtime._address_space_used', return_value=0), \
+             patch.object(resource, 'getrlimit', return_value=(-1, -1)), \
              patch.object(resource, 'setrlimit', side_effect=[None, ValueError('not allowed')]) as setter:
             with self.assertRaises(RuError) as caught:
                 self.handle_samples(sampled=1.25)
