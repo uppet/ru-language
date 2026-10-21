@@ -17,6 +17,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.10", "3.12", "3.14"]
+        shard: [0, 1, 2]
     env:
       CC: gcc
     steps:
@@ -30,8 +31,11 @@ jobs:
         run: |
           node --version
           node -e 'if (Number(process.versions.node.split(".")[0]) < 18) process.exit(1)'
-      - name: Run regression tests
-        run: make test
+      - name: Run regression shard
+        run: python tools/run_test_shard.py --shard ${{ matrix.shard }} --count 3 --failfast
+      - name: Record interpreter benchmarks
+        if: matrix.shard == 0
+        run: python tools/benchmark.py
       - name: Test offline notebook editor
         run: node --test rushu/tests/*.mjs
       - name: Build all examples
