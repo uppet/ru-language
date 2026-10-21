@@ -42,6 +42,13 @@ jobs:
         run: git diff --exit-code -- experiments/mi_kernel/generated
       - name: C and JS oracle checks (Linux additionally requires UBSan)
         run: python experiments/mi_kernel/test_kernel.py
+      - name: Real NativeMemory readonly bridge (native Windows or POSIX owner test adapter)
+        run: python experiments/mi_borrow/test_bridge.py
+      - name: Real NativeMemory bridge UBSan (Linux only)
+        if: runner.os == 'Linux'
+        env:
+          MI_UBSAN: "1"
+        run: python experiments/mi_borrow/test_bridge.py
       - name: Ordinary Ru C and JS correctness
         run: python experiments/mi_kernel/verify_baseline.py
       - name: Existing FFI descriptor regressions
@@ -62,3 +69,4 @@ jobs:
             experiments/mi_kernel/benchmark-output/
             experiments/mi_kernel/generated/
             experiments/mi_kernel/provenance.json
+            experiments/mi_borrow/test-output/
