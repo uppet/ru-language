@@ -1,5 +1,6 @@
 """Reproducible independent oracle + C/JS semantic tests, standard library only."""
 import copy
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -95,6 +96,21 @@ def cases():
     return rows
 
 class KernelTests(unittest.TestCase):
+    def test_generated_raw_bytes_are_reproducible(self):
+        # Git normalizes CRLF: compare raw bytes, not just git diff text.
+        expected = {
+            'kernel.h': '00b73730803725dc361df8f18a507b78fee84a9dcf391346f35f60182df3a6c4',
+            'kernel.js': '9f772e42c3ce3cc911d1b1962080f1cd710a9bc8b38c0cff58956a4c357cb1c0',
+            'metadata.json': '73eeaad8026c733e27bba82f0d74db9bd9ac1280f4877304b32e677b6af12ac5',
+        }
+        generate.generate()
+        for name, digest in expected.items():
+            data = (HERE/'generated'/name).read_bytes()
+            with self.subTest(name=name):
+                data.decode('utf-8', errors='strict')
+                self.assertNotIn(b'\r', data)
+                self.assertEqual(hashlib.sha256(data).hexdigest(), digest)
+
     def test_legacy_types_and_signature_reused(self):
         new=generate.signature('非负32',['非负8','非负32'])
         old=generate.NativeCSignature('u32',('u8','u32'))

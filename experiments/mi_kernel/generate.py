@@ -192,9 +192,9 @@ function scan(owner, offset, length, seed=0) {
 }
 module.exports = {Owner, scan, truthU32};
 '''
-    (out/'kernel.h').write_text(c);(out/'kernel.js').write_text(js)
+    (out/'kernel.h').write_text(c, encoding="utf-8", newline="\n");(out/'kernel.js').write_text(js, encoding="utf-8", newline="\n")
     sig=signature('非负32', ['非负8','非负32'])
     metadata={'experimental':True,'schema':1,'types':{name:{'legacy':t,'id':PRIMITIVE_IDS[t], 'c':C_TYPES[t], 'size':PRIMITIVES[t].size,'alignment':PRIMITIVES[t].alignment} for name,t in TYPES.items()}, 'scalar_signature_example':{'result':sig.result,'params':sig.params}, 'effects':['borrow-read','may-fail'],'abi_note':'mi_kernel uses internal status; not exported FFI','hot_c_gc_allocations':0,'hot_c_boxings':0,'hot_c_input_copied_bytes':0,'ordinary_boundary':'experimental owner wrapper; no Ru AST/CLI integration'}
-    (out/'metadata.json').write_text(json.dumps(metadata,ensure_ascii=False,indent=2)+'\n')
+    (out/'metadata.json').write_text(json.dumps(metadata,ensure_ascii=False,indent=2)+'\n', encoding='utf-8', newline='\n')
 
 if __name__=='__main__': generate()
