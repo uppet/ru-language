@@ -95,10 +95,19 @@ static void test_snapshot(RuNativeTrap *trap)
         assert((uintptr_t)trap->roots[i-1].heap < (uintptr_t)trap->roots[i].heap);
     test_oracle();
 }
+/* Traps under test come from the production freelist allocator: rn_trap_new
+ * pops a recycled node (or calloc's one) and rn_trap_release returns roots
+ * memory and recycles the node.  Tests that own a trap outright can simply
+ * free it; tests that interleave with dispatch use the release pair. */
+static RuNativeTrap *test_trap_new(void)
+{
+    return rn_trap_new();
+}
 static void test_free_trap(RuNativeTrap *trap)
 {
     ru_native_trap = trap->previous;
-    free(trap->roots); free(trap);
+    free(trap->roots);
+    free(trap);
 }
 '''
 
@@ -177,7 +186,7 @@ class NativeTransientRootRuntimeTests(unittest.TestCase):
     v_drop(b); assert(test_oracle() == 2); /* middle removal */
     v_drop(c); assert(test_oracle() == 1); /* head removal */
     v_drop(a); assert(test_oracle() == 0); /* tail/last removal */
-    empty = rn_trap_new(); test_snapshot(empty); assert(!empty->root_count);
+    empty = test_trap_new(); test_snapshot(empty); assert(!empty->root_count);
     rn_trap_restore(empty); test_snapshot(empty); test_free_trap(empty);
     a = v_copy(a); b = v_copy(b); c = v_copy(c);
     assert(test_oracle() == 3);
@@ -255,7 +264,7 @@ class NativeTransientRootRuntimeTests(unittest.TestCase):
     v_pin(a);
     outer_scratch = ru_scratch_alloc(17, 0);
     ru_call_depth = 7; ru_source = saved_source;
-    outer = rn_trap_new(); test_snapshot(outer); ru_native_trap = outer;
+    outer = test_trap_new(); test_snapshot(outer); ru_native_trap = outer;
     assert(outer->root_count == 3 && !outer->previous);
     v_copy(a); v_pin(b); v_unpin(permanent);
     born = v_str("born-during-callback"); v_pin(born);
@@ -263,7 +272,7 @@ class NativeTransientRootRuntimeTests(unittest.TestCase):
     live_before = ru_live; ru_gc(); assert(ru_live == live_before - 2);
     ru_next_gc = SIZE_MAX;
     ru_scratch_alloc(19, 0);
-    inner = rn_trap_new(); test_snapshot(inner); ru_native_trap = inner;
+    inner = test_trap_new(); test_snapshot(inner); ru_native_trap = inner;
     assert(inner != outer && inner->roots != outer->roots && inner->previous == outer);
     assert(inner->root_count == 4 && outer->root_count == 3);
     v_copy(a); v_copy(a); v_copy(graph); v_unpin(b);
@@ -325,7 +334,7 @@ class NativeTransientRootRuntimeTests(unittest.TestCase):
         v_drop(ignored); v_drop(child);
     }
     before = ru_live; test_snapshot_visits = 0;
-    trap = rn_trap_new(); test_snapshot(trap); small = test_snapshot_visits;
+    trap = test_trap_new(); test_snapshot(trap); small = test_snapshot_visits;
     assert(trap->root_count == 1); test_free_trap(trap);
     for (i = 0; i < 4096; ++i) {
         Val ignored;
@@ -333,7 +342,7 @@ class NativeTransientRootRuntimeTests(unittest.TestCase):
         v_drop(ignored); v_drop(child);
     }
     test_snapshot_visits = 0;
-    trap = rn_trap_new(); test_snapshot(trap); large = test_snapshot_visits;
+    trap = test_trap_new(); test_snapshot(trap); large = test_snapshot_visits;
     assert(trap->root_count == 1 && ru_live == before + 4096);
     assert(small == 2 && large == small);
     printf("fixed-R=1 small-H=%zu large-H=%zu visits=%zu,%zu\n", before, ru_live, small, large);
@@ -384,31 +393,20 @@ static void test_fatal_exit(void)
         def instrument(source):
             start, end = function_span(source, 'rn_trap_new')
             snapshot = source[start:end]
+            # The freelist recycles trap nodes: calloc fires only on a miss,
+            # and malloc exactly once for the roots snapshot.  Both failure
+            # paths return the node to the freelist before reporting NULL.
             self.assertEqual(snapshot.count('calloc('), 1)
             self.assertEqual(snapshot.count('malloc('), 1)
-            snapshot = snapshot.replace('calloc(', 'test_trap_calloc(')
             snapshot = snapshot.replace('malloc(', 'test_trap_malloc(')
             wrappers = r'''
 static int test_trap_oom_stage;
-static size_t test_trap_allocations, test_trap_discards;
-static void *test_trap_calloc(size_t n, size_t size)
-{
-    void *result;
-    if (test_trap_oom_stage == 1) { test_trap_oom_stage = 0; return NULL; }
-    result = calloc(n, size); test_trap_allocations += result != NULL; return result;
-}
 static void *test_trap_malloc(size_t size)
 {
-    if (test_trap_oom_stage == 2) { test_trap_oom_stage = 0; return NULL; }
+    if (test_trap_oom_stage) { test_trap_oom_stage = 0; return NULL; }
     return malloc(size);
 }
-static void test_trap_discard(void *trap)
-{
-    assert(trap); ++test_trap_discards; free(trap);
-}
 '''
-            self.assertIn('free(trap);', snapshot)
-            snapshot = snapshot.replace('free(trap);', 'test_trap_discard(trap);')
             source = source.replace('#include <string.h>', '#include <string.h>\n#include <assert.h>', 1)
             start, end = function_span(source, 'rn_trap_new')
             return source[:start] + wrappers + snapshot + source[end:]
@@ -440,13 +438,26 @@ static Val test_callback_code(Env *env, Val self, int line, Val *args)
     }
     if (test_callback_mode == 4 || test_callback_mode == 5) {
         RuNativeRaw answer;
-        size_t count = test_oracle();
-        test_trap_oom_stage = test_callback_mode - 3;
-        answer = ru_native_callback_dispatch(test_callback_slot, 0, NULL);
-        assert(answer.i == -73 && ru_native_trap == outer);
-        assert(test_oracle() == count && !test_trap_oom_stage);
-        /* The old outer boundary remains live after inner snapshot OOM. */
-        ru_fail(33, "outer-trap-survives-inner-oom");
+        Val extras[65]; size_t i;
+        int was_oom = (test_callback_mode == 4);
+        /* Roots always come from malloc in the freelist design, whatever the
+         * transient-root count.  Mode 4 OOMs that malloc; mode 5 succeeds.
+         * Clear the mode first so the nested callback takes the plain path. */
+        test_callback_mode = 0;
+        for (i = 0; i < 65; ++i) { extras[i] = v_str("extra-root"); v_copy(extras[i]); }
+        {
+            size_t count = test_oracle();
+            test_trap_oom_stage = was_oom;
+            answer = ru_native_callback_dispatch(test_callback_slot, 0, NULL);
+            assert(test_oracle() == count && !test_trap_oom_stage);
+        }
+        for (i = 0; i < 65; ++i) v_drop(extras[i]);
+        if (was_oom) {
+            assert(answer.i == -73 && ru_native_trap == outer);
+            ru_fail(33, "outer-trap-survives-inner-oom");
+        }
+        assert(answer.i == 42 && ru_native_trap == outer);
+        ru_fail(33, "outer-trap-survives-inner-malloc");
     }
     return v_num(42);
 }
@@ -459,7 +470,7 @@ static Val test_callback_code(Env *env, Val self, int line, Val *args)
     RuNativeRaw answer;
     RuNativeTrap *outer;
     size_t roots, permanent;
-    int mode, stage;
+    int mode;
     test_begin(); ru_native_builtins(NULL); ru_native_depth = 1;
     signature = rn_new(RN_SIGNATURE, 0); sig = (RuNative *)signature.heap;
     sig->as.signature.id = 0; sig->as.signature.count = 0;
@@ -486,23 +497,34 @@ static Val test_callback_code(Env *env, Val self, int line, Val *args)
         assert(callback.heap->roots == roots && callback.heap->permanent_roots == permanent);
         if (mode == 1) assert(strstr(ru_native_callback_error, "callback-runtime-error"));
         if (mode == 2) assert(strstr(ru_native_callback_error, "callback-panic"));
-        if (mode >= 4) assert(strstr(ru_native_callback_error, "内存不足"));
+        if (mode == 4) assert(strstr(ru_native_callback_error, "内存不足"));
+        if (mode == 5) assert(strstr(ru_native_callback_error, "outer-trap-survives-inner-malloc"));
         assert(!ru_panicking); test_oracle();
     }
-    /* Fail each allocation before entry under an already-active outer trap. */
-    outer = rn_trap_new(); assert(outer); ru_native_trap = outer;
-    for (stage = 1; stage <= 2; ++stage) {
-        int calls = test_callback_calls;
-        size_t allocations = test_trap_allocations, discards = test_trap_discards;
-        ru_native_callback_error[0] = 0; test_trap_oom_stage = stage;
+    /* With the trap node on the freelist, the roots malloc is the only
+     * allocation that can still fail.  Stage 1 covers the success path;
+     * stage 2 OOMs the roots malloc under an active outer trap.  The 65
+     * extras mirror the callback-driven modes above and pin the snapshot
+     * at a non-trivial size. */
+    outer = test_trap_new(); assert(outer); ru_native_trap = outer;
+    {
+        Val extras[65]; size_t i;
+        for (i = 0; i < 65; ++i) { extras[i] = v_str("extra-root"); v_copy(extras[i]); }
+        test_callback_mode = 0; ru_native_callback_error[0] = 0;
         answer = ru_native_callback_dispatch(test_callback_slot, 0, NULL);
-        assert(answer.i == -73 && test_callback_calls == calls);
-        assert(ru_native_trap == outer && !test_trap_oom_stage);
+        assert(answer.i == 42 && !ru_native_callback_error[0]);
+        assert(ru_native_trap == outer);
         assert(!ru_native_callback_depth && !object->as.callback.active);
         assert(callback.heap->roots == roots && callback.heap->permanent_roots == permanent);
-        assert(test_trap_allocations - allocations == (size_t)(stage == 2));
-        assert(test_trap_discards - discards == (size_t)(stage == 2));
+        test_trap_oom_stage = 1;
+        ru_native_callback_error[0] = 0;
+        answer = ru_native_callback_dispatch(test_callback_slot, 0, NULL);
+        assert(answer.i == -73 && !test_trap_oom_stage);
+        assert(ru_native_trap == outer);
+        assert(!ru_native_callback_depth && !object->as.callback.active);
+        assert(callback.heap->roots == roots && callback.heap->permanent_roots == permanent);
         assert(strstr(ru_native_callback_error, "内存不足")); test_oracle();
+        for (i = 0; i < 65; ++i) v_drop(extras[i]);
     }
     test_free_trap(outer);
     ru_native_callback_error[0] = 0; test_callback_mode = 0;
@@ -545,7 +567,7 @@ static Val test_callback_code(Env *env, Val self, int line, Val *args)
         }
         test_oracle();
         if (round % 31 == 0) {
-            RuNativeTrap *trap = rn_trap_new();
+            RuNativeTrap *trap = test_trap_new();
             test_snapshot(trap);
             v_copy(values[i]); v_pin(values[(i+1)%32]);
             values[(i+2)%32].heap->mark = 2;
@@ -604,7 +626,7 @@ static Val test_callback_code(Env *env, Val self, int line, Val *args)
       assert(chain_len == COUNT + 1); }
     transient_total = test_oracle();
     test_snapshot_visits = 0;
-    trap = rn_trap_new(); test_snapshot(trap);
+    trap = test_trap_new(); test_snapshot(trap);
     visits = test_snapshot_visits;
     heaps_before = ru_live;
     assert(trap->root_count == transient_total);
@@ -651,7 +673,7 @@ static void *test_format_realloc(void *data, size_t size)
 
         extra_c = r'''
 /* A separate setjmp-containing function avoids GCC's inlining/clobber warning
- * on rn_trap_new's allocator local, without weakening warnings or production. */
+ * on rn_trap_new's allocator locals, without weakening warnings or production. */
 static void test_throw_from_formatter(Val graph, RuNativeTrap *trap)
 {
     if (setjmp(trap->jump) == 0) {
@@ -669,7 +691,7 @@ static void test_throw_from_formatter(Val graph, RuNativeTrap *trap)
     text = v_str(long_text); child = v_array(1, &text, 0); v_drop(text);
     graph = v_array(1, &child, 0); v_drop(child);
     assert(!child.heap->roots && test_oracle() == 1);
-    trap = rn_trap_new(); test_snapshot(trap); ru_native_trap = trap;
+    trap = test_trap_new(); test_snapshot(trap); ru_native_trap = trap;
     assert(trap->root_count == 1 && trap->roots[0].heap == graph.heap);
     test_format_graph_only = child.heap; test_format_fail = 1;
     test_throw_from_formatter(graph, trap);
