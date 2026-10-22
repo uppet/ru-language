@@ -23,6 +23,43 @@ COMMANDS = {
 }
 
 
+GIT_BASH_JOB = """  windows-git-bash-bootstrap:
+    # Keep this second full bootstrap independent of the LLVM acceptance budget.
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.10"
+      - name: Bootstrap from Windows Git Bash with POSIX search paths
+        shell: bash
+        run: |
+          export INCLUDE='C:/msys64/usr/include/:C:/msys64/include/:'
+          export LIB='C:/msys64/usr/lib/:'
+          export CPATH='/usr/include:/mingw64/include'
+          unset PYTHONUTF8 PYTHONIOENCODING
+          python tools/prepare_workspace.py --with-llvm
+          python tools/bootstrap.py verify --directory bin/bootstrap/git-bash
+          python tools/bootstrap.py build examples/hello.ru --compiler bin/bootstrap/git-bash/stage3.exe -o bin/hello-git-bash.exe
+          ./bin/hello-git-bash.exe
+          python tools/build_rushu_kernel.py --compiler bin/bootstrap/git-bash/stage3.exe -o bin/rushu/git-bash-kernel.exe
+          ./bin/rushu/git-bash-kernel.exe examples/factorial.ru
+"""
+
+
+def check_git_bash_contract(source):
+    """Pin the standalone Windows path-variant acceptance job, not just its name."""
+    marker = "  windows-git-bash-bootstrap:\n"
+    if source.count(marker) != 1:
+        raise AssertionError("missing or duplicate Git Bash acceptance job")
+    body = re.split(r"^  [a-zA-Z]", source.split(marker, 1)[1], maxsplit=1, flags=re.MULTILINE)[0]
+    if marker + body != GIT_BASH_JOB:
+        raise AssertionError("Git Bash acceptance setup, budget, shell and commands must be preserved")
+
+
 def check_contract(source):
     """Deliberately narrow format check, not a general-purpose YAML parser."""
     for name, command in COMMANDS.items():
@@ -68,6 +105,39 @@ class CIExitContractTests(unittest.TestCase):
         self.assertIn('steps.later_success.outcome', wrapper)
         self.assertIn('steps.later_success.conclusion', wrapper)
         self.assertNotIn('continue-on-error:', acceptance)
+
+    def test_git_bash_acceptance_is_independent_and_fail_fast(self):
+        # Explicit shell: bash uses Actions' -e -o pipefail wrapper. Unlike
+        # PowerShell, this multi-command step stops at the first failed process.
+        check_git_bash_contract(self.source)
+
+    def test_git_bash_acceptance_mutations_are_rejected(self):
+        mutations = [
+            self.source.replace(GIT_BASH_JOB, ''),
+            self.source.replace(GIT_BASH_JOB, GIT_BASH_JOB + GIT_BASH_JOB),
+        ]
+        for old, new in [
+            ('timeout-minutes: 20', 'timeout-minutes: 30'),
+            ('runs-on: windows-latest', 'runs-on: ubuntu-22.04'),
+            ('python-version: "3.10"', 'python-version: "3.14"'),
+            ('shell: bash', 'shell: pwsh'),
+            ('        run: |', '        continue-on-error: true\n        run: |'),
+            ('    steps:', '    if: false\n    steps:'),
+            ('        shell: bash', '        if: false\n        shell: bash'),
+            ('export CPATH=', '# export CPATH='),
+            ('unset PYTHONUTF8 PYTHONIOENCODING', 'echo keep encodings'),
+        ]:
+            mutations.append(self.source.replace(GIT_BASH_JOB, GIT_BASH_JOB.replace(old, new)))
+        # Every actual native command is required, including the preparation,
+        # stage3 example and notebook kernel executions after self-compilation.
+        for line in GIT_BASH_JOB.splitlines(keepends=True):
+            if line.startswith(('          python ', '          ./bin/')):
+                mutations.append(self.source.replace(GIT_BASH_JOB, GIT_BASH_JOB.replace(line, '')))
+        for index, unsafe in enumerate(mutations):
+            with self.subTest(mutation=index):
+                self.assertNotEqual(unsafe, self.source)
+                with self.assertRaises(AssertionError):
+                    check_git_bash_contract(unsafe)
 
     def test_required_steps_cannot_continue_on_error(self):
         for name in COMMANDS:

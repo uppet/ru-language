@@ -52,6 +52,7 @@ class MockResponses:
         self.response = response_for() if response is None else response
         self.status, self.headers, self.delay, self.raw = status, headers or {}, delay, raw
         self.requests = []
+        self.request_received = threading.Event()
 
     def __enter__(self):
         owner = self
@@ -60,6 +61,7 @@ class MockResponses:
             def do_POST(self):
                 body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
                 owner.requests.append((self.path, dict(self.headers), json.loads(body)))
+                owner.request_received.set()
                 if owner.delay:
                     time.sleep(owner.delay)
                 body = owner.raw if owner.raw is not None else json.dumps(owner.response, ensure_ascii=False).encode()
@@ -635,10 +637,30 @@ class LocalResponsesTests(TemporaryGeneration):
 
     def test_timeout_no_retry_and_no_partial_output(self):
         with MockResponses(delay=0.15) as server:
+            # server_close must join this handler even after the client times out.
+            server.server.daemon_threads = False
             with self.assertRaisesRegex(GenerationError, "超时"):
                 generate(self.document, timeout=0.02, environ=self.local_env(server))
+            # The client may time out before the handler thread is scheduled.
+            # Wait only for observation; do not extend the production timeout.
+            self.assertTrue(server.request_received.wait(2), "mock server did not receive the request")
             self.assertEqual(len(server.requests), 1)
         self.assertFalse((self.root / "wish.generated.ru").exists())
+        self.assertEqual(list(self.root.glob(".ru-generate-*")), [])
+
+    def test_transport_timeout_is_not_retried_or_partially_published(self):
+        # Prove the no-retry contract independently of server thread timing.
+        with patch("rulang.generation.urlrequest.build_opener") as build_opener:
+            transport = build_opener.return_value.open
+            transport.side_effect = TimeoutError("injected transport timeout")
+            with self.assertRaisesRegex(GenerationError, "超时"):
+                generate(self.document, timeout=0.02, environ={**self.env, "RU_LLM_API_KEY": DUMMY,
+                         "RU_LLM_BASE_URL": "http://127.0.0.1:1/api/v1"})
+            build_opener.assert_called_once()
+            transport.assert_called_once()
+            self.assertEqual(transport.call_args.kwargs["timeout"], 0.02)
+        self.assertFalse((self.root / "wish.generated.ru").exists())
+        self.assertEqual(list(self.root.glob(".ru-generate-*")), [])
 
     def test_invalid_timeout_never_requests(self):
         with MockResponses() as server:
