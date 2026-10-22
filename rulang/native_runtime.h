@@ -759,8 +759,9 @@ static Val rn_memory_read(RuNative *memory, Val name, int line)
 }
 static Val rn_memory_write(RuNative *memory, Val name, Val value, int line)
 {
-    RuNativeField *field = rn_field(memory->as.memory.type, name, line);
+    RuNativeField *field;
     rn_memory_check(memory, line);
+    field = rn_field(memory->as.memory.type, name, line);
     rn_memory_check_mutation(memory, line);
     if (field->type->as.type.code == RN_STRUCT) {
         RuNative *source = rn_expect(value, RN_MEMORY, line, "嵌套结构写入需要同类型缓冲");
