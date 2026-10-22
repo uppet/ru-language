@@ -13,12 +13,27 @@ TRIPLE = 'x86_64-pc-windows-msvc'
 MARKER = '/* RU_BOOTSTRAP_NATIVE_V1 '+TRIPLE+' */\n'
 
 
+def link_trace(args):
+    def quote(arg):
+        return '"'+''.join(('\\'+c if c in ('"','\\','$') else c) for c in arg)+'"'
+    return ('clang version 14.0.6\nTarget: '+TRIPLE+'\nThread model: posix\nInstalledDir: fixture\n '+
+            ' '.join(quote(arg) for arg in args)+'\r\n').encode('utf-8')
+
+
 class FakeToolchain:
+    clang = ['fixture-clang']
+    @staticmethod
+    def run(command, input=None):
+        return ''
     triple = TRIPLE
     data_layout = 'e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128'
     def compile(self, ir, runtime, stage):
         self.runtime = runtime
         output, standalone = stage/'native.exe', stage/'linked.ll'
+        if getattr(self, 'link_flags', None):
+            obj = stage/'program.o'
+            obj.write_bytes(b'owned-object')
+            self.run(self.clang+[str(obj), '-o', str(output), *self.link_flags])
         output.write_bytes(b'MZfake-toolchain')
         standalone.write_bytes(ir.encode('utf-8'))
         return output, standalone
@@ -37,8 +52,16 @@ class BootstrapNativeHostTests(unittest.TestCase):
         self.metadata = MARKER+'/* typed thunks emitted by native compiler */\n'
         self.ir = 'target triple = "'+TRIPLE+'"\n'
         self.calls = []
+        self.link_calls = []
 
     def frontend(self, args, **kwargs):
+        if args[0] == 'fixture-clang':
+            self.link_calls.append((list(args), dict(kwargs)))
+            if args[-1] == '-###':
+                flags = [x for x in args if x.startswith(('-fuse-ld=', '-B'))]
+                path = Path(flags[1][2:])/flags[0].split('=',1)[1]
+                return SimpleNamespace(returncode=0, stdout=b'', stderr=link_trace([str(path), '-out:fixture']))
+            return SimpleNamespace(returncode=0, stdout=b'', stderr=b'')
         self.calls.append(args)
         Path(args[2]).write_text(self.ir,encoding='utf-8')
         Path(args[3]).write_text(self.metadata,encoding='utf-8')
@@ -105,9 +128,30 @@ class BootstrapNativeHostTests(unittest.TestCase):
         proof = self.root/'proof.json'
         evidence = self.invoke(linker=linker, proof=proof)
         self.assertEqual(evidence['linker'], bootstrap.file_identity(linker))
-        self.assertEqual(evidence['toolchain']['link_flags'], ['-fuse-ld='+str(linker.resolve())])
+        self.assertEqual(evidence['toolchain']['link_flags'], bootstrap.explicit_linker_flags(bootstrap.file_identity(linker)))
         self.assertIn(evidence['linker'], evidence['host_inputs'])
         self.assertFalse(hasattr(self.toolchain, 'link_flags'))
+        self.assertEqual(len(self.link_calls), 2)
+        dry, actual = self.link_calls
+        self.assertEqual(dry[0], actual[0]+['-###'])
+        self.assertEqual(dry[1], actual[1])
+        self.assertEqual(evidence['linker_selection']['command'], actual[0])
+
+    def test_wrong_dry_run_selection_never_executes_link_or_publishes(self):
+        linker = self.root/'link.exe';linker.write_bytes(b'original')
+        original = self.frontend
+        def wrong(args, **kwargs):
+            result = original(args, **kwargs)
+            if args[-1] == '-###':
+                result.stderr = link_trace(['other-link.exe',str(linker)])
+            return result
+        self.frontend = wrong
+        with self.assertRaises(ValueError):
+            self.invoke(linker=linker,proof=self.root/'proof.json')
+        self.assertEqual(len(self.link_calls),1)
+        self.assertEqual(self.link_calls[0][0][-1],'-###')
+        self.assertFalse((self.root/'proof.json').exists())
+        self.assertEqual(self.output.read_bytes(),b'preserved')
 
     def test_no_linker_preserves_default_behavior(self):
         evidence = self.invoke()
@@ -360,6 +404,74 @@ class BootstrapNativeHostTests(unittest.TestCase):
                 self.invoke(proof=proof,keep_frontend=True)
         self.assertEqual(proof.read_bytes(),b'old-proof')
         self.assertEqual(self.output.read_bytes(),b'preserved')
+
+
+
+class PinnedLinkerSelectionTests(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.root = Path(temp.name).resolve()
+        self.linker = self.root/'sp ace 汉😀$'/'link.exe'
+        self.linker.parent.mkdir()
+        self.linker.write_bytes(b'original-linker')
+        self.record = bootstrap.file_identity(self.linker)
+        self.command = ['clang', str(self.root/'p.obj'), '-o', str(self.root/'p.exe'),
+                        *bootstrap.explicit_linker_flags(self.record)]
+
+    def probe(self, raw=None, mutate=None):
+        raw = raw if raw is not None else link_trace([str(self.linker), '-out:p.exe'])
+        def run(*args, **kwargs):
+            self.assertEqual(args[0], self.command+['-###'])
+            self.assertEqual(kwargs['env'], {'OWNED': 'yes'})
+            self.assertEqual(kwargs['cwd'], str(self.root))
+            if mutate:
+                mutate()
+            return SimpleNamespace(returncode=0, stderr=raw, stdout=b'')
+        with patch.object(bootstrap.subprocess, 'run', side_effect=run):
+            return bootstrap.inspect_linker_command(self.command, self.record, {'OWNED':'yes'}, str(self.root))
+
+    def test_trace_strict_clang14_escape_roundtrip_and_raw_hash(self):
+        raw = link_trace([str(self.linker), 'quote"back\\slash$dollar', '-out:p.exe'])
+        result = self.probe(raw)
+        self.assertEqual(result['selected_command'][0], str(self.linker))
+        self.assertEqual(result['dry_run_stderr_sha256'], bootstrap.digest(raw))
+        self.assertEqual(result['dry_run_stderr_utf8'].encode(), raw)
+        self.assertEqual(result['command'], self.command)
+
+    def test_zero_two_malformed_and_error_diagnostics_rejected(self):
+        good = link_trace([str(self.linker), '-out:p.exe'])
+        for raw in (b'', good+good.splitlines()[-1]+b'\n', good+b'clang: error: bad\n',
+                    good.replace(b'"-out:p.exe"', b'"bad\\n"'),
+                    good.replace(b'"-out:p.exe"', b'"truncated'),
+                    good.replace(b'"-out:p.exe"', b'"@hidden.rsp"'),
+                    good.replace(b'"-out:p.exe"', b'"ok"tail'),
+                    good.replace(b'"-out:p.exe"', b'"control\x00"'),
+                    good.replace(b'clang version 14.', b'clang version 15.')):
+            with self.subTest(raw=raw[-80:]), self.assertRaises((ValueError, UnicodeError)):
+                self.probe(raw)
+
+    def test_same_basename_wrong_parent_or_target_prefix_no_fallback(self):
+        other = self.root/'wrong'/'link.exe'
+        other.parent.mkdir();other.write_bytes(self.linker.read_bytes())
+        for path in (str(other), TRIPLE+'-'+str(self.linker), 'link.exe'):
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                self.probe(link_trace([path, str(self.linker)]))
+
+    def test_replaced_or_missing_linker_during_probe_refused(self):
+        for mutation in (lambda:self.linker.write_bytes(b'changed'), lambda:self.linker.unlink()):
+            self.linker.write_bytes(b'original-linker')
+            with self.assertRaises((ValueError, RuntimeError, OSError)):
+                self.probe(mutate=mutation)
+
+    def test_duplicate_or_conflicting_selector_rejected_before_probe(self):
+        for flag in ('-B/other', '-fuse-ld=lld', '--ld-path=/other', '-###', '@other.rsp'):
+            self.command.append(flag)
+            with patch.object(bootstrap.subprocess, 'run') as run:
+                with self.assertRaises(ValueError):
+                    bootstrap.inspect_linker_command(self.command,self.record,{},str(self.root))
+                run.assert_not_called()
+            self.command.pop()
 
 
 if __name__ == '__main__':

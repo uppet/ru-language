@@ -49,6 +49,92 @@ def verify_identities(identities):
             raise RuntimeError('build input changed before publication: ' + identity['path'])
 
 
+def explicit_linker_flags(record):
+    path = Path(record['path'])
+    return ['-fuse-ld='+path.name, '-B'+str(path.parent)]
+
+
+def parse_linker_trace(raw):
+    """LLVM 14 Command::Print/printArg, not shell or Windows command parsing.
+
+    -### quotes every argument and escapes only quote, backslash and dollar.
+    This gate accepts only one pure-object link command, never response files.
+    """
+    if not isinstance(raw, bytes) or len(raw) > 1024 * 1024:
+        raise ValueError('invalid or oversized linker trace')
+    commands, header = [], []
+    for line in raw.decode('utf-8', errors='strict').splitlines():
+        line = line.strip()
+        if not line.startswith('"'):
+            if line:
+                header.append(line)
+            continue
+        args = []
+        while line:
+            if not line.startswith('"'):
+                raise ValueError('unquoted linker trace argument')
+            value, pos = '', 1
+            while pos < len(line) and line[pos] != '"':
+                char = line[pos]
+                if char == '\\':
+                    pos += 1
+                    if pos >= len(line) or line[pos] not in ('"', '\\', '$'):
+                        raise ValueError('unknown linker trace escape')
+                    char = line[pos]
+                if ord(char) < 32 or ord(char) == 127:
+                    raise ValueError('control character in linker trace')
+                value += char
+                pos += 1
+            if pos >= len(line):
+                raise ValueError('unterminated linker trace argument')
+            if value.startswith('@'):
+                raise ValueError('response files not supported by pinned linker gate')
+            args.append(value)
+            line = line[pos+1:]
+            if line and not line.startswith(' '):
+                raise ValueError('invalid linker trace argument boundary')
+            line = line.lstrip(' ')
+        commands.append(args)
+    if (len(header) != 4 or not re.fullmatch(r'clang version 14\.[^\r\n]+', header[0])
+            or not re.fullmatch(r'Target: x86_64-pc-windows-msvc(?:[0-9]+(?:\.[0-9]+)*)?', header[1])
+            or header[2] not in ('Thread model: posix', 'Thread model: win32')
+            or not header[3].startswith('InstalledDir: ') or not header[3][14:]):
+        raise ValueError('unexpected clang14 dry-run diagnostics/header')
+    if len(commands) != 1 or not commands[0] or not commands[0][0]:
+        raise ValueError('expected exactly one pure-object linker command')
+    return commands[0]
+
+
+def inspect_linker_command(command, record, environment, cwd, expected_triple=None):
+    command = list(map(str, command))
+    flags = explicit_linker_flags(record)
+    selectors = [arg for arg in command if arg.startswith(('-fuse-ld', '--ld-path', '-B'))]
+    if selectors != flags or '-###' in command or any(arg.startswith('@') for arg in command):
+        raise ValueError('conflicting or implicit linker selection')
+    if file_identity(record['path']) != record:
+        raise RuntimeError('linker input changed before dry run')
+    probe = subprocess.run(command+['-###'], capture_output=True, env=environment,
+                           cwd=cwd, timeout=120)
+    if probe.returncode:
+        raise RuntimeError('linker dry run failed: '+probe.stderr.decode('utf-8', errors='replace'))
+    selected = parse_linker_trace(probe.stderr)
+    if expected_triple is not None and ('Target: '+expected_triple) not in probe.stderr.decode('utf-8').splitlines():
+        raise ValueError('linker dry-run target differs from compilation target')
+    path = Path(selected[0])
+    if (not path.is_absolute() or path.resolve() != Path(record['path'])
+            or file_identity(path) != record):
+        raise ValueError('clang selected a different linker; fallback forbidden: '+json.dumps(selected, ensure_ascii=False))
+    if file_identity(record['path']) != record:
+        raise RuntimeError('linker input changed during dry run')
+    return {'schema': 'ru-pinned-linker-selection-v1', 'command': command,
+            'dry_run_command': command+['-###'], 'selected_command': selected,
+            'linker': record, 'cwd': str(Path(cwd).resolve()),
+            'environment_sha256': digest(json.dumps(sorted(environment.items()), ensure_ascii=False).encode('utf-8')),
+            'dry_run_stderr_utf8': probe.stderr.decode('utf-8', errors='strict'),
+            'dry_run_stderr_sha256': digest(probe.stderr),
+            'scope': 'driver dry-run selection; same argv/env/cwd execution and pre/post file identity; not OS process tracing or ABA protection'}
+
+
 def publish_artifacts(artifacts):
     """Pre-stage all bytes, then atomically replace each file (not a transaction).
 
@@ -74,6 +160,7 @@ def compile_native(compiler, source, output, toolchain, *, emit_llvm=None, keep_
     """No Python source parser, AST, module loader or code generator is called."""
     compiler, source, output = (Path(path).resolve() for path in (compiler, source, output))
     linker_identity = None
+    linker_selections = []
     if linker is not None:
         if sys.platform != 'win32' or not supported_native_triple(toolchain.triple):
             raise ValueError('explicit bootstrap linker requires Windows x64 MSVC target')
@@ -90,7 +177,7 @@ def compile_native(compiler, source, output, toolchain, *, emit_llvm=None, keep_
         flags = list(getattr(toolchain, 'link_flags', []))
         if any(str(flag).startswith(('-fuse-ld', '--ld-path', '-B')) for flag in flags):
             raise ValueError('toolchain already selects a linker')
-        toolchain.link_flags = [*flags, '-fuse-ld='+linker_identity['path']]
+        toolchain.link_flags = [*flags, *explicit_linker_flags(linker_identity)]
     if allow_native and (sys.platform != 'win32' or not supported_native_triple(toolchain.triple)):
         raise ValueError('bootstrap native v1 requires Windows x86-64 target ' + NATIVE_TRIPLE)
     if allow_native and source.stat().st_size > 64 * 1024 * 1024:
@@ -203,7 +290,30 @@ def compile_native(compiler, source, output, toolchain, *, emit_llvm=None, keep_
                 toolchain = copy(toolchain)
                 toolchain.link_flags = [*toolchain.link_flags, '-Xlinker', '/STACK:16777216']
         runtime = '#define RU_ENABLE_MODULO 1\n'+runtime+'\n'+descriptors
+        if linker_identity:
+            # Only the final object->EXE invocation receives the prefix. The
+            # selected tool is checked before executing the identical argv.
+            from rulang.toolchain_environment import llvm_environment
+            original_run = toolchain.run
+            environment, cwd = llvm_environment(), str(Path.cwd().resolve())
+            def pinned_run(command, input=None):
+                if not any(str(arg).startswith(('-fuse-ld', '--ld-path', '-B')) for arg in command):
+                    return original_run(command, input=input)
+                if input is not None:
+                    raise ValueError('pinned linker accepts object inputs only')
+                selection = inspect_linker_command(command, linker_identity, environment, cwd, toolchain.triple)
+                result = subprocess.run(command, capture_output=True, env=environment, cwd=cwd, timeout=120)
+                if result.returncode:
+                    raise RuntimeError('pinned linker command failed: '+result.stderr.decode('utf-8', errors='replace'))
+                verify_identities([linker_identity])
+                linker_selections.append(selection)
+                return result.stdout.decode('utf-8', errors='replace')
+            toolchain.run = pinned_run
         executable, standalone = toolchain.compile(ir, runtime, stage)
+        if linker_identity:
+            verify_identities([linker_identity])
+        if linker_identity and len(linker_selections) != 1:
+            raise ValueError('explicit linker was not observed exactly once')
         evidence = {'source_ir_sha256': digest(ir.encode()), 'metadata_sha256': digest(descriptors.encode()),
                     'binary_sha256': digest(executable.read_bytes()), 'frontend_seconds': frontend_finished-started,
                     'seconds': time.monotonic()-started,
@@ -213,6 +323,7 @@ def compile_native(compiler, source, output, toolchain, *, emit_llvm=None, keep_
                                                     'sha256': digest(standalone.read_bytes())}},
                     'host_python': sys.version,
                     'linker': linker_identity,
+                    'linker_selection': linker_selections[0] if linker_selections else None,
                     'native_protocol': NATIVE_PROTOCOL if allow_native else None,
                     'compiler': file_identity(compiler), 'source': str(source),
                     'dependencies': dependency_identities,
