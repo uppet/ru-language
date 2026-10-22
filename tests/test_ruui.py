@@ -88,6 +88,8 @@ SLIDER = """
 机 其 跑.
 """
 
+MIXER = (ROOT / 'examples' / 'ruui-mixer.ru').read_text(encoding='utf-8')
+
 
 def texts(commands):
     return [c.get('text') for c in commands if c.get('op') == 'text']
@@ -248,6 +250,89 @@ class RuUIParityTests(unittest.TestCase):
         ]
         events = self.compare(SLIDER, drag)
         self.assertIn('100', texts(events[-1]['commands']))
+
+    @unittest.skipUnless(NODE, 'Node required for JS parity')
+    def test_slider_drag_clamps_to_min(self):
+        events = self.compare(SLIDER)
+        knob = [c for c in events[-1]['commands'] if c.get('op') == 'ellipse']
+        kx, ky = knob[0]['x'] + 8, knob[0]['y'] + 8
+        drag = [
+            {'type': 'mouse_down', 'x': kx, 'y': ky, 'button': 0},
+            {'type': 'mouse_move', 'x': kx - 1000, 'y': ky, 'button': 0},
+            {'type': 'mouse_up', 'x': kx - 1000, 'y': ky, 'button': 0},
+            {'type': 'frame'},
+        ]
+        events = self.compare(SLIDER, drag)
+        self.assertEqual(texts(events[-1]['commands'])[0], '0')
+
+    @unittest.skipUnless(NODE, 'Node required for JS parity')
+    def test_scroll_drag_clamps_and_second_drag_resumes(self):
+        events = self.compare(SCROLL_TAP)
+        first = self.find_rect(events[-1]['commands'], '#4677ff')
+        x, y = self.center(first)
+        fifth = self.find_text(events[-1]['commands'], '戊')
+        # 内容剩余 120：向上猛拖 300，位移钳在 120，戊进入视口可点。
+        drag_up = [
+            {'type': 'mouse_down', 'x': x, 'y': y, 'button': 0},
+            {'type': 'mouse_move', 'x': x, 'y': y - 300, 'button': 0},
+            {'type': 'mouse_up', 'x': x, 'y': y - 300, 'button': 0},
+            {'type': 'frame'},
+        ]
+        events = self.compare(SCROLL_TAP, drag_up + self.tap(fifth['x'], fifth['y'] - 120))
+        self.assertEqual(texts(events[-1]['commands'])[-1], '戊')
+        # 松手后再向下拖 500：从 120 回 0，原位只点得到乙。
+        drag_down = [
+            {'type': 'mouse_down', 'x': x, 'y': y, 'button': 0},
+            {'type': 'mouse_move', 'x': x, 'y': y + 500, 'button': 0},
+            {'type': 'mouse_up', 'x': x, 'y': y + 500, 'button': 0},
+            {'type': 'frame'},
+        ]
+        events = self.compare(SCROLL_TAP, drag_up + drag_down + self.tap(fifth['x'], fifth['y'] - 120))
+        self.assertEqual(texts(events[-1]['commands'])[-1], '乙')
+
+    @unittest.skipUnless(NODE, 'Node required for JS parity')
+    def test_mixer_example_layout_and_equal_width(self):
+        events = self.compare(MIXER)
+        self.assertIn('调色盘', texts(events[-1]['commands']))
+        bars = [c for c in events[-1]['commands']
+                if c.get('op') == 'rect' and c.get('fill') in ('#ff5a5a', '#40c060', '#3f8cff')]
+        self.assertEqual(len(bars), 3, bars)
+        for bar in bars:
+            self.assertTrue(math.isclose(bar['width'], 120.0, abs_tol=1e-9), bars)
+        heights = {bar['fill']: bar['height'] for bar in bars}
+        self.assertEqual(heights, {'#ff5a5a': 40.0, '#40c060': 140.0, '#3f8cff': 90.0})
+        buttons = [c for c in events[-1]['commands']
+                   if c.get('op') == 'rect' and c.get('fill') == '#4677ff']
+        self.assertEqual(len(buttons), 2, buttons)
+        for button in buttons:
+            self.assertTrue(math.isclose(button['width'], 180.0, abs_tol=1e-9), buttons)
+
+    @unittest.skipUnless(NODE, 'Node required for JS parity')
+    def test_mixer_interactions_preset_and_theme(self):
+        events = self.compare(MIXER)
+        knob = [c for c in events[-1]['commands'] if c.get('op') == 'ellipse']
+        kx, ky = knob[0]['x'] + 8, knob[0]['y'] + 8
+        drag_right = [
+            {'type': 'mouse_down', 'x': kx, 'y': ky, 'button': 0},
+            {'type': 'mouse_move', 'x': kx + 1000, 'y': ky, 'button': 0},
+            {'type': 'mouse_up', 'x': kx + 1000, 'y': ky, 'button': 0},
+            {'type': 'frame'},
+        ]
+        events = self.compare(MIXER, drag_right)
+        bar = [c for c in events[-1]['commands'] if c.get('op') == 'rect' and c.get('fill') == '#ff5a5a'][0]
+        self.assertTrue(math.isclose(bar['height'], 255.0, rel_tol=1e-12, abs_tol=1e-12), bar)
+        # 选预设 深海：三柱变为 10/40/120。
+        sea = self.find_text(events[-1]['commands'], '深海')
+        events = self.compare(MIXER, drag_right + self.tap(sea['x'], sea['y']))
+        heights = {c['fill']: c['height'] for c in events[-1]['commands']
+                   if c.get('op') == 'rect' and c.get('fill') in ('#ff5a5a', '#40c060', '#3f8cff')}
+        self.assertEqual(heights, {'#ff5a5a': 10.0, '#40c060': 40.0, '#3f8cff': 120.0})
+        # 主题切换：背景变暗、按钮换标签，两后端一致。
+        toggle = self.find_text(events[-1]['commands'], '切到暗色')
+        events = self.compare(MIXER, drag_right + self.tap(sea['x'], sea['y']) + self.tap(toggle['x'], toggle['y']))
+        background = [c for c in events[-1]['commands'] if c.get('op') == 'background']
+        self.assertEqual(background[0]['color'], '#16181d')
+        self.assertIn('切回亮色', texts(events[-1]['commands']))
 
     def test_toast_and_page_switch(self):
         toast = """
