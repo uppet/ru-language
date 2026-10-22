@@ -4,6 +4,7 @@ import io
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -391,7 +392,14 @@ class LLVMExecutionTests(unittest.TestCase):
         with contextlib.redirect_stderr(error):
             status=main(['check',str(self.source),'--target','llvm'])
         self.assertEqual(status,1)
-        self.assertIn(str(child)+':2:1',error.getvalue())
+        # Windows temporary paths may use an 8.3 alias while the module graph
+        # reports the canonical long path. Check identity, not path spelling;
+        # a wrong dependency with the same basename must still fail.
+        locations = re.findall(r'^(.+):(\d+):(\d+): error:', error.getvalue(), re.MULTILINE)
+        self.assertEqual(len(locations), 1, error.getvalue())
+        diagnostic_path, line, column = locations[0]
+        self.assertTrue(Path(diagnostic_path).samefile(child), error.getvalue())
+        self.assertEqual((line, column), ('2', '1'))
         self.assertIn('未知 2.',error.getvalue())
 
     def test_instrumented_runtime_is_not_instrumented_twice_at_native_codegen(self):
