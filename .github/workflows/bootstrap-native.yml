@@ -1,0 +1,84 @@
+name: Bootstrap native isolated acceptance
+
+on:
+  push:
+    branches: [feature/bootstrap-native-20261022]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  native-bootstrap:
+    # New isolated acceptance only; existing CI and editor performance deadlines
+    # remain unchanged. No release, tag, merge, packaging, or GUI claim here.
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    defaults:
+      run:
+        working-directory: language
+    env:
+      PYTHONUTF8: '1'
+      CC: gcc
+      GIT_CONFIG_COUNT: '1'
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: 'false'
+    steps:
+      - name: Exact candidate checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: language
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.10'
+      - name: Install Linux LLVM 14
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y clang-14 llvm-14
+      - name: Prepare pinned project-local Windows LLVM 14
+        if: runner.os == 'Windows'
+        run: python tools/prepare_workspace.py --with-llvm
+      - name: Check independent C fixture compiler
+        run: gcc --version
+      - name: Check LLVM toolchain
+        run: python -c "from rulang.llvm_toolchain import LLVMToolchain; print(LLVMToolchain().version)"
+      - name: Host safety contracts
+        run: python -m unittest discover -s tests -p test_bootstrap_native_host.py -v
+      - name: Fail-closed CI evidence checker unit tests
+        run: python -m unittest discover -s tests -p test_bootstrap_native_ci.py -v
+      - name: Build stage1, stage2, stage3 and verify existing complete M4 suite
+        run: python tools/bootstrap.py verify --directory bin/bootstrap/native-ci
+      - name: Require 105 actual passes, zero skips, IR/ABI/native fixed point
+        run: python tools/verify_bootstrap_native_ci.py report --directory bin/bootstrap/native-ci
+      - name: Stage3 native frontend positive and fail-closed negative contracts
+        run: python tools/verify_bootstrap_native_ci.py frontend --directory bin/bootstrap/native-ci
+      - name: Real Win64 DLL calls, callbacks, GC, owner, reentry and errors
+        if: runner.os == 'Windows'
+        run: python tools/verify_bootstrap_native_ci.py windows --directory bin/bootstrap/native-ci
+      - name: Checkout exact public editor baseline, not current main or wij
+        if: runner.os == 'Windows'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: uppet/ru_notepad
+          ref: d964ea9f7e27065aa5bbcced8d6c7526a6224dd1
+          path: editor
+          persist-credentials: false
+      - name: Stage3 complete d964 editor graph and LLVM console link (not GUI acceptance)
+        if: runner.os == 'Windows'
+        run: python tools/verify_bootstrap_native_ci.py editor --directory bin/bootstrap/native-ci --editor-root ../editor
+      - name: Preserve native build identities and partial evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: bootstrap-native-${{ matrix.os }}-${{ github.sha }}
+          path: language/bin/bootstrap/native-ci/
+          if-no-files-found: error
+          retention-days: 14
