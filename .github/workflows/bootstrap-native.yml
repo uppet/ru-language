@@ -99,8 +99,8 @@ jobs:
       GIT_CONFIG_COUNT: '1'
       GIT_CONFIG_KEY_0: core.autocrlf
       GIT_CONFIG_VALUE_0: 'false'
-      EDITOR_COMMIT: def1d83189c4584a66b0ea6fdb189a92ae971d8a
-      EDITOR_TREE: 21c5e92c130a890cea1e24aaaff6367555e44ba4
+      EDITOR_COMMIT: e03dcd1601c8f52bf81a4fea0940f80840cda666
+      EDITOR_TREE: 3f86832c1d513b93b6584beb4483f2b3a7da4543
     steps:
       - name: Exact language second-stage checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -111,7 +111,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: uppet/ru_notepad
-          ref: def1d83189c4584a66b0ea6fdb189a92ae971d8a
+          ref: e03dcd1601c8f52bf81a4fea0940f80840cda666
           path: editor-bootstrap
           fetch-depth: 0
           persist-credentials: false
