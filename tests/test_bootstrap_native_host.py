@@ -20,7 +20,7 @@ class FakeToolchain:
         self.runtime = runtime
         output, standalone = stage/'native.exe', stage/'linked.ll'
         output.write_bytes(b'MZfake-toolchain')
-        standalone.write_text(ir,encoding='utf-8')
+        standalone.write_bytes(ir.encode('utf-8'))
         return output, standalone
 
 
@@ -28,7 +28,7 @@ class BootstrapNativeHostTests(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
-        self.root = Path(temp.name)
+        self.root = Path(temp.name).resolve()
         self.compiler, self.source, self.output = [self.root/n for n in ('stage3.exe','main.ru','output.exe')]
         self.compiler.write_bytes(b'MZfake-stage3')
         self.source.write_text("密 取 外言 '如:密'.",encoding='utf-8')
@@ -98,6 +98,21 @@ class BootstrapNativeHostTests(unittest.TestCase):
         self.assertEqual(evidence['runtime_sha256'],bootstrap.digest(self.toolchain.runtime.encode()))
         self.assertEqual(evidence['standalone_ir_sha256'],bootstrap.digest(self.ir.encode()))
         self.assertEqual(evidence['binary_sha256'],bootstrap.digest(self.output.read_bytes()))
+
+    def test_standalone_ir_proof_hashes_exact_toolchain_bytes(self):
+        emitted = self.ir.replace('\n','\r\n').encode('utf-8')
+        saved = self.root/'saved.ll'
+        original = self.toolchain.compile
+        def crlf_toolchain(ir,runtime,stage):
+            executable, standalone = original(ir,runtime,stage)
+            standalone.write_bytes(emitted)
+            return executable, standalone
+        with patch.object(self.toolchain,'compile',side_effect=crlf_toolchain):
+            evidence = self.invoke(emit_llvm=saved)
+        self.assertEqual(saved.read_bytes(),emitted)
+        self.assertEqual(evidence['standalone_ir_sha256'],bootstrap.digest(emitted))
+        self.assertEqual(evidence['source_ir_sha256'],bootstrap.digest(self.ir.encode('utf-8')))
+        self.assertNotEqual(evidence['standalone_ir_sha256'],evidence['source_ir_sha256'])
 
     def test_destinations_cannot_overwrite_inputs(self):
         for target in (self.source,self.compiler,bootstrap.ROOT/'rulang/native_runtime.h'):
