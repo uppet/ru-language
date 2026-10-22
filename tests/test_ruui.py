@@ -28,7 +28,7 @@ COUNTER = """
         (钮 '加一' (作: 数[0] 取 数[0] + 1. 为))
     ].
 法).
-机 其 跑.
+机 其 运行.
 """
 
 QUIZ = """
@@ -53,7 +53,7 @@ QUIZ = """
         (文 (馈[0]))
     ].
 法).
-机 其 跑.
+机 其 运行.
 """
 
 SCROLL_TAP = """
@@ -72,7 +72,7 @@ SCROLL_TAP = """
         (文 (中[0]))
     ].
 法).
-机 其 跑.
+机 其 运行.
 """
 
 SLIDER = """
@@ -85,7 +85,7 @@ SLIDER = """
         (滑 30 0 100 (作 新值 为 数: 值[0] 取 新值. 为))
     ].
 法).
-机 其 跑.
+机 其 运行.
 """
 
 TEXTFIELD = """
@@ -99,7 +99,7 @@ TEXTFIELD = """
         (文 ('次' + (改次[0] 为 句)))
     ].
 法).
-机 其 跑.
+机 其 运行.
 """
 
 TEXTAREA = """
@@ -111,7 +111,7 @@ TEXTAREA = """
         (多行 (文入 (稿[0]) '备注' (作 新文 为 句: 稿[0] 取 新文. 为)))
     ].
 法).
-机 其 跑.
+机 其 运行.
 """
 
 TEXT_PAGES = """
@@ -124,7 +124,7 @@ TEXT_PAGES = """
         (钮 '翻页' (作: (机 其 页 (算: 得 列 [(文 ('已存' + 名[0]))]. 法)). 为))
     ].
 法).
-机 其 跑.
+机 其 运行.
 """
 
 MIXER = (ROOT / 'examples' / 'ruui-mixer.ru').read_text(encoding='utf-8')
@@ -422,7 +422,7 @@ class RuUIParityTests(unittest.TestCase):
         ].
     然
 法).
-机 其 跑.
+机 其 运行.
 """
         events = run_python(toast)
         self.assertIn('首页', texts(events[-1]['commands']))
@@ -442,7 +442,7 @@ class RuUIParityTests(unittest.TestCase):
         (钮 '招呼' (作: 机 其 提示 '世界'. 为))
     ].
 法).
-机 其 跑.
+机 其 运行.
 """
         events = self.compare(source)
         btn = self.find_rect(events[-1]['commands'], '#4677ff')
@@ -477,7 +477,7 @@ class RuUIParityTests(unittest.TestCase):
         (文 (果 其 位 0))
     ].
 法).
-机 其 跑.
+机 其 运行.
 """
 
     def test_image_head_size_recognises_png_and_jpeg(self):
@@ -547,7 +547,7 @@ class RuUIParityTests(unittest.TestCase):
         (钮 '换' (作: 机 其 页 二页. 为))
     ].
 法).
-机 其 跑.
+机 其 运行.
 """
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
@@ -583,7 +583,7 @@ class RuUIParityTests(unittest.TestCase):
 机 取 新 应用 宽: 360 高: 640 件目: '{d}' 构: (算:
     得 列 [(文 果[0])].
 法).
-机 其 跑.
+机 其 运行.
 机 其 件载 'note.txt' (作 字 为 句 错 为 句: 果[0] 取 字 + '/' + 错. 为) '文' 假.
 机 其 件载 'data.bin' (作 字 为 句 错 为 句: 果[0] 取 果[0] + '|' + 字. 为) 'base64' 假.
 """
@@ -601,7 +601,7 @@ class RuUIParityTests(unittest.TestCase):
         base = """
 尽取 外言 '如UI'.
 机 取 新 应用 宽: 360 高: 640 {extra} 构: (算: 得 列 [(文 'x')]. 法).
-机 其 跑.
+机 其 运行.
 机 其 件载 '{src}' (作 字 为 句 错 为 句: 为) '文' 假.
 """
         cases = [
@@ -620,7 +620,7 @@ class RuUIParityTests(unittest.TestCase):
         source = """
 尽取 外言 '如UI'.
 机 取 新 应用 宽: 360 高: 640 构: (算: 得 列 [(文 'x')]. 法).
-机 其 跑.
+机 其 运行.
 机 其 件载 'a' (作 字 为 句 错 为 句: 为) 'binary' 假.
 """
         with self.assertRaisesRegex(RuError, '只支持 文 或 base64'):
@@ -633,7 +633,7 @@ class RuUIParityTests(unittest.TestCase):
         source = """
 尽取 外言 '如UI'.
 机 取 新 应用 宽: 360 高: 640 构: (算: 得 列 [(文 'x')]. 法).
-机 其 跑.
+机 其 运行.
 {lines}
 """
         with self.assertRaisesRegex(RuError, '如观文件装载最多 64 项'):
