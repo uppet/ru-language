@@ -516,3 +516,39 @@ test('package declaration help excludes ordinary names, members and static modul
   assert.match(tokenHelp(analyze('尽取 外言 吾 其 言.').tokens[0]),/尽取须连写/);
   assert.match(tokenHelp(analyze('尽 取 外言 吾 其 言.').tokens[0]),/已停用/);
 });
+
+test('另若 stays in one conditional structure and dedents as a branch',()=>{
+  const source='作 分类:\n若 假 则\n显 1.\n另若\n假\n则\n显 2.\n另若 真 则\n若 真 则\n显 3.\n然.\n另\n显 4.\n然.\n为.';
+  const result=analyze(source);
+  assert.equal(result.depth,0);
+  assert.deepEqual(result.blocks.map(b=>b.kind),['作','若','若']);
+  assert.deepEqual(result.lines.map(l=>l.depth),[0,1,2,1,2,1,2,1,2,3,2,1,2,1,0]);
+  assert.equal(indentText(indentText(source)),indentText(source));
+  for(const token of result.tokens.filter(t=>t.text==='另若')) {
+    assert.equal(token.face,'keyword'); assert.equal(token.open,undefined);
+    assert.match(tokenHelp(token),/整链只需一个然/);
+  }
+  assert.equal(needsAutoDedent('    另若 真 则'),true);
+  assert.equal(needsAutoDedent('另若'),true);
+  assert.equal(needsAutoDedent('另若值 取 1.'),false);
+  const prefix='若 假 则\n    显 1.\n另若 真 则';
+  assert.equal(enterEdit(prefix,prefix.length).text,'\n    ');
+});
+test('spaced 另 若 remains nested and formatting never joins it',()=>{
+  const source='若 假 则\n显 1.\n另 若 真 则\n显 2.\n然. 然.';
+  const formatted=indentText(source);
+  assert.equal(analyze(source).blocks.length,2);
+  assert.equal(analyze(source).depth,0);
+  assert.ok(formatted.includes('另 若'));
+  assert.deepEqual(lex(formatted).map(t=>[t.kind,t.text]),lex(source).map(t=>[t.kind,t.text]));
+  const chain='若 假 则 显 1. 另若 真 则 显 2. 然.';
+  assert.equal(analyze(chain).blocks.length,1);
+  assert.ok(indentText(chain).includes('另若'));
+});
+test('另若 longest names, strings, comments and callable conditions stay distinct',()=>{
+  const source='另若值 取 1. 显 "另若 若 然". # 另若 若 然\n若 假 则 显 1. 另若 (算: 得 真. 法)() 则 显 2. 然.';
+  const result=analyze(source);
+  assert.equal(result.depth,0); assert.deepEqual(result.blocks.map(b=>b.kind),['若','(','算','(']);
+  assert.equal(result.tokens.find(t=>t.text==='另若值').face,null);
+  for(let i=0;i<=source.length;i++)assert.doesNotThrow(()=>analyze(source.slice(0,i)));
+});

@@ -20,6 +20,17 @@ from rulang.prompts import export_prompt
 
 
 class PromptExportTests(unittest.TestCase):
+    def test_elif_contract_shared_by_all_exports(self):
+        for target in ("rushu", "ruguan"):
+            for backend in ("python", "browser-js"):
+                with self.subTest(target=target, backend=backend):
+                    prompt = export_prompt(target, runtime_target=backend)
+                    for contract in ("{'另若' 表达式 '则' 程序}",
+                                     "不再求值后续条件", "`另若` 须连写",
+                                     "`另 若`（包括中间换行或注释）仍表示",
+                                     "格式化器不能在这两种写法间增删空白"):
+                        self.assertIn(contract, prompt)
+
     def test_notebook_request_and_export_match_exactly(self):
         response = io.BytesIO(json.dumps({"status": "completed", "output_text": "显 '好'."}).encode())
         response.status = 200

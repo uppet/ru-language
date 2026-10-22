@@ -3,6 +3,7 @@ EMACS ?= emacs
 test:
 	python3 -m unittest discover -s tests -v
 examples:
+	python3 ru build examples/elif.ru -o bin/elif --emit-c dist/elif.c
 	python3 ru build examples/packages/应用/main.ru -o bin/packages --emit-c dist/packages.c
 	python3 ru build examples/array_traversal.ru -o bin/array_traversal --emit-c dist/array_traversal.c
 	python3 ru build examples/array_sort_map.ru -o bin/array_sort_map --emit-c dist/array_sort_map.c

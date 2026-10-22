@@ -52,7 +52,7 @@ MEMBER_PARAMS = {"含": ["句"], "位": ["位"], "段": ["始", "终"], "增": [
                  "排序": ["先于"], "另成": ["算法"], "逐位": ["回调"]}
 
 # 尽 remains reserved only to diagnose the retired two-token import spelling.
-KEYWORDS = set("显 取 为 得 完 破 若 则 另 然 循 次 环 算 作 法 其 且 或 非 空 真 假 典 成 对 形 象 如 新 外言 尽取 尽 试 救 卒".split())
+KEYWORDS = set("显 取 为 得 完 破 若 则 另若 另 然 循 次 环 算 作 法 其 且 或 非 空 真 假 典 成 对 形 象 如 新 外言 尽取 尽 试 救 卒".split())
 NUMBER = re.compile(r"(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
 
 
@@ -403,12 +403,9 @@ class Parser:
             self.expect(".")
             return node("break", t)
         if self.accept("若"):
-            condition = self.expression()
-            self.expect("则")
-            yes = self.parse(("另", "然"))
-            no = self.parse(("然",)) if self.accept("另") else []
-            closing = self.expect("然")
-            return self.statement_end(node("if", t, condition=condition, yes=yes, no=no), closing)
+            return self.conditional(t)
+        if self.isv("另若"):
+            self.fail("「另若」只能接在同一「若」条件链的「另」之前", t)
         if self.accept("循"):
             save, count = self.i, None
             try:
@@ -463,6 +460,37 @@ class Parser:
             return node("assign", t, target=expr, expr=value)
         self.expect(".")
         return node("expr", t, expr=expr)
+
+    def conditional(self, token):
+        """One source closer, lowered to the existing nested-if semantics.
+
+        Keep the depth budget of the equivalent explicit `另 若` nesting:
+        all downstream walkers/backends still receive nested nodes. Parse the
+        chain iteratively so source sugar itself does not add Python frames.
+        Only the outer statement owns the single optional closing dot.
+        """
+        branches = []
+        depth = self.depth
+        try:
+            while True:
+                condition = self.expression()
+                self.expect("则")
+                yes = self.parse(("另若", "另", "然"))
+                branches.append((token, condition, yes))
+                token = self.accept("另若")
+                if token is None:
+                    break
+                self.depth += 1
+                if self.depth > 128:
+                    self.fail("源码嵌套过深（原型上限 128 层）", token)
+            no = self.parse(("然",)) if self.accept("另") else []
+            closing = self.expect("然")
+        finally:
+            self.depth = depth
+        for token, condition, yes in reversed(branches):
+            result = node("if", token, condition=condition, yes=yes, no=no)
+            no = [result]
+        return self.statement_end(result, closing)
 
     def expression(self, minimum=0, allow_call=None):
         self.depth += 1

@@ -21,14 +21,19 @@ class StableEntryDocsTests(unittest.TestCase):
         stable_ru, stable_rushu = stable[0]
         self.assertIn(f'如 {stable_ru}、语言规范 {stable_ru}、如书 {stable_rushu}', entry)
         # The newest entry follows this checkout; an older labeled main release
-        # must not force wip package versions back or silently age out its docs.
+        # must not force candidate package versions back or silently age out its docs.
         current = re.match(r'^# ' + release_pattern + r'（', changelog)
         self.assertIsNotNone(current, 'the changelog starts with the current toolchain')
         self.assertEqual(current.groups(), (rulang.__version__, rushu.__version__))
         self.assertLessEqual(tuple(map(int, stable_ru.split('.'))),
                              tuple(map(int, rulang.__version__.split('.'))))
         if stable_ru != rulang.__version__:
-            self.assertIn(f'`wip` 正在开发如／规范 {rulang.__version__}', entry)
+            self.assertIn(
+                f'本工作树为如／规范 {rulang.__version__}、如书 {rushu.__version__} 开发候选',
+                entry)
+            self.assertIn('尚未发布', entry)
+            self.assertIn('不替代上面的稳定组合', entry)
+            self.assertRegex(changelog.splitlines()[0], r'（开发候选，尚未发布）$')
         readme = (ROOT / 'README.md').read_text(encoding='utf-8')
         self.assertIn('[安装、版本与更新](docs/stable-entry.md)', readme)
         notebook = (ROOT / 'rushu/README.md').read_text(encoding='utf-8')

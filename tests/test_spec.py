@@ -22,6 +22,16 @@ SPECIFICATION = ROOT / "rulang" / "language-spec.md"
 
 
 class SpecificationExamples(unittest.TestCase):
+    def test_elif_contract_and_example(self):
+        specification = SPECIFICATION.read_text(encoding="utf-8")
+        self.assertIn("{'另若' 表达式 '则' 程序}", specification)
+        self.assertIn("只有 `空` 和 `假` 为假", specification)
+        source = (ROOT / "examples" / "elif.ru").read_text(encoding="utf-8")
+        program = parse(source)
+        validate(program)
+        Compiler(program, "elif.ru").compile()
+        JSCompiler(program, "elif.ru").compile()
+
     def test_optional_parameter_contract_and_example(self):
         specification = SPECIFICATION.read_text(encoding="utf-8")
         self.assertIn("参数       = 名称 ['为' 类型] ;", specification)

@@ -983,7 +983,6 @@
       (with-current-buffer output
         (should (string-match-p "42" (buffer-string)))))))
 
-(provide 'ru-lang-mode-tests)
 ;;; ru-lang-mode-tests.el ends here
 
 (ert-deftest ru-lang-chinese-comments ()
@@ -1640,3 +1639,37 @@
     (should-not (eq (get-text-property (1- (point)) 'face)
                     'font-lock-keyword-face))
     (should-not (get-text-property (1- (point)) 'help-echo))))
+
+(ert-deftest ru-lang-elif-chain-indentation-and-navigation ()
+  (ru-lang-test--indent
+   "作 分类:\n若 假 则\n显 1.\n另若\n假\n则\n显 2.\n另若 真 则\n若 真 则\n显 3.\n然.\n另\n显 4.\n然.\n为.\n"
+   "作 分类:\n    若 假 则\n        显 1.\n    另若\n        假\n    则\n        显 2.\n    另若 真 则\n        若 真 则\n            显 3.\n        然.\n    另\n        显 4.\n    然.\n为.\n")
+  (ru-lang-test--buffer "若 假 则 显 1. 另若 真 则 显 2. 另 显 3. 然.\n显 4."
+    (ru-lang--ensure-cache)
+    (should (= (length ru-lang--blocks) 1))
+    (ru-lang-forward-list)
+    (should (looking-at "\n显 4"))
+    (ru-lang-backward-list)
+    (should (= (point) (point-min)))))
+
+(ert-deftest ru-lang-elif-spaced-nesting-is-preserved ()
+  (ru-lang-test--indent
+   "若 假 则\n显 1.\n另 若 真 则\n显 2.\n然. 然.\n"
+   "若 假 则\n    显 1.\n另 若 真 则\n        显 2.\n    然. 然.\n")
+  (ru-lang-test--buffer "若 假 则 显 1. 另 若 真 则 显 2. 然. 然."
+    (ru-lang--ensure-cache)
+    (should (= (length ru-lang--blocks) 2))))
+
+(ert-deftest ru-lang-elif-keyword-help-and-longest-names ()
+  (ru-lang-test--buffer "另若值 取 1. 显 '另若'. # 另若\n若 假 则 显 1. 另若 真 则 显 2. 然."
+    (font-lock-ensure)
+    (should-not (eq (get-text-property (point-min) 'face) 'font-lock-keyword-face))
+    (ru-lang--ensure-cache)
+    (seq-doseq (token ru-lang--tokens)
+      (when (equal (ru-lang--token-text token) "另若")
+        (should (eq (ru-lang--token-face token) 'font-lock-keyword-face))
+        (should (string-match-p "整链只需一个然"
+                                (get-text-property (ru-lang--token-start token) 'help-echo)))))
+    (should (= (length ru-lang--blocks) 1))))
+
+(provide 'ru-lang-mode-tests)

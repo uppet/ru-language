@@ -1,13 +1,13 @@
 ;;; ru-lang-mode.el --- Editing support for the 如 language -*- lexical-binding: t; -*-
 
-;; Version: 0.11.1
+;; Version: 0.12.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: languages
 ;; URL: https://github.com/uppet/ru-language
 
 ;;; Commentary:
 
-;; A dependency-free major mode for ru-language 0.11.x source files.  The
+;; A dependency-free major mode for ru-language 0.23.0 source files.  The
 ;; lightweight lexer mirrors rulang/frontend.py; it deliberately accepts
 ;; incomplete input.  It is an editing aid, not a compiler or language server.
 ;; See README.md in this directory for loading, indentation and navigation.
@@ -124,7 +124,7 @@ the source directory, passing filenames directly without a shell."
       output)))
 
 (defconst ru-lang--keywords
-  '("显" "取" "为" "得" "完" "破" "若" "则" "另" "然" "循" "次" "环"
+  '("显" "取" "为" "得" "完" "破" "若" "则" "另若" "另" "然" "循" "次" "环"
     "算" "作" "法" "其" "且" "或" "非" "空" "对" "形" "象" "如" "新"
     "外言" "尽取" "尽" "卒" "试" "救" "真" "假" "典" "成"))
 (defconst ru-lang--types '("数" "句" "阵" "事实" "典" "对" "空" "件" "录" "件作成果" "算" "作"))
@@ -457,7 +457,7 @@ Intervening comments are ignored."
                    (branch (and (ru-lang--code-token-p token) top
                                 (not binding)
                                 (or (and (equal (ru-lang--block-kind top) "若")
-                                         (member text '("则" "另")))
+                                         (member text '("则" "另若" "另")))
                                     (and (equal (ru-lang--block-kind top) "试")
                                          (equal text "救") statement-start)))))
               (when (and (eq kind 'name)
@@ -527,13 +527,14 @@ Intervening comments are ignored."
                  ((or branch (and top (ru-lang--block-header top) (equal text ":")
                                   (member (ru-lang--block-kind top)
                                           '("算" "作" "形" "典" "段" "试"))))
-                  (setf (ru-lang--block-header top) nil)
+                  (setf (ru-lang--block-header top) (and branch (equal text "另若")))
                   (when (and branch (equal text "救") next
                              (eq (ru-lang--token-kind next) 'name)
                              (not (member (ru-lang--token-text next) ru-lang--keywords)))
                     (setq rescue-binding next)
                     (setf (ru-lang--block-header top) t))
-                  (setq statement-start (not (equal (ru-lang--block-kind top) "典"))))
+                  (setq statement-start (and (not (equal (ru-lang--block-kind top) "典"))
+                                             (not (equal text "另若")))))
                  ((or (equal text ".") (equal text "次"))
                   (setq statement-start (not (and top (equal (ru-lang--block-kind top) "典")))))
                  (t (setq statement-start nil)))
@@ -589,7 +590,8 @@ Intervening comments are ignored."
   "取（词法规则）：函数内先更新当前局部，否则更新最近已有的非模块捕获绑定；未找到则新建当前局部，不隐式改写模块变量。直接救正文中的取写救局部；直接段／花括号作用域块中的取写块局部（含其中的若、循、试正文）；闭包共享捕获绑定，可更新捕获的块局部。:= 与取完全等价。参数属于本次调用局部。此提示不判断具体名称的运行时绑定。")
 
 (defconst ru-lang--token-help
-  '(("吾" . "吾 言 工程 其 力学.：可选顶层一次模块声明；吾、言仍为普通名称。正式根来自集录.ru，消费者别名不改变作者声明。")
+  '(("另若" . "另若 条件 则：同一若条件链的后续分支，可重复；整链只需一个然。依次判断，首个命中后不再求值后续条件；另只能在最后。另 若仍是嵌套，须各自收尾。")
+    ("吾" . "吾 言 工程 其 力学.：可选顶层一次模块声明；吾、言仍为普通名称。正式根来自集录.ru，消费者别名不改变作者声明。")
     ("言" . "与吾组成完整模块声明：吾 言 工程 其 力学.；其他位置仍为普通名称。")
     ("尽取" . "尽取：模块顶层全量导入。写作 尽取 外言 '如:数学'.，尽取须连写，不能替换成 :=。旧 尽 取 已停用并给出迁移提示；单字尽继续保留。保留原有静态解析、导出和名称冲突规则，长名称尽取值不拆分。此提示不检查此处语义。")
     ("尽" . "旧语法 尽 取 外言 已停用；请改用 尽取 外言 '文件.ru'.，尽取须连写。单字尽继续保留用于迁移诊断，没有兼容别名。")
