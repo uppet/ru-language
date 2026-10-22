@@ -17,6 +17,8 @@ from .frontend import Node, Token
 
 IO_TYPE_NAMES = ("件", "录", "件作成果")
 IO_BUILTIN_NAMES = IO_TYPE_NAMES + ("读取", "显出", "错误")
+# Full-file reads are pre-checked against this before allocation.
+MAX_FILE_READ_BYTES = 256 * 1024 * 1024
 _BUILTIN_TYPES = None
 
 
@@ -134,6 +136,15 @@ def _with_file(path, operation, content=None, append=False):
     try:
         stream = _open_regular(path, operation == "写", append)
         if operation == "读":
+            # Pre-check the allocation a full-file read would need; never
+            # first read a giant file into memory only to fail afterwards.
+            # Streams without fileno (test doubles) skip the pre-check.
+            fileno = getattr(stream, "fileno", None)
+            if fileno is not None:
+                size = os.fstat(fileno()).st_size
+                if size > MAX_FILE_READ_BYTES:
+                    raise _invalid(f"文件约 {size / 1024 / 1024:.0f} MiB，超过单次读取上限 "
+                                   f"{MAX_FILE_READ_BYTES // 1024 // 1024} MiB；请分块或按行读取")
             value = _decode(stream.read())
         else:
             encoded = _text(content, "内容").encode("utf-8")

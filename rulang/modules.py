@@ -12,7 +12,7 @@ from .frontend import Node, RuError, parse, validate, comment_marker, block_comm
 GENERATION_MARKER = "如是我言"
 STANDARD_MODULES = {"如:竞": "如竞.ru", "如:观": "如观.ru", "如:文本": "文本.ru",
                     "如:数学": "数学.ru", "如:随机": "随机.ru", "如:密": "密.ru"}
-BUNDLED_THIRD_PARTY_MODULES = {"如见": "如见/如见.ru"}
+BUNDLED_THIRD_PARTY_MODULES = {"如见": "如见/如见.ru", "如UI": "如UI/如UI.ru"}
 
 
 RENAMED_MODULES = {"如竞": "如:竞", "如观": "如:观", "如:竞赛": "如:竞"}

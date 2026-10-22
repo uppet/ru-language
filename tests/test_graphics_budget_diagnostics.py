@@ -3,6 +3,7 @@ import contextlib
 import hashlib
 import io
 import math
+import os
 from pathlib import Path
 import sys
 import unittest
@@ -40,6 +41,13 @@ class GraphicsBudgetDiagnosticsTests(unittest.TestCase):
         """
         self.traces, self.seen = [], 0
         old_trace = sys.gettrace()
+        # The guard samples the allocation baseline once at callback start;
+        # feed that first sample the untouched baseline, later ones the growth.
+        memory_calls = []
+        def memory():
+            base = self.host.memory_start
+            memory_calls.append(1)
+            return (base, 0) if len(memory_calls) == 1 else (base + allocated, 0)
         def invoke(*args):
             for self.seen in range(1, count + 1):
                 self.traces[0](None, 'line', None)
@@ -50,12 +58,12 @@ class GraphicsBudgetDiagnosticsTests(unittest.TestCase):
         with patch('rulang.graphics_runtime.sys.settrace', side_effect=self.traces.append), \
              patch('rulang.graphics_runtime.time.monotonic', side_effect=clock) as timer, \
              patch('rulang.graphics_runtime.tracemalloc.get_traced_memory',
-                   return_value=(self.host.memory_start + allocated, 0)) as memory, \
+                   side_effect=memory) as memory_patch, \
              patch.object(self.interpreter, 'invoke_value', side_effect=invoke):
             try:
                 self.host.handle({'type': 'frame'})
             finally:
-                self.timer_calls, self.memory_calls = timer.call_count, memory.call_count
+                self.timer_calls, self.memory_calls = timer.call_count, memory_patch.call_count
                 self.assertEqual(len(self.traces), 2)
                 self.assertIs(self.traces[-1], old_trace)
 
@@ -69,7 +77,7 @@ class GraphicsBudgetDiagnosticsTests(unittest.TestCase):
     def test_exact_wall_limit_is_allowed(self):
         self.handle_samples(sampled=1.)
         self.assertIsNotNone(self.host.canvas)
-        self.assertEqual((self.timer_calls, self.memory_calls), (2, 1))
+        self.assertEqual((self.timer_calls, self.memory_calls), (2, 2))
 
     def test_just_below_wall_limit_is_allowed(self):
         self.handle_samples(sampled=math.nextafter(1., 0.))
@@ -82,7 +90,7 @@ class GraphicsBudgetDiagnosticsTests(unittest.TestCase):
             self.handle_samples(clock=lambda: next(clock_values))
         self.assertEqual(caught.exception.message,
                          f'如观回调超过时间预算（实际约 {sampled!r} 秒墙钟耗时，阈值 1 秒）；已关闭交互，请简化回调后重跑')
-        self.assertEqual((self.timer_calls, self.memory_calls), (2, 0))
+        self.assertEqual((self.timer_calls, self.memory_calls), (2, 1))
         self.assert_closed_with(caught.exception.message)
 
     def test_wall_diagnostic_uses_nonzero_start_and_original_deadline_comparison(self):
@@ -106,7 +114,7 @@ class GraphicsBudgetDiagnosticsTests(unittest.TestCase):
         self.handle_samples(count=500000)
         self.assertEqual(self.seen, 500000)
         self.assertEqual(self.timer_calls, 1 + 500000 // 128 + 1)
-        self.assertEqual(self.memory_calls, 500000 // 128 + 1)
+        self.assertEqual(self.memory_calls, 500000 // 128 + 2)
         self.assertIsNotNone(self.host.canvas)
 
     def test_final_check_reports_one_line_over(self):
@@ -117,7 +125,7 @@ class GraphicsBudgetDiagnosticsTests(unittest.TestCase):
         self.assertEqual(self.seen, 500001)
         # The failing line guard still short-circuits the clock and memory reads.
         self.assertEqual(self.timer_calls, 1 + 500001 // 128)
-        self.assertEqual(self.memory_calls, 500001 // 128)
+        self.assertEqual(self.memory_calls, 500001 // 128 + 1)
         self.assert_closed_with(caught.exception.message)
 
     def test_in_callback_line_check_still_occurs_at_500096(self):
@@ -147,19 +155,19 @@ class GraphicsBudgetDiagnosticsTests(unittest.TestCase):
         self.assertIn('执行行预算', caught.exception.message)
         self.assertNotIn('时间预算', caught.exception.message)
         self.assertEqual(timer.call_count, 1 + 500000 // 128)
-        self.assertEqual(allocation.call_count, 500000 // 128)
+        self.assertEqual(allocation.call_count, 500000 // 128 + 1)
         self.assertEqual(len(traces), 2)
 
     def test_time_priority_when_memory_also_exceeds(self):
         with self.assertRaises(RuError) as caught:
             self.handle_samples(sampled=1.25, allocated=67108865)
         self.assertIn('时间预算', caught.exception.message)
-        self.assertEqual(self.memory_calls, 0)
+        self.assertEqual(self.memory_calls, 1)
 
     def test_exact_allocation_limit_is_allowed(self):
         self.handle_samples(allocated=67108864)
         self.assertIsNotNone(self.host.canvas)
-        self.assertEqual(self.memory_calls, 1)
+        self.assertEqual(self.memory_calls, 2)
 
     def test_just_below_allocation_limit_is_allowed(self):
         self.handle_samples(allocated=67108863)
@@ -170,7 +178,7 @@ class GraphicsBudgetDiagnosticsTests(unittest.TestCase):
             self.handle_samples(allocated=67108865)
         self.assertEqual(caught.exception.message,
                          '如观新增内存超过分配预算（实际 67108865 字节，阈值 67108864 字节／64 MiB）；已关闭交互，请减少数据后重跑')
-        self.assertEqual(self.memory_calls, 1)
+        self.assertEqual(self.memory_calls, 2)
         self.assert_closed_with(caught.exception.message)
 
     def test_callback_error_is_not_replaced_by_final_budget_check(self):
@@ -178,7 +186,7 @@ class GraphicsBudgetDiagnosticsTests(unittest.TestCase):
         with self.assertRaises(RuError) as caught:
             self.handle_samples(sampled=2., allocated=67108865, invoke_error=original)
         self.assertIs(caught.exception, original)
-        self.assertEqual((self.timer_calls, self.memory_calls), (1, 0))
+        self.assertEqual((self.timer_calls, self.memory_calls), (1, 1))
         self.assertIsNone(self.host.canvas)
 
     def test_budget_failure_preserves_provenance_and_cli_header(self):
@@ -199,23 +207,122 @@ class GraphicsBudgetDiagnosticsTests(unittest.TestCase):
         self.assertEqual(stdout.getvalue(), '')
         self.assertEqual(stderr.getvalue().splitlines()[0], detail['formatted'])
 
-    def test_resource_restore_failure_preserves_budget_error(self):
+    def test_callback_never_tightens_process_address_space_limit(self):
+        # Process-wide quotas belong at the session boundary; the callback
+        # guard is the portable trace budget only, so handle() must not
+        # touch RLIMIT_AS at all (no tightening, no restore, no restore-failure
+        # mode), whatever the ambient process usage is.
         try:
             import resource
         except ImportError:
             self.skipTest('POSIX resource limits unavailable')
         if not hasattr(resource, 'RLIMIT_AS'):
             self.skipTest('RLIMIT_AS unavailable')
-        with patch.object(resource, 'getrlimit', return_value=(-1, -1)), \
-             patch.object(resource, 'setrlimit', side_effect=[None, ValueError('not allowed')]) as setter:
-            with self.assertRaises(RuError) as caught:
-                self.handle_samples(sampled=1.25)
-        self.assertIn('时间预算', caught.exception.message)
-        self.assertNotIn('恢复系统内存', caught.exception.message)
-        self.assertEqual(setter.call_count, 2)
-        self.assertEqual(setter.call_args_list[0].args[1], (512 * 1024 * 1024, -1))
-        self.assertEqual(setter.call_args_list[1].args[1], (-1, -1))
-        self.assert_closed_with(caught.exception.message)
+        for used in (0, 600 * 1024 * 1024):
+            with self.subTest(used=used):
+                with patch('rulang.graphics_runtime._address_space_used', return_value=used), \
+                     patch.object(resource, 'setrlimit') as setter:
+                    self.handle_samples(count=1, started=0., sampled=0.5)
+                setter.assert_not_called()
+                self.assertIsNotNone(self.host.canvas)
+
+
+class AddressSpaceLimitTests(unittest.TestCase):
+    def setUp(self):
+        try:
+            import resource
+        except ImportError:
+            self.skipTest('POSIX resource limits unavailable')
+        if not hasattr(resource, 'RLIMIT_AS'):
+            self.skipTest('RLIMIT_AS unavailable')
+        self.resource = resource
+
+    def test_unset_environment_is_a_no_op(self):
+        from rulang.graphics_runtime import install_address_space_limit
+        with patch.dict(os.environ, {}, clear=True), \
+             patch.object(self.resource, 'setrlimit') as setter:
+            self.assertIsNone(install_address_space_limit())
+        setter.assert_not_called()
+
+    def test_explicit_bytes_set_soft_and_hard_quota_once(self):
+        from rulang.graphics_runtime import install_address_space_limit
+        with patch('rulang.graphics_runtime._address_space_used', return_value=0), \
+             patch.object(self.resource, 'setrlimit') as setter:
+            self.assertEqual(install_address_space_limit(1024), 1024)
+        setter.assert_called_once_with(self.resource.RLIMIT_AS, (1024, 1024))
+
+    def test_environment_value_supports_binary_suffixes(self):
+        from rulang.graphics_runtime import install_address_space_limit
+        with patch.dict(os.environ, {'RULANG_ADDRESS_SPACE_LIMIT': '512M'}), \
+             patch.object(self.resource, 'setrlimit') as setter:
+            self.assertEqual(install_address_space_limit(), 512 * 1024 * 1024)
+        setter.assert_called_once_with(self.resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
+
+    def test_unparsable_environment_value_fails_loudly(self):
+        from rulang.frontend import RuError
+        from rulang.graphics_runtime import install_address_space_limit
+        with patch.dict(os.environ, {'RULANG_ADDRESS_SPACE_LIMIT': 'lots'}), \
+             patch.object(self.resource, 'setrlimit') as setter:
+            with self.assertRaisesRegex(RuError, '无法解析'):
+                install_address_space_limit()
+        setter.assert_not_called()
+
+    def test_quota_below_current_usage_fails_loudly(self):
+        from rulang.frontend import RuError
+        from rulang.graphics_runtime import install_address_space_limit
+        with patch('rulang.graphics_runtime._address_space_used', return_value=600 * 1024 * 1024), \
+             patch.object(self.resource, 'setrlimit') as setter:
+            with self.assertRaisesRegex(RuError, '已高于请求的上限'):
+                install_address_space_limit(512 * 1024 * 1024)
+        setter.assert_not_called()
+
+    def test_non_positive_quota_rejected(self):
+        from rulang.frontend import RuError
+        from rulang.graphics_runtime import install_address_space_limit
+        with patch.object(self.resource, 'setrlimit') as setter:
+            with self.assertRaises(RuError):
+                install_address_space_limit(0)
+        setter.assert_not_called()
+
+
+class MemoryProtectionStatusTests(unittest.TestCase):
+    def test_reports_active_mechanism_when_quota_is_set(self):
+        try:
+            import resource
+        except ImportError:
+            self.skipTest('POSIX resource limits unavailable')
+        if not hasattr(resource, 'RLIMIT_AS'):
+            self.skipTest('RLIMIT_AS unavailable')
+        from rulang.graphics_runtime import memory_protection_status
+        quota = 1024 ** 3
+        with patch.object(resource, 'getrlimit', return_value=(quota, quota)):
+            status = memory_protection_status()
+        self.assertEqual(status['mechanism'], 'rlimit_as')
+        self.assertEqual(status['quota_bytes'], quota)
+        self.assertFalse(status['degraded'])
+        self.assertTrue(status['cooperative_budgets'])
+
+    def test_reports_degraded_tier_with_advice_when_no_quota(self):
+        from rulang.graphics_runtime import memory_protection_status
+        try:
+            import resource
+        except ImportError:
+            resource = None
+        if resource is None or not hasattr(resource, 'RLIMIT_AS'):
+            status = memory_protection_status()
+            self.assertIsNone(status['mechanism'])
+            self.assertIsNone(status['quota_bytes'])
+            self.assertTrue(status['degraded'])
+            self.assertTrue(status['cooperative_budgets'])
+            self.assertIn('Job Object', status['detail'])
+            return
+        with patch.object(resource, 'getrlimit',
+                          return_value=(resource.RLIM_INFINITY, resource.RLIM_INFINITY)):
+            status = memory_protection_status()
+        self.assertIsNone(status['mechanism'])
+        self.assertIsNone(status['quota_bytes'])
+        self.assertTrue(status['degraded'])
+        self.assertIn('RULANG_ADDRESS_SPACE_LIMIT', status['detail'])
 
 
 class GraphicsBudgetPromptTests(unittest.TestCase):

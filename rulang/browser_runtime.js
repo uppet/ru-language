@@ -12,6 +12,26 @@
   // Host-only clock injection; direct module users fall back to the platform's
   // monotonic clock. Neither the function nor timestamps enter the Ru scope.
   const browserNowSeconds=own(__ruHost,'nowSeconds')?__ruHost.nowSeconds:()=>performance.now()/1000;
+  // 测文协议：宿主可注入真实字度表与实测钩；缺省与如UI 早期近似度量逐位一致。
+  const browserHostFail=message=>{throw new Error(message)};
+  const browserDefaultTextMetrics=Object.freeze({全:1,半:0.56,行:1.5});
+  let browserTextMetrics=null,browserTextMeasurer=null;
+  if(own(__ruHost,'textMetrics')&&__ruHost.textMetrics!==undefined&&__ruHost.textMetrics!==null){
+    const injected=__ruHost.textMetrics;
+    if(typeof injected!=='object')browserHostFail('textMetrics 须为含全／半／行的对象');
+    const resolved={};
+    for(const key of ['全','半','行']){
+      const value=injected[key];
+      if(typeof value!=='number'||!Number.isFinite(value)||value<0.1||value>10)
+        browserHostFail('textMetrics.'+key+' 须为 0.1 至 10 之间有限数');
+      resolved[key]=value;
+    }
+    browserTextMetrics=Object.freeze(resolved);
+  }
+  if(own(__ruHost,'textMeasurer')&&__ruHost.textMeasurer!==undefined&&__ruHost.textMeasurer!==null){
+    if(typeof __ruHost.textMeasurer!=='function')browserHostFail('textMeasurer 须为函数');
+    browserTextMeasurer=__ruHost.textMeasurer;
+  }
   let browserLastClockSample=null;
   function browserSampleTime(m,loc,closeOnError=true){
     let sample;
@@ -89,12 +109,22 @@
   function browserDrawingTarget(width,height){
     return {width,height,commands:[],bytes:2,fill:'#4677ff',stroke:'#202530',lineWidth:1,textSize:16,textAlign:'left',textBaseline:'top',transform:browserIdentity(),clips:[],stack:[],dirty:false,closed:false};
   }
-  const browserEvents={每帧:['frame',1],鼠标按下:['mouse_down',3],鼠标松开:['mouse_up',3],鼠标移动:['mouse_move',2],按键:['key_down',1],松键:['key_up',1]};
+  const browserEvents={每帧:['frame',1],鼠标按下:['mouse_down',3],鼠标松开:['mouse_up',3],鼠标移动:['mouse_move',2],按键:['key_down',1],松键:['key_up',1],图就绪:['image_ready',3],图失败:['image_failed',2],件就绪:['file_ready',2],件失败:['file_failed',2],键按下:['text_key',1],字符:['text_char',1],剪贴:['text_paste',1],组开始:['text_comp_start',0],组更新:['text_comp_update',2],组结束:['text_comp_end',1]};
+  const browserTextKeys=new Set(['退格','删除','左','右','上','下','家','终','回车','空格','跳格','逃脱']);
   const browserParams={背景:['色'],填色:['色'],描边:['色'],线宽:['粗'],字号:['大小'],文字对齐:['横向','纵向'],矩形:['横','纵','宽','高'],椭圆:['横','纵','宽','高'],线:['横一','纵一','横二','纵二'],文字:['文','横','纵'],三角形:['横一','纵一','横二','纵二','横三','纵三'],多边形:['点阵'],平移:['横','纵'],旋转:['弧度'],缩放:['横倍率','纵倍率'],保存:[],恢复:[],变换:['a','b','c','d','e','f'],重置变换:[],裁剪:['横','纵','宽','高'],取消裁剪:[],帧率:['率'],停:[],继续:[],关闭:[],宽:[],高:[],帧:[],经过秒:[],间隔秒:[]};
   for(const name of Object.keys(browserEvents))browserParams[name]=['回调'];
   browserParams.缓存=['宽','高','绘制'];
   browserParams.贴图=['图像','横','纵'];
-  const browserRecorderForbidden=new Set(['缓存','贴图','帧率','停','继续','关闭','帧','经过秒','间隔秒',...Object.keys(browserEvents)]);
+  browserParams.图请求=['号','源'];
+  browserParams.绘图=['号','横','纵','宽','高'];
+  browserParams.图释放=['号'];
+  browserParams.件请求=['号','源','式'];
+  browserParams.入焦点=['横','纵','宽','高','文','标'];
+  browserParams.入失焦=[];
+  browserParams.入更新=['文','标'];
+  browserParams.字度=[];
+  browserParams.测文=['文'];
+  const browserRecorderForbidden=new Set(['缓存','贴图','图请求','绘图','图释放','件请求','入焦点','入失焦','入更新','字度','测文','帧率','停','继续','关闭','帧','经过秒','间隔秒',...Object.keys(browserEvents)]);
   browserParams.弧=['横','纵','宽','高','始角','转角'];
   browserParams.扇形=['横','纵','宽','高','始角','转角'];
   browserParams.折线=['点阵'];
@@ -120,7 +150,7 @@
       const a=argsBind(m,name,args,['宽','高'],loc),width=num(a.宽,'宽',1,2048,true),height=num(a.高,'高',1,2048,true);
       const origin=browserSampleTime(m,loc,false);
       browserClose();
-      browserCanvas={id:Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join(''),width,height,callbacks:dict(),commands:[],bytes:2,fill:'#4677ff',stroke:'#202530',lineWidth:1,textSize:16,textAlign:'left',textBaseline:'top',fps:30,frame:0,origin,elapsed:0,delta:0,previousFrame:null,running:false,closed:false,dirty:true,transform:browserIdentity(),clips:[],stack:[],resources:new Map(),resourceSizes:new Map(),resourcePixels:0,resourceBytes:2,referenceIds:new Set(),referenceBytes:0,referenceCommands:0,token:{},module:m,location:loc};
+      browserCanvas={id:Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join(''),width,height,callbacks:dict(),commands:[],bytes:2,fill:'#4677ff',stroke:'#202530',lineWidth:1,textSize:16,textAlign:'left',textBaseline:'top',fps:30,frame:0,origin,elapsed:0,delta:0,previousFrame:null,running:false,closed:false,dirty:true,transform:browserIdentity(),clips:[],stack:[],resources:new Map(),resourceSizes:new Map(),resourcePixels:0,resourceBytes:2,referenceIds:new Set(),referenceBytes:0,referenceCommands:0,imageLoads:new Set(),fileLoads:new Set(),loadDone:new Set(),metrics:{...(browserTextMetrics||browserDefaultTextMetrics)},token:{},module:m,location:loc};
       const value=new Instance(browserTypes.canvas,dict());value.graphicsCanvas=browserCanvas;m.lastMemberProcedure=false;return value;
     }
     if(kind==='image'){
@@ -137,7 +167,7 @@
     }
     if(!own(browserParams,name))bad('未知如观画布成员：'+name);
     const a=argsBind(m,name,args,browserParams[name],loc);
-    m.lastMemberProcedure=!['宽','高','帧','经过秒','间隔秒','缓存'].includes(name);
+    m.lastMemberProcedure=!['宽','高','帧','经过秒','间隔秒','字度','测文','缓存'].includes(name);
     const command=value=>{
       if(value.op!=='background'){
         if(c.transform.some((v,i)=>v!==browserIdentity()[i]))value.transform=c.transform.slice();
@@ -187,6 +217,34 @@
       const image=a.图像 instanceof Instance&&a.图像.type===browserTypes.image?a.图像.graphicsImage:null;
       if(!image||image.owner!==c.id||image.token!==c.token||!c.resources.has(image.id))bad('贴图须使用当前画布的有效如观图像');
       command({op:'image',resource:image.id,x:num(a.横,'横'),y:num(a.纵,'纵')});
+    }else if(name==='图请求'){
+      const id=num(a.号,'号',1,10000000,true);
+      if(typeof a.源!=='string'||!a.源||browserEncoder.encode(a.源).length>512)bad('如观图像源 须为非空句，最长 512 字节');
+      if(!c.imageLoads.has(id)&&c.imageLoads.size>=64)bad('如观图像装载最多 64 项；请用 图释放 归还句柄');
+      c.imageLoads.add(id);
+      command({op:'image_request',id,source:a.源});
+    }else if(name==='绘图'){
+      const id=num(a.号,'号',1,10000000,true);
+      command({op:'draw_image',id,x:num(a.横,'横'),y:num(a.纵,'纵'),width:num(a.宽,'宽',0),height:num(a.高,'高',0)});
+    }else if(name==='图释放'){
+      const id=num(a.号,'号',1,10000000,true);
+      c.imageLoads.delete(id);
+      command({op:'image_release',id});
+    }else if(name==='件请求'){
+      const id=num(a.号,'号',1,10000000,true);
+      if(typeof a.源!=='string'||!a.源||browserEncoder.encode(a.源).length>512)bad('如观文件源 须为非空句，最长 512 字节');
+      if(a.式!=='文'&&a.式!=='base64')bad("如观文件模式 只支持 '文' 或 'base64'");
+      if(!c.fileLoads.has(id)&&c.fileLoads.size>=64)bad('如观文件装载最多 64 项');
+      c.fileLoads.add(id);
+      command({op:'file_request',id,source:a.源,mode:a.式});
+    }else if(name==='入焦点'){
+      if(typeof a.文!=='string'||browserEncoder.encode(a.文).length>8388608)bad('如观文入文本 须为句，最长 8 MiB');
+      command({op:'text_focus',x:num(a.横,'横'),y:num(a.纵,'纵'),width:num(a.宽,'宽',0,100000),height:num(a.高,'高',0,100000),text:a.文,cursor:num(a.标,'标',0,4096,true)});
+    }else if(name==='入失焦'){
+      command({op:'text_blur'});
+    }else if(name==='入更新'){
+      if(typeof a.文!=='string'||Array.from(a.文).length>4096)bad('如观文入文本 最长 4096 字');
+      command({op:'text_update',text:a.文,cursor:num(a.标,'标',0,4096,true),sel:''});
     }else if(own(browserEvents,name)){
       const [event,count]=browserEvents[name],fn=a.回调;
       if(!(fn instanceof Fn)||fn.params.length!==count)bad(name+'需要接受 '+count+' 个参数的算／作回调');
@@ -196,6 +254,23 @@
     else if(name==='帧')return c.frame;
     else if(name==='经过秒')return c.elapsed;
     else if(name==='间隔秒')return c.delta;
+    else if(name==='字度'){
+      const result=new RuMap();
+      for(const key of ['全','半','行'])mapPut(m,result,key,c.metrics[key],loc);
+      return result;
+    }
+    else if(name==='测文'){
+      const text=a.文;
+      if(typeof text!=='string'||Array.from(text).length>4096)bad('测文须为不超过 4096 字符的句');
+      if(browserTextMeasurer!==null){
+        const width=browserTextMeasurer(text,c.textSize);
+        if(typeof width!=='number'||!Number.isFinite(width)||width<0||width>10000000)bad('如观测文宿主返回无效宽度');
+        return width;
+      }
+      let width=0;
+      for(const char of text)width+=(char.codePointAt(0)<0x4E00?c.metrics.半:c.metrics.全);
+      return width*c.textSize;
+    }
     else if(name==='关闭'){c.stack=[];browserFlush();browserClose();return null;}
     else if(name==='停'||name==='继续')browserSetRunning(c,name==='继续'&&own(c.callbacks,'frame'));
     else if(name==='帧率')c.fps=num(a.率,'帧率',1,60,true);
@@ -232,7 +307,15 @@
       const copy=Array.from(points,(point,index)=>{if(!own(points,index)||!Array.isArray(point)||point.length!==2||!own(point,0)||!own(point,1))bad(name+'每个点须为两个坐标的阵');return Array.from(point,value=>num(value,name+'坐标'));});
       command({op:name==='折线'?'polyline':'polygon',points:copy,fill:name==='折线'?'':c.fill,stroke:c.stroke,stroke_width:c.lineWidth});
     }
-    else if(name==='背景'){const value=color(a.色);browserResetCommands(c);command({op:'background',color:value});}
+    else if(name==='背景'){
+      const value=color(a.色);
+      // 背景重置整帧绘制，但装载管理命令（image_request/file_request/
+      // image_release）不是绘制，须在重置后存活（与 Python 宿主一致）。
+      const kept=c.commands.filter(command=>command.op==='image_request'||command.op==='file_request'||command.op==='image_release');
+      browserResetCommands(c);
+      kept.forEach(command);
+      command({op:'background',color:value});
+    }
     // Invisible/zero-sweep drawing calls still replace input scenes and spend
     // command/byte budget. Native rendering alone interprets the signed sweep.
     else if(name==='弧'||name==='扇形')command({op:name==='弧'?'arc':'sector',x:num(a.横,'横'),y:num(a.纵,'纵'),width:num(a.宽,'宽',0),height:num(a.高,'高',0),start:num(a.始角,'始角'),sweep:num(a.转角,'转角'),fill:name==='弧'?'':c.fill,stroke:c.stroke,stroke_width:c.lineWidth});
@@ -255,19 +338,64 @@
     if(Object.keys(request).some(key=>!['canvas_id','event'].includes(key)))throw new Error('如观请求含未知字段');
     const event=request.event;
     if(!event||typeof event!=='object'||Array.isArray(event)||
-        !['frame','close','mouse_down','mouse_up','mouse_move','key_down','key_up'].includes(event.type))throw new Error('无效如观事件');
+        !['frame','close','mouse_down','mouse_up','mouse_move','key_down','key_up','image_ready','image_failed','file_ready','file_failed','text_key','text_char','text_paste','text_comp_start','text_comp_update','text_comp_end'].includes(event.type))throw new Error('无效如观事件');
     const allowed=['type'];
     if(event.type.startsWith('mouse_'))allowed.push('x','y','button');
     else if(event.type.startsWith('key_'))allowed.push('key');
+    else if(event.type==='image_ready')allowed.push('id','width','height');
+    else if(event.type==='image_failed'||event.type==='file_failed')allowed.push('id','error');
+    else if(event.type==='file_ready')allowed.push('id','text');
+    else if(event.type==='text_key')allowed.push('key');
+    else if(event.type==='text_char'||event.type==='text_paste'||event.type==='text_comp_end')allowed.push('text');
+    else if(event.type==='text_comp_update')allowed.push('text','cursor');
     if(Object.keys(event).some(key=>!allowed.includes(key)))throw new Error('如观事件含未知字段');
     if(event.type==='close'){browserClose();return;}
     const callback=c.callbacks[event.type];
-    if(!callback||(event.type==='frame'&&!c.running))throw new Error('如观事件未启用');
+    const asyncEvent=event.type==='image_ready'||event.type==='image_failed'||event.type==='file_ready'||event.type==='file_failed';
+    if(!callback){
+      // Readiness nobody listens to is cleanup noise; mouse/key/frame stay strict.
+      if(asyncEvent)return;
+      throw new Error('如观事件未启用');
+    }
+    if(asyncEvent){
+      // 只对真正在途的装载句柄送就绪：未知句柄与重复就绪按噪音忽略。
+      // 校验先行（见下），坏事件仍须报错。
+      const outstanding=event.type.startsWith('image')?c.imageLoads:c.fileLoads;
+      if(!outstanding.has(event.id)||c.loadDone.has(event.id))return;
+    }
+    if(event.type==='frame'&&!c.running)throw new Error('如观事件未启用');
     const {fn,m,loc}=callback;
     let values;
     if(event.type==='frame')values=[c.frame+1];
     else if(event.type==='key_down'||event.type==='key_up'){
       if(typeof event.key!=='string'||Array.from(event.key).length>64)fail(m,'无效如观按键',loc);values=[event.key];
+    }else if(event.type==='image_ready'){
+      if(!Number.isInteger(event.id)||event.id<0||event.id>10000000)fail(m,'无效如观装载句柄',loc);
+      if(!Number.isInteger(event.width)||event.width<1||event.width>4096||!Number.isInteger(event.height)||event.height<1||event.height>4096)fail(m,'无效如观图像尺寸',loc);
+      values=[event.id,event.width,event.height];
+    }else if(event.type==='image_failed'||event.type==='file_failed'){
+      if(!Number.isInteger(event.id)||event.id<0||event.id>10000000)fail(m,'无效如观装载句柄',loc);
+      if(typeof event.error!=='string'||!event.error||browserEncoder.encode(event.error).length>512)fail(m,'无效如观装载错误',loc);
+      values=[event.id,event.error];
+    }else if(event.type==='file_ready'){
+      if(!Number.isInteger(event.id)||event.id<0||event.id>10000000)fail(m,'无效如观装载句柄',loc);
+      if(typeof event.text!=='string'||browserEncoder.encode(event.text).length>8388608)fail(m,'无效如观文件内容',loc);
+      values=[event.id,event.text];
+    }else if(event.type==='text_key'){
+      if(typeof event.key!=='string'||!browserTextKeys.has(event.key))fail(m,'无效如观文入键（须为附录 A 编辑键名）',loc);
+      values=[event.key];
+    }else if(event.type==='text_char'||event.type==='text_paste'){
+      if(typeof event.text!=='string'||(event.type==='text_char'?Array.from(event.text).length!==1:(!event.text||Array.from(event.text).length>4096)))fail(m,'无效如观文入文本',loc);
+      values=[event.text];
+    }else if(event.type==='text_comp_start'){
+      values=[];
+    }else if(event.type==='text_comp_update'){
+      if(typeof event.text!=='string'||Array.from(event.text).length>256)fail(m,'无效如观输入法组合',loc);
+      if(!Number.isFinite(event.cursor)||event.cursor<0||event.cursor>256)fail(m,'无效如观输入法光标',loc);
+      values=[event.text,event.cursor];
+    }else if(event.type==='text_comp_end'){
+      if(typeof event.text!=='string'||Array.from(event.text).length>256)fail(m,'无效如观输入法定字',loc);
+      values=[event.text];
     }else{
       if(!Number.isFinite(event.x)||!Number.isFinite(event.y)||Math.abs(event.x)>100000||Math.abs(event.y)>100000)fail(m,'无效如观鼠标坐标',loc);
       values=[event.x,event.y];
@@ -277,6 +405,7 @@
         values.push(event.button);
       }
     }
+    if(asyncEvent)c.loadDone.add(event.id);
     const now=browserSampleTime(m,loc);
     c.elapsed=now-c.origin;c.delta=event.type==='frame'&&c.previousFrame!==null?now-c.previousFrame:0;
     if(event.type==='frame'){c.previousFrame=now;c.frame++;}
@@ -286,9 +415,23 @@
     try{
       call(m,fn,values.map(value=>[null,value]),loc);
       if(browserCanvas===c&&!c.closed){
-        if(event.type!=='frame'&&!c.commands.length){c.commands=previous;c.bytes=previousBytes;c.referenceIds=previousIds;c.referenceBytes=previousReferenceBytes;c.referenceCommands=previousReferenceCommands;}
-        c.dirty=true;
+        if(asyncEvent){
+          // 装载就绪：旧装帧已作废（源可能已换或行已消失），不恢复不重发；
+          // 随后的补帧会全量重绘最新场景。
+        }else{
+          if(event.type!=='frame'&&!c.commands.length){
+            // Ignored inputs retain the previous complete scene (phase-2
+            // contract: re-publish the restored frame).
+            c.commands=previous;c.bytes=previousBytes;c.referenceIds=previousIds;c.referenceBytes=previousReferenceBytes;c.referenceCommands=previousReferenceCommands;
+          }
+          c.dirty=true;
+        }
       }
       browserFlush();
     }catch(error){browserClose();throw error;}finally{browserPhase=previousPhase;}
+    if(asyncEvent&&browserCanvas===c&&c.running&&own(c.callbacks,'frame')){
+      // 装载就绪视同一次帧推进：库只在每帧回调里绘制，运行时补一帧重渲染
+      // （与浏览器宿主就绪后下一拍 rAF 重绘对齐，也与 Python 宿主一致）。
+      browserDispatch({canvas_id:c.id,event:{type:'frame'}});
+    }
   }

@@ -33,8 +33,14 @@ EXAMPLE_SOURCES = tuple(sorted((ROOT / 'examples').rglob('*.ru')))
 # separate from Node parity, rather than silently excluding their coverage.
 NATIVE_EXAMPLE_SOURCES = tuple(path for path in EXAMPLE_SOURCES
                                if ROOT / 'examples' / 'native' in path.parents)
+# Graphics examples drive the 如观 canvas and only run in a 如书 Python
+# session or the browser runtime (see tests/test_ruui*.py); neither the C
+# compiler nor the Node compiler supports them yet.
+GRAPHICS_EXAMPLE_SOURCES = tuple(path for path in EXAMPLE_SOURCES
+                                 if path.stem.startswith('ruui-'))
 PORTABLE_EXAMPLE_SOURCES = tuple(path for path in EXAMPLE_SOURCES
-                                 if path not in NATIVE_EXAMPLE_SOURCES)
+                                 if path not in NATIVE_EXAMPLE_SOURCES
+                                 and path not in GRAPHICS_EXAMPLE_SOURCES)
 
 POWER_DECOMPOSITION = contest.PRELUDE + """
 算 分 数值 为 数:
@@ -95,8 +101,11 @@ class JavaScriptCompileTests(unittest.TestCase):
     def test_python_only_native_examples_validate_and_explicitly_reject_node(self):
         from rulang.js_compiler import JSCompiler
         self.assertGreaterEqual(len(NATIVE_EXAMPLE_SOURCES), 3)
-        self.assertEqual(set(EXAMPLE_SOURCES), set(PORTABLE_EXAMPLE_SOURCES) | set(NATIVE_EXAMPLE_SOURCES))
+        self.assertEqual(set(EXAMPLE_SOURCES),
+                         set(PORTABLE_EXAMPLE_SOURCES) | set(NATIVE_EXAMPLE_SOURCES) | set(GRAPHICS_EXAMPLE_SOURCES))
         self.assertFalse(set(PORTABLE_EXAMPLE_SOURCES) & set(NATIVE_EXAMPLE_SOURCES))
+        self.assertFalse(set(PORTABLE_EXAMPLE_SOURCES) & set(GRAPHICS_EXAMPLE_SOURCES))
+        self.assertFalse(set(NATIVE_EXAMPLE_SOURCES) & set(GRAPHICS_EXAMPLE_SOURCES))
         for source_path in NATIVE_EXAMPLE_SOURCES:
             with self.subTest(example=str(source_path.relative_to(ROOT))):
                 # Same non-executing parse/validate graph used by check --target
@@ -109,6 +118,19 @@ class JavaScriptCompileTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuError, '原生能力默认关闭'):
                     Interpreter(stdout=output).execute(graph[graph.root], source_path=graph.root, modules=graph)
                 self.assertEqual(output.getvalue(), '')
+
+    def test_python_only_graphics_examples_validate_and_explicitly_reject_node(self):
+        from rulang.js_compiler import JSCompiler
+        self.assertGreaterEqual(len(GRAPHICS_EXAMPLE_SOURCES), 2)
+        for source_path in GRAPHICS_EXAMPLE_SOURCES:
+            with self.subTest(example=str(source_path.relative_to(ROOT))):
+                # 如观 canvas is only available in a 如书 Python session; the
+                # Node compiler must reject it with an explicit 能力错误,
+                # while the browser runtime compiles it for --target ui
+                # (covered end-to-end by tests/test_ruui*.py).
+                graph = load_module_graph(source_path)
+                with self.assertRaisesRegex(RuError, '如观图形仅支持如书'):
+                    JSCompiler(graph[graph.root], graph.root, modules=graph).compile()
 
     def test_rejects_structurally_invalid_programs(self):
         from rulang.js_compiler import JSCompiler

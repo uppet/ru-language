@@ -5,8 +5,11 @@ host retains real Ru Function values; the ordinary interpreter owns closures.
 This is resource accounting for trusted local code, not a security sandbox.
 """
 import json
+from collections import deque
 from dataclasses import dataclass
 import math
+import os
+import base64
 import re
 import secrets
 import sys
@@ -29,6 +32,21 @@ MAX_RECIPE_COMMANDS = MAX_COMMANDS - 1
 MAX_CALLBACK_LINES = 500000
 MAX_CALLBACK_SECONDS = 1.0
 MAX_GRAPHICS_MEMORY = 64 * 1024 * 1024
+MAX_IMAGE_FILE_BYTES = 64 * 1024 * 1024
+MAX_IMAGE_PIXELS = 4096 * 4096
+MAX_FILE_LOAD_BYTES = 4 * 1024 * 1024
+MAX_FILE_TEXT_BYTES = 8 * 1024 * 1024
+MAX_LOAD_HANDLES = 64
+MAX_SOURCE_CHARS = 512
+MAX_LOAD_EVENTS_PER_FLUSH = 256
+LOAD_MODES = frozenset(("文", "base64"))
+ASYNC_EVENTS = frozenset(("image_ready", "image_failed", "file_ready", "file_failed"))
+# 背景重置整帧绘制，但装载管理命令不是绘制：图请求／件请求／图释放须在
+# 重置后存活（库可在铺排阶段先于背景发出它们）。
+LOAD_MANAGEMENT_OPS = frozenset(("image_request", "file_request", "image_release"))
+TEXT_EDIT_KEYS = frozenset(("退格", "删除", "左", "右", "上", "下", "家", "终", "回车", "空格", "跳格", "逃脱"))
+MAX_PASTE_CHARS = 4096
+MAX_COMPOSITION_CHARS = 256
 _COLOR = re.compile(r"#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?\Z")
 _TEXT_ALIGNS = MappingProxyType({"左": "left", "中": "center", "右": "right"})
 _TEXT_BASELINES = MappingProxyType({"上": "top", "中": "middle", "下": "bottom", "基线": "alphabetic"})
@@ -36,7 +54,14 @@ _TYPES = None
 EVENT_PARAMS = {"frame": ("每帧", ["帧"]), "mouse_down": ("鼠标按下", ["横", "纵", "键"]),
                 "mouse_up": ("鼠标松开", ["横", "纵", "键"]),
                 "mouse_move": ("鼠标移动", ["横", "纵"]),
-                "key_down": ("按键", ["键"]), "key_up": ("松键", ["键"])}
+                "key_down": ("按键", ["键"]), "key_up": ("松键", ["键"]),
+                "image_ready": ("图就绪", ["号", "宽", "高"]),
+                "image_failed": ("图失败", ["号", "错"]),
+                "file_ready": ("件就绪", ["号", "文"]),
+                "file_failed": ("件失败", ["号", "错"]),
+                "text_key": ("键按下", ["键"]), "text_char": ("字符", ["文"]),
+                "text_paste": ("剪贴", ["文"]), "text_comp_start": ("组开始", []),
+                "text_comp_update": ("组更新", ["组", "光标"]), "text_comp_end": ("组结束", ["文"])}
 CALLBACK_NAMES = {name: kind for kind, (name, _) in EVENT_PARAMS.items()}
 
 
@@ -51,7 +76,12 @@ CANVAS_PARAMS = MappingProxyType({"背景": ("色",), "填色": ("色",), "描�
               "保存": (), "恢复": (), "变换": ("a", "b", "c", "d", "e", "f"), "重置变换": (),
               "裁剪": ("横", "纵", "宽", "高"), "取消裁剪": (),
               "缓存": ("宽", "高", "绘制"), "贴图": ("图像", "横", "纵"),
+              "图请求": ("号", "源"), "绘图": ("号", "横", "纵", "宽", "高"),
+              "图释放": ("号",), "件请求": ("号", "源", "式"),
+              "入焦点": ("横", "纵", "宽", "高", "文", "标"), "入失焦": (),
+              "入更新": ("文", "标"),
               "帧率": ("率",), "停": (), "继续": (), "关闭": (), "宽": (), "高": (), "帧": (),
+              "字度": (), "测文": ("文",),
               "经过秒": (), "间隔秒": (),
               **{key: ("回调",) for key in CALLBACK_NAMES}})
 
@@ -73,13 +103,151 @@ def install_graphics(owner):
     owner.graphics_host = None
 
 
-READ_MEMBERS = frozenset(("宽", "高", "帧", "经过秒", "间隔秒"))
+READ_MEMBERS = frozenset(("宽", "高", "帧", "经过秒", "间隔秒", "字度", "测文"))
 RECORDER_MEMBERS = frozenset(CANVAS_PARAMS) - frozenset(CALLBACK_NAMES) - {
-    "缓存", "贴图", "帧率", "停", "继续", "关闭", "帧", "经过秒", "间隔秒"}
+    "缓存", "贴图", "帧率", "停", "继续", "关闭", "帧", "经过秒", "间隔秒",
+    "图请求", "绘图", "图释放", "件请求", "入焦点", "入失焦", "入更新",
+    "字度", "测文"}
+
+# 缺省字度（号的倍数）：与如UI 早期近似度量逐位一致，保证不注入时行为不变。
+_DEFAULT_TEXT_METRICS = {"全": 1.0, "半": 0.56, "行": 1.5}
+
+
+def _measure_text(canvas, text, fail):
+    """机 其 测文：宿主实测钩优先，否则按字度逐码点回退（半角＝码点 < 一）。"""
+    size = canvas.text_size
+    measurer = canvas.host.text_measurer
+    if measurer is not None:
+        width = measurer(text, size)
+        if (isinstance(width, bool) or not isinstance(width, (int, float))
+                or not math.isfinite(width) or not 0 <= width <= 10000000):
+            fail("如观测文宿主返回无效宽度")
+        return float(width)
+    half, full = canvas.metrics["半"], canvas.metrics["全"]
+    return float(sum(half if ord(char) < 0x4E00 else full for char in text) * size)
+
+
+def _address_space_used():
+    """Current virtual address space in bytes, or 0 when unmeasurable."""
+    try:
+        with open("/proc/self/status", encoding="ascii") as status:
+            for line in status:
+                if line.startswith("VmSize:"):
+                    return int(line.split()[1]) * 1024
+    except (OSError, ValueError, IndexError):
+        pass
+    return 0
+
+
+_ADDRESS_SPACE_LIMIT_ENV = "RULANG_ADDRESS_SPACE_LIMIT"
+_LIMIT_SUFFIXES = {"": 1, "K": 1024, "M": 1024 ** 2, "G": 1024 ** 3}
+
+
+def _parse_limit_bytes(text):
+    """Parse '1048576'／'512M'／'2G' style byte counts (binary suffixes)."""
+    match = re.fullmatch(r"\s*(\d+)\s*([A-Za-z]{0,3})\s*", text)
+    if not match:
+        raise RuError(f"无法解析地址空间上限 {text!r}；示例：512M、2G、1048576", category="能力错误")
+    suffix = match.group(2).upper()
+    suffix = {"B": "", "KB": "K", "MB": "M", "GB": "G", "KIB": "K", "MIB": "M", "GIB": "G"}.get(suffix, suffix)
+    if suffix not in _LIMIT_SUFFIXES:
+        raise RuError(f"无法解析地址空间上限 {text!r}；后缀只支持 K／M／G", category="能力错误")
+    return int(match.group(1)) * _LIMIT_SUFFIXES[suffix]
+
+
+def install_address_space_limit(limit_bytes=None):
+    """Set a permanent session address-space quota (POSIX ``RLIMIT_AS``).
+
+    Session spawners run one isolated process per session and call this once
+    at startup, or set ``RULANG_ADDRESS_SPACE_LIMIT`` (e.g. ``1G``) in its
+    environment. The quota covers the whole session process and cannot be
+    raised afterwards; exhausting it terminates the session instead of the
+    host application. ``GraphicsHost`` callbacks never tighten the process
+    limit: their guard is the portable time／line／allocation budget only.
+    Returns the quota in bytes, or None when neither argument nor
+    environment configures one (a no-op).
+    """
+    if limit_bytes is None:
+        raw = os.environ.get(_ADDRESS_SPACE_LIMIT_ENV)
+        if raw is None:
+            return None
+        limit_bytes = _parse_limit_bytes(raw)
+    if isinstance(limit_bytes, bool) or not isinstance(limit_bytes, int) or limit_bytes <= 0:
+        raise RuError("地址空间上限须为正整数字节数", category="能力错误")
+    try:
+        import resource
+    except ImportError:
+        resource = None
+    if resource is None or not hasattr(resource, "RLIMIT_AS"):
+        raise RuError("地址空间上限仅在支持 RLIMIT_AS 的 POSIX 系统可用；Windows 会话请改用 Job Object 等进程级机制", category="能力错误")
+    used = _address_space_used()
+    if used and used >= limit_bytes:
+        raise RuError(f"当前进程地址空间约 {used // 1024 // 1024} MiB，已高于请求的上限 {limit_bytes // 1024 // 1024} MiB；请调大配额或先排查异常内存映射", category="能力错误")
+    resource.setrlimit(resource.RLIMIT_AS, (limit_bytes, limit_bytes))
+    return limit_bytes
+
+
+def memory_protection_status():
+    """Report which memory-protection tier this process actually has.
+
+    Hosts surface this so users see the real boundary instead of an assumed
+    one: either a POSIX ``RLIMIT_AS`` quota configured at session startup,
+    or an explicit degraded note (external cgroup／Windows Job Object, or
+    RSS 预警 which cannot stop a single large allocation). The portable
+    callback budgets are always active regardless.
+    """
+    try:
+        import resource
+    except ImportError:
+        resource = None
+    if resource is None or not hasattr(resource, "RLIMIT_AS"):
+        return {"mechanism": None, "quota_bytes": None, "cooperative_budgets": True,
+                "degraded": True,
+                "detail": "无 POSIX RLIMIT_AS；进程级内存边界请用 Windows Job Object 或 cgroup 配置，"
+                          "RSS 轮询只能预警，挡不住瞬时大分配"}
+    soft, _hard = resource.getrlimit(resource.RLIMIT_AS)
+    if soft != resource.RLIM_INFINITY:
+        return {"mechanism": "rlimit_as", "quota_bytes": soft, "cooperative_budgets": True,
+                "degraded": False,
+                "detail": "POSIX RLIMIT_AS 地址空间配额全程生效；耗尽会终止本会话进程"}
+    return {"mechanism": None, "quota_bytes": None, "cooperative_budgets": True,
+            "degraded": True,
+            "detail": "RLIMIT_AS 未配置；当前只有回调级合作式预算与硬看门狗。"
+                      "建议会话启动时设置 RULANG_ADDRESS_SPACE_LIMIT，"
+                      "或由外部 cgroup／Job Object 负责进程级配额"}
 
 
 def _json(value):
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def _image_head_size(data):
+    """Read pixel dimensions from PNG/JPEG headers without decoding."""
+    if data[:8] == b"\x89PNG\r\n\x1a\n" and len(data) >= 24:
+        width = int.from_bytes(data[16:20], "big")
+        height = int.from_bytes(data[20:24], "big")
+        if width > 0 and height > 0:
+            return width, height
+        raise RuError("图像尺寸无效", category="用法错误")
+    if data[:2] == b"\xff\xd8":
+        index = 2
+        while index + 9 <= len(data):
+            if data[index] != 0xFF:
+                index += 1
+                continue
+            marker = data[index + 1]
+            if marker in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7,
+                          0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
+                height = int.from_bytes(data[index + 5:index + 7], "big")
+                width = int.from_bytes(data[index + 7:index + 9], "big")
+                if width > 0 and height > 0:
+                    return width, height
+                raise RuError("图像尺寸无效", category="用法错误")
+            segment = int.from_bytes(data[index + 2:index + 4], "big")
+            if segment < 2:
+                break
+            index += 2 + segment
+    raise RuError("不识别的图像格式", category="用法错误")
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,7 +286,12 @@ class Canvas:
         self.line_width, self.text_size = 1, 16
         self.text_align, self.text_baseline = "left", "top"
         self.fps, self.frame = 30, 0
+        self.metrics = dict(_DEFAULT_TEXT_METRICS)
         self.running, self.closed = False, False
+        self.image_loads = set()
+        self.file_loads = set()
+        self.load_started = set()
+        self.load_done = set()
         self._origin = origin
         self._previous_frame = None
         self._elapsed, self._delta = 0.0, 0.0
@@ -154,6 +327,10 @@ class Canvas:
         self.resources.clear()
         self.resource_bytes, self.resource_pixels = 2, 0
         self.commands.clear()
+        self.image_loads.clear()
+        self.file_loads.clear()
+        self.load_started.clear()
+        self.load_done.clear()
         self.reset_geometry()
         self.host.emit({"type": "graphics_closed", "canvas_id": self.id})
         if self.host.canvas is self:
@@ -231,7 +408,7 @@ class DrawingRecorder(Canvas):
 
 
 class GraphicsHost:
-    def __init__(self, interpreter, emit, *, now_seconds=None):
+    def __init__(self, interpreter, emit, *, now_seconds=None, auto_load=True):
         self.interpreter, self.emit = interpreter, emit
         self.canvas = None
         self.phase = "initialization"
@@ -242,6 +419,14 @@ class GraphicsHost:
         # default separately: callback budget checks keep reading their live clock.
         self._now_seconds = time.monotonic if now_seconds is None else now_seconds
         self._last_clock_sample = None
+        # Phase 3a: the Python host resolves 图请求／件请求 itself unless a test
+        # driver opts out (auto_load=False) and injects readiness events by hand.
+        self.auto_load = bool(auto_load)
+        self.load_queue = deque()
+        self._draining = False
+        # 测文协议：下游渲染宿主可注入真实字度表与实测钩（如书前端等）。
+        self.text_metrics = None
+        self.text_measurer = None
         interpreter.graphics_host = self
 
     def _sample_time(self, *, close_on_error=True):
@@ -285,6 +470,7 @@ class GraphicsHost:
     def begin_execution(self):
         self.close()
         self.phase = "initialization"
+        self.load_queue.clear()
 
     def create(self, width, height):
         from .interpreter import Instance
@@ -295,11 +481,27 @@ class GraphicsHost:
         if not tracemalloc.is_tracing():
             tracemalloc.start(1)
             self.owns_tracing = True
-        self.memory_start = tracemalloc.get_traced_memory()[0]
         self.canvas = Canvas(self, width, height, origin)
+        self.canvas.metrics = self._resolve_text_metrics()
         instance = Instance(_TYPES["canvas"], {})
         instance.graphics_canvas = self.canvas
         return instance
+
+    def _resolve_text_metrics(self):
+        metrics = self.text_metrics
+        if metrics is None:
+            return dict(_DEFAULT_TEXT_METRICS)
+        if not isinstance(metrics, dict):
+            raise RuError("如观字度须为含全／半／行的典", category="用法错误")
+        resolved = {}
+        for key in ("全", "半", "行"):
+            value = metrics.get(key)
+            if (isinstance(value, bool) or not isinstance(value, (int, float))
+                    or not math.isfinite(value) or not 0.1 <= value <= 10):
+                raise RuError("如观字度须为含全／半／行的典，三个数各为 0.1 至 10 之间有限数",
+                              category="用法错误")
+            resolved[key] = float(value)
+        return resolved
 
     def flush(self):
         canvas = self.canvas
@@ -311,6 +513,70 @@ class GraphicsHost:
                 raise RuError("如观完整绘图帧超过 256 KiB UTF-8 数据；请减少图形或文字", category="运行错误")
             self.emit(event)
             canvas.dirty = False
+        self._drain_loads()
+
+    def _drain_loads(self):
+        # Load jobs queue host-issued readiness events. Deliver them iteratively
+        # (not through nested handle→flush recursion) so chained requests stay
+        # shallow; each event still passes the ordinary callback budgets.
+        if self._draining:
+            return
+        self._draining = True
+        try:
+            delivered = 0
+            while self.load_queue and delivered < MAX_LOAD_EVENTS_PER_FLUSH:
+                job = self.load_queue.popleft()
+                delivered += 1
+                canvas = self.canvas
+                if canvas is None or canvas.closed or canvas.id != job["canvas_id"]:
+                    continue
+                canvas.load_started.add(job["handle"])
+                if job["kind"] == "image":
+                    event = self._load_image_job(job)
+                else:
+                    event = self._load_file_job(job)
+                if event is not None:
+                    self.handle(event)
+        finally:
+            self._draining = False
+
+    def _load_image_job(self, job):
+        try:
+            if os.path.getsize(job["source"]) > MAX_IMAGE_FILE_BYTES:
+                raise ValueError("图像超过配额")
+            with open(job["source"], "rb") as stream:
+                head = stream.read(65536)
+            width, height = _image_head_size(head)
+            if width * height > MAX_IMAGE_PIXELS:
+                raise ValueError("图像超过配额")
+            return {"type": "image_ready", "id": job["handle"], "width": width, "height": height}
+        except OSError:
+            return {"type": "image_failed", "id": job["handle"], "error": "读不到文件"}
+        except ValueError as exc:
+            return {"type": "image_failed", "id": job["handle"], "error": str(exc)[:512] or "装载失败"}
+
+    def _load_file_job(self, job):
+        try:
+            if os.path.getsize(job["source"]) > MAX_FILE_LOAD_BYTES:
+                raise ValueError("文件超过配额")
+            with open(job["source"], "rb") as stream:
+                raw = stream.read(MAX_FILE_LOAD_BYTES + 1)
+            if len(raw) > MAX_FILE_LOAD_BYTES:
+                raise ValueError("文件超过配额")
+            if job["mode"] == "文":
+                try:
+                    text = raw.decode("utf-8")
+                except UnicodeDecodeError:
+                    raise ValueError("不是有效 UTF-8 文本")
+            else:
+                text = base64.b64encode(raw).decode("ascii")
+                if len(text) > MAX_FILE_LOAD_BYTES:
+                    raise ValueError("文件超过配额")
+            return {"type": "file_ready", "id": job["handle"], "text": text}
+        except OSError:
+            return {"type": "file_failed", "id": job["handle"], "error": "读不到文件"}
+        except ValueError as exc:
+            return {"type": "file_failed", "id": job["handle"], "error": str(exc)[:512] or "装载失败"}
 
     def handle(self, event, *, canvas_id=None):
         canvas = self.canvas
@@ -337,14 +603,98 @@ class GraphicsHost:
             allowed.add("key")
             if not isinstance(event.get("key"), str) or len(event["key"]) > 64:
                 raise RuError("无效如观按键", category="运行错误")
+        elif kind == "image_ready":
+            allowed |= {"id", "width", "height"}
+        elif kind == "image_failed":
+            allowed |= {"id", "error"}
+        elif kind == "file_ready":
+            allowed |= {"id", "text"}
+        elif kind == "file_failed":
+            allowed |= {"id", "error"}
+        elif kind == "text_key":
+            allowed.add("key")
+            if not isinstance(event.get("key"), str) or event["key"] not in TEXT_EDIT_KEYS:
+                raise RuError("无效如观文入键（须为附录 A 编辑键名）", category="运行错误")
+        elif kind in ("text_char", "text_paste"):
+            allowed.add("text")
+            text = event.get("text")
+            if (not isinstance(text, str) or (kind == "text_char" and len(text) != 1)
+                    or (kind == "text_paste" and (not text or len(text) > MAX_PASTE_CHARS))):
+                raise RuError("无效如观文入文本", category="运行错误")
+        elif kind == "text_comp_start":
+            pass
+        elif kind == "text_comp_update":
+            allowed |= {"text", "cursor"}
+            text = event.get("text")
+            cursor = event.get("cursor")
+            if not isinstance(text, str) or len(text) > MAX_COMPOSITION_CHARS:
+                raise RuError("无效如观输入法组合", category="运行错误")
+            if (isinstance(cursor, bool) or not isinstance(cursor, (int, float))
+                    or not 0 <= cursor <= MAX_COMPOSITION_CHARS or not math.isfinite(cursor)):
+                raise RuError("无效如观输入法光标", category="运行错误")
+        elif kind == "text_comp_end":
+            allowed.add("text")
+            if not isinstance(event.get("text"), str) or len(event["text"]) > MAX_COMPOSITION_CHARS:
+                raise RuError("无效如观输入法定字", category="运行错误")
         if set(event) - allowed:
             raise RuError("如观事件含未知字段", category="运行错误")
         if kind == "close":
             self.close()
             return
         callback = canvas.callbacks.get(kind)
-        if callback is None or (kind == "frame" and not canvas.running):
+        if kind in ASYNC_EVENTS and callback is None:
+            # 未绑定的装载就绪事件按清理噪音静默忽略。
+            return
+        if kind != "frame" and callback is None:
             raise RuError("如观事件未启用", category="运行错误")
+        if kind == "frame" and not canvas.running:
+            raise RuError("如观事件未启用", category="运行错误")
+        if kind == "image_ready":
+            handle_id = event["id"]
+            width, height = event["width"], event["height"]
+            if (isinstance(handle_id, bool) or not isinstance(handle_id, int)
+                    or not 0 <= handle_id <= 10000000):
+                raise RuError("无效如观装载句柄", category="运行错误")
+            if (isinstance(width, bool) or not isinstance(width, int)
+                    or isinstance(height, bool) or not isinstance(height, int)
+                    or not 1 <= width <= 4096 or not 1 <= height <= 4096):
+                raise RuError("无效如观图像尺寸", category="运行错误")
+            event = {"type": kind, "id": handle_id, "width": width, "height": height}
+        elif kind == "image_failed":
+            handle_id = event["id"]
+            error = event["error"]
+            if (isinstance(handle_id, bool) or not isinstance(handle_id, int)
+                    or not 0 <= handle_id <= 10000000):
+                raise RuError("无效如观装载句柄", category="运行错误")
+            if not isinstance(error, str) or not 1 <= len(error.encode("utf-8")) <= 512:
+                raise RuError("无效如观装载错误", category="运行错误")
+            event = {"type": kind, "id": handle_id, "error": error}
+        elif kind == "file_ready":
+            handle_id = event["id"]
+            text = event["text"]
+            if (isinstance(handle_id, bool) or not isinstance(handle_id, int)
+                    or not 0 <= handle_id <= 10000000):
+                raise RuError("无效如观装载句柄", category="运行错误")
+            if not isinstance(text, str) or len(text.encode("utf-8")) > MAX_FILE_TEXT_BYTES:
+                raise RuError("无效如观文件内容", category="运行错误")
+            event = {"type": kind, "id": handle_id, "text": text}
+        elif kind == "file_failed":
+            handle_id = event["id"]
+            error = event["error"]
+            if (isinstance(handle_id, bool) or not isinstance(handle_id, int)
+                    or not 0 <= handle_id <= 10000000):
+                raise RuError("无效如观装载句柄", category="运行错误")
+            if not isinstance(error, str) or not 1 <= len(error.encode("utf-8")) <= 512:
+                raise RuError("无效如观装载错误", category="运行错误")
+            event = {"type": kind, "id": handle_id, "error": error}
+        if kind in ASYNC_EVENTS:
+            # 只对真正在途的装载句柄送就绪：未知句柄（从未请求或已释放）
+            # 与重复就绪都按噪音忽略，帧数保持确定。校验先行，坏事件仍须报错。
+            outstanding = canvas.image_loads if kind.startswith("image") else canvas.file_loads
+            if (handle_id not in outstanding or handle_id not in canvas.load_started
+                    or handle_id in canvas.load_done):
+                return
+            canvas.load_done.add(handle_id)
         fn, node = callback
         now = self._sample_time()
         canvas._elapsed = now - canvas._origin
@@ -358,6 +708,18 @@ class GraphicsHost:
             values = [float(event["x"]), float(event["y"])]
             if kind != "mouse_move":
                 values.append(float(event.get("button", 0)))
+        elif kind == "image_ready":
+            values = [float(event["id"]), float(event["width"]), float(event["height"])]
+        elif kind in ("image_failed", "file_failed"):
+            values = [float(event["id"]), event["error"]]
+        elif kind == "file_ready":
+            values = [float(event["id"]), event["text"]]
+        elif kind in ("text_char", "text_paste", "text_comp_end"):
+            values = [event["text"]]
+        elif kind == "text_comp_update":
+            values = [event["text"], float(event["cursor"])]
+        elif kind == "text_comp_start":
+            values = []
         else:
             values = [event["key"]]
         # Frames are complete scenes. Input callbacks can change style/data;
@@ -367,6 +729,10 @@ class GraphicsHost:
         previous_bytes = canvas.command_bytes
         canvas.commands, canvas.command_bytes = [], 2
         started = time.monotonic()
+        # Sample the allocation baseline per callback so the budget measures
+        # this callback's net growth. Slow growth across many callbacks is
+        # covered by the session-level address-space quota instead.
+        self.memory_start = tracemalloc.get_traced_memory()[0]
         deadline, lines = started + MAX_CALLBACK_SECONDS, 0
         remaining = 128
         def check():
@@ -399,21 +765,11 @@ class GraphicsHost:
                     remaining = 128
                     check()
             return trace
+        # The callback layer guards time, work and allocation with the
+        # portable trace budget above. Process-wide resource quotas belong
+        # at the session boundary: session spawners set them once at process
+        # startup via install_address_space_limit, never per callback here.
         old_trace = sys.gettrace()
-        old_limit = None
-        # A single host operation may allocate before Python's next trace line.
-        # POSIX's address-space ceiling complements the portable allocation
-        # budget. Restore the caller's setting after this callback.
-        try:
-            import resource
-            if hasattr(resource, "RLIMIT_AS"):
-                old_limit = resource.getrlimit(resource.RLIMIT_AS)
-                finite = [value for value in old_limit if value != resource.RLIM_INFINITY]
-                ceiling = min([512 * 1024 * 1024] + finite)
-                resource.setrlimit(resource.RLIMIT_AS, (ceiling, old_limit[1]))
-        except (ImportError, OSError, ValueError):
-            old_limit = None
-        callback_error = False
         previous_phase, self.phase = self.phase, "event"
         try:
             sys.settrace(trace)
@@ -422,31 +778,32 @@ class GraphicsHost:
             if self.canvas:
                 self.canvas.check_balanced()
         except BaseException:
-            callback_error = True
             self.close()
             raise
         finally:
             self.phase = previous_phase
             sys.settrace(old_trace)
-            if old_limit is not None:
-                try:
-                    resource.setrlimit(resource.RLIMIT_AS, old_limit)
-                except (OSError, ValueError):
-                    # Some hosts permit lowering a soft limit but reject raising
-                    # it again. Keep the protective ceiling, never hide the
-                    # original callback error, and report an actionable failure.
-                    self.close()
-                    if not callback_error:
-                        self.interpreter.fail(node, "如观无法恢复系统内存上限；保护性限制仍生效，已关闭交互，请重启会话")
         if self.canvas is canvas:
-            if not canvas.commands and kind != "frame":
-                canvas.commands, canvas.command_bytes = previous, previous_bytes
-            canvas.dirty = True
+            if kind in ASYNC_EVENTS:
+                # 装载就绪：旧装帧已作废（源可能已换或行已消失），不恢复不
+                # 重发；随后的补帧会全量重绘最新场景。
+                pass
+            else:
+                if not canvas.commands and kind != "frame":
+                    # Ignored inputs retain the previous complete scene (phase-2
+                    # contract: re-publish the restored frame).
+                    canvas.commands, canvas.command_bytes = previous, previous_bytes
+                canvas.dirty = True
         try:
             self.flush()
         except BaseException:
             self.close()
             raise
+        if (kind in ASYNC_EVENTS and self.canvas is canvas and canvas.running
+                and "frame" in canvas.callbacks):
+            # 装载就绪视同一次帧推进：库只在每帧回调里绘制，宿主补一帧
+            # 重渲染，与浏览器宿主在就绪后下一拍 rAF 重绘对齐。
+            self.handle({"type": "frame"})
 
 
 def graphics_member(owner, n, receiver, name, args):
@@ -545,6 +902,62 @@ def graphics_member(owner, n, receiver, name, args):
             fail("如观图像已失效或属于另一画布；请重新创建缓存")
         canvas.command({"op": "image", "resource": handle.resource_id,
                         "x": number(bound["横"], "横"), "y": number(bound["纵"], "纵")}, fail)
+    elif name == "图请求":
+        handle_id = number(bound["号"], "号", 1, 10000000, True)
+        source = bound["源"]
+        if not isinstance(source, str) or not source or len(source.encode("utf-8")) > MAX_SOURCE_CHARS:
+            fail("如观图像源 须为非空句，最长 512 字节")
+        if handle_id not in canvas.image_loads and len(canvas.image_loads) >= MAX_LOAD_HANDLES:
+            fail("如观图像装载最多 64 项；请用 图释放 归还句柄")
+        canvas.image_loads.add(handle_id)
+        canvas.command({"op": "image_request", "id": handle_id, "source": source}, fail)
+        if canvas.host.auto_load:
+            canvas.host.load_queue.append({"kind": "image", "canvas_id": canvas.id,
+                                           "handle": handle_id, "source": source})
+    elif name == "绘图":
+        handle_id = number(bound["号"], "号", 1, 10000000, True)
+        canvas.command({"op": "draw_image", "id": handle_id,
+                        "x": number(bound["横"], "横"), "y": number(bound["纵"], "纵"),
+                        "width": number(bound["宽"], "宽", 0, 100000),
+                        "height": number(bound["高"], "高", 0, 100000)}, fail)
+    elif name == "图释放":
+        handle_id = number(bound["号"], "号", 1, 10000000, True)
+        canvas.image_loads.discard(handle_id)
+        canvas.command({"op": "image_release", "id": handle_id}, fail)
+    elif name == "件请求":
+        handle_id = number(bound["号"], "号", 1, 10000000, True)
+        source = bound["源"]
+        if not isinstance(source, str) or not source or len(source.encode("utf-8")) > MAX_SOURCE_CHARS:
+            fail("如观文件源 须为非空句，最长 512 字节")
+        mode = bound["式"]
+        if mode not in LOAD_MODES:
+            fail("如观文件模式 只支持 '文' 或 'base64'")
+        if handle_id not in canvas.file_loads and len(canvas.file_loads) >= MAX_LOAD_HANDLES:
+            fail("如观文件装载最多 64 项")
+        canvas.file_loads.add(handle_id)
+        canvas.command({"op": "file_request", "id": handle_id, "source": source, "mode": mode}, fail)
+        if canvas.host.auto_load:
+            canvas.host.load_queue.append({"kind": "file", "canvas_id": canvas.id, "handle": handle_id,
+                                           "source": source, "mode": mode})
+    elif name == "入焦点":
+        text = bound["文"]
+        if not isinstance(text, str) or len(text.encode("utf-8")) > MAX_FILE_TEXT_BYTES:
+            fail("如观文入文本 须为句，最长 8 MiB")
+        canvas.command({"op": "text_focus", "x": number(bound["横"], "横"),
+                        "y": number(bound["纵"], "纵"),
+                        "width": number(bound["宽"], "宽", 0, 100000),
+                        "height": number(bound["高"], "高", 0, 100000),
+                        "text": text,
+                        "cursor": number(bound["标"], "标", 0, MAX_PASTE_CHARS, True)}, fail)
+    elif name == "入失焦":
+        canvas.command({"op": "text_blur"}, fail)
+    elif name == "入更新":
+        text = bound["文"]
+        if not isinstance(text, str) or len(text) > MAX_PASTE_CHARS:
+            fail("如观文入文本 最长 " + str(MAX_PASTE_CHARS) + " 字")
+        canvas.command({"op": "text_update", "text": text,
+                        "cursor": number(bound["标"], "标", 0, MAX_PASTE_CHARS, True),
+                        "sel": ""}, fail)
     elif name in CALLBACK_NAMES:
         fn = bound["回调"]
         event = CALLBACK_NAMES[name]
@@ -557,6 +970,17 @@ def graphics_member(owner, n, receiver, name, args):
         return True, float({"宽": canvas.width, "高": canvas.height, "帧": canvas.frame}[name])
     elif name in ("经过秒", "间隔秒"):
         return True, canvas._elapsed if name == "经过秒" else canvas._delta
+    elif name == "字度":
+        from .interpreter import RuMap
+        result = RuMap()
+        for key in ("全", "半", "行"):
+            owner.map_put(n, result, key, canvas.metrics[key])
+        return True, result
+    elif name == "测文":
+        text = bound["文"]
+        if not isinstance(text, str) or len(text) > 4096:
+            fail("测文须为不超过 4096 字符的句")
+        return True, _measure_text(canvas, text, fail)
     elif name == "关闭":
         # Explicit close is cleanup and may discard an unfinished saved state.
         canvas.stack.clear()
@@ -631,9 +1055,13 @@ def graphics_member(owner, n, receiver, name, args):
                         "stroke": canvas.stroke, "stroke_width": canvas.line_width}, fail)
     elif name == "背景":
         background = color(bound["色"])
-        # A new background makes preceding drawing invisible; release it only
-        # after validation so a caught argument error cannot erase the scene.
+        # A new background makes preceding drawing invisible; load-management
+        # commands are not drawing and survive the reset so a layout walk may
+        # issue them before the background is painted.
+        kept = [item for item in canvas.commands if item["op"] in LOAD_MANAGEMENT_OPS]
         canvas.commands, canvas.command_bytes = [], 2
+        for item in kept:
+            canvas.command(item, fail)
         canvas.command({"op": "background", "color": background}, fail)
     elif name in ("弧", "扇形"):
         # Keep signed angles and even invisible/zero-sweep commands. A drawing

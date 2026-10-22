@@ -105,8 +105,11 @@ current live traced allocation bytes at canvas creation; compare current live
 bytes minus that baseline to 64 MiB. This is not peak memory, RSS, GPU memory or
 all-system memory. A temporary allocation freed before a sampling point may not
 trip it. Tracing lasts until canvas close (unless another owner started it).
-- POSIX address-space soft limit during callbacks is the minimum of 512 MiB and
-existing finite limits, restored in finally.
+- Callbacks never tighten the process resource limit. Session processes set
+  their address-space quota once at startup (`install_address_space_limit` or
+  `RULANG_ADDRESS_SPACE_LIMIT`, e.g. `1G`; POSIX `RLIMIT_AS`, soft and hard),
+  and exhausting it terminates and restarts the isolated session instead of
+  the host application.
 - Out-of-process 10 s graphics watchdog, process/session generation checks,
 stop/reset and graphics data validation remain untouched.
 

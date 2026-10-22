@@ -356,6 +356,11 @@ class LanguageTests(unittest.TestCase):
 
     def test_examples(self):
         for path in (ROOT/"examples").glob("*.ru"):
+            if path.stem.startswith("ruui-"):
+                # 如UI examples drive the 如观 canvas: Python 如书 session or
+                # browser runtime only (see tests/test_ruui*.py); the C
+                # backend explicitly rejects 如观.
+                continue
             with self.subTest(example=path.name):
                 Compiler(parse(path.read_text(encoding="utf-8")), str(path)).compile()
 

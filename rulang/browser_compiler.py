@@ -9,13 +9,20 @@ import re
 from .c_runtime import walk_nodes
 from .frontend import RuError, parse, validate
 from .js_compiler import JSCompiler, js
-from .modules import ModuleGraph, STANDARD_MODULES, import_nodes, reject_generation_document, reject_renamed_import
+from .modules import (
+    BUNDLED_THIRD_PARTY_MODULES,
+    ModuleGraph,
+    STANDARD_MODULES,
+    import_nodes,
+    reject_generation_document,
+    reject_renamed_import,
+)
 
 # ModuleGraph keys must have the same canonical form as Compiler.root. On
 # Windows an absolute slash path gains a drive and native separators when
 # resolved; keeping the slash spelling would collect the same root AST twice.
 ROOT = str(Path('/__rushu_browser__/root.ru').resolve())
-ALLOWED_MODULES = frozenset(STANDARD_MODULES) - {"如:密"}
+ALLOWED_MODULES = (frozenset(STANDARD_MODULES) | frozenset(BUNDLED_THIRD_PARTY_MODULES)) - {"如:密"}
 FORBIDDEN_NAMES = frozenset({'读', '件', '录', '件作成果', '读取', '显出', '错误'})
 MAX_NODES = 20000
 
@@ -55,7 +62,11 @@ def browser_graph(code):
                 error = RuError('浏览器 JS 模式只允许内置标准外言，不读取本地文件：' + requested, n.token.line, n.token.col, '能力错误')
                 error.source_name = path
                 raise error
-            resolved = str((Path(__file__).parent / 'stdlib' / STANDARD_MODULES[requested]).resolve())
+            bundled = BUNDLED_THIRD_PARTY_MODULES.get(requested)
+            if bundled is not None:
+                resolved = str((Path(__file__).parent / 'thirdparty' / bundled).resolve())
+            else:
+                resolved = str((Path(__file__).parent / 'stdlib' / STANDARD_MODULES[requested]).resolve())
             n.data['resolved'] = resolved
             if resolved not in graph:
                 visit(resolved, Path(resolved).read_text(encoding='utf-8'))

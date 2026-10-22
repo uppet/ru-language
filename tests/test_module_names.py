@@ -11,9 +11,10 @@ from unittest.mock import patch
 from rulang.browser_compiler import ALLOWED_MODULES, browser_graph
 from rulang.compiler import Compiler
 from rulang.frontend import RuError, parse
+from rulang.modules import BUNDLED_THIRD_PARTY_MODULES, STANDARD_MODULES, load_module_graph, resolve_import
 from rulang.interpreter import Interpreter
 from rulang.js_compiler import JSCompiler
-from rulang.modules import STANDARD_MODULES, load_module_graph, resolve_import
+
 
 ROOT = Path(__file__).resolve().parents[1]
 RENAMED = {'如观': '如:观', '如竞': '如:竞', '如:竞赛': '如:竞'}
@@ -23,7 +24,10 @@ class ModuleNameTests(unittest.TestCase):
     def test_canonical_names_are_the_only_standard_names(self):
         expected = {'如:观', '如:竞', '如:文本', '如:数学', '如:随机', '如:密'}
         self.assertEqual(set(STANDARD_MODULES), expected)
-        self.assertEqual(ALLOWED_MODULES, expected - {'如:密'})
+        # Browser JS allows every bundled module (standard library plus the
+        # 如见／如UI third-party bundles) except the 密 crypto module.
+        self.assertEqual(ALLOWED_MODULES,
+                         (set(STANDARD_MODULES) | set(BUNDLED_THIRD_PARTY_MODULES)) - {'如:密'})
         for name, filename in STANDARD_MODULES.items():
             self.assertEqual(resolve_import(name, '/tmp/main.ru'),
                              str((ROOT / 'rulang' / 'stdlib' / filename).resolve()))

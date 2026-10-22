@@ -156,24 +156,24 @@ class GraphicsTransformTests(unittest.TestCase):
                 self.run_ru('图 其 矩形 0 0 1 1.')
         self.assertEqual(self.host.canvas.commands, [])
 
-    def test_limit_restoration_failure_is_friendly_and_keeps_original_error(self):
+    def test_callback_leaves_process_limit_and_trace_untouched(self):
         try:
             import resource
         except ImportError:
             self.skipTest('POSIX resource limits unavailable')
         if not hasattr(resource, 'RLIMIT_AS'):
             self.skipTest('RLIMIT_AS unavailable')
-        for callback, expected in [('图 其 线 0 0 1 1.', '无法恢复系统内存上限'), ('显 未定义.', '未定义')]:
-            self.run_ru('图 取 观 其 画布 10 10. 图 其 每帧 (作 帧: ' + callback + ' 为).')
-            old_trace = sys.gettrace()
-            with patch.object(resource, 'getrlimit', return_value=(-1, -1)), \
-                 patch.object(resource, 'setrlimit', side_effect=[None, ValueError('not allowed')]) as setter:
-                with self.assertRaisesRegex(RuError, expected):
+        original_trace = sys.gettrace()
+        with patch.object(resource, 'setrlimit') as setter:
+            for callback, expected in [('图 其 线 0 0 1 1.', None), ('显 未定义.', '未定义')]:
+                self.run_ru('图 取 观 其 画布 10 10. 图 其 每帧 (作 帧: ' + callback + ' 为).')
+                if expected is None:
                     self.host.handle({'type': 'frame'})
-                self.assertEqual(setter.call_count, 2)
-                self.assertEqual(setter.call_args_list[0].args[1], (512 * 1024 * 1024, -1))
-            self.assertIs(sys.gettrace(), old_trace)
-            self.assertIsNone(self.host.canvas)
+                else:
+                    with self.assertRaisesRegex(RuError, expected):
+                        self.host.handle({'type': 'frame'})
+        setter.assert_not_called()
+        self.assertIs(sys.gettrace(), original_trace)
 
 
 if __name__ == '__main__':

@@ -126,15 +126,21 @@ def compiler_command(selected, windows=None):
     return parts
 
 
-def build(program, source_path, output, cc=None, emit_c=None, modules=None, target="c", full_runtime=False, allow_native=False, source_prefix_maps=(), style_check=None, emit_llvm=None, llvm_clang=None, mi_manifest=None):
-    if target not in ("c", "js", "llvm"):
-        raise RuError("编译目标须为 c、js 或 llvm", category="编译错误")
+def build(program, source_path, output, cc=None, emit_c=None, modules=None, target="c", full_runtime=False, allow_native=False, source_prefix_maps=(), style_check=None, emit_llvm=None, llvm_clang=None, mi_manifest=None, assets=None):
+    if target not in ("c", "js", "llvm", "ui"):
+        raise RuError("编译目标须为 c、js、llvm 或 ui", category="编译错误")
     if target != 'llvm' and (emit_llvm is not None or llvm_clang is not None):
         raise RuError('--emit-llvm 和 --llvm-clang 只适用于 LLVM 目标', category='编译错误')
     if mi_manifest and target not in ('c', 'llvm'):
         raise RuError('密实验普通桥仅支持 C／LLVM；JS 语义内核请用实验生成器', category='能力错误')
     if target == 'llvm' and (cc is not None or emit_c is not None or (allow_native and not mi_manifest)):
         raise RuError('LLVM AOT M1 不支持 --cc、--emit-c 或 --allow-native；编译器请用 --llvm-clang 指定', category='能力错误')
+    if target == "ui" and (cc is not None or emit_c is not None):
+        raise RuError("如UI 网页目标不能使用 --cc 或 --emit-c", category="编译错误")
+    if target == "ui" and allow_native:
+        raise RuError("--allow-native 只适用于 C 编译目标", category="能力错误")
+    if target == "ui" and source_prefix_maps:
+        raise RuError("源码路径映射只适用于 C 编译目标", category="编译错误")
     if target == "js" and (cc is not None or emit_c is not None):
         raise RuError("JavaScript 目标不能使用 --cc 或 --emit-c", category="编译错误")
     if source_prefix_maps and target != 'c':
@@ -174,6 +180,20 @@ def build(program, source_path, output, cc=None, emit_c=None, modules=None, targ
                 os.fsync(stream.fileno())
             os.replace(script, output)
         return output, "JavaScript (Node.js)"
+    if target == "ui":
+        from .app_builder import build_app_html
+        generated = build_app_html(source_path.read_text(encoding="utf-8"), title=source_path.stem, assets_dir=assets)
+        if style_check is not None:
+            style_check()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix=".ru-build-", dir=output.parent) as temp:
+            page = Path(temp) / "app.html"
+            with page.open("w", encoding="utf-8", newline="\n") as stream:
+                stream.write(generated)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(page, output)
+        return output, "如UI 网页（自包含 HTML）"
     generated = Compiler(program, str(source_path), modules=modules, full_runtime=full_runtime, allow_native=allow_native,
                          source_prefix_maps=source_prefix_maps, mi_manifest=mi_manifest).compile()
     if style_check is not None:
@@ -267,7 +287,7 @@ def repl():
             report(error, "<repl>", pending)
             pending = ""
         except RecursionError:
-            report(RuError("表达式或语句结构过深，请拆分为较小的步骤"), "<repl>")
+            report(RuError("程序执行超出解释器资源上限（结构嵌套过深），请拆分为较小的步骤", category="运行错误"), "<repl>")
             pending = ""
         except (OSError, UnicodeError, ValueError) as error:
             report(RuError("输入失败：无法读取有效 UTF-8 输入", category="运行错误"), "<repl>")
@@ -300,7 +320,8 @@ def make_parser():
     p.add_argument("source")
     p.add_argument("--strict-style", action="store_true", help="将缺少完整语句结束句点的书写提示作为错误；默认只在标准错误提示")
     p.add_argument("-o", "--output", help="输出路径；C 默认去掉源文件扩展名，JS 默认为同名 .js")
-    p.add_argument("--target", choices=("c", "js", "llvm"), default="c", help="编译目标：c（默认）、js（Node.js）或 llvm（LLVM 14 / Linux、Windows x86-64 AOT）")
+    p.add_argument("--target", choices=("c", "js", "llvm", "ui"), default="c", help="编译目标：c（默认）、js（Node.js）、llvm（LLVM 14 / Linux、Windows x86-64 AOT）或 ui（如UI 自包含网页，浏览器打开即交互）")
+    p.add_argument("--assets", metavar="目录", help="仅 --target ui：内嵌资产目录，供 件目/图载/件载 以相对路径访问；图像转 data URL、文本内联、其余转 base64，总量 ≤16 MiB")
     p.add_argument("--cc", help="C 编译器（默认依次查找 clang、gcc、cc；也支持 CC 环境变量）")
     p.add_argument("--emit-c", metavar="PATH", help="额外保存可审阅的独立 C99 源码")
     p.add_argument("--emit-llvm", metavar="PATH", help="仅 LLVM：保存已链接运行时、验证并优化的独立 .ll，可由 clang-14 复编")
@@ -373,6 +394,8 @@ def main(argv=None):
         parser.error('--emit-llvm 和 --llvm-clang 只适用于 --target llvm')
     if args.command == 'build' and args.target == 'llvm' and (args.cc is not None or args.emit_c is not None or (args.allow_native and not args.experimental_mi_manifest) or args.source_prefix_map):
         parser.error('LLVM AOT M1 不支持 --cc、--emit-c、--allow-native 或 --source-prefix-map；编译器请用 --llvm-clang 指定')
+    if args.command == 'build' and args.assets and args.target != 'ui':
+        parser.error('--assets 只适用于 --target ui')
     if args.command in (None, "repl"):
         return repl()
     source, name = "", getattr(args, "source", getattr(args, "document", "<输入>"))
@@ -487,17 +510,20 @@ def main(argv=None):
             print(f"检查通过：{name}" + ("（Python 模块语法验证；未执行代码或加载 DLL）" if args.target == "python" else ""))
         elif args.command == "build":
             output = args.output or (str(Path(args.source).with_suffix(".js")) if args.target == "js"
+                                     else str(Path(args.source).with_suffix(".html")) if args.target == "ui"
                                      else str(Path(args.source).with_suffix("")) + (".exe" if os.name == "nt" else ""))
             result, compiler = build(program, args.source, output, args.cc, args.emit_c,
                                      modules=modules, target=args.target, full_runtime=args.full_runtime, allow_native=args.allow_native,
                                      source_prefix_maps=args.source_prefix_map, style_check=check_style,
                                      emit_llvm=args.emit_llvm, llvm_clang=args.llvm_clang,
-                                     mi_manifest=args.experimental_mi_manifest)
+                                     mi_manifest=args.experimental_mi_manifest, assets=args.assets)
             if args.target == "js":
                 print(f"已编译：{result}\n运行目标：{compiler}；未执行")
             elif args.target == 'llvm':
                 host = 'Windows' if sys.platform == 'win32' else 'Linux'
                 print(f'已编译：{result}\nLLVM 工具链：{compiler}；{host} x86-64；未执行')
+            elif args.target == "ui":
+                print(f"已编译：{result}\n运行目标：{compiler}；未执行。用浏览器打开即可交互。")
             else:
                 print(f"已编译：{result}\nC 编译器：{compiler}")
         return 0
@@ -507,7 +533,7 @@ def main(argv=None):
         report(error, name, source)
         return 1
     except RecursionError:
-        report(RuError("表达式或语句结构过深，请拆分为较小的步骤"), name)
+        report(RuError("程序执行超出解释器资源上限（结构嵌套过深），请拆分为较小的步骤", category="运行错误"), name)
         return 1
     except (OSError, UnicodeError) as error:
         failure = RuError(str(error), category="文件／编码错误")
