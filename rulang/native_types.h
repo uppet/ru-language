@@ -22,7 +22,7 @@ struct RuNative {
     union {
         struct { int code, bits, is_signed; size_t size, alignment, count; RuNativeField *fields; } type;
         struct { RuNative *type; RuNativeRaw raw; } scalar;
-        struct { RuNative *type, *root, *parent; unsigned char *data; size_t size, offset; size_t *pin_offsets, *pin_sizes; } memory;
+        struct { RuNative *type, *root, *parent; unsigned char *data; size_t size, offset, mi_read_borrows; size_t *pin_offsets, *pin_sizes; } memory;
         struct { int id, convention; RuNative *result; size_t count; RuNative *params[64]; } signature;
         struct { void *handle; } library;
         struct { RuNative *library, *signature; void *address; } function;
@@ -44,6 +44,7 @@ typedef struct RuNativeTrap {
 } RuNativeTrap;
 static RuNativeTrap *ru_native_trap;
 static unsigned ru_native_depth, ru_native_callback_depth;
+static size_t ru_mi_active_borrows;
 static int ru_native_handling_failure;
 static char ru_native_callback_error[4097];
 static int ru_native_member(Val, const char *, size_t, const char **, Val *, int, Val *);

@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "params": {"data": "borrow_ro_u8", "length": "u32", "seed": "u32"},
+  "locals": [["count","u32",["var","seed"]], ["i","u32",["const","u32",0]], ["previous","u8",["const","u8",0]], ["current","u8",["const","u8",0]]],
+  "body": [["if",["truth",["const","u32",0]],[
+    ["while",["lt",["var","i"],["var","length"]],[
+      ["set","current",["load",["var","i"]]],
+      ["if",["or",["eq",["var","current"],["const","u8",13]],["and",["eq",["var","current"],["const","u8",10]],["ne",["var","previous"],["const","u8",13]]]],[
+        ["add_checked","count",["const","u32",1]]
+      ]],
+      ["set","previous",["var","current"]],
+      ["add_checked","i",["const","u32",1]]
+    ]]
+  ]]],
+  "return": ["var","count"]
+}

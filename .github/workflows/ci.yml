@@ -68,13 +68,59 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Check Windows C compiler
+        run: gcc --version
+      - name: Check Windows Node.js
+        run: node --version
       - name: Run Windows regression shard
         env:
           PYTHONUTF8: "1"
           CC: gcc
-        run: |
-          gcc --version
-          node --version
-          python tools/run_test_shard.py --shard ${{ matrix.shard }} --count 3 --failfast
+        run: python tools/run_test_shard.py --shard ${{ matrix.shard }} --count 3 --failfast
       - name: Test offline notebook editor
         run: node --test rushu/tests/*.mjs
+  mi-core:
+    name: Mi core (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    env:
+      PYTHONUTF8: "1"
+      CC: gcc
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Check C compiler
+        run: gcc --version
+      - name: Check Node.js
+        run: node --version
+      - name: Checked source and differential kernels
+        run: python experiments/mi_source/test_source.py
+      - name: Real NativeMemory owner and failure cleanup
+        run: python experiments/mi_borrow/test_bridge.py
+      - name: Historical kernel regression
+        run: python experiments/mi_kernel/test_kernel.py
+      - name: UTF8 caller and synchronous native callback
+        run: python -m unittest discover -s tests -p test_mi_utf8_c.py -v
+      - name: CLI protection and default output contract
+        run: python -m unittest discover -s tests -p test_mi_integration.py -v
+      - name: Source bridge UBSan (Linux fixture only)
+        if: runner.os == 'Linux'
+        env:
+          MI_UBSAN: "1"
+        run: python experiments/mi_source/test_source.py
+      - name: NativeMemory UBSan (Linux fixture only)
+        if: runner.os == 'Linux'
+        env:
+          MI_UBSAN: "1"
+        run: python experiments/mi_borrow/test_bridge.py
+      - name: UTF8 callback UBSan (Linux fixture only)
+        if: runner.os == 'Linux'
+        env:
+          MI_UBSAN: "1"
+        run: python -m unittest discover -s tests -p test_mi_utf8_c.py -v

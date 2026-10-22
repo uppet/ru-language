@@ -1,0 +1,24 @@
+{
+  "baseline": "ae1a9947e1b1b1785499967fea93c7e3ca09b37b",
+  "source_name": "/fixed/example.ru",
+  "sources": [
+    "显 1.",
+    "显 2 + 3.",
+    "若 0 则 显 1. 另 显 2. 然.",
+    "算 加一 x: 得 x + 1. 法. 显 加一 4."
+  ],
+  "order": [
+    "C",
+    "JavaScript"
+  ],
+  "sha256": [
+    "d08a77eb25503600998934426e733a48dc3c83dff299444202c9fabf0ce714fa",
+    "ee3f5a89e40c4300ec064c1f86ec1c894dab0e9d4b476f719f53c59f2dbe3343",
+    "04406673b795734ed016782b2fe0e848c0db914ccc9f39576a826f95455f6dfd",
+    "be91a5852ec42dfea94e64d77d867f9612c7fc8fff08f091460033d77d2b4585",
+    "d7bac9dca3844fb0a76915d6cede2de9fdcb65704332e68e21ed82a49ac3f46c",
+    "44cdc281310fdc93665a2a7d72dda94d0cfca71f4db7c346850e20d6627faaf0",
+    "8690f3bb77596c5a5cd9fc01ab5b2aef15abcc4e83a847468dc4d126ff7a4ff3",
+    "277927a257cf62dbd74aabd74f77b4678f02880ca4e4250ac8b783d84101d944"
+  ]
+}

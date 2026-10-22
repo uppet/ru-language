@@ -58,6 +58,13 @@ static void rn_memory_check(RuNative *memory, int line)
     for (; memory; memory = memory->as.memory.parent)
         if (memory->closed) ru_fail(line, "原生缓冲已关闭");
 }
+/* No change to legacy FFI when the private dense bridge is inactive. */
+static void rn_memory_check_mutation(RuNative *memory, int line)
+{
+    RuNative *root = memory->as.memory.root ? memory->as.memory.root : memory;
+    if (root->as.memory.mi_read_borrows)
+        ru_fail(line, "密只读借用期间不能关闭或写入同根缓冲");
+}
 /* Check and optionally retain a snapshot of every owner reachable through an
  * argument. Reentrant code may mutate arrays and pins while the DLL uses them.
  * Temporary roots preserve bytes even after logical close. */
@@ -517,6 +524,7 @@ static Val rn_invoke(RuNative *function, Val parameters, int line)
     RuNative *sig = function->as.function.signature, *outcome;
     RuArray *array; RuNativeRaw args[64], raw; Val snapshot, value, result;
     size_t i; int outer; uint32_t error; char callback_error[4097];
+    if (ru_mi_active_borrows) ru_fail(line, "密只读借用期间拒绝未知 effect 原生调用");
     if (rn_platform_thread() != ru_native_thread_id) ru_fail(line, "原生对象只能在所属执行线程使用");
     if (function->as.function.library->closed) ru_fail(line, "动态库已关闭");
     if (parameters.kind != RU_ARRAY || ((RuArray *)parameters.heap)->len != sig->as.signature.count) ru_fail(line, "原生调用实参数量与签名不符");
@@ -753,6 +761,7 @@ static Val rn_memory_write(RuNative *memory, Val name, Val value, int line)
 {
     RuNativeField *field = rn_field(memory->as.memory.type, name, line);
     rn_memory_check(memory, line);
+    rn_memory_check_mutation(memory, line);
     if (field->type->as.type.code == RN_STRUCT) {
         RuNative *source = rn_expect(value, RN_MEMORY, line, "嵌套结构写入需要同类型缓冲");
         RuNative *root = source->as.memory.root ? source->as.memory.root : source;
@@ -917,7 +926,7 @@ static int ru_native_member(Val receiver, const char *name, size_t argc, const c
         }
     } else if (object->tag == RN_MEMORY) {
         if (!strcmp(name, "关闭")) {
-            RN_BIND(0, NULL); object->closed = 1;
+            RN_BIND(0, NULL); rn_memory_check_mutation(object, line); object->closed = 1;
             if (!object->as.memory.root) object->edge_count = 2;
             RN_RETURN(v_null());
         }
