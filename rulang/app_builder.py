@@ -265,6 +265,169 @@ const RuHost = (() => {
     };
   }
 
+  // 文入桥（3c）：隐藏 input 承载系统 IME，把编辑行为翻译回如观文入事件。
+  // 如观侧命令 text_focus／text_update／text_blur 驱动 input 的几何与内容；
+  // input 侧的 keydown／beforeinput／composition 事件翻译回 text_key／
+  // text_char／text_paste／text_comp_* 事件。input 永不拦截指针（画布
+  // 的 mousedown 已 preventDefault，焦点切换全由如观命令决定）。
+  const textBridge = { input: null, active: false, composing: false, mirror: '' };
+  const TEXT_KEY_MAP = {
+    Backspace: '退格', Delete: '删除', ArrowLeft: '左', ArrowRight: '右',
+    ArrowUp: '上', ArrowDown: '下', Home: '家', End: '终', Enter: '回车',
+    Tab: '跳格', Escape: '逃脱',
+  };
+
+  function dispatchText(type, fields) {
+    if (canvasId === null) return;
+    runtime.dispatch({ canvas_id: canvasId, event: Object.assign({ type }, fields) });
+  }
+
+  function textBridgeEnsure() {
+    if (textBridge.input) return textBridge.input;
+    const input = document.createElement('input');
+    input.setAttribute('type', 'text');
+    input.setAttribute('autocomplete', 'off');
+    input.setAttribute('autocapitalize', 'off');
+    input.setAttribute('spellcheck', 'false');
+    input.style.position = 'fixed';
+    input.style.opacity = '0';
+    input.style.pointerEvents = 'none';
+    input.style.zIndex = '-1';
+    input.style.border = '0';
+    input.style.padding = '0';
+    input.style.margin = '0';
+    input.style.background = 'transparent';
+    (document.body || document.documentElement).appendChild(input);
+    input.addEventListener('keydown', (event) => {
+      if (!textBridge.active || textBridge.composing || event.isComposing) return;
+      const key = TEXT_KEY_MAP[event.key];
+      if (key === undefined) return;
+      event.preventDefault();
+      dispatchText('text_key', { key });
+    });
+    input.addEventListener('beforeinput', (event) => {
+      if (!textBridge.active || textBridge.composing || event.isComposing) return;
+      const type = event.inputType || '';
+      if (type === 'insertText' || type === 'insertFromPaste' || type === 'insertFromDrop') {
+        const data = event.data || '';
+        if (!data) return;
+        event.preventDefault();
+        if (type === 'insertText' && Array.from(data).length <= 1)
+          dispatchText('text_char', { text: data });
+        else
+          dispatchText('text_paste', { text: data });
+      } else if (type === 'insertLineBreak' || type === 'insertParagraph') {
+        event.preventDefault();
+        dispatchText('text_key', { key: '回车' });
+      } else if (/^delete(Content|Word|SoftLine)Backward/.test(type)) {
+        event.preventDefault();
+        dispatchText('text_key', { key: '退格' });
+      } else if (/^delete(Content|Word|SoftLine)Forward/.test(type)) {
+        event.preventDefault();
+        dispatchText('text_key', { key: '删除' });
+      } else if (type === 'insertCompositionText') {
+        // composition 事件驱动；不拦截。
+      } else {
+        event.preventDefault();
+      }
+    });
+    input.addEventListener('input', (event) => {
+      // 兜底：不支持 beforeinput 的引擎按差异翻译（组合期间忽略）。
+      if (!textBridge.active || textBridge.composing) return;
+      if (event.inputType) return;
+      const value = input.value, old = textBridge.mirror;
+      if (value === old) return;
+      let prefix = 0;
+      const maxPrefix = Math.min(value.length, old.length);
+      while (prefix < maxPrefix && value[prefix] === old[prefix]) prefix += 1;
+      let suffix = 0;
+      while (suffix < Math.min(value.length, old.length) - prefix
+             && value[value.length - 1 - suffix] === old[old.length - 1 - suffix]) suffix += 1;
+      const removed = old.slice(prefix, old.length - suffix);
+      const inserted = value.slice(prefix, value.length - suffix);
+      const caretUnits = input.selectionStart == null ? old.length : input.selectionStart;
+      if (removed && removed.length <= 32) {
+        const back = prefix + removed.length >= caretUnits;
+        const key = back ? '退格' : '删除';
+        for (let i = 0; i < Array.from(removed).length; i += 1) dispatchText('text_key', { key });
+      }
+      if (inserted) {
+        if (Array.from(inserted).length <= 4)
+          for (const ch of inserted) dispatchText('text_char', { text: ch });
+        else
+          dispatchText('text_paste', { text: inserted });
+      }
+      textBridge.mirror = value;
+    });
+    input.addEventListener('compositionstart', () => {
+      if (!textBridge.active) return;
+      textBridge.composing = true;
+      textBridge.compBase = input.selectionStart || 0;
+      dispatchText('text_comp_start', {});
+    });
+    input.addEventListener('compositionupdate', (event) => {
+      if (!textBridge.active || !textBridge.composing) return;
+      const data = event.data || '';
+      let caret = (input.selectionStart || 0) - (textBridge.compBase || 0);
+      caret = Math.max(0, Math.min(caret, data.length));
+      dispatchText('text_comp_update', { text: data, cursor: caret });
+    });
+    input.addEventListener('compositionend', (event) => {
+      textBridge.composing = false;
+      if (!textBridge.active) return;
+      dispatchText('text_comp_end', { text: event.data || '' });
+      textBridge.mirror = input.value;
+    });
+    textBridge.input = input;
+    return input;
+  }
+
+  function textBridgeSet(text, cursor) {
+    const input = textBridge.input;
+    const units = Array.from(text).slice(0, cursor).join('').length;
+    input.value = text;
+    try { input.setSelectionRange(units, units); } catch (error) { /* 桩环境无选择区 */ }
+  }
+
+  function textBridgeFocus(command) {
+    const input = textBridgeEnsure();
+    const rect = canvas.getBoundingClientRect();
+    const kx = rect.width / canvas.width, ky = rect.height / canvas.height;
+    input.style.left = (rect.left + command.x * kx) + 'px';
+    input.style.top = (rect.top + command.y * ky) + 'px';
+    input.style.width = Math.max(1, command.width * kx) + 'px';
+    input.style.height = Math.max(1, command.height * ky) + 'px';
+    textBridge.active = true;
+    if (!textBridge.composing) {
+      textBridge.mirror = command.text;
+      textBridgeSet(command.text, command.cursor);
+    }
+    if (document.activeElement !== input) {
+      try { input.focus({ preventScroll: true }); }
+      catch (error) { try { input.focus(); } catch (inner) { /* 桩环境无焦点 */ } }
+    }
+  }
+
+  function textBridgeSync(command) {
+    if (!textBridge.input || textBridge.composing) return;
+    if (textBridge.input.value !== command.text) {
+      textBridge.mirror = command.text;
+      textBridgeSet(command.text, command.cursor);
+    } else {
+      try {
+        const units = Array.from(command.text).slice(0, command.cursor).join('').length;
+        textBridge.input.setSelectionRange(units, units);
+      } catch (error) { /* 桩环境无选择区 */ }
+    }
+  }
+
+  function textBridgeBlur() {
+    textBridge.active = false;
+    textBridge.composing = false;
+    const input = textBridge.input;
+    if (input && document.activeElement === input) input.blur();
+  }
+
   const host = {
     emit(e) {
       if (e.type === 'graphics') {
@@ -273,6 +436,9 @@ const RuHost = (() => {
           if (command.op === 'image_request') requestImage(command.id, command.source);
           else if (command.op === 'file_request') requestFile(command.id, command.source, command.mode);
           else if (command.op === 'image_release') images.delete(command.id);
+          else if (command.op === 'text_focus') textBridgeFocus(command);
+          else if (command.op === 'text_update') textBridgeSync(command);
+          else if (command.op === 'text_blur') textBridgeBlur();
           else draw(command);
         }
         canvasId = e.canvas_id;

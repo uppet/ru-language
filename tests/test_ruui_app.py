@@ -49,7 +49,30 @@ const canvas = {
   addEventListener(kind, fn) { __handlers[kind] = fn; },
   getBoundingClientRect() { return { left: 0, top: 0, width: this.width, height: this.height }; },
 };
-globalThis.document = { getElementById: (id) => (id === 'ru-canvas' ? canvas : null) };
+globalThis.__inputs = [];
+function makeInput() {
+  const listeners = {};
+  const input = {
+    value: '', style: {}, _sel: 0,
+    setAttribute() {},
+    get selectionStart() { return this._sel; },
+    setSelectionRange(start, end) { this._sel = start; },
+    focus() { document.activeElement = input; },
+    blur() { if (document.activeElement === input) document.activeElement = null; },
+    addEventListener(kind, fn) { listeners[kind] = fn; },
+    dispatch(kind, event) {
+      if (listeners[kind]) listeners[kind](Object.assign({ preventDefault() {} }, event));
+    },
+  };
+  __inputs.push(input);
+  return input;
+}
+globalThis.document = {
+  getElementById: (id) => (id === 'ru-canvas' ? canvas : null),
+  createElement: (tag) => makeInput(),
+  body: { appendChild(el) { this.child = el; } },
+  activeElement: null,
+};
 globalThis.__texts = __texts;
 globalThis.__handlers = __handlers;
 """
@@ -110,6 +133,18 @@ class AppPageSmokeTest(unittest.TestCase):
         self.assertIn('mouse_down', html)  # host forwards pointer events
         self.assertIn('requestAnimationFrame', html)  # host drives the frame loop
 
+    def test_textfield_ime_bridge_in_node(self):
+        html = build_app_html(TEXTFIELD_PROGRAM, title='如UI 文入')
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / 'textfield_page.mjs'
+            script.write_text(DOM_STUB + extract_module_script(html) + TEXTFIELD_EPILOGUE,
+                              encoding='utf-8')
+            result = subprocess.run([NODE, str(script)], text=True,
+                                    capture_output=True, timeout=30)
+        if result.returncode != 0:
+            self.fail(result.stderr)
+        self.assertIn('TEXTFIELD PAGE OK', result.stdout)
+
     def test_assets_dir_embeds_into_page(self):
         code = (ROOT / 'examples' / 'ruui-counter.ru').read_text(encoding='utf-8')
         with tempfile.TemporaryDirectory() as directory:
@@ -126,6 +161,54 @@ class AppPageSmokeTest(unittest.TestCase):
         self.assertIn('data:image/png;base64,', html)
         self.assertIn('你好资产', html)
         self.assertIn('AP8Q', html)  # b'\x00\xff\x10' 的 base64
+
+
+TEXTFIELD_EPILOGUE = r"""
+__pump(0);
+const placeholder = __texts.find((t) => t.text === '姓名');
+if (!placeholder) { console.error('FAIL: placeholder missing'); process.exit(1); }
+const fx = placeholder.x + 1, fy = placeholder.y + 1;
+const click = (x, y) => {
+  __handlers['mousedown']({ clientX: x, clientY: y, button: 0, preventDefault() {} });
+  __handlers['mouseup']({ clientX: x, clientY: y, button: 0, preventDefault() {} });
+};
+click(fx, fy);
+const input = __inputs[0];
+if (!input) { console.error('FAIL: hidden input not created'); process.exit(1); }
+if (document.activeElement !== input) { console.error('FAIL: input not focused'); process.exit(1); }
+if (input.value !== '' || input.style.left === undefined) {
+  console.error('FAIL: focus geometry/value, got ' + JSON.stringify({ value: input.value, left: input.style.left }));
+  process.exit(1);
+}
+// beforeinput 单字 → text_char → 入更新 同步回 input。
+input.dispatch('beforeinput', { inputType: 'insertText', data: '小' });
+if (input.value !== '小') { console.error('FAIL: insertText, got ' + input.value); process.exit(1); }
+// keydown Backspace → 退格。
+input.dispatch('keydown', { key: 'Backspace' });
+if (input.value !== '') { console.error('FAIL: backspace, got ' + input.value); process.exit(1); }
+// 重新输入并走一遍 IME 组合：组开始/更新/结束 → 定字恰一次上屏。
+input.dispatch('beforeinput', { inputType: 'insertText', data: '甲' });
+input.dispatch('compositionstart', {});
+input.dispatch('compositionupdate', { data: 'ni' });
+input.dispatch('compositionend', { data: '你' });
+if (input.value !== '甲你') { console.error('FAIL: ime commit, got ' + input.value); process.exit(1); }
+// 点按框外 → 失焦提交，input 交出焦点。
+click(4, 600);
+if (document.activeElement !== null) { console.error('FAIL: blur, still focused'); process.exit(1); }
+console.log('TEXTFIELD PAGE OK');
+"""
+
+TEXTFIELD_PROGRAM = """\
+尽取 外言 '如UI'.
+名 取 [''].
+机 取 新 应用 宽: 360 高: 640 构: (算:
+    得 列 [
+        (文入 (名[0]) '姓名' (作 新文 为 句: 名[0] 取 新文. 为)),
+        (文 (名[0]))
+    ].
+法).
+机 其 跑.
+"""
 
 
 if __name__ == '__main__':
