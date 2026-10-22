@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "functions": [
+    {
+      "module": "../src/markdown_ascii_kernel.ru",
+      "function": "ASCII段",
+      "params": {
+        "字节": "borrow_ro_utf8",
+        "始": "u32",
+        "终": "u32"
+      },
+      "result": "u32",
+      "effects": [
+        "borrow-read",
+        "no-escape",
+        "no-callback",
+        "no-gc",
+        "may-fail"
+      ],
+      "ranges": [
+        {
+          "view": "字节",
+          "begin": "始",
+          "end": "终"
+        }
+      ]
+    },
+    {
+      "module": "../src/markdown_ascii_kernel.ru",
+      "function": "重复ASCII段",
+      "params": {
+        "字节": "borrow_ro_utf8",
+        "始": "u32",
+        "终": "u32"
+      },
+      "result": "u32",
+      "effects": [
+        "borrow-read",
+        "no-escape",
+        "no-callback",
+        "no-gc",
+        "may-fail"
+      ],
+      "ranges": [
+        {
+          "view": "字节",
+          "begin": "始",
+          "end": "终"
+        }
+      ]
+    },
+    {
+      "module": "../src/markdown_ascii_kernel.ru",
+      "function": "字节量",
+      "params": {
+        "字节": "borrow_ro_utf8"
+      },
+      "result": "u32",
+      "effects": [
+        "borrow-read",
+        "no-escape",
+        "no-callback",
+        "no-gc",
+        "may-fail"
+      ]
+    },
+    {
+      "module": "../src/markdown_ascii_kernel.ru",
+      "function": "安全围栏段",
+      "params": {
+        "字节": "borrow_ro_utf8",
+        "始": "u32",
+        "终": "u32",
+        "围栏": "u8"
+      },
+      "result": "u32",
+      "effects": [
+        "borrow-read",
+        "no-escape",
+        "no-callback",
+        "no-gc",
+        "may-fail"
+      ],
+      "ranges": [
+        {
+          "view": "字节",
+          "begin": "始",
+          "end": "终"
+        }
+      ],
+      "locals": {
+        "缩进": "u32",
+        "安全": "u8"
+      }
+    },
+    {
+      "module": "../src/markdown_ascii_kernel.ru",
+      "function": "计换行",
+      "params": {
+        "字节": "borrow_ro_utf8",
+        "始": "u32",
+        "终": "u32"
+      },
+      "result": "u32",
+      "effects": [
+        "borrow-read",
+        "no-escape",
+        "no-callback",
+        "no-gc",
+        "may-fail"
+      ],
+      "ranges": [
+        {
+          "view": "字节",
+          "begin": "始",
+          "end": "终"
+        }
+      ],
+      "locals": {
+        "数量": "u32"
+      }
+    }
+  ]
+}

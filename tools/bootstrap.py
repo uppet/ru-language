@@ -26,6 +26,7 @@ sys.path.insert(0, str(ROOT))
 from rulang.c_runtime import runtime_source
 from rulang.frontend import RuError
 from rulang.llvm_toolchain import LLVMToolchain
+from tools import bootstrap_dense_protocol as dense_protocol
 from tools.bootstrap_native_runtime import (BASE_HEADERS, NATIVE_HEADERS, NATIVE_FLAG,
     NATIVE_MARKER, NATIVE_PROTOCOL, NATIVE_TRIPLE, fixed_native_runtime,
     supported_native_triple, native_marker)
@@ -70,9 +71,22 @@ def publish_artifacts(artifacts):
 
 
 def compile_native(compiler, source, output, toolchain, *, emit_llvm=None, keep_frontend=False,
-                   interpreter_host=False, allow_native=False, proof=None, source_roots=(), linker=None):
+                   interpreter_host=False, allow_native=False, proof=None, source_roots=(), linker=None, experimental_mi_manifest=None):
     """No Python source parser, AST, module loader or code generator is called."""
     compiler, source, output = (Path(path).resolve() for path in (compiler, source, output))
+    dense = experimental_mi_manifest is not None
+    frozen_inventory = allow_native or dense
+    manifest = (dense_protocol.canonical_file(experimental_mi_manifest, resolve_cli=True)
+                if dense else None)
+    if dense and not ((sys.platform == 'linux' and toolchain.triple in dense_protocol.LINUX_TARGETS) or
+                      (sys.platform == 'win32' and supported_native_triple(toolchain.triple))):
+        raise ValueError('dense-v1 requires a supported Linux/Windows x64 LLVM target')
+    if dense and (source.stat().st_size > dense_protocol.SOURCE_BYTES or
+                  manifest.stat().st_size > dense_protocol.JSON_BYTES):
+        raise ValueError('dense-v1: source/manifest byte limit exceeded')
+    verify_inputs = dense_protocol.verify if dense else verify_identities
+    if dense and interpreter_host:
+        raise ValueError('dense-v1 and interpreter-host capabilities cannot be combined')
     linker_identity = None
     if linker is not None:
         if sys.platform != 'win32' or not supported_native_triple(toolchain.triple):
@@ -84,7 +98,7 @@ def compile_native(compiler, source, output, toolchain, *, emit_llvm=None, keep_
                 or any(parent.is_symlink() for parent in [path, *path.parents])
                 or not path.is_file()):
             raise ValueError('linker must be an absolute regular link.exe or lld-link.exe path')
-        linker_identity = file_identity(path)
+        linker_identity = dense_protocol.identity(path) if dense else file_identity(path)
         from copy import copy
         toolchain = copy(toolchain)
         flags = list(getattr(toolchain, 'link_flags', []))
@@ -113,6 +127,10 @@ def compile_native(compiler, source, output, toolchain, *, emit_llvm=None, keep_
     if allow_native:
         fixed_paths += [ROOT/'rulang'/name for name in NATIVE_HEADERS]
         fixed_paths.append(ROOT/'rulang/native_c_runtime.py')
+    if dense:
+        fixed_paths += [ROOT/'rulang/bootstrap_dense_runtime.h',
+                        ROOT/'tools/bootstrap_dense_protocol.py', manifest]
+        fixed_paths += sorted((ROOT/'bootstrap').glob('*.ru'))
     if interpreter_host:
         fixed_paths += [ROOT/'rulang'/name for name in
                         ('interpreter_host.py', 'interpreter_host.h', 'interpreter_frames.h')]
@@ -121,13 +139,22 @@ def compile_native(compiler, source, output, toolchain, *, emit_llvm=None, keep_
         protected.add(Path(linker_identity['path']))
     if protected.intersection(destinations):
         raise ValueError('output path cannot overwrite a compiler or runtime input')
+    if dense:
+        dense_protocol.reject_overlap(protected, destinations)
     frozen_inputs = [linker_identity if linker_identity and str(path) == linker_identity['path']
-                     else file_identity(path) for path in sorted(protected)]
+                     else (dense_protocol.identity(path, limit=dense_protocol.JSON_BYTES if path == manifest
+                                                   else dense_protocol.SOURCE_BYTES) if dense else file_identity(path))
+                     for path in sorted(protected)]
     # Native releases use a pre-read byte inventory, never a post-read claim.
     # Additional external import trees must be explicitly supplied; the host
     # enumerates files and hashes bytes, but does not discover imports itself.
     inventory = {}
-    if allow_native:
+    if dense:
+        dense_inventory = dense_protocol.inventory(source, [ROOT/'rulang/stdlib', *source_roots])
+        inventory = {str(Path(item['path'])): item for item in dense_inventory}
+        dense_protocol.reject_overlap(inventory, destinations)
+        packet = dense_protocol.prepare_transport(manifest, inventory)
+    elif allow_native:
         roots = {source.parent, ROOT/'rulang/stdlib'} | {Path(path).resolve() for path in source_roots}
         if any(not root.is_dir() for root in roots):
             raise ValueError('native source inventory roots must be directories')
@@ -156,25 +183,44 @@ def compile_native(compiler, source, output, toolchain, *, emit_llvm=None, keep_
     with tempfile.TemporaryDirectory(prefix='.ru-bootstrap-', dir=output.parent) as stage:
         stage = Path(stage)
         program, metadata, sources = stage/'frontend.ll', stage/'metadata.c', stage/'sources.json'
-        verify_identities(frozen_inputs)
+        dense_args = []
+        if dense:
+            packet_path, plan_path = stage/'dense.packet', stage/'dense.plan.json'
+            dense_protocol.reject_overlap([*protected, *inventory],
+                                          [*destinations, packet_path, plan_path, program, metadata, sources])
+            packet_identity = dense_protocol.write_packet(packet_path, packet)
+            dense_args = [dense_protocol.FLAG, str(packet_path), str(plan_path)]
+            dense_protocol.verify([packet_identity, *inventory.values()])
+        if dense:
+            dense_protocol.verify(frozen_inputs)
+        verify_inputs(frozen_inputs)
         result = subprocess.run([str(compiler), str(source), str(program), str(metadata),
-                                 toolchain.triple, toolchain.data_layout, str(ROOT/'rulang/stdlib'), str(sources)] + ([NATIVE_FLAG] if allow_native else []),
+                                 toolchain.triple, toolchain.data_layout, str(ROOT/'rulang/stdlib'), str(sources)] + ([NATIVE_FLAG] if allow_native else []) + dense_args,
                                 capture_output=True, text=True, encoding='utf-8', timeout=300)
         if result.returncode:
             raise RuntimeError('native Ru compiler failed:\n'+(result.stderr or result.stdout))
         frontend_finished = time.monotonic()
-        source_paths = json.loads(sources.read_text(encoding='utf-8'))
+        if dense:
+            dense_protocol.verify(frozen_inputs)
+            verify_inputs(frozen_inputs)
+            dense_protocol.verify([packet_identity, *inventory.values()])
+        source_paths = (dense_protocol.read_json(sources, dense_protocol.PACKET_BYTES) if dense else
+                        json.loads(sources.read_text(encoding='utf-8')))
         if not isinstance(source_paths, list) or not all(isinstance(path, str) and path for path in source_paths):
             raise ValueError('frontend source manifest must be a list of source paths')
-        if allow_native and any(not Path(path).is_absolute() or '..' in Path(path).parts for path in source_paths):
+        if frozen_inventory and any(not Path(path).is_absolute() or '..' in Path(path).parts for path in source_paths):
             raise ValueError('native source manifest requires absolute paths without traversal')
+        if dense and (len(source_paths) > dense_protocol.MAX_FILES or
+                      len(source_paths) != len(set(source_paths)) or
+                      any(path not in packet[2] for path in source_paths)):
+            raise ValueError('dense-v1: frontend dependencies must use exact frozen canonical paths')
         dependencies = {Path(path).resolve() for path in source_paths} | {source}
-        if allow_native:
+        if frozen_inventory:
             missing = dependencies - {Path(path) for path in inventory}
             if missing:
                 raise ValueError('native dependency absent from pre-read source inventory; add --source-root: ' +
                                  ', '.join(str(path) for path in sorted(missing)))
-            verify_identities(inventory.values())
+            verify_inputs(inventory.values())
             dependency_identities = [inventory[str(path)] for path in sorted(dependencies)]
         else:
             dependency_identities = [file_identity(path) for path in sorted(dependencies)]
@@ -192,6 +238,13 @@ def compile_native(compiler, source, output, toolchain, *, emit_llvm=None, keep_
             if 'RU_BOOTSTRAP_NATIVE_' in descriptors:
                 raise ValueError('native metadata requires explicit --allow-native')
             runtime = runtime_source({}, '', full=True)+'\n'+(ROOT/'rulang/llvm_runtime.h').read_text(encoding='utf-8')
+        dense_protocol.validate_metadata(descriptors, ir, toolchain.triple,
+                                         enabled=dense, native=allow_native, data_layout=toolchain.data_layout)
+        if dense:
+            selected_plan, plan_identity = dense_protocol.validate_plan(plan_path, packet, return_identity=True)
+            if any(row[0] not in source_paths for row in selected_plan[2]):
+                raise ValueError('dense-v1: selected plan module absent from frontend dependency report')
+            runtime += '\n' + (ROOT/'rulang/bootstrap_dense_runtime.h').read_text(encoding='utf-8')
         if interpreter_host:
             from rulang.interpreter_host import integrate_host
             runtime = integrate_host(runtime)
@@ -214,14 +267,15 @@ def compile_native(compiler, source, output, toolchain, *, emit_llvm=None, keep_
                     'host_python': sys.version,
                     'linker': linker_identity,
                     'native_protocol': NATIVE_PROTOCOL if allow_native else None,
-                    'compiler': file_identity(compiler), 'source': str(source),
+                    'compiler': (next(item for item in frozen_inputs if item['path'] == str(compiler))
+                                 if dense else file_identity(compiler)), 'source': str(source),
                     'dependencies': dependency_identities,
                     'dependency_observation': ('pre-frontend inventory; verified after frontend and before publication'
-                                               if allow_native else 'after-frontend; verified unchanged before publication'),
+                                               if frozen_inventory else 'after-frontend; verified unchanged before publication'),
                     'source_inventory': list(inventory.values()),
-                    'source_inventory_limits': {'files': 10000, 'bytes': 64 * 1024 * 1024} if allow_native else None,
+                    'source_inventory_limits': {'files': 10000, 'bytes': 64 * 1024 * 1024} if frozen_inventory else None,
                     'input_identity_scope': ('pre/post byte inventory; not per-read snapshots; does not exclude ABA mutations'
-                                             if allow_native else 'post-frontend observation'),
+                                             if frozen_inventory else 'post-frontend observation'),
                     'host_inputs': frozen_inputs,
                     'runtime_sha256': digest(runtime.encode()),
                     'standalone_ir_sha256': digest(standalone.read_bytes()),
@@ -230,14 +284,24 @@ def compile_native(compiler, source, output, toolchain, *, emit_llvm=None, keep_
                                   'clang': getattr(toolchain, 'clang', None),
                                   'tools': getattr(toolchain, 'tools', None),
                                   'link_flags': getattr(toolchain, 'link_flags', None)}}
+        if dense:
+            evidence['dense_protocol'] = dense_protocol.PROTOCOL
+            evidence['dense_plan_encoding'] = dense_protocol.PLAN_ENCODING
+            evidence['dense_manifest'] = next(item for item in frozen_inputs if item['path'] == str(manifest))
+            evidence['dense_packet'] = packet_identity
+            evidence['dense_plan'] = plan_identity
+            evidence['dense_transport'] = packet
+            evidence['dense_selected_plan'] = selected_plan
+            dense_protocol.verify_proof_hashes(evidence)
+            dense_protocol.verify([packet_identity, plan_identity, *inventory.values()])
         if keep_frontend:
             evidence['artifacts']['frontend_ir'] = {'path': str(output.with_name(output.name+'.frontend.ll')),
                                                     'sha256': evidence['source_ir_sha256']}
             evidence['artifacts']['metadata'] = {'path': str(output.with_name(output.name+'.metadata.c')),
                                                  'sha256': evidence['metadata_sha256']}
-        verify_identities(inventory.values())
-        verify_identities(frozen_inputs)
-        verify_identities(dependency_identities)
+        verify_inputs(inventory.values())
+        verify_inputs(frozen_inputs)
+        verify_inputs(dependency_identities)
         # Prepare all output bytes before publication; proof is committed last.
         artifacts = []
         if keep_frontend:
@@ -252,6 +316,11 @@ def compile_native(compiler, source, output, toolchain, *, emit_llvm=None, keep_
             staged = stage/'proof.json'
             staged.write_text(json.dumps(evidence, indent=2)+'\n', encoding='utf-8')
             artifacts.append((staged, Path(proof).resolve()))
+        if dense:
+            dense_protocol.verify([packet_identity, plan_identity, *inventory.values()])
+            dense_protocol.verify(frozen_inputs)
+            verify_inputs(frozen_inputs)
+            dense_protocol.reject_overlap([*protected, *inventory, packet_path, plan_path], destinations)
         publish_artifacts(artifacts)
     return evidence
 
@@ -312,6 +381,7 @@ def main(argv=None):
     build.add_argument('-o', '--output', required=True)
     build.add_argument('--emit-llvm')
     build.add_argument('--allow-native', action='store_true', help='opt in to versioned Windows native ABI')
+    build.add_argument('--experimental-mi-manifest', help='explicit private dense UTF8 manifest (default off)')
     build.add_argument('--proof', help='write build input and artifact identity evidence')
     build.add_argument('--linker', help='pin an absolute Windows link.exe or lld-link.exe path')
     build.add_argument('--source-root', action='append', default=[],
@@ -326,7 +396,8 @@ def main(argv=None):
         else:
             compile_native(args.compiler, args.source, args.output, LLVMToolchain(args.llvm_clang),
                            emit_llvm=args.emit_llvm, allow_native=args.allow_native, proof=args.proof,
-                           source_roots=args.source_root, linker=args.linker)
+                           source_roots=args.source_root, linker=args.linker,
+                           experimental_mi_manifest=args.experimental_mi_manifest)
     except (RuError, OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
         print(str(error), file=sys.stderr)
         return 1

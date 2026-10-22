@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "functions": [
+    {
+      "module": "kernel.ru",
+      "function": "读字",
+      "params": {
+        "字节": "borrow_ro_utf8",
+        "位": "u32"
+      },
+      "result": "u8",
+      "effects": [
+        "borrow-read",
+        "no-escape",
+        "no-callback",
+        "no-gc",
+        "may-fail"
+      ]
+    },
+    {
+      "module": "kernel.ru",
+      "function": "加法",
+      "params": {
+        "字节": "borrow_ro_utf8",
+        "左": "u32",
+        "右": "u32"
+      },
+      "result": "u32",
+      "effects": [
+        "borrow-read",
+        "no-escape",
+        "no-callback",
+        "no-gc",
+        "may-fail"
+      ]
+    },
+    {
+      "module": "kernel.ru",
+      "function": "范围",
+      "params": {
+        "字节": "borrow_ro_utf8",
+        "始": "u32",
+        "终": "u32"
+      },
+      "result": "u32",
+      "effects": [
+        "borrow-read",
+        "no-escape",
+        "no-callback",
+        "no-gc",
+        "may-fail"
+      ],
+      "ranges": [
+        {
+          "view": "字节",
+          "begin": "始",
+          "end": "终"
+        }
+      ]
+    }
+  ]
+}

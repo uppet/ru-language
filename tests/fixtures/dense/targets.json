@@ -1,0 +1,23 @@
+{
+  "accepted": [
+    "x86_64-pc-linux-gnu",
+    "x86_64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+    "x86_64-pc-windows-msvc19.20.0"
+  ],
+  "rejected": [
+    "aarch64-pc-linux-gnu",
+    "x86_64-pc-linux-gnux32",
+    "x86_64-apple-darwin",
+    "x86_64-linux-darwin",
+    "x86_64-unknown-notlinux",
+    "x86_64-redhat-linux-gnu",
+    "x86_64-pc-linux-musl",
+    "x86_64-pc-linux-gnu-extra",
+    "x86_64-pc-windows-msvc.19",
+    "x86_64-pc-windows-msvc19.",
+    "x86_64-pc-windows-msvc19..0",
+    "x86_64-unknown-windows-msvc",
+    "x86_64-pc-linux-gnu\"bad"
+  ]
+}
