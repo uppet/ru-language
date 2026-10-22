@@ -89,7 +89,8 @@
   function browserDrawingTarget(width,height){
     return {width,height,commands:[],bytes:2,fill:'#4677ff',stroke:'#202530',lineWidth:1,textSize:16,textAlign:'left',textBaseline:'top',transform:browserIdentity(),clips:[],stack:[],dirty:false,closed:false};
   }
-  const browserEvents={每帧:['frame',1],鼠标按下:['mouse_down',3],鼠标松开:['mouse_up',3],鼠标移动:['mouse_move',2],按键:['key_down',1],松键:['key_up',1],图就绪:['image_ready',3],图失败:['image_failed',2],件就绪:['file_ready',2],件失败:['file_failed',2]};
+  const browserEvents={每帧:['frame',1],鼠标按下:['mouse_down',3],鼠标松开:['mouse_up',3],鼠标移动:['mouse_move',2],按键:['key_down',1],松键:['key_up',1],图就绪:['image_ready',3],图失败:['image_failed',2],件就绪:['file_ready',2],件失败:['file_failed',2],键按下:['text_key',1],字符:['text_char',1],剪贴:['text_paste',1],组开始:['text_comp_start',0],组更新:['text_comp_update',2],组结束:['text_comp_end',1]};
+  const browserTextKeys=new Set(['退格','删除','左','右','上','下','家','终','回车','空格','跳格','逃脱']);
   const browserParams={背景:['色'],填色:['色'],描边:['色'],线宽:['粗'],字号:['大小'],文字对齐:['横向','纵向'],矩形:['横','纵','宽','高'],椭圆:['横','纵','宽','高'],线:['横一','纵一','横二','纵二'],文字:['文','横','纵'],三角形:['横一','纵一','横二','纵二','横三','纵三'],多边形:['点阵'],平移:['横','纵'],旋转:['弧度'],缩放:['横倍率','纵倍率'],保存:[],恢复:[],变换:['a','b','c','d','e','f'],重置变换:[],裁剪:['横','纵','宽','高'],取消裁剪:[],帧率:['率'],停:[],继续:[],关闭:[],宽:[],高:[],帧:[],经过秒:[],间隔秒:[]};
   for(const name of Object.keys(browserEvents))browserParams[name]=['回调'];
   browserParams.缓存=['宽','高','绘制'];
@@ -98,7 +99,10 @@
   browserParams.绘图=['号','横','纵','宽','高'];
   browserParams.图释放=['号'];
   browserParams.件请求=['号','源','式'];
-  const browserRecorderForbidden=new Set(['缓存','贴图','图请求','绘图','图释放','件请求','帧率','停','继续','关闭','帧','经过秒','间隔秒',...Object.keys(browserEvents)]);
+  browserParams.入焦点=['横','纵','宽','高','文','标'];
+  browserParams.入失焦=[];
+  browserParams.入更新=['文','标'];
+  const browserRecorderForbidden=new Set(['缓存','贴图','图请求','绘图','图释放','件请求','入焦点','入失焦','入更新','帧率','停','继续','关闭','帧','经过秒','间隔秒',...Object.keys(browserEvents)]);
   browserParams.弧=['横','纵','宽','高','始角','转角'];
   browserParams.扇形=['横','纵','宽','高','始角','转角'];
   browserParams.折线=['点阵'];
@@ -211,6 +215,14 @@
       if(!c.fileLoads.has(id)&&c.fileLoads.size>=64)bad('如观文件装载最多 64 项');
       c.fileLoads.add(id);
       command({op:'file_request',id,source:a.源,mode:a.式});
+    }else if(name==='入焦点'){
+      if(typeof a.文!=='string'||browserEncoder.encode(a.文).length>8388608)bad('如观文入文本 须为句，最长 8 MiB');
+      command({op:'text_focus',x:num(a.横,'横'),y:num(a.纵,'纵'),width:num(a.宽,'宽',0,100000),height:num(a.高,'高',0,100000),text:a.文,cursor:num(a.标,'标',0,4096,true)});
+    }else if(name==='入失焦'){
+      command({op:'text_blur'});
+    }else if(name==='入更新'){
+      if(typeof a.文!=='string'||Array.from(a.文).length>4096)bad('如观文入文本 最长 4096 字');
+      command({op:'text_update',text:a.文,cursor:num(a.标,'标',0,4096,true),sel:''});
     }else if(own(browserEvents,name)){
       const [event,count]=browserEvents[name],fn=a.回调;
       if(!(fn instanceof Fn)||fn.params.length!==count)bad(name+'需要接受 '+count+' 个参数的算／作回调');
@@ -287,13 +299,16 @@
     if(Object.keys(request).some(key=>!['canvas_id','event'].includes(key)))throw new Error('如观请求含未知字段');
     const event=request.event;
     if(!event||typeof event!=='object'||Array.isArray(event)||
-        !['frame','close','mouse_down','mouse_up','mouse_move','key_down','key_up','image_ready','image_failed','file_ready','file_failed'].includes(event.type))throw new Error('无效如观事件');
+        !['frame','close','mouse_down','mouse_up','mouse_move','key_down','key_up','image_ready','image_failed','file_ready','file_failed','text_key','text_char','text_paste','text_comp_start','text_comp_update','text_comp_end'].includes(event.type))throw new Error('无效如观事件');
     const allowed=['type'];
     if(event.type.startsWith('mouse_'))allowed.push('x','y','button');
     else if(event.type.startsWith('key_'))allowed.push('key');
     else if(event.type==='image_ready')allowed.push('id','width','height');
     else if(event.type==='image_failed'||event.type==='file_failed')allowed.push('id','error');
     else if(event.type==='file_ready')allowed.push('id','text');
+    else if(event.type==='text_key')allowed.push('key');
+    else if(event.type==='text_char'||event.type==='text_paste'||event.type==='text_comp_end')allowed.push('text');
+    else if(event.type==='text_comp_update')allowed.push('text','cursor');
     if(Object.keys(event).some(key=>!allowed.includes(key)))throw new Error('如观事件含未知字段');
     if(event.type==='close'){browserClose();return;}
     const callback=c.callbacks[event.type];
@@ -327,6 +342,21 @@
       if(!Number.isInteger(event.id)||event.id<0||event.id>10000000)fail(m,'无效如观装载句柄',loc);
       if(typeof event.text!=='string'||browserEncoder.encode(event.text).length>8388608)fail(m,'无效如观文件内容',loc);
       values=[event.id,event.text];
+    }else if(event.type==='text_key'){
+      if(typeof event.key!=='string'||!browserTextKeys.has(event.key))fail(m,'无效如观文入键（须为附录 A 编辑键名）',loc);
+      values=[event.key];
+    }else if(event.type==='text_char'||event.type==='text_paste'){
+      if(typeof event.text!=='string'||(event.type==='text_char'?Array.from(event.text).length!==1:(!event.text||Array.from(event.text).length>4096)))fail(m,'无效如观文入文本',loc);
+      values=[event.text];
+    }else if(event.type==='text_comp_start'){
+      values=[];
+    }else if(event.type==='text_comp_update'){
+      if(typeof event.text!=='string'||Array.from(event.text).length>256)fail(m,'无效如观输入法组合',loc);
+      if(!Number.isFinite(event.cursor)||event.cursor<0||event.cursor>256)fail(m,'无效如观输入法光标',loc);
+      values=[event.text,event.cursor];
+    }else if(event.type==='text_comp_end'){
+      if(typeof event.text!=='string'||Array.from(event.text).length>256)fail(m,'无效如观输入法定字',loc);
+      values=[event.text];
     }else{
       if(!Number.isFinite(event.x)||!Number.isFinite(event.y)||Math.abs(event.x)>100000||Math.abs(event.y)>100000)fail(m,'无效如观鼠标坐标',loc);
       values=[event.x,event.y];

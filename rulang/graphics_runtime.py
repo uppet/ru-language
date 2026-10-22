@@ -44,6 +44,9 @@ ASYNC_EVENTS = frozenset(("image_ready", "image_failed", "file_ready", "file_fai
 # 背景重置整帧绘制，但装载管理命令不是绘制：图请求／件请求／图释放须在
 # 重置后存活（库可在铺排阶段先于背景发出它们）。
 LOAD_MANAGEMENT_OPS = frozenset(("image_request", "file_request", "image_release"))
+TEXT_EDIT_KEYS = frozenset(("退格", "删除", "左", "右", "上", "下", "家", "终", "回车", "空格", "跳格", "逃脱"))
+MAX_PASTE_CHARS = 4096
+MAX_COMPOSITION_CHARS = 256
 _COLOR = re.compile(r"#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?\Z")
 _TEXT_ALIGNS = MappingProxyType({"左": "left", "中": "center", "右": "right"})
 _TEXT_BASELINES = MappingProxyType({"上": "top", "中": "middle", "下": "bottom", "基线": "alphabetic"})
@@ -55,7 +58,10 @@ EVENT_PARAMS = {"frame": ("每帧", ["帧"]), "mouse_down": ("鼠标按下", ["�
                 "image_ready": ("图就绪", ["号", "宽", "高"]),
                 "image_failed": ("图失败", ["号", "错"]),
                 "file_ready": ("件就绪", ["号", "文"]),
-                "file_failed": ("件失败", ["号", "错"])}
+                "file_failed": ("件失败", ["号", "错"]),
+                "text_key": ("键按下", ["键"]), "text_char": ("字符", ["文"]),
+                "text_paste": ("剪贴", ["文"]), "text_comp_start": ("组开始", []),
+                "text_comp_update": ("组更新", ["组", "光标"]), "text_comp_end": ("组结束", ["文"])}
 CALLBACK_NAMES = {name: kind for kind, (name, _) in EVENT_PARAMS.items()}
 
 
@@ -72,6 +78,8 @@ CANVAS_PARAMS = MappingProxyType({"背景": ("色",), "填色": ("色",), "描�
               "缓存": ("宽", "高", "绘制"), "贴图": ("图像", "横", "纵"),
               "图请求": ("号", "源"), "绘图": ("号", "横", "纵", "宽", "高"),
               "图释放": ("号",), "件请求": ("号", "源", "式"),
+              "入焦点": ("横", "纵", "宽", "高", "文", "标"), "入失焦": (),
+              "入更新": ("文", "标"),
               "帧率": ("率",), "停": (), "继续": (), "关闭": (), "宽": (), "高": (), "帧": (),
               "经过秒": (), "间隔秒": (),
               **{key: ("回调",) for key in CALLBACK_NAMES}})
@@ -97,7 +105,7 @@ def install_graphics(owner):
 READ_MEMBERS = frozenset(("宽", "高", "帧", "经过秒", "间隔秒"))
 RECORDER_MEMBERS = frozenset(CANVAS_PARAMS) - frozenset(CALLBACK_NAMES) - {
     "缓存", "贴图", "帧率", "停", "继续", "关闭", "帧", "经过秒", "间隔秒",
-    "图请求", "绘图", "图释放", "件请求"}
+    "图请求", "绘图", "图释放", "件请求", "入焦点", "入失焦", "入更新"}
 
 
 def _address_space_used():
@@ -563,6 +571,31 @@ class GraphicsHost:
             allowed |= {"id", "text"}
         elif kind == "file_failed":
             allowed |= {"id", "error"}
+        elif kind == "text_key":
+            allowed.add("key")
+            if not isinstance(event.get("key"), str) or event["key"] not in TEXT_EDIT_KEYS:
+                raise RuError("无效如观文入键（须为附录 A 编辑键名）", category="运行错误")
+        elif kind in ("text_char", "text_paste"):
+            allowed.add("text")
+            text = event.get("text")
+            if (not isinstance(text, str) or (kind == "text_char" and len(text) != 1)
+                    or (kind == "text_paste" and (not text or len(text) > MAX_PASTE_CHARS))):
+                raise RuError("无效如观文入文本", category="运行错误")
+        elif kind == "text_comp_start":
+            pass
+        elif kind == "text_comp_update":
+            allowed |= {"text", "cursor"}
+            text = event.get("text")
+            cursor = event.get("cursor")
+            if not isinstance(text, str) or len(text) > MAX_COMPOSITION_CHARS:
+                raise RuError("无效如观输入法组合", category="运行错误")
+            if (isinstance(cursor, bool) or not isinstance(cursor, (int, float))
+                    or not 0 <= cursor <= MAX_COMPOSITION_CHARS or not math.isfinite(cursor)):
+                raise RuError("无效如观输入法光标", category="运行错误")
+        elif kind == "text_comp_end":
+            allowed.add("text")
+            if not isinstance(event.get("text"), str) or len(event["text"]) > MAX_COMPOSITION_CHARS:
+                raise RuError("无效如观输入法定字", category="运行错误")
         if set(event) - allowed:
             raise RuError("如观事件含未知字段", category="运行错误")
         if kind == "close":
@@ -641,6 +674,12 @@ class GraphicsHost:
             values = [float(event["id"]), event["error"]]
         elif kind == "file_ready":
             values = [float(event["id"]), event["text"]]
+        elif kind in ("text_char", "text_paste", "text_comp_end"):
+            values = [event["text"]]
+        elif kind == "text_comp_update":
+            values = [event["text"], float(event["cursor"])]
+        elif kind == "text_comp_start":
+            values = []
         else:
             values = [event["key"]]
         # Frames are complete scenes. Input callbacks can change style/data;
@@ -860,6 +899,25 @@ def graphics_member(owner, n, receiver, name, args):
         if canvas.host.auto_load:
             canvas.host.load_queue.append({"kind": "file", "canvas_id": canvas.id, "handle": handle_id,
                                            "source": source, "mode": mode})
+    elif name == "入焦点":
+        text = bound["文"]
+        if not isinstance(text, str) or len(text.encode("utf-8")) > MAX_FILE_TEXT_BYTES:
+            fail("如观文入文本 须为句，最长 8 MiB")
+        canvas.command({"op": "text_focus", "x": number(bound["横"], "横"),
+                        "y": number(bound["纵"], "纵"),
+                        "width": number(bound["宽"], "宽", 0, 100000),
+                        "height": number(bound["高"], "高", 0, 100000),
+                        "text": text,
+                        "cursor": number(bound["标"], "标", 0, MAX_PASTE_CHARS, True)}, fail)
+    elif name == "入失焦":
+        canvas.command({"op": "text_blur"}, fail)
+    elif name == "入更新":
+        text = bound["文"]
+        if not isinstance(text, str) or len(text) > MAX_PASTE_CHARS:
+            fail("如观文入文本 最长 " + str(MAX_PASTE_CHARS) + " 字")
+        canvas.command({"op": "text_update", "text": text,
+                        "cursor": number(bound["标"], "标", 0, MAX_PASTE_CHARS, True),
+                        "sel": ""}, fail)
     elif name in CALLBACK_NAMES:
         fn = bound["回调"]
         event = CALLBACK_NAMES[name]

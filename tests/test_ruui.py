@@ -88,6 +88,45 @@ SLIDER = """
 机 其 跑.
 """
 
+TEXTFIELD = """
+尽取 外言 '如UI'.
+
+名 取 [''].
+改次 取 [0].
+机 取 新 应用 宽: 360 高: 640 构: (算:
+    得 列 [
+        (文入 (名[0]) '姓名' (作 新文 为 句: 名[0] 取 新文. 改次[0] 取 改次[0] + 1. 为)),
+        (文 ('次' + (改次[0] 为 句)))
+    ].
+法).
+机 其 跑.
+"""
+
+TEXTAREA = """
+尽取 外言 '如UI'.
+
+稿 取 [''].
+机 取 新 应用 宽: 360 高: 640 构: (算:
+    得 列 [
+        (多行 (文入 (稿[0]) '备注' (作 新文 为 句: 稿[0] 取 新文. 为)))
+    ].
+法).
+机 其 跑.
+"""
+
+TEXT_PAGES = """
+尽取 外言 '如UI'.
+
+名 取 [''].
+机 取 新 应用 宽: 360 高: 640 构: (算:
+    得 列 [
+        (文入 (名[0]) '姓名' (作 新文 为 句: 名[0] 取 新文. 为)),
+        (钮 '翻页' (作: (机 其 页 (算: 得 列 [(文 ('已存' + 名[0]))]. 法)). 为))
+    ].
+法).
+机 其 跑.
+"""
+
 MIXER = (ROOT / 'examples' / 'ruui-mixer.ru').read_text(encoding='utf-8')
 
 
@@ -625,6 +664,151 @@ class RuUIParityTests(unittest.TestCase):
                 handle.truncate(64 * 1024 * 1024 + 1)
             events = run_python(self.load_program(directory, 'big.png'))
         self.assertIn('0x0:图像超过配额', texts(events[-1]['commands']))
+
+    def field(self, commands):
+        return self.find_rect(commands, '#d8dee9')
+
+    @staticmethod
+    def all_ops(events, op):
+        return [c for e in events if e['type'] == 'graphics'
+                for c in ops(e['commands'], op)]
+
+    @unittest.skipUnless(NODE, 'Node required for JS parity')
+    def test_textfield_focus_types_and_blur_parity(self):
+        events = self.compare(TEXTFIELD)
+        self.assertEqual(texts(events[-1]['commands'])[0], '姓名')
+        field = self.field(events[-1]['commands'])
+        x, y = self.center(field)
+        focus_tap = self.tap(x, y)
+        events = self.compare(TEXTFIELD, focus_tap)
+        self.assertEqual(texts(events[-1]['commands'])[0], '次0')
+        focus = self.all_ops(events, 'text_focus')[0]
+        self.assertEqual(focus['text'], '')
+        self.assertEqual(focus['cursor'], 0)
+        typing = focus_tap + [{'type': 'text_char', 'text': '小'},
+                              {'type': 'text_char', 'text': '红'}, {'type': 'frame'}]
+        events = self.compare(TEXTFIELD, typing)
+        self.assertEqual(texts(events[-1]['commands'])[:2], ['小红', '次2'])
+        updates = self.all_ops(events, 'text_update')
+        self.assertEqual(updates[-1]['cursor'], 2)
+        blur_tap = typing + self.tap(4, 600)
+        events = self.compare(TEXTFIELD, blur_tap)
+        self.assertTrue(self.all_ops(events, 'text_blur'))
+        self.assertEqual(texts(events[-1]['commands'])[:2], ['小红', '次2'])
+
+    @unittest.skipUnless(NODE, 'Node required for JS parity')
+    def test_textfield_edit_keys_parity(self):
+        events = self.compare(TEXTFIELD)
+        field = self.field(events[-1]['commands'])
+        x, y = self.center(field)
+        sequence = self.tap(x, y) + [
+            {'type': 'text_paste', 'text': '甲乙丙'},
+            {'type': 'text_key', 'key': '左'},
+            {'type': 'text_key', 'key': '退格'},
+            {'type': 'text_key', 'key': '家'},
+            {'type': 'text_key', 'key': '终'},
+            {'type': 'text_key', 'key': '删除'},
+            {'type': 'frame'},
+        ]
+        events = self.compare(TEXTFIELD, sequence)
+        # 粘贴后光标居尾；退格删乙；家／终跳行首／尾；尾处删除无操作。
+        self.assertEqual(texts(events[-1]['commands'])[:2], ['甲丙', '次2'])
+
+    @unittest.skipUnless(NODE, 'Node required for JS parity')
+    def test_textfield_enter_commits_single_line_and_ignores_rest(self):
+        events = self.compare(TEXTFIELD)
+        field = self.field(events[-1]['commands'])
+        x, y = self.center(field)
+        sequence = self.tap(x, y) + [
+            {'type': 'text_char', 'text': '甲'},
+            {'type': 'text_key', 'key': '回车'},
+            {'type': 'text_char', 'text': '乙'},
+            {'type': 'frame'},
+        ]
+        events = self.compare(TEXTFIELD, sequence)
+        # 单行回车＝提交并失焦；后续无焦点输入被忽略（重发旧场景）。
+        self.assertEqual(texts(events[-1]['commands'])[:2], ['甲', '次1'])
+
+    @unittest.skipUnless(NODE, 'Node required for JS parity')
+    def test_textfield_single_line_paste_strips_newlines(self):
+        events = self.compare(TEXTFIELD)
+        field = self.field(events[-1]['commands'])
+        x, y = self.center(field)
+        sequence = self.tap(x, y) + [{'type': 'text_paste', 'text': '甲\n乙'},
+                                     {'type': 'frame'}]
+        events = self.compare(TEXTFIELD, sequence)
+        self.assertEqual(texts(events[-1]['commands'])[0], '甲乙')
+
+    @unittest.skipUnless(NODE, 'Node required for JS parity')
+    def test_textarea_multiline_enter_newline_and_line_keys(self):
+        events = self.compare(TEXTAREA)
+        field = self.field(events[-1]['commands'])
+        x, y = self.center(field)
+        sequence = self.tap(x, y) + [
+            {'type': 'text_char', 'text': '甲'},
+            {'type': 'text_key', 'key': '回车'},
+            {'type': 'text_char', 'text': '乙'},
+            {'type': 'text_key', 'key': '上'},
+            {'type': 'text_key', 'key': '家'},
+            {'type': 'text_char', 'text': '丙'},
+            {'type': 'frame'},
+        ]
+        events = self.compare(TEXTAREA, sequence)
+        # 上：列位保持归首行；家：行首；丙插行首。
+        self.assertEqual(texts(events[-1]['commands'])[0], '丙甲\n乙')
+
+    @unittest.skipUnless(NODE, 'Node required for JS parity')
+    def test_textfield_ime_composition_commit_once(self):
+        events = self.compare(TEXTFIELD)
+        field = self.field(events[-1]['commands'])
+        x, y = self.center(field)
+        sequence = self.tap(x, y) + [
+            {'type': 'text_comp_start'},
+            {'type': 'text_char', 'text': 'n'},
+            {'type': 'text_comp_update', 'text': 'n', 'cursor': 1},
+            {'type': 'text_comp_update', 'text': 'ni', 'cursor': 2},
+            {'type': 'text_key', 'key': '左'},
+            {'type': 'text_comp_end', 'text': '你'},
+            {'type': 'frame'},
+        ]
+        events = self.compare(TEXTFIELD, sequence)
+        # 组合草稿与组合期按键全部忽略；定字上屏只 遇改 一次。
+        self.assertEqual(texts(events[-1]['commands'])[:2], ['你', '次1'])
+
+    def test_textfield_host_validation_python(self):
+        events = run_python(TEXTFIELD)
+        field = self.field(events[-1]['commands'])
+        x, y = self.center(field)
+        focus_tap = self.tap(x, y)
+        run_python(TEXTFIELD, focus_tap + [{'type': 'text_key', 'key': '回车'}])
+        bad = [
+            {'type': 'text_key', 'key': '乱键'},
+            {'type': 'text_key', 'key': 'Enter'},
+            {'type': 'text_char', 'text': '甲乙'},
+            {'type': 'text_char', 'text': ''},
+            {'type': 'text_paste', 'text': ''},
+            {'type': 'text_paste', 'text': 'x' * 4097},
+            {'type': 'text_comp_update', 'text': 'x' * 257, 'cursor': 1},
+            {'type': 'text_comp_update', 'text': 'a', 'cursor': -1},
+            {'type': 'text_comp_end', 'text': 'x' * 257},
+            {'type': 'text_key', 'key': '回车', 'extra': 1},
+        ]
+        for event in bad:
+            with self.assertRaises(RuError):
+                run_python(TEXTFIELD, focus_tap + [event])
+
+    @unittest.skipUnless(NODE, 'Node required for JS parity')
+    def test_textfield_blur_when_page_drops_field(self):
+        events = self.compare(TEXT_PAGES)
+        field = self.field(events[-1]['commands'])
+        x, y = self.center(field)
+        button = self.find_rect(events[-1]['commands'], '#4677ff')
+        bx, by = self.center(button)
+        sequence = self.tap(x, y) + [{'type': 'text_char', 'text': '甲'}] + self.tap(bx, by)
+        events = self.compare(TEXT_PAGES, sequence)
+        # 点击按钮先失焦提交（text_blur），再翻页；新页读到已提交的串。
+        self.assertTrue(self.all_ops(events, 'text_blur'))
+        self.assertIn('已存甲', texts(events[-1]['commands']))
 
 
 if __name__ == '__main__':
