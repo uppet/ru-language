@@ -70,9 +70,27 @@ def publish_artifacts(artifacts):
 
 
 def compile_native(compiler, source, output, toolchain, *, emit_llvm=None, keep_frontend=False,
-                   interpreter_host=False, allow_native=False, proof=None, source_roots=()):
+                   interpreter_host=False, allow_native=False, proof=None, source_roots=(), linker=None):
     """No Python source parser, AST, module loader or code generator is called."""
     compiler, source, output = (Path(path).resolve() for path in (compiler, source, output))
+    linker_identity = None
+    if linker is not None:
+        if sys.platform != 'win32' or not supported_native_triple(toolchain.triple):
+            raise ValueError('explicit bootstrap linker requires Windows x64 MSVC target')
+        raw = str(linker)
+        path = Path(raw)
+        if (not path.is_absolute() or any(char in raw for char in ('\0', '\r', '\n', '"'))
+                or path.name.lower() not in ('link.exe', 'lld-link.exe')
+                or any(parent.is_symlink() for parent in [path, *path.parents])
+                or not path.is_file()):
+            raise ValueError('linker must be an absolute regular link.exe or lld-link.exe path')
+        linker_identity = file_identity(path)
+        from copy import copy
+        toolchain = copy(toolchain)
+        flags = list(getattr(toolchain, 'link_flags', []))
+        if any(str(flag).startswith(('-fuse-ld', '--ld-path', '-B')) for flag in flags):
+            raise ValueError('toolchain already selects a linker')
+        toolchain.link_flags = [*flags, '-fuse-ld='+linker_identity['path']]
     if allow_native and (sys.platform != 'win32' or not supported_native_triple(toolchain.triple)):
         raise ValueError('bootstrap native v1 requires Windows x86-64 target ' + NATIVE_TRIPLE)
     if allow_native and source.stat().st_size > 64 * 1024 * 1024:
@@ -99,9 +117,12 @@ def compile_native(compiler, source, output, toolchain, *, emit_llvm=None, keep_
         fixed_paths += [ROOT/'rulang'/name for name in
                         ('interpreter_host.py', 'interpreter_host.h', 'interpreter_frames.h')]
     protected = {path.resolve() for path in fixed_paths} | {source, compiler}
+    if linker_identity:
+        protected.add(Path(linker_identity['path']))
     if protected.intersection(destinations):
         raise ValueError('output path cannot overwrite a compiler or runtime input')
-    frozen_inputs = [file_identity(path) for path in sorted(protected)]
+    frozen_inputs = [linker_identity if linker_identity and str(path) == linker_identity['path']
+                     else file_identity(path) for path in sorted(protected)]
     # Native releases use a pre-read byte inventory, never a post-read claim.
     # Additional external import trees must be explicitly supplied; the host
     # enumerates files and hashes bytes, but does not discover imports itself.
@@ -135,6 +156,7 @@ def compile_native(compiler, source, output, toolchain, *, emit_llvm=None, keep_
     with tempfile.TemporaryDirectory(prefix='.ru-bootstrap-', dir=output.parent) as stage:
         stage = Path(stage)
         program, metadata, sources = stage/'frontend.ll', stage/'metadata.c', stage/'sources.json'
+        verify_identities(frozen_inputs)
         result = subprocess.run([str(compiler), str(source), str(program), str(metadata),
                                  toolchain.triple, toolchain.data_layout, str(ROOT/'rulang/stdlib'), str(sources)] + ([NATIVE_FLAG] if allow_native else []),
                                 capture_output=True, text=True, encoding='utf-8', timeout=300)
@@ -190,6 +212,7 @@ def compile_native(compiler, source, output, toolchain, *, emit_llvm=None, keep_
                                   'standalone_ir': {'path': str(Path(emit_llvm).resolve()) if emit_llvm else None,
                                                     'sha256': digest(standalone.read_bytes())}},
                     'host_python': sys.version,
+                    'linker': linker_identity,
                     'native_protocol': NATIVE_PROTOCOL if allow_native else None,
                     'compiler': file_identity(compiler), 'source': str(source),
                     'dependencies': dependency_identities,
@@ -290,6 +313,7 @@ def main(argv=None):
     build.add_argument('--emit-llvm')
     build.add_argument('--allow-native', action='store_true', help='opt in to versioned Windows native ABI')
     build.add_argument('--proof', help='write build input and artifact identity evidence')
+    build.add_argument('--linker', help='pin an absolute Windows link.exe or lld-link.exe path')
     build.add_argument('--source-root', action='append', default=[],
                        help='extra directory of .ru inputs to freeze before native frontend execution')
     args = parser.parse_args(argv)
@@ -301,7 +325,8 @@ def main(argv=None):
             return 0 if verify(args.directory, args.llvm_clang)['m4_complete'] else 1
         else:
             compile_native(args.compiler, args.source, args.output, LLVMToolchain(args.llvm_clang),
-                           emit_llvm=args.emit_llvm, allow_native=args.allow_native, proof=args.proof, source_roots=args.source_root)
+                           emit_llvm=args.emit_llvm, allow_native=args.allow_native, proof=args.proof,
+                           source_roots=args.source_root, linker=args.linker)
     except (RuError, OSError, ValueError, RuntimeError, subprocess.TimeoutExpired) as error:
         print(str(error), file=sys.stderr)
         return 1

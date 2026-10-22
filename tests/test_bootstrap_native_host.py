@@ -99,6 +99,103 @@ class BootstrapNativeHostTests(unittest.TestCase):
         self.assertEqual(evidence['standalone_ir_sha256'],bootstrap.digest(self.ir.encode()))
         self.assertEqual(evidence['binary_sha256'],bootstrap.digest(self.output.read_bytes()))
 
+    def test_explicit_linker_is_hashed_and_pinned_without_mutating_caller(self):
+        linker = self.root/'link.exe'
+        linker.write_bytes(b'MZowned-linker-fixture')
+        proof = self.root/'proof.json'
+        evidence = self.invoke(linker=linker, proof=proof)
+        self.assertEqual(evidence['linker'], bootstrap.file_identity(linker))
+        self.assertEqual(evidence['toolchain']['link_flags'], ['-fuse-ld='+str(linker.resolve())])
+        self.assertIn(evidence['linker'], evidence['host_inputs'])
+        self.assertFalse(hasattr(self.toolchain, 'link_flags'))
+
+    def test_no_linker_preserves_default_behavior(self):
+        evidence = self.invoke()
+        self.assertIsNone(evidence['linker'])
+        self.assertIsNone(evidence['toolchain']['link_flags'])
+
+    def test_explicit_linker_rejects_wrong_platform_or_target_before_frontend(self):
+        linker = self.root/'link.exe'
+        linker.write_bytes(b'fixture')
+        with self.assertRaises(ValueError):
+            self.invoke(linker=linker, platform='linux', allow=False)
+        self.toolchain.triple = 'aarch64-pc-windows-msvc'
+        with self.assertRaises(ValueError):
+            self.invoke(linker=linker, allow=False)
+        self.assertEqual(self.calls, [])
+
+    def test_explicit_linker_rejects_missing_directory_relative_and_injection(self):
+        directory = self.root/'link.exe'
+        directory.mkdir()
+        for path in ('link.exe', self.root/'missing'/'link.exe', directory,
+                     self.root/'other.exe', str(self.root/'bad\nlink.exe'), str(self.root/'bad"link.exe')):
+            with self.subTest(path=path), self.assertRaises(ValueError):
+                self.invoke(linker=path)
+        self.assertEqual(self.calls, [])
+
+    def test_explicit_linker_rejects_existing_linker_override(self):
+        linker = self.root/'lld-link.exe'
+        linker.write_bytes(b'fixture')
+        self.toolchain.link_flags = ['-fuse-ld=other']
+        with self.assertRaises(ValueError):
+            self.invoke(linker=linker)
+        self.assertEqual(self.calls, [])
+
+    def test_explicit_linker_cli_passes_only_explicit_option(self):
+        linker = self.root/'link.exe'
+        with patch.object(bootstrap, 'LLVMToolchain', return_value=self.toolchain), \
+                patch.object(bootstrap, 'compile_native') as compile_call:
+            self.assertEqual(bootstrap.main(['build', str(self.source), '-o', str(self.output),
+                                             '--linker', str(linker)]), 0)
+        self.assertEqual(compile_call.call_args.kwargs['linker'], str(linker))
+
+    def test_explicit_linker_rejects_symlink_marker(self):
+        linker = self.root/'link.exe'
+        linker.write_bytes(b'fixture')
+        with patch.object(Path, 'is_symlink', return_value=True), self.assertRaises(ValueError):
+            self.invoke(linker=linker)
+        self.assertEqual(self.calls, [])
+
+    def test_linker_is_protected_from_output_alias(self):
+        linker = self.root/'link.exe'
+        linker.write_bytes(b'fixture')
+        with self.assertRaises(ValueError):
+            self.invoke(linker=linker, proof=linker)
+        self.assertEqual(linker.read_bytes(), b'fixture')
+        self.assertEqual(self.calls, [])
+
+    def test_changed_linker_rejects_publication(self):
+        linker = self.root/'link.exe'
+        linker.write_bytes(b'fixture')
+        original = self.toolchain.compile
+        def mutate(*args):
+            linker.write_bytes(b'changed')
+            return original(*args)
+        with patch.object(self.toolchain, 'compile', side_effect=mutate):
+            with self.assertRaisesRegex(RuntimeError, 'input changed'):
+                self.invoke(linker=linker, proof=self.root/'proof.json')
+        self.assertFalse((self.root/'proof.json').exists())
+        self.assertEqual(self.output.read_bytes(), b'preserved')
+
+    def test_linker_change_after_first_identity_cannot_replace_frozen_baseline(self):
+        linker = self.root/'link.exe'
+        linker.write_bytes(b'original')
+        original = bootstrap.file_identity
+        observed = False
+        def mutate_after_identity(path):
+            nonlocal observed
+            result = original(path)
+            if Path(path).resolve() == linker.resolve() and not observed:
+                observed = True
+                linker.write_bytes(b'changed-between-samples')
+            return result
+        with patch.object(bootstrap, 'file_identity', side_effect=mutate_after_identity):
+            with self.assertRaisesRegex(RuntimeError, 'input changed'):
+                self.invoke(linker=linker, proof=self.root/'proof.json')
+        self.assertEqual(self.calls, [])
+        self.assertFalse((self.root/'proof.json').exists())
+        self.assertEqual(self.output.read_bytes(), b'preserved')
+
     def test_standalone_ir_proof_hashes_exact_toolchain_bytes(self):
         emitted = self.ir.replace('\n','\r\n').encode('utf-8')
         saved = self.root/'saved.ll'
