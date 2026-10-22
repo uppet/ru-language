@@ -12,7 +12,7 @@ from tools.bootstrap_compare import compare_native
 
 
 def snapshots(paths):
-    return {str(path.relative_to(ROOT)): digest(path.read_bytes()) for path in sorted(set(paths))}
+    return {path.relative_to(ROOT).as_posix(): digest(path.read_bytes()) for path in sorted(set(paths))}
 
 
 def input_paths():

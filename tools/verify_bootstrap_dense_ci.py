@@ -73,7 +73,7 @@ def evidence_inputs(kind):
         paths += sorted(fixture.rglob('*'))
     paths = [p for p in paths if not p.is_dir()]
     require(all(p.is_file() for p in paths), 'required dense runner/test input missing')
-    return {str(p.relative_to(ROOT)): digest(p) for p in paths}
+    return {p.relative_to(ROOT).as_posix(): digest(p) for p in paths}
 
 
 def toolchain_identity():

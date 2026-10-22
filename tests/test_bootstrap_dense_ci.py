@@ -3,7 +3,7 @@ import copy
 from contextlib import contextmanager
 import io
 import json
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -12,6 +12,19 @@ from tools import verify_bootstrap_dense_ci as gate
 
 
 class DenseCiEvidenceTests(unittest.TestCase):
+    def test_source_inventory_keys_use_posix_under_windows_model(self):
+        original = Path.relative_to
+        def windows_relative(path, *others):
+            return PureWindowsPath(original(path, *others).as_posix())
+        for kind in ('frontend', 'runtime', 'windows'):
+            with self.subTest(kind=kind):
+                expected = gate.evidence_inputs(kind)
+                with patch.object(Path, 'relative_to', windows_relative):
+                    actual = gate.evidence_inputs(kind)
+                self.assertEqual(actual, expected)
+                self.assertIn('.github/workflows/bootstrap-dense.yml', actual)
+                self.assertTrue(all('\\' not in key for key in actual))
+
     def good(self, kind='frontend'):
         names = gate.required_cases(kind)
         return {'kind':kind, 'planned':names,

@@ -42,6 +42,8 @@ jobs:
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.10'
+      - name: Initialize diagnostics before toolchain and unit gates
+        run: python -c "import json,os; from pathlib import Path; p=Path('bin/bootstrap/dense-ci'); p.mkdir(parents=True,exist_ok=True); (p/'preflight-diagnostics.json').write_text(json.dumps({'scope':'diagnostics-only','head_sha':os.environ.get('GITHUB_SHA'),'run_id':os.environ.get('GITHUB_RUN_ID')})+'\n',encoding='utf-8')"
       - name: Require dedicated branch and exact checked out commit
         run: python -c "import os,subprocess,sys; sys.exit(0 if os.environ['GITHUB_REF']=='refs/heads/feature/bootstrap-dense-20261022' and subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==os.environ['GITHUB_SHA'] else 'wrong dense branch/commit')"
       - name: Install Linux LLVM 14
@@ -55,7 +57,7 @@ jobs:
       - name: Require complete matching LLVM14 toolchain
         run: python -c "from tools.verify_bootstrap_dense_ci import toolchain_identity; print(toolchain_identity())"
       - name: Host and fail-closed evidence checker unit contracts
-        run: python -m unittest tests.test_bootstrap_native_host tests.test_bootstrap_dense_host tests.test_bootstrap_native_ci tests.test_bootstrap_dense_ci tests.test_bootstrap_dense_runtime_gate tests.test_bootstrap_dense_fixture_portability tests.test_bootstrap_dense_workflow -v
+        run: python -c "import hashlib,json,subprocess,sys; from pathlib import Path; p=Path('bin/bootstrap/dense-ci'); p.mkdir(parents=True,exist_ok=True); r=subprocess.run([sys.executable,'-m','unittest','tests.test_bootstrap_native_host','tests.test_bootstrap_dense_host','tests.test_bootstrap_native_ci','tests.test_bootstrap_dense_ci','tests.test_bootstrap_dense_runtime_gate','tests.test_bootstrap_dense_fixture_portability','tests.test_bootstrap_dense_workflow','-v'],stdout=subprocess.PIPE,stderr=subprocess.STDOUT); (p/'host-units.log').write_bytes(r.stdout); (p/'host-units-diagnostics.json').write_text(json.dumps({'scope':'diagnostics-only','returncode':r.returncode,'log_sha256':hashlib.sha256(r.stdout).hexdigest(),'argv':r.args})+'\n',encoding='utf-8'); sys.stdout.buffer.write(r.stdout); sys.exit(r.returncode)"
       - name: Fresh stage1 stage2 stage3 and existing complete M4 suite
         run: python tools/bootstrap.py verify --directory bin/bootstrap/dense-ci
       - name: Require 105 actual passes zero skips and all fixed points

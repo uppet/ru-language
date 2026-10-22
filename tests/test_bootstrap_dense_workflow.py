@@ -6,6 +6,11 @@ GitHub remains the actual workflow parser; these are portable policy negatives,
 not proof of remote execution or new-stage3 LLVM14 acceptance.
 """
 from pathlib import Path
+import hashlib
+import json
+import subprocess
+import sys
+import tempfile
 import re
 import unittest
 
@@ -13,12 +18,17 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / '.github/workflows/bootstrap-dense.yml'
 EXPECTED_HEADER = "name: Bootstrap dense isolated core acceptance\non:\n  push:\n    branches: [feature/bootstrap-dense-20261022]\n  workflow_dispatch:\npermissions:\n  contents: read\nconcurrency:\n  group: ${{ github.workflow }}-${{ github.ref }}\n  cancel-in-progress: false\njobs:\n  dense-bootstrap-core:\n    runs-on: ${{ matrix.os }}\n    timeout-minutes: 75\n    strategy:\n      fail-fast: false\n      matrix:\n        os: [ubuntu-22.04, windows-latest]\n    defaults:\n      run:\n        working-directory: language\n    env:\n      PYTHONUTF8: '1'\n      CC: gcc\n      GIT_CONFIG_COUNT: '1'\n      GIT_CONFIG_KEY_0: core.autocrlf\n      GIT_CONFIG_VALUE_0: 'false'"
 
+INIT_CODE = "import json,os; from pathlib import Path; p=Path('bin/bootstrap/dense-ci'); p.mkdir(parents=True,exist_ok=True); (p/'preflight-diagnostics.json').write_text(json.dumps({'scope':'diagnostics-only','head_sha':os.environ.get('GITHUB_SHA'),'run_id':os.environ.get('GITHUB_RUN_ID')})+'\\n',encoding='utf-8')"
+UNIT_CODE = "import hashlib,json,subprocess,sys; from pathlib import Path; p=Path('bin/bootstrap/dense-ci'); p.mkdir(parents=True,exist_ok=True); r=subprocess.run([sys.executable,'-m','unittest','tests.test_bootstrap_native_host','tests.test_bootstrap_dense_host','tests.test_bootstrap_native_ci','tests.test_bootstrap_dense_ci','tests.test_bootstrap_dense_runtime_gate','tests.test_bootstrap_dense_fixture_portability','tests.test_bootstrap_dense_workflow','-v'],stdout=subprocess.PIPE,stderr=subprocess.STDOUT); (p/'host-units.log').write_bytes(r.stdout); (p/'host-units-diagnostics.json').write_text(json.dumps({'scope':'diagnostics-only','returncode':r.returncode,'log_sha256':hashlib.sha256(r.stdout).hexdigest(),'argv':r.args})+'\\n',encoding='utf-8'); sys.stdout.buffer.write(r.stdout); sys.exit(r.returncode)"
+
 EXPECTED_STEPS = [{'name': 'Exact immutable candidate checkout',
   'uses': 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
   'with': {'ref': '${{ github.sha }}', 'path': 'language', 'persist-credentials': 'false'}},
  {'name': 'Python for bootstrap host and test orchestration',
   'uses': 'actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97',
   'with': {'python-version': '3.10'}},
+ {'name': 'Initialize diagnostics before toolchain and unit gates',
+  'run': 'python -c \"'+INIT_CODE+'\"'},
  {'name': 'Require dedicated branch and exact checked out commit',
   'run': 'python -c "import os,subprocess,sys; sys.exit(0 if '
          "os.environ['GITHUB_REF']=='refs/heads/feature/bootstrap-dense-20261022' and "
@@ -35,9 +45,7 @@ EXPECTED_STEPS = [{'name': 'Exact immutable candidate checkout',
   'run': 'python -c "from tools.verify_bootstrap_dense_ci import toolchain_identity; '
          'print(toolchain_identity())"'},
  {'name': 'Host and fail-closed evidence checker unit contracts',
-  'run': 'python -m unittest tests.test_bootstrap_native_host tests.test_bootstrap_dense_host '
-         'tests.test_bootstrap_native_ci tests.test_bootstrap_dense_ci '
-         'tests.test_bootstrap_dense_runtime_gate tests.test_bootstrap_dense_fixture_portability tests.test_bootstrap_dense_workflow -v'},
+  'run': 'python -c \"'+UNIT_CODE+'\"'},
  {'name': 'Fresh stage1 stage2 stage3 and existing complete M4 suite',
   'run': 'python tools/bootstrap.py verify --directory bin/bootstrap/dense-ci'},
  {'name': 'Require 105 actual passes zero skips and all fixed points',
@@ -115,6 +123,40 @@ class DenseWorkflowTests(unittest.TestCase):
         self.assertIn(old, self.text)
         with self.assertRaises(ValueError):
             validate_workflow(self.text.replace(old,new,1))
+
+    def test_unit_diagnostics_preserve_raw_bytes_and_child_exit(self):
+        for code in (0, 3):
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp).resolve()
+                payload = '诊断\r\n'.encode('utf-8')
+                (root/'unittest.py').write_text(
+                    'import sys; sys.stdout.buffer.write('+repr(payload)+'); sys.exit('+str(code)+')',
+                    encoding='utf-8')
+                result = subprocess.run([sys.executable, '-c', UNIT_CODE], cwd=root,
+                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                self.assertEqual(result.returncode, code, result.stderr)
+                self.assertEqual(result.stdout, payload)
+                evidence = root/'bin/bootstrap/dense-ci'
+                self.assertEqual((evidence/'host-units.log').read_bytes(), payload)
+                report = json.loads((evidence/'host-units-diagnostics.json').read_bytes())
+                self.assertEqual(report['scope'], 'diagnostics-only')
+                self.assertEqual(report['returncode'], code)
+                self.assertEqual(report['log_sha256'], hashlib.sha256(payload).hexdigest())
+                self.assertEqual(report['argv'][0:3], [sys.executable, '-m', 'unittest'])
+
+    def test_initial_diagnostics_exist_before_any_compiler(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            result = subprocess.run([sys.executable, '-c', INIT_CODE], cwd=root,
+                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            report = json.loads((root/'bin/bootstrap/dense-ci/preflight-diagnostics.json').read_bytes())
+            self.assertEqual(report['scope'], 'diagnostics-only')
+            self.assertNotIn('complete', report)
+
+    def test_diagnostics_cannot_mask_exit_or_be_late(self):
+        self.reject('sys.exit(r.returncode)', 'sys.exit(0)')
+        self.reject('Initialize diagnostics before toolchain and unit gates', 'Initialize diagnostics after gates')
 
     def test_reviewed_core_workflow(self):
         validate_workflow(self.text)
