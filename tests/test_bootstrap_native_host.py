@@ -136,6 +136,24 @@ class BootstrapNativeHostTests(unittest.TestCase):
         self.assertEqual(dry[0], actual[0]+['-###'])
         self.assertEqual(dry[1], actual[1])
         self.assertEqual(evidence['linker_selection']['command'], actual[0])
+        self.assertEqual(actual[0][1], '--target='+self.toolchain.triple)
+
+    def test_explicit_link_uses_exact_versioned_ir_target(self):
+        old = self.toolchain.triple
+        self.toolchain.triple = old+'19.51.36260'
+        self.ir = self.ir.replace(old, self.toolchain.triple)
+        self.metadata = self.metadata.replace(old, self.toolchain.triple)
+        linker = self.root/'link.exe';linker.write_bytes(b'original')
+        original = self.frontend
+        def targeted(args, **kwargs):
+            result = original(args, **kwargs)
+            if args[-1] == '-###':
+                self.assertEqual(args[1], '--target='+self.toolchain.triple)
+                result.stderr = result.stderr.replace(('Target: '+old+'\n').encode(), ('Target: '+self.toolchain.triple+'\n').encode())
+            return result
+        self.frontend = targeted
+        evidence = self.invoke(linker=linker)
+        self.assertEqual(evidence['linker_selection']['command'][1], '--target='+self.toolchain.triple)
 
     def test_wrong_dry_run_selection_never_executes_link_or_publishes(self):
         linker = self.root/'link.exe';linker.write_bytes(b'original')
@@ -472,6 +490,21 @@ class PinnedLinkerSelectionTests(unittest.TestCase):
                     bootstrap.inspect_linker_command(self.command,self.record,{},str(self.root))
                 run.assert_not_called()
             self.command.pop()
+
+    def test_target_rejection_retains_exact_raw_bytes_and_both_values(self):
+        lines=link_trace([str(self.linker)]).splitlines(keepends=True)
+        raw=b'\n \r\n'+lines[-1]+b''.join(lines[:-1])
+        expected='x86_64-pc-windows-msvc19.51.36260'
+        with patch.object(bootstrap.subprocess,'run',return_value=type('R',(),{'returncode':0,'stdout':b'','stderr':raw})()):
+            with self.assertRaises(ValueError) as raised:
+                bootstrap.inspect_linker_command(self.command,self.record,{},str(self.root),expected)
+        diagnostic=json.loads(str(raised.exception).split(': ',1)[1])
+        self.assertEqual(diagnostic['expected_target'],expected)
+        self.assertEqual(diagnostic['observed_target'],'x86_64-pc-windows-msvc')
+        self.assertEqual(diagnostic['dry_run_stderr_utf8'].encode(),raw)
+        self.assertEqual(diagnostic['dry_run_stderr_sha256'],bootstrap.digest(raw))
+        self.assertEqual(diagnostic['command'],self.command)
+        self.assertEqual(diagnostic['status'],'rejected-diagnostic-only')
 
 
 if __name__ == '__main__':

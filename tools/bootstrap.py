@@ -119,7 +119,11 @@ def inspect_linker_command(command, record, environment, cwd, expected_triple=No
         raise RuntimeError('linker dry run failed: '+probe.stderr.decode('utf-8', errors='replace'))
     selected = parse_linker_trace(probe.stderr)
     if expected_triple is not None and ('Target: '+expected_triple) not in probe.stderr.decode('utf-8').splitlines():
-        raise ValueError('linker dry-run target differs from compilation target')
+        diagnostic = {'schema': 'ru-linker-target-rejection-v1', 'status': 'rejected-diagnostic-only',
+                      'expected_target': expected_triple, 'observed_target': next(line.strip()[len('Target: '):] for line in probe.stderr.decode('utf-8').splitlines() if line.strip().startswith('Target: ')),
+                      'command': command, 'dry_run_stderr_utf8': probe.stderr.decode('utf-8'),
+                      'dry_run_stderr_sha256': digest(probe.stderr)}
+        raise ValueError('linker dry-run target differs from compilation target: '+json.dumps(diagnostic, ensure_ascii=False))
     path = Path(selected[0])
     if (not path.is_absolute() or path.resolve() != Path(record['path'])
             or file_identity(path) != record):
@@ -301,6 +305,9 @@ def compile_native(compiler, source, output, toolchain, *, emit_llvm=None, keep_
                     return original_run(command, input=input)
                 if input is not None:
                     raise ValueError('pinned linker accepts object inputs only')
+                if any(str(arg).startswith(('--target', '-target')) for arg in command):
+                    raise ValueError('conflicting explicit link target')
+                command = [command[0], '--target='+toolchain.triple, *command[1:]]
                 selection = inspect_linker_command(command, linker_identity, environment, cwd, toolchain.triple)
                 result = subprocess.run(command, capture_output=True, env=environment, cwd=cwd, timeout=120)
                 if result.returncode:
