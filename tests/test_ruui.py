@@ -152,9 +152,13 @@ def jpeg_bytes(width, height):
     return b'\xff\xd8\xff\xc0\x00\x11\x08' + height.to_bytes(2, 'big') + width.to_bytes(2, 'big')
 
 
-def run_python(source, inputs=()):
+def run_python(source, inputs=(), metrics=None, measurer=None):
     events = []
     host = GraphicsHost(Interpreter(), events.append)
+    if metrics is not None:
+        host.text_metrics = metrics
+    if measurer is not None:
+        host.text_measurer = measurer
     try:
         host.interpreter.execute(parse(source))
         host.flush()
@@ -165,13 +169,19 @@ def run_python(source, inputs=()):
         host.close()
 
 
-def run_javascript(source, inputs=()):
+def run_javascript(source, inputs=(), metrics=None, measurer_js=None):
     with tempfile.TemporaryDirectory() as directory:
         path = Path(directory)
         (path / 'program.mjs').write_text(compile_browser(source), encoding='utf-8')
+        options = '{emit:e=>events.push(e)'
+        if metrics is not None:
+            options += ',textMetrics:' + json.dumps(metrics, ensure_ascii=False)
+        if measurer_js is not None:
+            options += ',textMeasurer:' + measurer_js
+        options += '}'
         (path / 'run.mjs').write_text(
             "import create from './program.mjs';const events=[];"
-            "const runtime=create({emit:e=>events.push(e)});"
+            f"const runtime=create({options});"
             "const canvas_id=events.find(e=>e.type==='graphics').canvas_id;"
             + "for(const event of " + json.dumps(inputs)
             + ")runtime.dispatch({canvas_id,event});"
@@ -202,9 +212,9 @@ def compare_value(test, left, right):
 
 
 class RuUIParityTests(unittest.TestCase):
-    def compare(self, source, inputs=()):
-        python = run_python(source, inputs)
-        javascript = run_javascript(source, inputs)
+    def compare(self, source, inputs=(), metrics=None, measurer=None, measurer_js=None):
+        python = run_python(source, inputs, metrics=metrics, measurer=measurer)
+        javascript = run_javascript(source, inputs, metrics=metrics, measurer_js=measurer_js)
         self.assertEqual(len(python), len(javascript), (len(python), len(javascript)))
         for p, j in zip(python, javascript):
             p = {k: v for k, v in p.items() if k != 'canvas_id'}
@@ -809,6 +819,102 @@ class RuUIParityTests(unittest.TestCase):
         # 点击按钮先失焦提交（text_blur），再翻页；新页读到已提交的串。
         self.assertTrue(self.all_ops(events, 'text_blur'))
         self.assertIn('已存甲', texts(events[-1]['commands']))
+
+
+MEASURE_SNIPPET = """
+观 取 外言 '如:观'.
+机 取 (观 其 画布 360 640).
+机 其 背景 '#102030'.
+机 其 填色 '#ffffff'.
+机 其 矩形 10 10 (机 其 测文 'a一') 4.
+机 其 填色 '#ff0000'.
+度 取 (机 其 字度).
+机 其 矩形 20 20 4 ((度 其 查 '半') * 16).
+机 其 填色 '#00ff00'.
+机 其 矩形 30 30 4 ((度 其 查 '行') * 16).
+机 其 填色 '#0000ff'.
+机 其 矩形 40 40 ((机 其 测文 '甲乙') - (机 其 测文 '甲')) 4.
+"""
+
+
+class RuUITextMeasureTests(unittest.TestCase):
+
+    def setUp(self):
+        self.case = RuUIParityTests()
+
+    def widths(self, events):
+        commands = events[-1]['commands']
+        return {
+            'text': self.case.find_rect(commands, '#ffffff'),
+            'half': self.case.find_rect(commands, '#ff0000'),
+            'line': self.case.find_rect(commands, '#00ff00'),
+            'full': self.case.find_rect(commands, '#0000ff'),
+        }
+
+    @staticmethod
+    def size(widths, key):
+        rect = widths[key]
+        return rect['width'] if key in ('text', 'full') else rect['height']
+
+    @unittest.skipUnless(NODE, 'Node required for JS parity')
+    def test_measure_text_default_metrics_parity(self):
+        # 不注入：双端回退算法与库早期近似逐位一致（全 1.0、半 0.56、行 1.5）。
+        events = self.case.compare(MEASURE_SNIPPET)
+        widths = self.widths(events)
+        self.assertAlmostEqual(self.size(widths, 'text'), 1.56 * 16, delta=1e-9)
+        self.assertAlmostEqual(self.size(widths, 'half'), 0.56 * 16, delta=1e-9)
+        self.assertAlmostEqual(self.size(widths, 'line'), 1.5 * 16, delta=1e-9)
+        self.assertAlmostEqual(self.size(widths, 'full'), 1.0 * 16, delta=1e-9)
+
+    @unittest.skipUnless(NODE, 'Node required for JS parity')
+    def test_measure_text_injected_metrics_drive_layout(self):
+        injected = {'全': 1.1, '半': 0.5, '行': 1.4}
+        events = self.case.compare(MEASURE_SNIPPET, metrics=injected)
+        widths = self.widths(events)
+        self.assertAlmostEqual(self.size(widths, 'text'), 1.6 * 16, delta=1e-9)
+        self.assertAlmostEqual(self.size(widths, 'half'), 0.5 * 16, delta=1e-9)
+        self.assertAlmostEqual(self.size(widths, 'line'), 1.4 * 16, delta=1e-9)
+        self.assertAlmostEqual(self.size(widths, 'full'), 1.1 * 16, delta=1e-9)
+
+    @unittest.skipUnless(NODE, 'Node required for JS parity')
+    def test_textfield_caret_follows_injected_metrics(self):
+        # 值区起始 x＝9.6（页内边距后实测常量）；注入半角 0.5：打完 'a'
+        # 光标 x＝9.6＋0.5×16＝17.6；缺省回退 0.56 时为 18.56，两档必须不同。
+        events = self.case.compare(TEXTFIELD)
+        field = self.case.field(events[-1]['commands'])
+        x, y = self.case.center(field)
+        sequence = self.case.tap(x, y) + [{'type': 'text_char', 'text': 'a'},
+                                          {'type': 'frame'}]
+        carets = []
+        for metrics in (None, {'全': 1.1, '半': 0.5, '行': 1.4}):
+            events = self.case.compare(TEXTFIELD, sequence, metrics=metrics)
+            matches = [c for c in ops(events[-1]['commands'], 'rect') if c['width'] == 2]
+            self.assertTrue(matches, events[-1]['commands'])
+            carets.append(matches[-1]['x'])
+        self.assertAlmostEqual(carets[0], 9.6 + 0.56 * 16, delta=1e-9)
+        self.assertAlmostEqual(carets[1], 9.6 + 0.5 * 16, delta=1e-9)
+        self.assertNotAlmostEqual(carets[0], carets[1], delta=1e-6)
+
+    def test_measure_text_measurer_hook_parity(self):
+        # 宿主实测钩优先于回退：'a一' → 2×2+1 ＝ 5（双端同一确定性钩）。
+        measurer = lambda text, size: len(text) * 2 + 1
+        measurer_js = '(text,size)=>Array.from(text).length*2+1'
+        events = self.case.compare(MEASURE_SNIPPET, measurer=measurer, measurer_js=measurer_js)
+        self.assertEqual(self.size(self.widths(events), 'text'), 5)
+
+    def test_measure_text_invalid_injection_rejected(self):
+        bad_metrics = {'全': 1, '半': -1, '行': 1.5}
+        with self.assertRaises(RuError) as caught:
+            run_python(MEASURE_SNIPPET, metrics=bad_metrics)
+        self.assertIn('字度', str(caught.exception))
+        if NODE:
+            with self.assertRaises(AssertionError):
+                run_javascript(MEASURE_SNIPPET, metrics=bad_metrics)
+
+    def test_measure_text_invalid_measurer_result_rejected(self):
+        with self.assertRaises(RuError) as caught:
+            run_python(MEASURE_SNIPPET, measurer=lambda text, size: float('nan'))
+        self.assertIn('无效宽度', str(caught.exception))
 
 
 if __name__ == '__main__':

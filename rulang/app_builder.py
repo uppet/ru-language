@@ -271,6 +271,30 @@ const RuHost = (() => {
   // text_char／text_paste／text_comp_* 事件。input 永不拦截指针（画布
   // 的 mousedown 已 preventDefault，焦点切换全由如观命令决定）。
   const textBridge = { input: null, active: false, composing: false, mirror: '' };
+
+  // 测文协议：用显示上下文实测字度（号的倍数），供如UI 文入光标、换行断点
+  // 与真实字形对齐；候选窗桥的光标同步不受影响。引擎缺 measureText 时回退
+  // 到协议缺省值。
+  function measureTextMetrics() {
+    const fallback = { 全: 1, 半: 0.56, 行: 1.5 };
+    try {
+      if (typeof ctx.measureText !== 'function') return fallback;
+      ctx.font = '16px ' + FONT;
+      const probe = ctx.measureText('字');
+      if (!probe || typeof probe.width !== 'number') return fallback;
+      const clamp = (value, low, high) => Math.min(high, Math.max(low, value));
+      const line = (probe.actualBoundingBoxAscent != null && probe.actualBoundingBoxDescent != null)
+        ? (probe.actualBoundingBoxAscent + probe.actualBoundingBoxDescent) / 16
+        : fallback.行;
+      return {
+        全: clamp(probe.width / 16, 0.5, 2),
+        半: clamp(ctx.measureText('a').width / 16, 0.2, 1),
+        行: clamp(line, 1, 2.5),
+      };
+    } catch (error) {
+      return fallback;
+    }
+  }
   const TEXT_KEY_MAP = {
     Backspace: '退格', Delete: '删除', ArrowLeft: '左', ArrowRight: '右',
     ArrowUp: '上', ArrowDown: '下', Home: '家', End: '终', Enter: '回车',
@@ -429,6 +453,11 @@ const RuHost = (() => {
   }
 
   const host = {
+    textMetrics: measureTextMetrics(),
+    textMeasurer(text, size) {
+      ctx.font = size + 'px ' + FONT;
+      return ctx.measureText(text).width;
+    },
     emit(e) {
       if (e.type === 'graphics') {
         if (e.width && canvas.width !== e.width) { canvas.width = e.width; canvas.height = e.height; }

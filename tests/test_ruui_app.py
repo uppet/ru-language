@@ -6,6 +6,7 @@ canvas host under Node with a minimal DOM stub: assert initial paint, tap the
 """
 import json
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -32,11 +33,14 @@ let __clock = 0;
 globalThis.performance = { now: () => __clock };
 
 const __texts = [];
+const __rects = [];
 const __handlers = {};
 function makeCtx() {
   return {
     setTransform() {}, save() {}, restore() {}, beginPath() {},
-    rect() {}, ellipse() {}, moveTo() {}, lineTo() {}, closePath() {},
+    rect(x, y, w, h) { __rects.push({ x, y, w, h }); },
+    measureText(text) { return { width: Array.from(text).length * 8 }; },
+    ellipse() {}, moveTo() {}, lineTo() {}, closePath() {},
     clip() {}, arc() {}, fill() {}, stroke() {}, fillRect() {},
     fillText(text, x, y) { __texts.push({ text, x, y }); },
     font: '', fillStyle: '', strokeStyle: '', lineWidth: 1,
@@ -74,6 +78,7 @@ globalThis.document = {
   activeElement: null,
 };
 globalThis.__texts = __texts;
+globalThis.__rects = __rects;
 globalThis.__handlers = __handlers;
 """
 
@@ -145,6 +150,21 @@ class AppPageSmokeTest(unittest.TestCase):
             self.fail(result.stderr)
         self.assertIn('TEXTFIELD PAGE OK', result.stdout)
 
+    @unittest.skipUnless(shutil.which('node'), 'node required for page smoke test')
+    def test_page_measures_real_text_metrics_for_caret(self):
+        # stub measureText 每字恒 8px：实测钩生效时打 '小' 光标 x＝9.6＋8＝17.6；
+        # 若页主没接测文协议，回退宽度为 1.0×16＝16，光标会是 25.6。
+        html = build_app_html(TEXTFIELD_PROGRAM, title='如UI 文入')
+        with tempfile.TemporaryDirectory() as directory:
+            script = Path(directory) / 'textfield_caret_page.mjs'
+            script.write_text(DOM_STUB + extract_module_script(html) + TEXTFIELD_CARET_EPILOGUE,
+                              encoding='utf-8')
+            result = subprocess.run([NODE, str(script)], text=True,
+                                    capture_output=True, timeout=30)
+        if result.returncode != 0:
+            self.fail(result.stderr)
+        self.assertIn('TEXTFIELD CARET OK', result.stdout)
+
     def test_assets_dir_embeds_into_page(self):
         code = (ROOT / 'examples' / 'ruui-counter.ru').read_text(encoding='utf-8')
         with tempfile.TemporaryDirectory() as directory:
@@ -196,6 +216,32 @@ if (input.value !== '甲你') { console.error('FAIL: ime commit, got ' + input.v
 click(4, 600);
 if (document.activeElement !== null) { console.error('FAIL: blur, still focused'); process.exit(1); }
 console.log('TEXTFIELD PAGE OK');
+"""
+
+TEXTFIELD_CARET_EPILOGUE = r"""
+__pump(0);
+const placeholder = __texts.find((t) => t.text === '姓名');
+if (!placeholder) { console.error('FAIL: placeholder missing'); process.exit(1); }
+const click = (x, y) => {
+  __handlers['mousedown']({ clientX: x, clientY: y, button: 0, preventDefault() {} });
+  __handlers['mouseup']({ clientX: x, clientY: y, button: 0, preventDefault() {} });
+};
+click(placeholder.x + 1, placeholder.y + 1);
+const input = __inputs[0];
+if (!input) { console.error('FAIL: hidden input not created'); process.exit(1); }
+input.dispatch('beforeinput', { inputType: 'insertText', data: '小' });
+__rects.length = 0;
+__texts.length = 0;
+__pump(40);
+// stub 实测：'小' 宽 8px，值区起始 x 9.6 → 光标 x 17.6（回退度量会给 25.6）。
+const carets = __rects.filter((r) => r.w === 2);
+if (!carets.length) { console.error('FAIL: caret rect missing'); process.exit(1); }
+const last = carets[carets.length - 1];
+if (Math.abs(last.x - (9.6 + 8)) > 1e-9) {
+  console.error('FAIL: caret x, got ' + JSON.stringify(last));
+  process.exit(1);
+}
+console.log('TEXTFIELD CARET OK');
 """
 
 TEXTFIELD_PROGRAM = """\

@@ -81,6 +81,7 @@ CANVAS_PARAMS = MappingProxyType({"背景": ("色",), "填色": ("色",), "描�
               "入焦点": ("横", "纵", "宽", "高", "文", "标"), "入失焦": (),
               "入更新": ("文", "标"),
               "帧率": ("率",), "停": (), "继续": (), "关闭": (), "宽": (), "高": (), "帧": (),
+              "字度": (), "测文": ("文",),
               "经过秒": (), "间隔秒": (),
               **{key: ("回调",) for key in CALLBACK_NAMES}})
 
@@ -102,10 +103,28 @@ def install_graphics(owner):
     owner.graphics_host = None
 
 
-READ_MEMBERS = frozenset(("宽", "高", "帧", "经过秒", "间隔秒"))
+READ_MEMBERS = frozenset(("宽", "高", "帧", "经过秒", "间隔秒", "字度", "测文"))
 RECORDER_MEMBERS = frozenset(CANVAS_PARAMS) - frozenset(CALLBACK_NAMES) - {
     "缓存", "贴图", "帧率", "停", "继续", "关闭", "帧", "经过秒", "间隔秒",
-    "图请求", "绘图", "图释放", "件请求", "入焦点", "入失焦", "入更新"}
+    "图请求", "绘图", "图释放", "件请求", "入焦点", "入失焦", "入更新",
+    "字度", "测文"}
+
+# 缺省字度（号的倍数）：与如UI 早期近似度量逐位一致，保证不注入时行为不变。
+_DEFAULT_TEXT_METRICS = {"全": 1.0, "半": 0.56, "行": 1.5}
+
+
+def _measure_text(canvas, text, fail):
+    """机 其 测文：宿主实测钩优先，否则按字度逐码点回退（半角＝码点 < 一）。"""
+    size = canvas.text_size
+    measurer = canvas.host.text_measurer
+    if measurer is not None:
+        width = measurer(text, size)
+        if (isinstance(width, bool) or not isinstance(width, (int, float))
+                or not math.isfinite(width) or not 0 <= width <= 10000000):
+            fail("如观测文宿主返回无效宽度")
+        return float(width)
+    half, full = canvas.metrics["半"], canvas.metrics["全"]
+    return float(sum(half if ord(char) < 0x4E00 else full for char in text) * size)
 
 
 def _address_space_used():
@@ -267,6 +286,7 @@ class Canvas:
         self.line_width, self.text_size = 1, 16
         self.text_align, self.text_baseline = "left", "top"
         self.fps, self.frame = 30, 0
+        self.metrics = dict(_DEFAULT_TEXT_METRICS)
         self.running, self.closed = False, False
         self.image_loads = set()
         self.file_loads = set()
@@ -404,6 +424,9 @@ class GraphicsHost:
         self.auto_load = bool(auto_load)
         self.load_queue = deque()
         self._draining = False
+        # 测文协议：下游渲染宿主可注入真实字度表与实测钩（如书前端等）。
+        self.text_metrics = None
+        self.text_measurer = None
         interpreter.graphics_host = self
 
     def _sample_time(self, *, close_on_error=True):
@@ -459,9 +482,26 @@ class GraphicsHost:
             tracemalloc.start(1)
             self.owns_tracing = True
         self.canvas = Canvas(self, width, height, origin)
+        self.canvas.metrics = self._resolve_text_metrics()
         instance = Instance(_TYPES["canvas"], {})
         instance.graphics_canvas = self.canvas
         return instance
+
+    def _resolve_text_metrics(self):
+        metrics = self.text_metrics
+        if metrics is None:
+            return dict(_DEFAULT_TEXT_METRICS)
+        if not isinstance(metrics, dict):
+            raise RuError("如观字度须为含全／半／行的典", category="用法错误")
+        resolved = {}
+        for key in ("全", "半", "行"):
+            value = metrics.get(key)
+            if (isinstance(value, bool) or not isinstance(value, (int, float))
+                    or not math.isfinite(value) or not 0.1 <= value <= 10):
+                raise RuError("如观字度须为含全／半／行的典，三个数各为 0.1 至 10 之间有限数",
+                              category="用法错误")
+            resolved[key] = float(value)
+        return resolved
 
     def flush(self):
         canvas = self.canvas
@@ -930,6 +970,17 @@ def graphics_member(owner, n, receiver, name, args):
         return True, float({"宽": canvas.width, "高": canvas.height, "帧": canvas.frame}[name])
     elif name in ("经过秒", "间隔秒"):
         return True, canvas._elapsed if name == "经过秒" else canvas._delta
+    elif name == "字度":
+        from .interpreter import RuMap
+        result = RuMap()
+        for key in ("全", "半", "行"):
+            owner.map_put(n, result, key, canvas.metrics[key])
+        return True, result
+    elif name == "测文":
+        text = bound["文"]
+        if not isinstance(text, str) or len(text) > 4096:
+            fail("测文须为不超过 4096 字符的句")
+        return True, _measure_text(canvas, text, fail)
     elif name == "关闭":
         # Explicit close is cleanup and may discard an unfinished saved state.
         canvas.stack.clear()

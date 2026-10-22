@@ -12,6 +12,26 @@
   // Host-only clock injection; direct module users fall back to the platform's
   // monotonic clock. Neither the function nor timestamps enter the Ru scope.
   const browserNowSeconds=own(__ruHost,'nowSeconds')?__ruHost.nowSeconds:()=>performance.now()/1000;
+  // 测文协议：宿主可注入真实字度表与实测钩；缺省与如UI 早期近似度量逐位一致。
+  const browserHostFail=message=>{throw new Error(message)};
+  const browserDefaultTextMetrics=Object.freeze({全:1,半:0.56,行:1.5});
+  let browserTextMetrics=null,browserTextMeasurer=null;
+  if(own(__ruHost,'textMetrics')&&__ruHost.textMetrics!==undefined&&__ruHost.textMetrics!==null){
+    const injected=__ruHost.textMetrics;
+    if(typeof injected!=='object')browserHostFail('textMetrics 须为含全／半／行的对象');
+    const resolved={};
+    for(const key of ['全','半','行']){
+      const value=injected[key];
+      if(typeof value!=='number'||!Number.isFinite(value)||value<0.1||value>10)
+        browserHostFail('textMetrics.'+key+' 须为 0.1 至 10 之间有限数');
+      resolved[key]=value;
+    }
+    browserTextMetrics=Object.freeze(resolved);
+  }
+  if(own(__ruHost,'textMeasurer')&&__ruHost.textMeasurer!==undefined&&__ruHost.textMeasurer!==null){
+    if(typeof __ruHost.textMeasurer!=='function')browserHostFail('textMeasurer 须为函数');
+    browserTextMeasurer=__ruHost.textMeasurer;
+  }
   let browserLastClockSample=null;
   function browserSampleTime(m,loc,closeOnError=true){
     let sample;
@@ -102,7 +122,9 @@
   browserParams.入焦点=['横','纵','宽','高','文','标'];
   browserParams.入失焦=[];
   browserParams.入更新=['文','标'];
-  const browserRecorderForbidden=new Set(['缓存','贴图','图请求','绘图','图释放','件请求','入焦点','入失焦','入更新','帧率','停','继续','关闭','帧','经过秒','间隔秒',...Object.keys(browserEvents)]);
+  browserParams.字度=[];
+  browserParams.测文=['文'];
+  const browserRecorderForbidden=new Set(['缓存','贴图','图请求','绘图','图释放','件请求','入焦点','入失焦','入更新','字度','测文','帧率','停','继续','关闭','帧','经过秒','间隔秒',...Object.keys(browserEvents)]);
   browserParams.弧=['横','纵','宽','高','始角','转角'];
   browserParams.扇形=['横','纵','宽','高','始角','转角'];
   browserParams.折线=['点阵'];
@@ -128,7 +150,7 @@
       const a=argsBind(m,name,args,['宽','高'],loc),width=num(a.宽,'宽',1,2048,true),height=num(a.高,'高',1,2048,true);
       const origin=browserSampleTime(m,loc,false);
       browserClose();
-      browserCanvas={id:Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join(''),width,height,callbacks:dict(),commands:[],bytes:2,fill:'#4677ff',stroke:'#202530',lineWidth:1,textSize:16,textAlign:'left',textBaseline:'top',fps:30,frame:0,origin,elapsed:0,delta:0,previousFrame:null,running:false,closed:false,dirty:true,transform:browserIdentity(),clips:[],stack:[],resources:new Map(),resourceSizes:new Map(),resourcePixels:0,resourceBytes:2,referenceIds:new Set(),referenceBytes:0,referenceCommands:0,imageLoads:new Set(),fileLoads:new Set(),loadDone:new Set(),token:{},module:m,location:loc};
+      browserCanvas={id:Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join(''),width,height,callbacks:dict(),commands:[],bytes:2,fill:'#4677ff',stroke:'#202530',lineWidth:1,textSize:16,textAlign:'left',textBaseline:'top',fps:30,frame:0,origin,elapsed:0,delta:0,previousFrame:null,running:false,closed:false,dirty:true,transform:browserIdentity(),clips:[],stack:[],resources:new Map(),resourceSizes:new Map(),resourcePixels:0,resourceBytes:2,referenceIds:new Set(),referenceBytes:0,referenceCommands:0,imageLoads:new Set(),fileLoads:new Set(),loadDone:new Set(),metrics:{...(browserTextMetrics||browserDefaultTextMetrics)},token:{},module:m,location:loc};
       const value=new Instance(browserTypes.canvas,dict());value.graphicsCanvas=browserCanvas;m.lastMemberProcedure=false;return value;
     }
     if(kind==='image'){
@@ -145,7 +167,7 @@
     }
     if(!own(browserParams,name))bad('未知如观画布成员：'+name);
     const a=argsBind(m,name,args,browserParams[name],loc);
-    m.lastMemberProcedure=!['宽','高','帧','经过秒','间隔秒','缓存'].includes(name);
+    m.lastMemberProcedure=!['宽','高','帧','经过秒','间隔秒','字度','测文','缓存'].includes(name);
     const command=value=>{
       if(value.op!=='background'){
         if(c.transform.some((v,i)=>v!==browserIdentity()[i]))value.transform=c.transform.slice();
@@ -232,6 +254,23 @@
     else if(name==='帧')return c.frame;
     else if(name==='经过秒')return c.elapsed;
     else if(name==='间隔秒')return c.delta;
+    else if(name==='字度'){
+      const result=new RuMap();
+      for(const key of ['全','半','行'])mapPut(m,result,key,c.metrics[key],loc);
+      return result;
+    }
+    else if(name==='测文'){
+      const text=a.文;
+      if(typeof text!=='string'||Array.from(text).length>4096)bad('测文须为不超过 4096 字符的句');
+      if(browserTextMeasurer!==null){
+        const width=browserTextMeasurer(text,c.textSize);
+        if(typeof width!=='number'||!Number.isFinite(width)||width<0||width>10000000)bad('如观测文宿主返回无效宽度');
+        return width;
+      }
+      let width=0;
+      for(const char of text)width+=(char.codePointAt(0)<0x4E00?c.metrics.半:c.metrics.全);
+      return width*c.textSize;
+    }
     else if(name==='关闭'){c.stack=[];browserFlush();browserClose();return null;}
     else if(name==='停'||name==='继续')browserSetRunning(c,name==='继续'&&own(c.callbacks,'frame'));
     else if(name==='帧率')c.fps=num(a.率,'帧率',1,60,true);
