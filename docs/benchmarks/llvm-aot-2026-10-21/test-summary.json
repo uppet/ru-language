@@ -1,0 +1,23 @@
+[
+  {
+    "shard": 0,
+    "tests": 576,
+    "seconds": 241.877,
+    "skipped": 15,
+    "collection_sha256": "b68578ad283a945903cbf3295eb48b26b608ba2b67001b3477178031fae2fa19"
+  },
+  {
+    "shard": 1,
+    "tests": 576,
+    "seconds": 363.27,
+    "skipped": 16,
+    "collection_sha256": "b68578ad283a945903cbf3295eb48b26b608ba2b67001b3477178031fae2fa19"
+  },
+  {
+    "shard": 2,
+    "tests": 576,
+    "seconds": 363.722,
+    "skipped": 15,
+    "collection_sha256": "b68578ad283a945903cbf3295eb48b26b608ba2b67001b3477178031fae2fa19"
+  }
+]

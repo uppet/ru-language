@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import random
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -20,6 +21,9 @@ from rulang.frontend import RuError, parse
 from rulang.modules import load_module_graph
 from rulang.mi_ir import EFFECTS, VIEW
 from rulang.mi_source import MiSourcePlan
+from rulang.cli import compiler_command
+from rulang.llvm_toolchain import find_clang
+from rulang.toolchain_environment import llvm_environment
 
 SCAN = (HERE / 'ascii.ru').read_text(encoding='utf-8')
 SPEC = json.loads((HERE / 'manifest.json').read_text(encoding='utf-8'))['functions'][0]
@@ -46,16 +50,33 @@ def compile_c(source, directory, *, shared=False):
     cfile = directory / 'test.c'
     output = directory / ('test.dll' if shared and os.name == 'nt' else 'test.so' if shared else 'test.exe' if os.name == 'nt' else 'test')
     cfile.write_text(source, encoding='utf-8', newline='\n')
-    command = [os.environ.get('CC', 'gcc'), '-std=c99', '-O1', '-Wall', '-Wextra', '-Werror', '-Wno-unused-function', '-pedantic']
+    selected = os.environ.get('CC') or shutil.which('gcc') or find_clang()
+    if not selected: raise AssertionError('需要 C 编译器或本地 LLVM 14')
+    command = compiler_command(selected) + ['-std=c99', '-O1', '-Wall', '-Wextra', '-Werror', '-Wno-unused-function', '-pedantic']
+    if os.name == 'nt': command += ['-D_CRT_SECURE_NO_WARNINGS']
     if shared: command += ['-shared'] + ([] if os.name == 'nt' else ['-fPIC'])
     if os.environ.get('MI_UBSAN'): command += ['-fsanitize=undefined', '-fno-sanitize-recover=all']
-    command += [str(cfile), '-lm']
-    if os.name != 'nt': command += ['-ldl', '-pthread']
-    run(command + ['-o', str(output)])
+    command += [str(cfile)]
+    if os.name != 'nt': command += ['-lm', '-ldl', '-pthread']
+    run(command + ['-o', str(output)], env=llvm_environment())
     return output
 
 
 class SourceTests(unittest.TestCase):
+    compiler_class = Compiler
+
+    def generate_program(self, compiler, directory):
+        return compiler.compile()
+
+    def link_program(self, source, directory):
+        return compile_c(source, directory)
+
+    def replace_main(self, generated, probe, directory):
+        return generated[:generated.index('int main(int argc, char **argv) {')] + probe
+
+    def probe_function(self, compiler, fn):
+        return compiler.function_ids[id(fn)]
+
     def fixture(self, source=SCAN, spec=None, caller=None):
         temp = tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
         directory = Path(temp.name)
@@ -72,9 +93,9 @@ class SourceTests(unittest.TestCase):
     def compile_program(self, source=SCAN, spec=None, caller=None):
         fixture = self.fixture(source, spec, caller)
         directory, entry, ast, graph, manifest, _ = fixture
-        compiler = Compiler(ast, str(entry), modules=graph, allow_native=True, mi_manifest=manifest)
-        generated = compiler.compile()
-        binary = compile_c(portable(generated) if compiler.native_enabled else generated, directory)
+        compiler = self.compiler_class(ast, str(entry), modules=graph, allow_native=True, mi_manifest=manifest)
+        generated = self.generate_program(compiler, directory)
+        binary = self.link_program(portable(generated) if compiler.native_enabled else generated, directory)
         return fixture, compiler, generated, binary
 
     def test_ordinary_caller_imported_source_gc(self):
@@ -88,7 +109,8 @@ class SourceTests(unittest.TestCase):
 
     def test_c_js_random_differential_and_all_bytes(self):
         directory, _, _, _, _, plan = self.fixture()
-        source = plan.compute_source('c') + '\nRuMiResult test_call(const uint8_t *data, uint32_t length, uint32_t begin, uint32_t end) { return ru_mi_kernel_0((RuMiView){data,length},begin,end); }\n'
+        export = '__declspec(dllexport) ' if os.name == 'nt' else ''
+        source = plan.compute_source('c') + '\n' + export + 'RuMiResult test_call(const uint8_t *data, uint32_t length, uint32_t begin, uint32_t end) { return ru_mi_kernel_0((RuMiView){data,length},begin,end); }\n'
         binary = compile_c(source, directory, shared=True)
         class Result(C.Structure): _fields_ = [('status', C.c_int), ('value', C.c_uint32), ('line', C.c_uint32), ('col', C.c_uint32)]
         library = C.CDLL(str(binary)); fn = library.test_call
@@ -220,8 +242,9 @@ class SourceTests(unittest.TestCase):
         spec = copy.deepcopy(SPEC); spec.pop('ranges')
         source = '算 ASCII段 字节 始 终:\n    得 终 + 1.\n法.'
         directory, entry, ast, graph, manifest, plan = self.fixture(source, spec, "密 取 外言 '如:密'. 核 取 外言 './ascii.ru'.")
-        compiler = Compiler(ast, str(entry), modules=graph, allow_native=True, full_runtime=True, mi_manifest=manifest)
-        generated = compiler.compile(); function = compiler.function_ids[id(compiler.mi_plan.records[0]['node'])]
+        compiler = self.compiler_class(ast, str(entry), modules=graph, allow_native=True, full_runtime=True, mi_manifest=manifest)
+        generated = self.generate_program(compiler, directory)
+        function = self.probe_function(compiler, compiler.mi_plan.records[0]['node'])
         probe = r'''
 int main(void) {
     ru_init(); (void)ru_native_builtins(ru_contest_builtins());
@@ -256,8 +279,8 @@ int main(void) {
     v_drop(memory); ru_shutdown(); puts("failure released; retry passed"); return 0;
 }
 '''.replace('FUNCTION', function)
-        generated = generated[:generated.index('int main(int argc, char **argv) {')] + probe
-        binary = compile_c(portable(generated), directory)
+        generated = self.replace_main(generated, probe, directory)
+        binary = self.link_program(portable(generated), directory)
         result = run([str(binary)], env=dict(os.environ, RU_GC_THRESHOLD='1', RU_GC_STATS='1'))
         self.assertIn('failure released; retry passed', result.stdout)
         self.assertIn('RU_GC live=0', result.stderr)

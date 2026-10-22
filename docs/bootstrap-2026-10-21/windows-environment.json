@@ -1,0 +1,24 @@
+{
+  "platform": "Windows-11-10.0.26100-SP0",
+  "machine": "AMD64",
+  "python": "3.12.4 (tags/v3.12.4:8e8a4ba, Jun  6 2024, 19:30:16) [MSC v.1940 64 bit (AMD64)]",
+  "host_unicode": "15.0.0",
+  "native_frontend_unicode": "13.0.0",
+  "llvm": "clang version 14.0.6",
+  "triple": "x86_64-pc-windows-msvc19.51.36260",
+  "data_layout": "e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128",
+  "tools": {
+    "llvm-as": "LLVM (http://llvm.org/):",
+    "llvm-link": "LLVM (http://llvm.org/):",
+    "opt": "LLVM (http://llvm.org/):",
+    "llvm-dis": "LLVM (http://llvm.org/):",
+    "llc": "LLVM (http://llvm.org/):"
+  },
+  "windows_tool_manifest_sha256": "6a085b033d29fb17e30fbd3caca1013156b0f995c3ca0eed533dfb2e9228bcca",
+  "note": "Build timing samples were collected with regression work running; no isolated performance claim.",
+  "actual_windows_https_download": {
+    "package": "libzlib-1.2.12-h8ffe710_2.tar.bz2",
+    "sha256": "e88ff9ab754e58a76162532e9d671637870a1dec9387fdda63a7841fc6a3b4c0",
+    "matched_manifest": true
+  }
+}

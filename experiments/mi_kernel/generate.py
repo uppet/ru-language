@@ -225,19 +225,29 @@ def generate_source(manifest, out, entry=None):
         modules.update(load_module_graph(source, parse(source.read_text(encoding='utf-8'))))
     plan = MiSourcePlan(modules, manifest)
     out = Path(out); out.mkdir(parents=True, exist_ok=True)
-    for target, name in (('c', 'kernel.h'), ('js', 'kernel.js')):
+    for target, name in (('c', 'kernel.h'), ('js', 'kernel.js'), ('llvm', 'kernel.ll')):
         (out / name).write_text(plan.compute_source(target), encoding='utf-8', newline='\n')
     records = [{'module': Path(os.path.relpath(r['module'], manifest.parent)).as_posix(),
                 'function': r['function'], 'symbol': r['symbol'], 'ir': r['ir'], 'ranges': r['ranges'],
                 'source_sha256': sha256(Path(r['module']).read_bytes()).hexdigest()} for r in plan.records]
+    from rulang.mi_ir import UTF8
+    for record, selected in zip(records, plan.records):
+        if UTF8 in selected['input_contracts'].values():
+            record['input_contracts'] = selected['input_contracts']
     (out / 'ir.json').write_text(json.dumps(records, ensure_ascii=False, indent=2)+'\n', encoding='utf-8', newline='\n')
     metadata = {'experimental': True, 'schema': 2, 'manifest_sha256': sha256(manifest.read_bytes()).hexdigest(),
-        'source_count': len(records), 'ordinary_bridge': 'C NativeMemory synchronous readonly, explicit --experimental-mi-manifest',
+        'source_count': len(records), 'ordinary_bridge': 'C/LLVM NativeMemory synchronous readonly on Windows x64; scalar C/LLVM also on Linux; explicit --experimental-mi-manifest',
+        'llvm_scope': 'direct checked IR to LLVM 14; pointer/u32 private ABI; no generated C kernel body',
+        'self_hosted_mi_frontend': False,
         'js_scope': 'same IR compute semantics only, no NativeMemory or physical ABI promise',
         'kernel_gc_allocations': 0, 'kernel_boxings': 0, 'kernel_input_copied_bytes': 0,
         'boundary_allocations': 'owner snapshot may allocate; ordinary adapters measured separately',
         'ordinary_input_copy': 'UTF8 adapter explicitly copies once per input block; never zero-copy',
         's1_acceptance': 'not complete'}
+    if any(UTF8 in r['input_contracts'].values() for r in plan.records):
+        metadata['immutable_utf8_boundary'] = 'retain ordinary immutable UTF8 string; byte offsets/length; no allocation or copy; synchronous callback entry allowed'
+        metadata['boundary_allocations'] = 'immutable UTF8 retain does not allocate; NativeMemory owner snapshot may allocate'
+        metadata['ordinary_input_copy'] = 'borrow_ro_utf8 borrows string storage without copying; borrow_ro_u8 retains the original NativeMemory contract'
     (out / 'metadata.json').write_text(json.dumps(metadata, ensure_ascii=False, indent=2)+'\n', encoding='utf-8', newline='\n')
     return plan
 
@@ -262,4 +272,3 @@ if __name__ == '__main__':
     except (OSError, UnicodeError) as error:
         report(RuError(str(error), category='编译错误'), str(args.manifest or '<密实验>'))
         raise SystemExit(1)
-

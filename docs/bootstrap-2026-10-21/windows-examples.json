@@ -1,0 +1,332 @@
+[
+  {
+    "source": "examples/add.ru",
+    "stdin": "2\n3\n",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "d612eca069cb942999ff2d1cd303c53f4fe37ae84afd7744955c7bb71f717325"
+  },
+  {
+    "source": "examples/anonymous.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "d92eccecbddeff3589935836e3a5774542827dc8453053679a005b13e5af5100"
+  },
+  {
+    "source": "examples/array_sort.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "33aa4d9b2170437f3feb6930a838a7c60215bd968037e1b580d2c882df413bb5"
+  },
+  {
+    "source": "examples/array_sort_map.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "56b0f7594e72f91aeb5215082bf0381cc634f06b825da570a73c1099fda69f44"
+  },
+  {
+    "source": "examples/array_traversal.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "85dd215cada4d8dbb1dd02a82cc840eba483107840dcce3e1e4ec592ada811db"
+  },
+  {
+    "source": "examples/ceremony.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "d6b992c7553024cb8e2f5127f79b72b1a6b1e3c551e93bf5d2454ad9f826b6b1"
+  },
+  {
+    "source": "examples/checked_io.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "868941700a6e8f14fe12798248340d24ab76c56e96fabf2d9e2e6a5df0a337a7"
+  },
+  {
+    "source": "examples/closures.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "a113339b7512b650951a05e2bf3f9c9ff1ef5f55d0ad8588ce1781b8320d94e5"
+  },
+  {
+    "source": "examples/contest_line_words.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  {
+    "source": "examples/contest_prefix_sum.ru",
+    "stdin": "5 3\n1 2 3 4 5\n1 3\n2 5\n4 4\n",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "e368608e9800506e012a5f13c87a65a49af94f04731338d00e696f1c3acb483b"
+  },
+  {
+    "source": "examples/contest_stable_records.ru",
+    "stdin": "4 1\n甲 80\n乙 70\n丙 80\n丁 60\n",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "483d32fc45c289e63b136b03c5893c3cd430f65609970452f4decb6f0360c9f1"
+  },
+  {
+    "source": "examples/contest_sum_eof.ru",
+    "stdin": "1 2\n-3 4\n5 -6\n",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "d4633f1a35da37f328f8f7a2b3676c899476ddba08c4370e0e7eac89216511ae"
+  },
+  {
+    "source": "examples/conversation.ru",
+    "stdin": "你好\n再见\n",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "46e9aa7fef02f7c0135fe31147ef79c93982c401c16fe51535e504ead9f6ad67"
+  },
+  {
+    "source": "examples/entry.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "acf144b98a9c12e9dd284614f37762f34d6c66bddf328ab28966c16ff34c4119"
+  },
+  {
+    "source": "examples/factorial.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "140154083d726867f5e43282aeaf021f9300ec6287d4d2c874493ee655a766e7"
+  },
+  {
+    "source": "examples/hello.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "250f02e4c4ac31c5a20a6e042efa84eaebe75933b8142264db9485ddb1fbbb06"
+  },
+  {
+    "source": "examples/linked_pairs.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "5f495ab082cce99d1b7a188198c2861c8d4e769e8d8b98d9111dfc37ff547f8a"
+  },
+  {
+    "source": "examples/map_index_read.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "7a8037c42d6987df7ac210d83dbd50ed7a2f444d48229863eb8fd39985e2cb45"
+  },
+  {
+    "source": "examples/map_symbol_literals.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "ace22e8b2d000786d0f7c7a3c4f5bd03fa23f368e48b4fdccaf9deddc4ae47f2"
+  },
+  {
+    "source": "examples/maps_facts.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "2484a87d7706fdce776dddcdd223c7aecf81e76a93f87832185d2e9e2895cf8f"
+  },
+  {
+    "source": "examples/objects.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "611016a31788c94b2488fdd0e25c929d4fad00e72facb0cef81262421994cb47"
+  },
+  {
+    "source": "examples/optional_parameters.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "940f1c0a9e774af455a0bf8ed958f7ef1ead094546f57ff3390712294316f3fd"
+  },
+  {
+    "source": "examples/positional.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "31ab4921b45e94f8e7a5325fccbcd38223a63b4e03106f4d9b8add3d48f0e3cc"
+  },
+  {
+    "source": "examples/practical_libraries.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "70976e494d6823d9f2e4ccae264c3118e345083d189ff5de5bd92046e8c4cff9"
+  },
+  {
+    "source": "examples/procedure_finish.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "ecf9ef6bf4271d0ce1c358cbf6144a0027ddfc24e34e837ecd097ebf3c3a4018"
+  },
+  {
+    "source": "examples/recovery.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "14e60d876b26934b6550c771d5c9995a8dd1a1ba0d9f24e13be532c2160422f2"
+  },
+  {
+    "source": "examples/scoped_blocks.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "15063e8e773993f04e9bf40c65853d3773f702e691fa9be1c7e9e547f7e6b623"
+  },
+  {
+    "source": "examples/square.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "225d20eb2d555849461ec21f38cf29a2c2a2431127da98ed754788e72d8f11bf"
+  },
+  {
+    "source": "examples/students.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "93762405450f76cedec99222b8729112ce90cec977d5088c0b8b425c8dcd5ff0"
+  },
+  {
+    "source": "examples/unicode_slices.ru",
+    "stdin": "",
+    "argv": [
+      "6"
+    ],
+    "status": "passed",
+    "native_exit": 0,
+    "reference_exit": 0,
+    "stdout_sha256": "568bd7cdf6c7fe2c47bf67f0e792e2113457f0519f49ad6781b6e646f628d9f0"
+  }
+]

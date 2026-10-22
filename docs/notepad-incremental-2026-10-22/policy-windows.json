@@ -1,0 +1,9 @@
+{
+  "passed": true,
+  "edits": 54,
+  "stdout": "CASE_PASS fence base\nCASE_PASS fence edit 0\nCASE_PASS fence edit 1\nCASE_PASS fence edit 2\nCASE_PASS fence edit 3\nCASE_PASS fence edit 4\nCASE_PASS fence edit 5\nCASE_PASS fence edit 6\nCASE_PASS fence edit 7\nCASE_PASS backtick base\nCASE_PASS backtick edit 0\nCASE_PASS backtick edit 1\nCASE_PASS backtick edit 2\nCASE_PASS backtick edit 3\nCASE_PASS backtick edit 4\nCASE_PASS backtick edit 5\nCASE_PASS backtick edit 6\nCASE_PASS backtick edit 7\nCASE_PASS paragraph base\nCASE_PASS paragraph edit 0\nCASE_PASS paragraph edit 1\nCASE_PASS paragraph edit 2\nCASE_PASS paragraph edit 3\nCASE_PASS paragraph edit 4\nCASE_PASS paragraph edit 5\nCASE_PASS unicode base\nCASE_PASS unicode edit 0\nCASE_PASS unicode edit 1\nCASE_PASS unicode edit 2\nCASE_PASS unicode edit 3\nCASE_PASS unicode edit 4\nCASE_PASS unicode edit 5\nCASE_PASS unicode edit 6\nCASE_PASS unicode edit 7\nCASE_PASS html base\nCASE_PASS html edit 0\nCASE_PASS html edit 1\nCASE_PASS html edit 2\nCASE_PASS html edit 3\nCASE_PASS html edit 4\nCASE_PASS html edit 5\nCASE_PASS containers base\nCASE_PASS containers edit 0\nCASE_PASS containers edit 1\nCASE_PASS containers edit 2\nCASE_PASS containers edit 3\nCASE_PASS containers edit 4\nCASE_PASS containers edit 5\nCASE_PASS singleline base\nCASE_PASS singleline edit 0\nCASE_PASS singleline edit 1\nCASE_PASS singleline edit 2\nCASE_PASS singleline edit 3\nCASE_PASS singleline edit 4\nCASE_PASS singleline edit 5\nCASE_PASS empty base\nCASE_PASS empty edit 0\nCASE_PASS empty edit 1\nCASE_PASS empty edit 2\nCASE_PASS empty edit 3\nCASE_PASS empty edit 4\nCASE_PASS empty edit 5\nREVISIONS 62\nFOLD_LINES 89956\nREUSED_REVISIONS 10\nINCREMENTAL_PASS\n",
+  "gc_live_zero": true,
+  "windows_execution": true,
+  "oracle_sha256": "e9658000e1c5fbe5fb49403af2a27eb11a0efb9d4bf5261617b760688ea2d720",
+  "incremental_sha256": "63548b1a22835356e28efd9acdbda6ca4d4fc0d245756d7300d3a34d3a05f7b6"
+}

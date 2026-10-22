@@ -1,0 +1,15 @@
+{
+  "browser": "155.0.8059.80",
+  "platform": "win32",
+  "passed": [
+    "native cells share state through the real browser",
+    "runtime error preserves the session and navigable diagnostics",
+    "closures retain mutable lexical bindings across cells",
+    "Unicode prompt and input use the existing browser flow",
+    "stop terminates an infinite native loop and resets state",
+    "save and reopen retain history without automatic execution"
+  ],
+  "errors": [],
+  "execution_requests": 10,
+  "automatic_execution_on_reopen": false
+}

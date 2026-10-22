@@ -4,7 +4,7 @@
 
 ## 实现方式与边界
 
-**本版不是自举编译器。** 编译器和 REPL 使用 Python；原生输出经过 C 编译器编译，执行时不需要 Python、`ru`、原始 `.ru` 文件或生成的 `.c` 文件。JavaScript 输出只需要 Node.js 内置标准库，不需要 Python、项目文件、原 `.ru` 文件或 npm 包。两种生成程序都没有如词法分析器、语法分析器或源码 / AST 解释器。
+常规编译器和 REPL 仍使用 Python；`bs` 另有以如言实现的实验编译前端及[首次自编译链](bootstrap.md)。默认原生输出经过 C 编译器编译，实验 LLVM 目标直接生成 LLVM IR 并链接运行时，执行时均不需要 Python、`ru`、原始 `.ru` 文件或项目文件。JavaScript 输出只需要 Node.js 内置标准库，不需要 Python、项目文件、原 `.ru` 文件或 npm 包。运行时不附带如源码／AST 解释器；如源码编译器程序自身实现的词法／语法分析是其普通用户代码。LLVM 的安装、私有 ABI、能力与实际验证范围见 [LLVM AOT](llvm-aot.md)。
 
 ## 项目结构
 
@@ -14,6 +14,12 @@ rulang/frontend.py        Unicode 词法分析、AST、Pratt 表达式解析、�
 rulang/interpreter.py     REPL / run 的参考解释器
 rulang/compiler.py        AST → C99 直接代码生成
 rulang/js_compiler.py     AST → JavaScript 直接代码生成，共用语义准备
+rulang/llvm_compiler.py   AST → LLVM 14 IR；复用语义准备，函数/分支/循环由 LLVM 表示
+rulang/llvm_runtime.h     动态值/GC 的私有指针 ABI；运行时仅一个翻译单元
+rulang/llvm_toolchain.py  LLVM 14 验证/链接/优化、独立 IR 与原生产物发布
+bootstrap/compiler.ru    如言源码的独立实验前端：词法/解析/语义、依赖、直接 LLVM 发射
+tools/bootstrap.py       三代自编译与普通原生前端构建驱动；后续代不调用 Python 源码分析器
+tools/prepare_workspace.py 可选 Windows 本地 LLVM 预备与真实工具链检查
 rulang/runtime.js        内联的 Node.js 动态值、闭包、对象、I/O 与竞赛运行时
 rulang/runtime.h          动态值、集合 / 对象 / 模块、内存管理、作用域、panic
 rulang/io_runtime.py       解释器的受检查文件、目录与标准流
@@ -57,11 +63,11 @@ VALIDATION.md              各次实际验证记录
 
 0.21.0 的 C 原生支持只在显式启用且依赖图使用如:密时加入；普通 C／OJ 程序继续走原有裁剪路径。原生 ABI 由有限静态签名生成有类型 C 跳板，不引入 Python、libffi 或运行时机器码生成。平台适配层当前仅实现 Windows x64；如见的 Win32 名称和消息循环留在三方库，后续跨平台驱动不能依赖“所有平台都等于 Win32”的假设。接口与限制见[原生指南](native-library.md)。
 
-两个编译后端把表达式和控制流直接翻译成 C 或 JavaScript 语句 / 函数；每个值的类型仍在运行时表示和检查，这是动态值模型，不是静态类型推断。集合、对象和模块使用统一的运行时值表示，赋值 / 调用 / 返回保留引用语义。
+编译后端把表达式和控制流直接翻译成 C、JavaScript 或 LLVM IR；每个值的类型仍在运行时表示和检查，这是动态值模型，不是静态类型推断。集合、对象和模块使用统一的运行时值表示，赋值 / 调用 / 返回保留引用语义。
 
 JavaScript 后端会保守扫描完整已解析的模块依赖图 AST：只有整图未引用相应内置名称 / 类型时，才省略受检查 I/O 或竞赛辅助运行时区段。经别名访问或外言依赖所需的区段仍保留，包括尚未执行的分支与函数。这是通用运行时裁剪，不做压缩混淆或针对某道题重写源码。
 
-目前没有箭头函数、通用用户代码优化器或自举。包依赖支持显式 Git／HTTPS 目录获取及本地静态目录原型，没有默认公共包目录、账号或网络发布服务；见[包指南](packages.md)。`check` 不是完整静态类型分析：例如未绑定变量、数值转换、实际参数类型仍可能在运行时报错。编译过程检查整个程序，因此即使某个分支不执行，其中无效的显式函数调用也会阻止编译。
+目前没有箭头函数或通用用户代码优化器。首次自编译前端的语言范围与宿主驱动边界见[自编译指南](bootstrap.md)，尚未替换完整 Python 前端。包依赖支持显式 Git／HTTPS 目录获取及本地静态目录原型，没有默认公共包目录、账号或网络发布服务；见[包指南](packages.md)。`check` 不是完整静态类型分析：例如未绑定变量、数值转换、实际参数类型仍可能在运行时报错。编译过程检查整个程序，因此即使某个分支不执行，其中无效的显式函数调用也会阻止编译。
 
 Python 解释器由 Python 的追踪式 GC 管理引用图；C 运行时使用根引用与追踪回收，能回收阵／对象之间的不可达循环。可用 `RU_GC_THRESHOLD=1 RU_GC_STATS=1 ./bin/objects` 压测频繁回收并查看退出统计；统计不是完整内存安全审计。
 

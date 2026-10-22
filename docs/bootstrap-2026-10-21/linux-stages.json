@@ -1,0 +1,24 @@
+{
+  "platform": "linux",
+  "triple": "x86_64-pc-linux-gnu",
+  "llvm": "Ubuntu clang version 14.0.0-1ubuntu1.1",
+  "source_sha256": "02d276dc6e1eee732a8141fdc458226e96aab9ffcaa9a222dd7aaf4520076d73",
+  "stage0_seconds": 10.50419089999923,
+  "stages": [
+    {
+      "source_ir_sha256": "2a847d351c7f73fbb19478e872fbc7a9e5b19533b358b3d97efd4d860dc0400b",
+      "metadata_sha256": "f1bde6d71125df52ef3eb70a58fc0169601c8363922ea1385285032f267290ae",
+      "binary_sha256": "3351eb1a1046116e2b7c492d3666b19e4d3c89d797b7d0fc77d97c1ec2c601ad",
+      "frontend_seconds": 6.345520647999365,
+      "seconds": 16.110549525998067
+    },
+    {
+      "source_ir_sha256": "2a847d351c7f73fbb19478e872fbc7a9e5b19533b358b3d97efd4d860dc0400b",
+      "metadata_sha256": "f1bde6d71125df52ef3eb70a58fc0169601c8363922ea1385285032f267290ae",
+      "binary_sha256": "3351eb1a1046116e2b7c492d3666b19e4d3c89d797b7d0fc77d97c1ec2c601ad",
+      "frontend_seconds": 6.379631758987671,
+      "seconds": 16.143053040999803
+    }
+  ],
+  "fixed_point": true
+}

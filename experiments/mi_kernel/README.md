@@ -1,5 +1,7 @@
 # 密模式 S0/S1 有界本地实验（不是语言功能发布）
 
+本页记录原始 v1 固定扫描器。后续真实 owner、源码清单和 bs 的 LLVM 适配分别见 `../mi_borrow`、`../mi_source` 及 [LLVM 密模式指南](../../docs/mi-llvm.md)；本页“未集成生产文件”等历史范围不代表后续适配状态。`provenance.json` 保留原始基线，复制来源及新工作线另记在 `../mi_source/adaptation.json`。
+
 基线：[ru-language `649d98c399f74f1cf0a6bb89a1989bd44c8a8f4d`](https://github.com/uppet/ru-language/tree/649d98c399f74f1cf0a6bb89a1989bd44c8a8f4d)。在该源码根下应用实验新增文件即可运行；不修改任何既有生产文件。保留仓库根 MIT LICENSE。基线树和校验信息见 [provenance.json](provenance.json)。本实验仅用于独立实验分支 CI，不是正式语言功能或编辑器集成，不合并 wip/main。
 
 核心文件清单：`generate.py`、`scan.ir.json`、`test_kernel.py`、`no_gc_probe.c`、`generated/kernel.h`、`generated/kernel.js`、`generated/metadata.json`。对照文件：`baseline.ru`、`verify_baseline.py`、`benchmark_baseline.py`、`BENCHMARK.md`。测试证据与性能原始样本路径见下文；运行脚本从自身位置定位仓库，可搬迁后重新生成，不依赖固定workspace路径。

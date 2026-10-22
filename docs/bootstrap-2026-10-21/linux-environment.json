@@ -1,0 +1,19 @@
+{
+  "platform": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+  "machine": "x86_64",
+  "python": "3.10.12 (main, Mar  3 2026, 11:56:32) [GCC 11.4.0]",
+  "host_unicode": "13.0.0",
+  "native_frontend_unicode": "13.0.0",
+  "llvm": "Ubuntu clang version 14.0.0-1ubuntu1.1",
+  "triple": "x86_64-pc-linux-gnu",
+  "data_layout": "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128",
+  "tools": {
+    "llvm-as": "Ubuntu LLVM version 14.0.0",
+    "llvm-link": "Ubuntu LLVM version 14.0.0",
+    "opt": "Ubuntu LLVM version 14.0.0",
+    "llvm-dis": "Ubuntu LLVM version 14.0.0",
+    "llc": "Ubuntu LLVM version 14.0.0"
+  },
+  "windows_tool_manifest_sha256": "6a085b033d29fb17e30fbd3caca1013156b0f995c3ca0eed533dfb2e9228bcca",
+  "note": "Build timing samples were collected with regression work running; no isolated performance claim."
+}

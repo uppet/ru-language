@@ -1,0 +1,436 @@
+diff --git a/src/markdown_policy.ru b/src/markdown_policy.ru
+index 17b1577..14d04b1 100644
+--- a/src/markdown_policy.ru
++++ b/src/markdown_policy.ru
+@@ -1,3 +1,4 @@
++_密核 取 外言 'markdown_ascii_kernel.ru'.
+ # Conservative top-level Markdown heading folds; pure Ru 0.21.6.
+ # The bridge drains ordered [startLine,count,depth,header] assignments.
+ # It must not expand a long retroactive paragraph range in one UI callback.
+@@ -354,6 +355,171 @@
+     然
+     得 {'folds':列,'used':位,'line':态[0],'bytes':态[23],'finished':态[2]}.
+ 法
++# Experimental source-generated readonly-u8 bridge entry. The ordinary 喂入
++# above remains byte-for-byte the a09 oracle. Both entries use the SAME helpers,
++# state, alias graph, range pause/CR handling and final deferred materialization.
++# Caller owns the UTF8 adaptation buffer through this synchronous call, and must
++# pass its exact text byte length (excluding NUL). No view is retained in state.
++算 喂入视图 态 文 为 句 结束 为 事实 字节块 字节末 为 数:
++    # _宽 returns at most four bytes per scalar. Keep the original scalar-limit
++    # check before any state access; a separate full byte-count pass is redundant.
++    若 文 其 量 > 1024 则 卒 'Markdown input exceeds 1024 Unicode scalars.'. 然
++    列 取 []. 位 取 0.
++    若 态[2] 则
++        若 文 != '' 或 非 结束 则 卒 'Markdown state is already finished.'. 然
++        得 {'folds':列,'used':0,'line':态[0],'bytes':态[23],'finished':真}.
++    然
++    长 取 文 其 量.
++    块始字节 取 态[23].
++    窗 取 ''. 窗始 取 0. 窗末 取 0.
++    # Local deferral is eligible only after this active-fence line cannot close.
++    # Keep the original route for chunks with no newline, including long lines.
++    若 态[6] != '' 且 态[8] == '' 且 非 (文 其 含 '>') 且 ((文 其 含 '\r') 或 (文 其 含 '\n')) 则
++        缓始 取 -1.
++        循
++            若 位 >= 长 或 (列 其 量) >= 60 则 破. 然
++            # A complete, non-closing ASCII line batch has one compressed
++            # fold assignment. Fresh-line and queue guards preserve the exact
++            # public feed boundary and retained closer/header alias behavior.
++            批长 取 0.
++            栈 取 态[3].
++            若 非 态[20] 且 非 态[1] 且 缓始 < 0 且 (列 其 量) < 59 且 态[6] != '' 且 态[8] == '' 且 ((栈 其 量) == 0 或 栈[(栈 其 量)-1][3]) 则
++                围栏字节 取 96. 若 态[6] == '~' 则 围栏字节 取 126. 然
++                批长 取 _密核 其 安全围栏段 字节块 (态[23]-块始字节) 字节末 围栏字节.
++            然
++            若 批长 > 0 则
++                批始 取 态[23]-块始字节.
++                批行 取 _密核 其 计换行 字节块 批始 (批始+批长).
++                _行 态 列.
++                若 批行 > 1 则 _加 列 (态[0]+1) (批行-1) (态[3] 其 量) 假. 然
++                态[0] 取 态[0]+批行. 态[23] 取 态[23]+批长. 位 取 位+批长.
++                _清行 态. 态[1] 取 假.
++            另
++                # The byte cursor is explicit: state bytes consumed since this feed.
++                # Only ASCII makes byte run length equal the ordinary scalar count.
++                连长 取 0.
++                若 态[6] != '' 且 态[8] == '' 且 (态[9] > 3 或 (非 态[10] 且 态[13] != 态[6])) 则
++                    连长 取 _密核 其 ASCII段 字节块 (态[23]-块始字节) 字节末.
++                然
++                若 连长 > 0 则
++                    若 缓始 < 0 则 缓始 取 位. 然
++                    位 取 位+连长. 态[23] 取 态[23]+连长. 态[1] 取 假.
++                另
++                    若 位 >= 窗末 则
++                        窗始 取 位. 窗末 取 位+32.
++                        若 窗末 > 长 则 窗末 取 长. 然
++                        窗 取 文[窗始:窗末].
++                    然
++                    字 取 窗[位-窗始]. 位 取 位+1.
++                    若 字 < '' 则
++                        态[23] 取 态[23]+1.
++                    另
++                        若 字 < 'ࠀ' 则
++                            态[23] 取 态[23]+2.
++                        另
++                            若 字 < '𐀀' 则
++                                态[23] 取 态[23]+3.
++                            另
++                                态[23] 取 态[23]+4.
++                            然
++                        然
++                    然
++                    若 字 == '\n' 且 态[1] 则
++                        态[1] 取 假.
++                    另
++                        态[1] 取 假.
++                        若 字 == '\r' 或 字 == '\n' 则
++                            _行 态 列. 缓始 取 -1.
++                            态[0] 取 态[0]+1. _清行 态.
++                            若 字 == '\r' 则 态[1] 取 真. 然
++                        另
++                            若 字 != '>' 且 态[6] != '' 且 态[8] == '' 且 (态[9] > 3 或 (非 态[10] 且 态[13] != 态[6])) 则
++                                若 缓始 < 0 则 缓始 取 位-1. 然
++                            另
++                                # A retained closer-flags array must observe every >.
++                                若 缓始 >= 0 则
++                                    循
++                                        若 缓始 >= 位-1 则 破. 然
++                                        _字符 态 文[缓始]. 缓始 取 缓始+1.
++                                    环
++                                    缓始 取 -1.
++                                然
++                                _字符 态 字.
++                            然
++                        然
++                    然
++                然
++            然
++        环
++        # EOF keeps line fields, and every public return exposes all 24 slots.
++        若 缓始 >= 0 则
++            循
++                若 缓始 >= 位 则 破. 然
++                _字符 态 文[缓始]. 缓始 取 缓始+1.
++            环
++        然
++    另
++        循
++            若 位 >= 长 或 (列 其 量) >= 60 则 破. 然
++            # At a saturated prefix, a uniform ASCII run can preserve every
++            # state field without per-scalar work. Keep its final 11 scalars on
++            # the ordinary path to materialize the exact lowercase rolling tail.
++            连长 取 0. 同首 取 假.
++            若 非 态[10] 且 (态[11] 其 量) == 32 则
++                若 非 态[15] 则
++                    同首 取 文[位] == 态[13].
++                然
++                若 同首 或 (态[15] 且 非 态[16]) 则
++                    连长 取 _密核 其 重复ASCII段 字节块 (态[23]-块始字节) 字节末.
++                然
++            然
++            若 连长 > 11 则
++                跳过 取 连长-11.
++                态[12] 取 态[12]+跳过.
++                若 同首 则 态[14] 取 态[14]+跳过. 然
++                态[23] 取 态[23]+跳过. 位 取 位+跳过. 态[1] 取 假.
++                循 11 次
++                    _字符 态 文[位]. 位 取 位+1. 态[23] 取 态[23]+1.
++                环
++            另
++                若 位 >= 窗末 则
++                    窗始 取 位. 窗末 取 位+32.
++                    若 窗末 > 长 则 窗末 取 长. 然
++                    窗 取 文[窗始:窗末].
++                然
++                字 取 窗[位-窗始]. 位 取 位+1.
++                若 字 < '' 则
++                    态[23] 取 态[23]+1.
++                另
++                    若 字 < 'ࠀ' 则
++                        态[23] 取 态[23]+2.
++                    另
++                        若 字 < '𐀀' 则
++                            态[23] 取 态[23]+3.
++                        另
++                            态[23] 取 态[23]+4.
++                        然
++                    然
++                然
++                若 字 == '\n' 且 态[1] 则
++                    态[1] 取 假.
++                另
++                    态[1] 取 假.
++                    若 字 == '\r' 或 字 == '\n' 则
++                        _行 态 列. 态[0] 取 态[0]+1. _清行 态.
++                        若 字 == '\r' 则 态[1] 取 真. 然
++                    另
++                        _字符 态 字.
++                    然
++                然
++            然
++        环
++    然
++    若 结束 且 位 == 长 且 (列 其 量) < 60 则
++        _行 态 列. _完段 态 列. 态[2] 取 真.
++    然
++    得 {'folds':列,'used':位,'line':态[0],'bytes':态[23],'finished':态[2]}.
++法
+ 算 资源 态:
+     得 {'stack':态[3] 其 量,'prefix':态[11] 其 量,'tail':态[18] 其 量,'state':态 其 量,'ranges':64,'scalars':1024,'bytes':4096}.
+ 法
+diff --git a/src/markdown_syntax.ru b/src/markdown_syntax.ru
+index 014aaf6..766dcc6 100644
+--- a/src/markdown_syntax.ru
++++ b/src/markdown_syntax.ru
+@@ -11,6 +11,8 @@
+ 密 取 外言 '如:密'.
+ 窗 取 外言 'win32.ru'.
+ 策 取 外言 'markdown_policy.ru'.
++密策 取 外言 'markdown_dense.ru'.
++_密扫描策略 取 {'enabled':假}.
+ _编辑们 取 {}.
+ _序号 取 [0].
+ _身份 取 [0].
+@@ -746,7 +748,11 @@ _时存 取 _计数型 其 新建.
+         若 末-始 > 态['maxRead'] 则 态 其 增 'maxRead' (末-始). 然
+     然
+     文 取 态['chunk'].
+-    果 取 策 其 喂入 态['policy'] 文 (态['readEnd'] == 态['length']).
++    若 _密扫描策略['enabled'] 则
++        果 取 密策 其 喂入 态['policy'] 文 (态['readEnd'] == 态['length']).
++    另
++        果 取 策 其 喂入 态['policy'] 文 (态['readEnd'] == 态['length']).
++    然
+     _护 柄 态.
+     用 取 果['used'].
+     若 用 < 0 或 用 > 文 其 量 则 卒 'Invalid Markdown consumed scalar count.'. 然
+diff --git a/src/markdown_ascii_kernel.ru b/src/markdown_ascii_kernel.ru
+new file mode 100755
+index 0000000..4f03311
+--- /dev/null
++++ b/src/markdown_ascii_kernel.ru
+@@ -0,0 +1,66 @@
++# Ordinary Ru source is the only algorithm definition. Explicit build manifest
++# may lower this function's AST to typed readonly-u8 IR; no handwritten C kernel.
++# Without opt-in this is an ordinary number-array oracle, not NativeMemory access.
++算 ASCII段 字节 始 终:
++    位 取 始.
++    循 (终-始) 次
++        值 取 字节[位].
++        若 值 >= 128 或 值 == 13 或 值 == 10 或 值 == 62 则 破. 然
++        位 取 位+1.
++    环
++    得 位-始.
++法
++
++# A general same-byte ASCII run. Backticks, HTML-closer terminators and physical
++# line endings stay on the exact scalar path; no text or Markdown state escapes.
++算 重复ASCII段 字节 始 终:
++    若 始 == 终 则 得 0. 然
++    首 取 字节[始].
++    若 首 >= 128 或 首 == 13 或 首 == 10 或 首 == 62 或 首 == 96 则 得 0. 然
++    位 取 始.
++    循 (终-始) 次
++        若 字节[位] != 首 则 破. 然
++        位 取 位+1.
++    环
++    得 位-始.
++法
++
++算 字节量 字节:
++    得 字节 其 量.
++法
++
++# Return a complete LF-terminated ASCII prefix whose lines cannot close a fence.
++# CR, non-ASCII, HTML closer markers and a potential fence closer stop BEFORE
++# the current line. No assumption about a particular word or benchmark input.
++算 安全围栏段 字节 始 终 围栏:
++    位 取 始. 末 取 始. 缩进 取 0. 安全 取 0.
++    循 (终-始) 次
++        值 取 字节[位].
++        若 值 >= 128 或 值 == 13 或 值 == 62 则 破. 然
++        若 值 == 10 则
++            位 取 位+1. 末 取 位. 缩进 取 0. 安全 取 0.
++        另
++            若 安全 == 0 则
++                若 值 == 32 则
++                    缩进 取 缩进+1.
++                    若 缩进 >= 4 则 安全 取 1. 然
++                另若 值 == 9 则
++                    安全 取 1.
++                另
++                    若 值 == 围栏 则 破. 然
++                    安全 取 1.
++                然
++            然
++            位 取 位+1.
++        然
++    环
++    得 末-始.
++法
++算 计换行 字节 始 终:
++    位 取 始. 数量 取 0.
++    循 (终-始) 次
++        若 字节[位] == 10 则 数量 取 数量+1. 然
++        位 取 位+1.
++    环
++    得 数量.
++法
+diff --git a/src/markdown_dense.ru b/src/markdown_dense.ru
+new file mode 100755
+index 0000000..66ea92f
+--- /dev/null
++++ b/src/markdown_dense.ru
+@@ -0,0 +1,21 @@
++# Experimental immutable UTF8 adapter; the ordinary sentence owns its bytes.
++# NativeMemory and its stricter callback/reentry contract are not involved.
++_密核 取 外言 'markdown_ascii_kernel.ru'.
++策 取 外言 'markdown_policy.ru'.
++算 喂入 态 文 为 句 结束 为 事实:
++    # Preserve the scalar-limit error before state access and finished ordering.
++    若 文 其 量 > 1024 则 得 策 其 喂入 态 文 结束. 然
++    若 态[2] 则 得 策 其 喂入 态 文 结束. 然
++    # This native-only adapter accepts the _读块 input contract (no embedded NUL).
++    # The unchanged ordinary pure entry remains available for all other inputs.
++    若 文 == '' 则 得 策 其 喂入 态 文 结束. 然
++    # A fresh first chunk uses the ordinary entry until the full bounded prefix
++    # exists; later single-line feeds can use the exact-state uniform-run path.
++    围栏 取 态[6] != '' 且 态[8] == '' 且 非 (文 其 含 '>') 且 ((文 其 含 '\r') 或 (文 其 含 '\n')).
++    长行 取 非 态[10] 且 (态[11] 其 量) == 32.
++    若 非 围栏 且 非 长行 则 得 策 其 喂入 态 文 结束. 然
++    # Explicit immutable UTF8 borrowing; no native address, allocation/copy or
++    # borrow survives this synchronous call, callback boundary or UI yield.
++    字节末 取 _密核 其 字节量 文.
++    得 策 其 喂入视图 态 文 结束 文 字节末.
++法
+diff --git a/experiments/markdown-dense-manifest.json b/experiments/markdown-dense-manifest.json
+new file mode 100755
+index 0000000..534a95b
+--- /dev/null
++++ b/experiments/markdown-dense-manifest.json
+@@ -0,0 +1,124 @@
++{
++  "version": 1,
++  "functions": [
++    {
++      "module": "../src/markdown_ascii_kernel.ru",
++      "function": "ASCII段",
++      "params": {
++        "字节": "borrow_ro_utf8",
++        "始": "u32",
++        "终": "u32"
++      },
++      "result": "u32",
++      "effects": [
++        "borrow-read",
++        "no-escape",
++        "no-callback",
++        "no-gc",
++        "may-fail"
++      ],
++      "ranges": [
++        {
++          "view": "字节",
++          "begin": "始",
++          "end": "终"
++        }
++      ]
++    },
++    {
++      "module": "../src/markdown_ascii_kernel.ru",
++      "function": "重复ASCII段",
++      "params": {
++        "字节": "borrow_ro_utf8",
++        "始": "u32",
++        "终": "u32"
++      },
++      "result": "u32",
++      "effects": [
++        "borrow-read",
++        "no-escape",
++        "no-callback",
++        "no-gc",
++        "may-fail"
++      ],
++      "ranges": [
++        {
++          "view": "字节",
++          "begin": "始",
++          "end": "终"
++        }
++      ]
++    },
++    {
++      "module": "../src/markdown_ascii_kernel.ru",
++      "function": "字节量",
++      "params": {
++        "字节": "borrow_ro_utf8"
++      },
++      "result": "u32",
++      "effects": [
++        "borrow-read",
++        "no-escape",
++        "no-callback",
++        "no-gc",
++        "may-fail"
++      ]
++    },
++    {
++      "module": "../src/markdown_ascii_kernel.ru",
++      "function": "安全围栏段",
++      "params": {
++        "字节": "borrow_ro_utf8",
++        "始": "u32",
++        "终": "u32",
++        "围栏": "u8"
++      },
++      "result": "u32",
++      "effects": [
++        "borrow-read",
++        "no-escape",
++        "no-callback",
++        "no-gc",
++        "may-fail"
++      ],
++      "ranges": [
++        {
++          "view": "字节",
++          "begin": "始",
++          "end": "终"
++        }
++      ],
++      "locals": {
++        "缩进": "u32",
++        "安全": "u8"
++      }
++    },
++    {
++      "module": "../src/markdown_ascii_kernel.ru",
++      "function": "计换行",
++      "params": {
++        "字节": "borrow_ro_utf8",
++        "始": "u32",
++        "终": "u32"
++      },
++      "result": "u32",
++      "effects": [
++        "borrow-read",
++        "no-escape",
++        "no-callback",
++        "no-gc",
++        "may-fail"
++      ],
++      "ranges": [
++        {
++          "view": "字节",
++          "begin": "始",
++          "end": "终"
++        }
++      ],
++      "locals": {
++        "数量": "u32"
++      }
++    }
++  ]
++}

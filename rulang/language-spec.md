@@ -2,7 +2,7 @@
 
 规范版本：0.23.0
 
-适用实现：本仓库如工具链 `0.23.0`／如书 `0.8.9`（开发候选，尚未发布）；源码扩展名惯例为 `.ru`；文档编码为 UTF-8。
+适用实现：本仓库如工具链 `0.23.0`／如书 `0.9.0`（bs 原生解释内核实验版，尚未发布到 main）；源码扩展名惯例为 `.ru`；文档编码为 UTF-8。
 
 本文件是供学习者、实现维护者与源码生成模型共同使用的**单一版本化语言规范**。它规定当前已经实现的语言、标准 I/O 和工具入口，不以中文词语的日常含义推导额外能力。模型生成如源码时必须遵守本文件；用户意图不能改变关键字、类型、求值规则或凭空增加库。
 
@@ -12,11 +12,15 @@
 
 文中的“必须”“只能”“报错”描述本版可执行约束。“默认”描述本版明确采用、但未来可能修改的选择，例如双精度数、位置调用绑定方式、字段缺省为空、文件写入默认截断。本文件是 **0.23.0 的实现规范，不是已经冻结的永久语言标准**；未来改变应更新版本、实现、测试及规范，不能让生成模型自行猜测。
 
-解释器使用 Python 3.10+ 标准库；原生后端把 AST 直接降为 C99，再调用 Clang、GCC 或兼容编译器。原生程序包含运行时动态值操作，不包含如词法分析器、语法分析器或源码解释器，执行时不需要 Python、`ru`、原 `.ru` 文件、项目头文件或生成的 `.c` 文件。它仍依赖构建目标的系统和运行库。
+解释器使用 Python 3.10+ 标准库；默认 C 原生后端把 AST 直接降为 C99，再调用 Clang、GCC 或兼容编译器。原生程序包含运行时动态值操作，不包含如词法分析器、语法分析器或源码解释器，执行时不需要 Python、`ru`、原 `.ru` 文件、项目头文件或生成的 `.c` 文件。它仍依赖构建目标的系统和运行库。
 
 JavaScript 后端同样把 AST 直接降为 JavaScript 函数、表达式和控制流，输出内联运行时的独立 CommonJS 文件，目标为 **Node.js 18+**，不是浏览器脚本。执行只需 Node 及其内置标准库，不需要 Python、`ru`、项目文件、npm 包或原 `.ru` 依赖；静态外言在构建时打包。输出不嵌入如解析器或 AST 解释器，不通过 `eval` / `new Function` 解释如源码。数仍遵守本规范的 IEEE-754 双精度语义，不自动变为 BigInt。此实现尚未自举。
 
-三种执行路径使用本规范的相同核心语言接口；宿主专有库另受各节列出的能力边界限制，如观与如:密并非跨目标通用能力。垃圾回收、平台文件权限、最大调用栈与可用资源由各宿主实现决定。Node 的栈溢出会作为运行错误退出，不保证与 Python / C 相同的最大递归深度。JavaScript 目标不添加 DOM、异步、JavaScript FFI 或任意库调用。
+实验目标 `llvm` 把如 AST 中的函数正文、表达式和控制流直接降为 LLVM IR，再经 LLVM 14 工具验证、链接运行时、优化与原生编译；构建目标为 Linux 与 Windows x86-64（Windows 使用 MSVC ABI），使用 LLVM 14 的有类型指针 IR。动态值、GC、I/O 等复用 C 运行时，通过私有指针 ABI 和聚合调用桥接连接；如程序本身不先生成 C。产物不含如解析器或 AST 解释器，运行不需要 Python、LLVM、如源码或项目文件，仍依赖目标系统运行库。`--emit-llvm` 可保留含运行时的独立 `.ll`，可用 clang-14 复编。常规 build 仍用 Python 前端；独立如言前端的首次自编译见下段。不支持如观、如:密、如见、跨目标原生构建或如书 AOT 会话；支持范围、命令和实测见 [LLVM AOT 指南](../docs/llvm-aot.md)。生成机器码不代表已达到 Dart 原生 AOT 性能。
+
+`bs` 另提供 `bootstrap/compiler.ru`：以如言实现词法、解析、语义、静态文件依赖及直接 LLVM 发射，并通过 `tools/bootstrap.py` 生成 stage1→stage2→stage3，比较自身 IR 和描述符固定点。后续阶段的源码处理由原生如言编译器完成，Python 宿主驱动只准备固定运行时、调用本机编译器／LLVM 和发布产物。该实验前端冻结 Unicode 13.0.0 分类，尚未移植具名模块／包锁、路径别名完整身份和全部前端诊断，不能据首次自编译宣称完整工具链替换；完整范围见 [自编译指南](../docs/bootstrap.md)。普通程序不附带源码解释器；编译器程序自身的词法／语法实现是普通如用户代码。
+
+上述执行路径使用本规范的相同核心语言接口；宿主专有库另受各节列出的能力边界限制，如观与如:密并非跨目标通用能力。垃圾回收、平台文件权限、最大调用栈与可用资源由各宿主实现决定。Node 的栈溢出会作为运行错误退出，不保证与 Python / C 相同的最大递归深度。JavaScript 目标不添加 DOM、异步、JavaScript FFI 或任意库调用。
 
 编译输出默认做保守的依赖裁剪，不改变源码语法或上述语义。C 保留生成代码可达的运行时函数及传递依赖，并按完整模块图的成员名称保留分派分支；根据可达构造器可省略不可能存在的对／阵路径，根据全模块图可省略未使用的用户形查找与「卒／试」传播状态；C / JavaScript 都可移除能证明未被引用的随附标准库声明。分析考虑别名、闭包、函数引用及转导出；模块值逃逸或无法确定时保留所需的保守集合。用户声明、用户模块及初始化副作用不会作为标准库裁剪对象，完整原始依赖图仍先接受检查。C 输出保持可读、独立，不做代码压缩或题目专用替换。JavaScript 另外只在未引用时省略可选 I/O / 竞赛 / 实用库运行时区段。第 12 节的 `--full-runtime` 可关闭这些裁剪以供诊断。
 
@@ -1279,6 +1283,8 @@ python3 ru                    # 默认进入 REPL
 python3 ru repl
 python3 ru check source.ru                 # 默认 C 目标
 python3 ru check --target python source.ru # 只解析、校验 Python 导入图
+python3 ru check --target llvm source.ru   # 生成 LLVM IR 做源码检查，不调用 LLVM 工具或执行程序
+python3 ru build source.ru --target llvm -o bin/app --emit-llvm dist/app.ll # 实验性 LLVM 14 / Linux、Windows x86-64 AOT
 python3 ru run --allow-native native.ru    # 仅 Windows x64 本地 Python，审阅后显式启用
 python3 ru check --target c --allow-native native.ru # 静态 C 原生签名检查，不执行
 python3 ru build --allow-native native.ru -o native.exe # 须 Windows x64 C 工具链
@@ -1305,6 +1311,8 @@ C `build` 可显式重复使用 `--source-prefix-map OLD=NEW`，仅重写产物�
 两种构建都在完整生成成功后才原子替换既有程序输出，输出不得覆盖源码/外言依赖。程序输出与 `--emit-c` 输出彼此也须不同；输出 C 内联运行时，普通程序可独立用 `cc -std=c99 -O2 app.c -lm -o app` 构建；含原生依赖时必须改用 Windows x64 目标工具链。`--emit-c` 文件可能在之后 C 编译失败前就已经写出。JavaScript 运行仍受 Node、操作系统、调用栈和时间 / 内存限制约束；Windows 与 macOS 的 Node 路径尚未在本次环境实测。
 
 正常无入口退出为 0，入口返回其有效退出码，常规错误为 1，CLI 参数解析错误为 2，文件命令 Ctrl-C 取消为 130。
+
+实验 `build --target llvm` 默认输出为去掉源扩展名的本机程序路径。`--llvm-clang COMMAND`、环境 `RU_LLVM_CLANG`、Windows 项目内 `.build_tools/llvm-14/bin/clang.exe`、自动查找 clang-14/clang 按顺序选择 LLVM 14 Clang，不读取 `CC`；llvm-as、llvm-link、opt、llvm-dis 和 llc 必须同为 14。Windows 工作目录预备可显式执行 `python3 tools/prepare_workspace.py --with-llvm` 下载并验证固定工具；常规构建不下载工具。`--emit-llvm PATH` 保存已链接运行时并验证优化的独立 IR。它拒绝 `--cc`、`--emit-c`、`--source-prefix-map` 和 `--allow-native`；这些选项不能隐式扩大目标能力。`--full-runtime` 保留完整随附声明和运行时公共适配入口用于对照，LLVM 仍做合法优化。原生程序和 IR 的输出不得覆盖源码、依赖或彼此；所有编译/验证成功后才发布，每个文件原子替换，多文件发布不是一个文件系统事务。源码、风格、工具或验证失败保留旧产物。`check --target llvm` 做整图源码/调用与节点支持检查，不检查本机 LLVM 安装，也不证明运行时路径均正确。
 
 REPL 重定义同名形会产生新身份；旧方法参数保留已绑定的原身份，普通函数参数注解按调用时的声明模块解析（详见 8.3）。
 

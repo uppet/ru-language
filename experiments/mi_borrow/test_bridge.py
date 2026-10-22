@@ -177,15 +177,8 @@ class RealMemoryC(unittest.TestCase):
         source += '\n' + (HERE / 'runtime_probe.c').read_text(encoding='utf-8')
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
-            executable = path / ('test.exe' if os.name == 'nt' else 'test')
-            (path / 'test.c').write_text(source, encoding='utf-8', newline='\n')
-            command = ['gcc', '-std=c99', '-O1', '-Wall', '-Wextra', '-Werror', '-Wno-unused-function', '-pedantic', str(path / 'test.c'), '-lm', '-ldl', '-pthread', '-o', str(executable)]
-            if os.name == 'nt':
-                command.remove('-ldl'); command.remove('-pthread')
-            if os.environ.get('MI_UBSAN'):
-                command[1:1] = ['-fsanitize=undefined', '-fno-sanitize-recover=all']
-            result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', timeout=120)
-            self.assertEqual(result.returncode, 0, result.stderr)
+            from experiments.mi_source.test_source import compile_c
+            executable = compile_c(source, path)
             result = subprocess.run([str(executable)], capture_output=True, text=True, encoding='utf-8', timeout=45, env=dict(os.environ, RU_GC_THRESHOLD='1', RU_GC_STATS='1'))
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
             self.assertIn('real owner borrow checks passed', result.stdout)

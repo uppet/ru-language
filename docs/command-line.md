@@ -4,6 +4,10 @@
 
 本页对应 `main` 上的如 0.22.0，包含包依赖同步、Windows x64 C 原生后端、源码路径映射和句点书写检查。原生能力须显式启用，执行平台与实测范围见[版本说明](stable-entry.md)。
 
+`bs` 实验开发版 0.23.0 另有 `build --target llvm`、`check --target llvm`、`--llvm-clang` 与 `--emit-llvm`；安装、Windows 可选工作目录预备、目标范围、独立 IR 复编及性能测量见 [LLVM AOT](llvm-aot.md)。它需要 LLVM 14／Linux 或 Windows x86-64，当前不作为如书代码格内核。
+
+独立如言前端使用 `python3 tools/bootstrap.py bootstrap` 生成三代编译器，再以 `python3 tools/bootstrap.py build SOURCE -o OUTPUT` 使用本机 stage3。`python3 tools/bootstrap.py verify` 重新生成三代并执行 M4 固定点及逐代同套回归，结果写入 `bin/bootstrap/<platform>/verification.json`；范围与 Python 宿主驱动边界见 [自编译与固定点验收](bootstrap.md)。常规 `ru build` 继续使用完整 Python 前端。
+
 ## 常用命令
 
 ```sh

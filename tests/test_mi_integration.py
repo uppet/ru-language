@@ -45,11 +45,35 @@ class MiIntegration(unittest.TestCase):
                 build(parse('显 1.'), 'main.ru', 'program.js', target='js', mi_manifest='manifest.json')
             invoked.assert_not_called()
 
-    def test_no_llvm_target_or_tool_requirement(self):
+    def test_llvm_is_explicit_and_c_remains_default(self):
         parser = make_parser()
         options = {action.dest: action for action in parser._subparsers._group_actions[0].choices['build']._actions}
-        self.assertEqual(tuple(options['target'].choices), ('c', 'js'))
-        self.assertNotIn('llvm_clang', options)
-        self.assertNotIn('emit_llvm', options)
+        self.assertEqual(tuple(options['target'].choices), ('c', 'js', 'llvm'))
+        self.assertEqual(options['target'].default, 'c')
+        self.assertIn('llvm_clang', options)
+        self.assertIn('emit_llvm', options)
         with self.assertRaises(RuError):
             Compiler(parse('显 1.'), mi_backend='llvm')
+
+    def test_default_c_build_does_not_require_llvm_tools(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            entry = root / 'main.ru'; entry.write_text('显 1.', encoding='utf-8')
+            def compile_stub(command, **kwargs):
+                Path(command[command.index('-o') + 1]).write_bytes(b'compiled C')
+                from subprocess import CompletedProcess
+                return CompletedProcess(command, 0, '', '')
+            with patch('rulang.llvm_toolchain.LLVMToolchain', side_effect=AssertionError('unexpected LLVM lookup')):
+                with patch('rulang.cli.subprocess.run', side_effect=compile_stub) as invoked:
+                    output, _ = build(parse('显 1.'), entry, root / 'program', cc='gcc')
+                    self.assertEqual(output.read_bytes(), b'compiled C')
+                    self.assertEqual(invoked.call_count, 1)
+
+    def test_explicit_llvm_build_dispatches_to_llvm_tools(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            entry = root / 'main.ru'; entry.write_text('显 1.', encoding='utf-8')
+            with patch('rulang.llvm_toolchain.build_llvm', return_value=('artifact', 'LLVM 14')) as llvm:
+                self.assertEqual(build(parse('显 1.'), entry, root / 'program', target='llvm'),
+                                 ('artifact', 'LLVM 14'))
+                llvm.assert_called_once()

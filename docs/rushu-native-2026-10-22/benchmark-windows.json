@@ -1,0 +1,352 @@
+{
+  "schema": 1,
+  "platform": "win32",
+  "system": "Windows-11-10.0.26100-SP0",
+  "python": "3.12.4 (tags/v3.12.4:8e8a4ba, Jun  6 2024, 19:30:16) [MSC v.1940 64 bit (AMD64)]",
+  "machine": "AMD64",
+  "repetitions": 7,
+  "native_sha256": "1bd38535e87099b60400c05f6c5f096ba40ca8b4b04ca9211f799ce35d2b6b7c",
+  "method": "warm persistent cells; parse+execute+GC+IPC+0.5ms polling; interleaved engines; one warmup per case; no CPU affinity",
+  "cases": [
+    {
+      "name": "small",
+      "source": "显 6*7.",
+      "expected": "42\n",
+      "samples": {
+        "python": [
+          {
+            "seconds": 0.000996199989458546,
+            "first_output_seconds": 0.000995299982605502,
+            "stdout_sha256": "084c799cd551dd1d8d5c5f9a5d593b2e931f5e36122ee5c793c1d08a19839cc0"
+          },
+          {
+            "seconds": 0.0010154999908991158,
+            "first_output_seconds": 0.0010142999817617238,
+            "stdout_sha256": "084c799cd551dd1d8d5c5f9a5d593b2e931f5e36122ee5c793c1d08a19839cc0"
+          },
+          {
+            "seconds": 0.0009824000007938594,
+            "first_output_seconds": 0.0009815999947022647,
+            "stdout_sha256": "084c799cd551dd1d8d5c5f9a5d593b2e931f5e36122ee5c793c1d08a19839cc0"
+          },
+          {
+            "seconds": 0.0010786000057123601,
+            "first_output_seconds": 0.0010776999988593161,
+            "stdout_sha256": "084c799cd551dd1d8d5c5f9a5d593b2e931f5e36122ee5c793c1d08a19839cc0"
+          },
+          {
+            "seconds": 0.0012278000067453831,
+            "first_output_seconds": 0.0012272000021766871,
+            "stdout_sha256": "084c799cd551dd1d8d5c5f9a5d593b2e931f5e36122ee5c793c1d08a19839cc0"
+          },
+          {
+            "seconds": 0.0010139000078197569,
+            "first_output_seconds": 0.0010130000009667128,
+            "stdout_sha256": "084c799cd551dd1d8d5c5f9a5d593b2e931f5e36122ee5c793c1d08a19839cc0"
+          },
+          {
+            "seconds": 0.0012334999919403344,
+            "first_output_seconds": 0.001232799986610189,
+            "stdout_sha256": "084c799cd551dd1d8d5c5f9a5d593b2e931f5e36122ee5c793c1d08a19839cc0"
+          }
+        ],
+        "ru_ast": [
+          {
+            "seconds": 0.0010056000028271228,
+            "first_output_seconds": 0.0010043999936897308,
+            "stdout_sha256": "084c799cd551dd1d8d5c5f9a5d593b2e931f5e36122ee5c793c1d08a19839cc0"
+          },
+          {
+            "seconds": 0.001997899991692975,
+            "first_output_seconds": 0.001996999984839931,
+            "stdout_sha256": "084c799cd551dd1d8d5c5f9a5d593b2e931f5e36122ee5c793c1d08a19839cc0"
+          },
+          {
+            "seconds": 0.0009985000069718808,
+            "first_output_seconds": 0.0009978000016417354,
+            "stdout_sha256": "084c799cd551dd1d8d5c5f9a5d593b2e931f5e36122ee5c793c1d08a19839cc0"
+          },
+          {
+            "seconds": 0.0010017000022344291,
+            "first_output_seconds": 0.0010009999969042838,
+            "stdout_sha256": "084c799cd551dd1d8d5c5f9a5d593b2e931f5e36122ee5c793c1d08a19839cc0"
+          },
+          {
+            "seconds": 0.0010075000172946602,
+            "first_output_seconds": 0.0010065000096801668,
+            "stdout_sha256": "084c799cd551dd1d8d5c5f9a5d593b2e931f5e36122ee5c793c1d08a19839cc0"
+          },
+          {
+            "seconds": 0.0020145000016782433,
+            "first_output_seconds": 0.0020132999925408512,
+            "stdout_sha256": "084c799cd551dd1d8d5c5f9a5d593b2e931f5e36122ee5c793c1d08a19839cc0"
+          },
+          {
+            "seconds": 0.0009927000210154802,
+            "first_output_seconds": 0.0009919000149238855,
+            "stdout_sha256": "084c799cd551dd1d8d5c5f9a5d593b2e931f5e36122ee5c793c1d08a19839cc0"
+          }
+        ]
+      },
+      "median_seconds": {
+        "python": 0.0010154999908991158,
+        "ru_ast": 0.0010056000028271228
+      }
+    },
+    {
+      "name": "loop_10000",
+      "source": "总 取 0. 循 10000 次 总 取 总+1. 环. 显 总.",
+      "expected": "10000\n",
+      "samples": {
+        "python": [
+          {
+            "seconds": 0.012074300000676885,
+            "first_output_seconds": 0.012072999990778044,
+            "stdout_sha256": "876e13f4e07bb39705302c01f445ffd2d2c3b180a207e4d959d6b671c67da09b"
+          },
+          {
+            "seconds": 0.01240410000900738,
+            "first_output_seconds": 0.012403100001392886,
+            "stdout_sha256": "876e13f4e07bb39705302c01f445ffd2d2c3b180a207e4d959d6b671c67da09b"
+          },
+          {
+            "seconds": 0.01262180000776425,
+            "first_output_seconds": 0.012620900000911206,
+            "stdout_sha256": "876e13f4e07bb39705302c01f445ffd2d2c3b180a207e4d959d6b671c67da09b"
+          },
+          {
+            "seconds": 0.012104199995519593,
+            "first_output_seconds": 0.012103000015486032,
+            "stdout_sha256": "876e13f4e07bb39705302c01f445ffd2d2c3b180a207e4d959d6b671c67da09b"
+          },
+          {
+            "seconds": 0.012226499995449558,
+            "first_output_seconds": 0.012225200014654547,
+            "stdout_sha256": "876e13f4e07bb39705302c01f445ffd2d2c3b180a207e4d959d6b671c67da09b"
+          },
+          {
+            "seconds": 0.012044199975207448,
+            "first_output_seconds": 0.012042899994412437,
+            "stdout_sha256": "876e13f4e07bb39705302c01f445ffd2d2c3b180a207e4d959d6b671c67da09b"
+          },
+          {
+            "seconds": 0.012117700011003762,
+            "first_output_seconds": 0.012116900004912168,
+            "stdout_sha256": "876e13f4e07bb39705302c01f445ffd2d2c3b180a207e4d959d6b671c67da09b"
+          }
+        ],
+        "ru_ast": [
+          {
+            "seconds": 0.45316340000135824,
+            "first_output_seconds": 0.4531622000213247,
+            "stdout_sha256": "876e13f4e07bb39705302c01f445ffd2d2c3b180a207e4d959d6b671c67da09b"
+          },
+          {
+            "seconds": 0.4812970999919344,
+            "first_output_seconds": 0.48129579998203553,
+            "stdout_sha256": "876e13f4e07bb39705302c01f445ffd2d2c3b180a207e4d959d6b671c67da09b"
+          },
+          {
+            "seconds": 0.45442610001191497,
+            "first_output_seconds": 0.4544248000020161,
+            "stdout_sha256": "876e13f4e07bb39705302c01f445ffd2d2c3b180a207e4d959d6b671c67da09b"
+          },
+          {
+            "seconds": 0.4519205999968108,
+            "first_output_seconds": 0.45191970001906157,
+            "stdout_sha256": "876e13f4e07bb39705302c01f445ffd2d2c3b180a207e4d959d6b671c67da09b"
+          },
+          {
+            "seconds": 0.4425207999884151,
+            "first_output_seconds": 0.4414126999909058,
+            "stdout_sha256": "876e13f4e07bb39705302c01f445ffd2d2c3b180a207e4d959d6b671c67da09b"
+          },
+          {
+            "seconds": 0.44845249998616055,
+            "first_output_seconds": 0.44845120000536554,
+            "stdout_sha256": "876e13f4e07bb39705302c01f445ffd2d2c3b180a207e4d959d6b671c67da09b"
+          },
+          {
+            "seconds": 0.45432660001097247,
+            "first_output_seconds": 0.45326740000746213,
+            "stdout_sha256": "876e13f4e07bb39705302c01f445ffd2d2c3b180a207e4d959d6b671c67da09b"
+          }
+        ]
+      },
+      "median_seconds": {
+        "python": 0.012117700011003762,
+        "ru_ast": 0.45316340000135824
+      }
+    },
+    {
+      "name": "closure_1000",
+      "source": "算 造: 值 取 0. 算 加: 值 取 值+1. 得 值. 法. 得 算 加. 法. 计 取 造. 最后 取 0. 循 1000 次 最后 取 计(). 环. 显 最后.",
+      "expected": "1000\n",
+      "samples": {
+        "python": [
+          {
+            "seconds": 0.006387300003552809,
+            "first_output_seconds": 0.006386099994415417,
+            "stdout_sha256": "83c02ac2d48c863dab2ccf6870455aadfc2cec073b8db269b517c879d76aa6d9"
+          },
+          {
+            "seconds": 0.006015899998601526,
+            "first_output_seconds": 0.006015099992509931,
+            "stdout_sha256": "83c02ac2d48c863dab2ccf6870455aadfc2cec073b8db269b517c879d76aa6d9"
+          },
+          {
+            "seconds": 0.0060354000015649945,
+            "first_output_seconds": 0.0060345999954734,
+            "stdout_sha256": "83c02ac2d48c863dab2ccf6870455aadfc2cec073b8db269b517c879d76aa6d9"
+          },
+          {
+            "seconds": 0.006017999985488132,
+            "first_output_seconds": 0.006017200008500367,
+            "stdout_sha256": "83c02ac2d48c863dab2ccf6870455aadfc2cec073b8db269b517c879d76aa6d9"
+          },
+          {
+            "seconds": 0.00603160000173375,
+            "first_output_seconds": 0.006030300020938739,
+            "stdout_sha256": "83c02ac2d48c863dab2ccf6870455aadfc2cec073b8db269b517c879d76aa6d9"
+          },
+          {
+            "seconds": 0.005315100017469376,
+            "first_output_seconds": 0.005314400012139231,
+            "stdout_sha256": "83c02ac2d48c863dab2ccf6870455aadfc2cec073b8db269b517c879d76aa6d9"
+          },
+          {
+            "seconds": 0.006175799993798137,
+            "first_output_seconds": 0.006174500013003126,
+            "stdout_sha256": "83c02ac2d48c863dab2ccf6870455aadfc2cec073b8db269b517c879d76aa6d9"
+          }
+        ],
+        "ru_ast": [
+          {
+            "seconds": 0.1506746000086423,
+            "first_output_seconds": 0.15067329999874346,
+            "stdout_sha256": "83c02ac2d48c863dab2ccf6870455aadfc2cec073b8db269b517c879d76aa6d9"
+          },
+          {
+            "seconds": 0.14406819999567233,
+            "first_output_seconds": 0.14406739998958074,
+            "stdout_sha256": "83c02ac2d48c863dab2ccf6870455aadfc2cec073b8db269b517c879d76aa6d9"
+          },
+          {
+            "seconds": 0.13767779999761842,
+            "first_output_seconds": 0.13767649998771958,
+            "stdout_sha256": "83c02ac2d48c863dab2ccf6870455aadfc2cec073b8db269b517c879d76aa6d9"
+          },
+          {
+            "seconds": 0.13849990000016987,
+            "first_output_seconds": 0.1384991000231821,
+            "stdout_sha256": "83c02ac2d48c863dab2ccf6870455aadfc2cec073b8db269b517c879d76aa6d9"
+          },
+          {
+            "seconds": 0.13884410000173375,
+            "first_output_seconds": 0.1377364999789279,
+            "stdout_sha256": "83c02ac2d48c863dab2ccf6870455aadfc2cec073b8db269b517c879d76aa6d9"
+          },
+          {
+            "seconds": 0.13912489998620003,
+            "first_output_seconds": 0.13912409998010844,
+            "stdout_sha256": "83c02ac2d48c863dab2ccf6870455aadfc2cec073b8db269b517c879d76aa6d9"
+          },
+          {
+            "seconds": 0.13964859998668544,
+            "first_output_seconds": 0.1396476999798324,
+            "stdout_sha256": "83c02ac2d48c863dab2ccf6870455aadfc2cec073b8db269b517c879d76aa6d9"
+          }
+        ]
+      },
+      "median_seconds": {
+        "python": 0.00603160000173375,
+        "ru_ast": 0.13912489998620003
+      }
+    },
+    {
+      "name": "arrays_2000",
+      "source": "循 2000 次 列 取 [1,2,3]. 环. 显 列 其 量.",
+      "expected": "3\n",
+      "samples": {
+        "python": [
+          {
+            "seconds": 0.0034923000202979892,
+            "first_output_seconds": 0.003491600014967844,
+            "stdout_sha256": "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2"
+          },
+          {
+            "seconds": 0.0029984999855514616,
+            "first_output_seconds": 0.00299719997565262,
+            "stdout_sha256": "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2"
+          },
+          {
+            "seconds": 0.003210800001397729,
+            "first_output_seconds": 0.003209899994544685,
+            "stdout_sha256": "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2"
+          },
+          {
+            "seconds": 0.0019908999965991825,
+            "first_output_seconds": 0.001990199991269037,
+            "stdout_sha256": "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2"
+          },
+          {
+            "seconds": 0.0020210999937262386,
+            "first_output_seconds": 0.0020203000167384744,
+            "stdout_sha256": "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2"
+          },
+          {
+            "seconds": 0.003316200018161908,
+            "first_output_seconds": 0.0033156000135932118,
+            "stdout_sha256": "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2"
+          },
+          {
+            "seconds": 0.0020136999955866486,
+            "first_output_seconds": 0.002012899989495054,
+            "stdout_sha256": "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2"
+          }
+        ],
+        "ru_ast": [
+          {
+            "seconds": 0.07677179999882355,
+            "first_output_seconds": 0.07677089999197051,
+            "stdout_sha256": "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2"
+          },
+          {
+            "seconds": 0.07599680000566877,
+            "first_output_seconds": 0.07599560002563521,
+            "stdout_sha256": "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2"
+          },
+          {
+            "seconds": 0.07533739999053068,
+            "first_output_seconds": 0.07533659998443909,
+            "stdout_sha256": "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2"
+          },
+          {
+            "seconds": 0.07536230000550859,
+            "first_output_seconds": 0.07536149999941699,
+            "stdout_sha256": "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2"
+          },
+          {
+            "seconds": 0.07711650000419468,
+            "first_output_seconds": 0.07711569999810308,
+            "stdout_sha256": "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2"
+          },
+          {
+            "seconds": 0.07563320000190288,
+            "first_output_seconds": 0.07563199999276549,
+            "stdout_sha256": "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2"
+          },
+          {
+            "seconds": 0.07628599999588914,
+            "first_output_seconds": 0.07628520001890138,
+            "stdout_sha256": "1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2"
+          }
+        ]
+      },
+      "median_seconds": {
+        "python": 0.0029984999855514616,
+        "ru_ast": 0.07599680000566877
+      }
+    }
+  ]
+}

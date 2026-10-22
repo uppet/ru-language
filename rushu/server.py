@@ -44,14 +44,14 @@ class NotebookServer(ThreadingHTTPServer):
     allow_reuse_address = False
 
     def __init__(self, port=0, token=None, static_dir=None,
-                 generation_timeout=DEFAULT_TIMEOUT, max_output_tokens=None):
+                 generation_timeout=DEFAULT_TIMEOUT, max_output_tokens=None, native_kernel=None):
         self.generation_timeout = validate_generation_timeout(generation_timeout)
         self.max_output_tokens = validate_max_output_tokens(max_output_tokens) if max_output_tokens is not None else None
         self.token = token if token is not None else secrets.token_urlsafe(32)
         if not isinstance(self.token, str) or not re.fullmatch(r"[A-Za-z0-9_-]{16,256}", self.token):
             raise ValueError("token must be 16-256 URL-safe ASCII characters")
         self.static_dir = (Path(static_dir) if static_dir else Path(__file__).parent / "static").resolve()
-        self.sessions = SessionManager()
+        self.sessions = SessionManager(native_kernel=native_kernel)
         self.generation_traces = TraceStore()
         self._request_slots = threading.BoundedSemaphore(64)
         super().__init__(("127.0.0.1", port), NotebookHandler)
@@ -294,9 +294,11 @@ class NotebookHandler(BaseHTTPRequestHandler):
     do_GET = do_HEAD = do_POST = do_DELETE = do_PUT = do_PATCH = do_OPTIONS = _dispatch
 
 
-def make_server(port=0, token=None, static_dir=None, generation_timeout=DEFAULT_TIMEOUT, max_output_tokens=None):
+def make_server(port=0, token=None, static_dir=None, generation_timeout=DEFAULT_TIMEOUT, max_output_tokens=None,
+                native_kernel=None):
     return NotebookServer(port=port, token=token, static_dir=static_dir,
-                          generation_timeout=generation_timeout, max_output_tokens=max_output_tokens)
+                          generation_timeout=generation_timeout, max_output_tokens=max_output_tokens,
+                          native_kernel=native_kernel)
 
 
 def main(argv=None):
@@ -307,6 +309,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="python -m rushu", description="如书 · 仅在本机运行的如语言笔记本")
     parser.add_argument("--port", type=int, default=0, help="本机端口，默认自动选择")
     parser.add_argument("--no-browser", action="store_true", help="仅打印地址，不自动打开浏览器")
+    parser.add_argument("--native-kernel", type=Path, metavar="EXECUTABLE",
+                        help="使用已构建的如言原生解释内核（当前核心语言范围见文档）")
     parser.add_argument("--generation-timeout", type=float, default=DEFAULT_TIMEOUT,
                         help=f"生成请求超时秒数，须为有限正数，默认 {DEFAULT_TIMEOUT:g} 秒")
     parser.add_argument("--max-output-tokens", type=max_output_tokens_argument, help="生成输出 token 正整数预算；覆盖环境与配置，默认省略")
@@ -318,7 +322,15 @@ def main(argv=None):
     except ValueError as error:
         parser.error(str(error))
     try:
-        server = make_server(args.port, generation_timeout=args.generation_timeout, max_output_tokens=args.max_output_tokens)
+        if args.native_kernel is not None:
+            args.native_kernel = args.native_kernel.resolve(strict=True)
+            if not args.native_kernel.is_file():
+                raise OSError("原生解释内核须为可执行文件")
+        options = dict(generation_timeout=args.generation_timeout,
+                       max_output_tokens=args.max_output_tokens)
+        if args.native_kernel is not None:
+            options['native_kernel'] = args.native_kernel
+        server = make_server(args.port, **options)
     except OSError as error:
         parser.exit(1, "无法启动本机服务：" + str(error) + "\n")
     print("如书 · 请用此完整链接打开：\n" + server.url, flush=True)

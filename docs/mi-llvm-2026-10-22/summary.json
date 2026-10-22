@@ -1,0 +1,275 @@
+{
+  "date": "2026-10-22",
+  "bs_pushed_commit": "e8ce196543ef16c81e06adf1f0ae6aa98dfd2db5",
+  "prototype_copied_commit": "d78a29d51844acf23ee0a49129d0211c006ac737",
+  "adaptation_status": "local uncommitted working tree",
+  "scope": "checked source IR directly to LLVM 14; C only for runtime/descriptors/ABI/owner checks",
+  "toolchains": {
+    "linux": "Ubuntu clang version 14.0.0-1ubuntu1.1",
+    "win32": "clang version 14.0.6 / x86_64 MSVC"
+  },
+  "tests": {
+    "linux": {
+      "mi_llvm": {
+        "discovered": 22,
+        "passed": 21,
+        "skipped": 1,
+        "failures": 0,
+        "errors": 0,
+        "seconds": 48.325,
+        "skip_lines": [
+          "test_windows_cli_native_memory_bridge_requires_permission (test_mi_llvm.SourceLLVMTests) ... skipped '真实 NativeMemory CLI 桥仅支持 Windows x64'"
+        ],
+        "raw_log_sha256": "254183eb0fce2bd249b92fd8f3730e59e3721833097b9d5801cc09f63d829c15"
+      },
+      "source_c_js": {
+        "discovered": 16,
+        "passed": 16,
+        "skipped": 0,
+        "failures": 0,
+        "errors": 0,
+        "seconds": 10.535,
+        "skip_lines": [],
+        "raw_log_sha256": "c7ee5f7eb67e8d546ee8797a134135185a82f87526b8e7c539bc7b8cd84b7790"
+      },
+      "owner": {
+        "discovered": 7,
+        "passed": 7,
+        "skipped": 0,
+        "failures": 0,
+        "errors": 0,
+        "seconds": 0.741,
+        "skip_lines": [],
+        "raw_log_sha256": "52c870f7d2bc5885547f2e784ed89efc490a4064301d34fcc4a13ce84e9049d0"
+      },
+      "legacy_kernel": {
+        "discovered": 6,
+        "passed": 6,
+        "skipped": 0,
+        "failures": 0,
+        "errors": 0,
+        "seconds": 1.479,
+        "skip_lines": [],
+        "raw_log_sha256": "027357acf07819f27a3ed218f32de3c0ec6f87639f8370d724ea37488d2f3ac8"
+      },
+      "ordinary_llvm": {
+        "discovered": 31,
+        "passed": 30,
+        "skipped": 1,
+        "failures": 0,
+        "errors": 0,
+        "seconds": 48.305,
+        "skip_lines": [
+          "test_posix_include_and_library_lists_do_not_hide_windows_sdk (test_llvm.LLVMExecutionTests) ... skipped 'Windows SDK environment regression'"
+        ],
+        "raw_log_sha256": "670fb3777f06df7a7931168c85e1965381ae663124b6faf686cb0050bb44eb47"
+      },
+      "native_plan": {
+        "discovered": 79,
+        "passed": 79,
+        "skipped": 0,
+        "failures": 0,
+        "errors": 0,
+        "seconds": 3.581,
+        "skip_lines": [],
+        "raw_log_sha256": "14e88d372dcdb11f5b1d4ec09362bfd0b3047713e7b98b40d42f945b4ce0f652"
+      },
+      "native_anchors": {
+        "discovered": 2,
+        "passed": 2,
+        "skipped": 0,
+        "failures": 0,
+        "errors": 0,
+        "seconds": 0.017,
+        "skip_lines": [],
+        "raw_log_sha256": "35c43648c857d727437c270a1f2830d29530e68ca35efc014ce8beb14d5d866f"
+      },
+      "native_runtime": {
+        "discovered": 10,
+        "passed": 10,
+        "skipped": 0,
+        "failures": 0,
+        "errors": 0,
+        "seconds": 15.806,
+        "skip_lines": [],
+        "raw_log_sha256": "b2ccc9bfec92205445caea1ff987dcbe4e9f95cc3a7872d10029f481bce5cc51"
+      },
+      "source_ubsan": {
+        "discovered": 16,
+        "passed": 16,
+        "skipped": 0,
+        "failures": 0,
+        "errors": 0,
+        "seconds": 12.813,
+        "skip_lines": [],
+        "raw_log_sha256": "912c45cde95e149cd9f0b79457a8f03419452b5b851ee52d8e3761ef35665154"
+      },
+      "owner_ubsan": {
+        "discovered": 7,
+        "passed": 7,
+        "skipped": 0,
+        "failures": 0,
+        "errors": 0,
+        "seconds": 1.069,
+        "skip_lines": [],
+        "raw_log_sha256": "2d00378420e69382840b532f1177eaad033190d4e9009c5ed5c16fb1117f79a0"
+      },
+      "bootstrap": {
+        "tests_run": 105,
+        "passed": 105,
+        "skipped": 0,
+        "gates": {
+          "source_ir_and_abi_fixed_point": true,
+          "native_binary_fixed_point": true,
+          "same_nonempty_suite_for_each_stage": true,
+          "every_planned_case_ran": true,
+          "every_case_passed_without_skips": true,
+          "test_runner_success_without_skips": true,
+          "inputs_unchanged": true,
+          "artifacts_unchanged_during_tests": true
+        },
+        "m4_complete": true,
+        "mi_self_hosting": false
+      }
+    },
+    "win32": {
+      "mi_llvm": {
+        "discovered": 22,
+        "passed": 22,
+        "skipped": 0,
+        "failures": 0,
+        "errors": 0,
+        "seconds": 60.183,
+        "skip_lines": [],
+        "raw_log_sha256": "f7cea5e2c563086b460a50ce37600e10e567213bca6db296528244e9b6c3ac4f"
+      },
+      "source_c_js": {
+        "discovered": 16,
+        "passed": 16,
+        "skipped": 0,
+        "failures": 0,
+        "errors": 0,
+        "seconds": 23.2,
+        "skip_lines": [],
+        "raw_log_sha256": "006a1b309d3532adaaa080973ba86cf6ea4e7b4ece7936a53346c2b1a05b9cb4"
+      },
+      "owner": {
+        "discovered": 7,
+        "passed": 7,
+        "skipped": 0,
+        "failures": 0,
+        "errors": 0,
+        "seconds": 1.412,
+        "skip_lines": [],
+        "raw_log_sha256": "9440568979e1beded79a72fc8f03db8312a7d50ea6b2871422355981c4438895"
+      },
+      "legacy_kernel": {
+        "discovered": 6,
+        "passed": 6,
+        "skipped": 0,
+        "failures": 0,
+        "errors": 0,
+        "seconds": 0.99,
+        "skip_lines": [],
+        "raw_log_sha256": "cddbb658a5bbfc061ad451b7b0998a9fba3fbd03c901ed83700d8e6921f0ed17"
+      },
+      "ordinary_llvm": {
+        "discovered": 31,
+        "passed": 30,
+        "skipped": 1,
+        "failures": 0,
+        "errors": 0,
+        "seconds": 46.284,
+        "skip_lines": [
+          "test_instrumented_runtime_is_not_instrumented_twice_at_native_codegen (test_llvm.LLVMExecutionTests.test_instrumented_runtime_is_not_instrumented_twice_at_native_codegen) ... skipped 'Clang 14 ASan runtime not installed'"
+        ],
+        "raw_log_sha256": "446b3e9a4adafcbb180353544d273b0df0dfb239aef0e129600066ed3fb35795"
+      },
+      "native_plan": {
+        "discovered": 79,
+        "passed": 78,
+        "skipped": 1,
+        "failures": 0,
+        "errors": 0,
+        "seconds": 1.119,
+        "skip_lines": [
+          "test_exact_mixed_calls_and_callback_tables_compile_and_run (test_native_c_plan.NativeCThunkTests.test_exact_mixed_calls_and_callback_tables_compile_and_run) ... skipped 'a C compiler is required'"
+        ],
+        "raw_log_sha256": "1d2874b1177ac85fd305ce7fcb0201781733926914cdfc5ecab73cf384e7a798"
+      },
+      "native_anchors": {
+        "discovered": 2,
+        "passed": 2,
+        "skipped": 0,
+        "failures": 0,
+        "errors": 0,
+        "seconds": 0.005,
+        "skip_lines": [],
+        "raw_log_sha256": "0a3a1dcf82ab0215dee5942dc8a6eba8cdc5fd6fc9b340f9dae07d713f43204d"
+      },
+      "bootstrap": {
+        "tests_run": 105,
+        "passed": 105,
+        "skipped": 0,
+        "gates": {
+          "source_ir_and_abi_fixed_point": true,
+          "native_binary_fixed_point": true,
+          "same_nonempty_suite_for_each_stage": true,
+          "every_planned_case_ran": true,
+          "every_case_passed_without_skips": true,
+          "test_runner_success_without_skips": true,
+          "inputs_unchanged": true,
+          "artifacts_unchanged_during_tests": true
+        },
+        "m4_complete": true,
+        "mi_self_hosting": false
+      }
+    }
+  },
+  "compute_oracles": {
+    "source_seed": 20261022,
+    "identical_legal_cases_per_backend": 857,
+    "backends": [
+      "C",
+      "JS Node",
+      "direct LLVM"
+    ],
+    "legal_cases_include_all_256_bytes": true,
+    "llvm_extra_checked_failure_cases": 2,
+    "legacy_seed": 649,
+    "legacy_cases_per_backend": 644,
+    "ordinary_baseline_cases_per_backend": 72
+  },
+  "generated_artifact_count": 8,
+  "generated_bytes_equal_after_windows_regeneration": true,
+  "source_checksum_file": "source-checksums.json",
+  "source_input_count": 90,
+  "artifacts": {
+    "linux": {
+      "bin/mi/linux-scalar": "db5e17da067316926c172d03412a4a24f01a386de916dbebcfa88377f6de6e9d",
+      "dist/mi/linux-scalar.ll": "6ca8fbe13ade41b2261f14da85ef7601c31bab39c2b0cb196677cbadf21c1855"
+    },
+    "win32": {
+      "bin/mi-scalar.exe": "444152aa76cdaf4f36b9288f832be70053bac4eb00610132aa49fc88c07908cd",
+      "dist/mi-scalar.ll": "672b191b034828368139f09137a16361287ac684aa31098db4befb5d9d5ed888",
+      "bin/mi-ascii.exe": "10e5fd10ea547f4fa8465774dd318797e22d66279e8933a33dce48fa20a7b770",
+      "dist/mi-ascii.ll": "b3a1f365015f67f6677315dd67caa713c3627f2f64ceda8caae0296514bf0c85"
+    }
+  },
+  "example_stdout": {
+    "linux_scalar": "10000\n",
+    "windows_scalar": "10000\n",
+    "windows_native_memory_ascii": "3\n"
+  },
+  "boundaries": {
+    "windows_native_memory_production_abi": true,
+    "linux_native_memory_platform": "test-only POSIX owner fixture; product CLI rejects view bridge",
+    "mi_self_hosted_frontend": false,
+    "rushu_mi_call_entry": false,
+    "public_mi_syntax": false,
+    "new_performance_measurements": false,
+    "remote_ci_run_for_local_adaptation": false,
+    "full_dll_or_gui_backend_acceptance": false
+  },
+  "initial_test_failures": "New test fixtures used incorrect conditional/loop spelling and omitted the v2 terminal-return requirement; corrected without changing language semantics. Windows prototype tests assumed GCC and encountered MSVC CRT deprecation warnings under -Werror; tests now use available GCC/local LLVM, filtered tool environment and test-local CRT compatibility define."
+}

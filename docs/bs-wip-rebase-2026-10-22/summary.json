@@ -1,0 +1,113 @@
+{
+  "schema": 1,
+  "date": "2026-10-22",
+  "branch": "bs",
+  "status": "passed",
+  "wip_base": "ae1a9947e1b1b1785499967fea93c7e3ca09b37b",
+  "snapshot_before_rebase": "c24acde783c1ae6d5b2a5b655cb13d6775edf33b",
+  "previous_remote_bs": "0a200bd85e84d2f907163c07fb3a1b86cc068855",
+  "rewritten_commits_above_wip": 2,
+  "ru": "0.23.0",
+  "rushu": "0.9.0",
+  "protocol": 2,
+  "source_files": 287,
+  "verification": {
+    "bootstrap_linux": {
+      "tests": 105,
+      "passed": 105,
+      "skipped": 0,
+      "seconds": 243.314,
+      "log_sha256": "9adf176e01264f749e4220d5b6b49762443b73f5d62f2272654319efe77e00de"
+    },
+    "bootstrap_windows": {
+      "tests": 105,
+      "passed": 105,
+      "skipped": 0,
+      "seconds": 235.162,
+      "log_sha256": "8e481fafa87e3dd4bc9bdd1fbcf8a7a5d0808e7c92b75349ab8d3c62ead05d05"
+    },
+    "rushu_linux": {
+      "tests": 160,
+      "passed": 160,
+      "skipped": 0,
+      "seconds": 94.852,
+      "log_sha256": "cc7a280f14ab4559fb7fea9e74258146dbef13ddfdd51de2c0a44b5cb27eb86b"
+    },
+    "native_windows": {
+      "tests": 51,
+      "passed": 51,
+      "skipped": 0,
+      "seconds": 53.272,
+      "log_sha256": "2572f19206d02feccdab4f5f53a278e95afa68c369598298d92a5a4612ede501"
+    },
+    "llvm_linux": {
+      "tests": 31,
+      "passed": 30,
+      "skipped": 1,
+      "seconds": 45.976,
+      "log_sha256": "a2c9e5461d55ea0bc22b8b88743ebd5a7041ed6fc125fc705c916bfdb60dd5db"
+    },
+    "llvm_windows": {
+      "tests": 31,
+      "passed": 30,
+      "skipped": 1,
+      "seconds": 50.291,
+      "log_sha256": "c6e5853f9926ba6c3572443c83734bd08e4e18841cfed98e62014d0ce10da63f"
+    },
+    "upstream_elif_linux": {
+      "tests": 53,
+      "passed": 53,
+      "skipped": 0,
+      "seconds": 8.408,
+      "log_sha256": "3e5d560d3f4a91a25bbc4ee1a51364b148f5846c416fdeb5f206bb590573a2e1"
+    },
+    "contracts_linux": {
+      "tests": 57,
+      "passed": 57,
+      "skipped": 0,
+      "seconds": 5.08,
+      "log_sha256": "9f76b6d4f5168e9621cab344890ec78aabd8048bde33d3332b6cc2ed1286179c"
+    },
+    "contracts_windows": {
+      "tests": 57,
+      "passed": 57,
+      "skipped": 0,
+      "seconds": 4.86,
+      "log_sha256": "89f4b8a7de01ba14cff3bc6e0a49abeee495a1ccf575f0b03e67102efb338ed9"
+    },
+    "node": {
+      "tests": 345,
+      "passed": 332,
+      "skipped": 13,
+      "log_sha256": "208a95bc9224acb4f0640774678bb1552d0c733b22b5e980c3921cf8750d03db"
+    },
+    "emacs": {
+      "tests": 141,
+      "passed": 141,
+      "skipped": 0,
+      "log_sha256": "590532666fe93830d24909a8faf93476aa2d0adfeaaed15525015bd6e14b9b3e"
+    }
+  },
+  "binaries": {
+    "bin/rushu/native-kernel": "43453fdb20e790f118f76e3c3ee5a5cedc409aa2b43b40979cb62e7891b2bfaa",
+    "bin/rushu/native-kernel.exe": "bf39f949e3e145c35b654b148501fc89ebadd8636bd7a5214676454c966c955d"
+  },
+  "browser": {
+    "report": "browser-windows.json",
+    "scenarios": 10,
+    "execution_requests": 12,
+    "page_errors": 0,
+    "model_requests": 0
+  },
+  "scope": {
+    "linux_native_fixture": "Initial 160-test run built fresh stages and kernel; only a new diagnostic column assertion failed (expected 6, actual 5). After correcting the assertion, all 160 passed using the rebuilt product kernel.",
+    "windows_native_fixture": "Rebuilt product executable on the Windows host; final 51-test run passed after correcting the same test assertion.",
+    "llvm_skips": {
+      "linux": "Windows SDK-specific regression",
+      "windows": "Clang 14 ASan runtime unavailable"
+    },
+    "sanitizers": "Linux LLVM suite includes its sanitizer regression. Full native-kernel M5 sanitizer and performance reports remain pre-rebase historical snapshots, not measurements of these new binaries.",
+    "remote_ci_run": false,
+    "remote_bs_pushed": false
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "clang-14": "Ubuntu clang version 14.0.0-1ubuntu1.1\nTarget: x86_64-pc-linux-gnu\nThread model: posix\nInstalledDir: /usr/bin\n",
+  "llvm-as-14": "Ubuntu LLVM version 14.0.0\n  \n  Optimized build.\n  Default target: x86_64-pc-linux-gnu\n  Host CPU: znver3\n",
+  "llvm-link-14": "Ubuntu LLVM version 14.0.0\n  \n  Optimized build.\n  Default target: x86_64-pc-linux-gnu\n  Host CPU: znver3\n",
+  "opt-14": "Ubuntu LLVM version 14.0.0\n  \n  Optimized build.\n  Default target: x86_64-pc-linux-gnu\n  Host CPU: znver3\n",
+  "llvm-dis-14": "Ubuntu LLVM version 14.0.0\n  \n  Optimized build.\n  Default target: x86_64-pc-linux-gnu\n  Host CPU: znver3\n",
+  "llc-14": "Ubuntu LLVM version 14.0.0\n  \n  Optimized build.\n  Default target: x86_64-pc-linux-gnu\n  Host CPU: znver3\n\n  Registered Targets:\n    aarch64    - AArch64 (little endian)\n    aarch64_32 - AArch64 (little endian ILP32)\n    aarch64_be - AArch64 (big endian)\n    amdgcn     - AMD GCN GPUs\n    arm        - ARM\n    arm64      - ARM64 (little endian)\n    arm64_32   - ARM64 (little endian ILP32)\n    armeb      - ARM (big endian)\n    avr        - Atmel AVR Microcontroller\n    bpf        - BPF (host endian)\n    bpfeb      - BPF (big endian)\n    bpfel      - BPF (little endian)\n    hexagon    - Hexagon\n    lanai      - Lanai\n    m68k       - Motorola 68000 family\n    mips       - MIPS (32-bit big endian)\n    mips64     - MIPS (64-bit big endian)\n    mips64el   - MIPS (64-bit little endian)\n    mipsel     - MIPS (32-bit little endian)\n    msp430     - MSP430 [experimental]\n    nvptx      - NVIDIA PTX 32-bit\n    nvptx64    - NVIDIA PTX 64-bit\n    ppc32      - PowerPC 32\n    ppc32le    - PowerPC 32 LE\n    ppc64      - PowerPC 64\n    ppc64le    - PowerPC 64 LE\n    r600       - AMD GPUs HD2XXX-HD6XXX\n    riscv32    - 32-bit RISC-V\n    riscv64    - 64-bit RISC-V\n    sparc      - Sparc\n    sparcel    - Sparc LE\n    sparcv9    - Sparc V9\n    systemz    - SystemZ\n    thumb      - Thumb\n    thumbeb    - Thumb (big endian)\n    ve         - VE\n    wasm32     - WebAssembly 32-bit\n    wasm64     - WebAssembly 64-bit\n    x86        - 32-bit X86: Pentium-Pro and above\n    x86-64     - 64-bit X86: EM64T and AMD64\n    xcore      - XCore\n",
+  "python": "Python 3.10.12",
+  "node": "v24.4.0",
+  "emacs": "GNU Emacs 30.2",
+  "cpu": "AMD Ryzen 7 7800X3D 8-Core Processor",
+  "specification_sha256": "59103ae63f27b0bb36bd6e0d57d836f56a97fcfb71f81c466f3e1fa70f2ae2c2",
+  "dart_sdk_zip_sha256": "f80780c01ade17b789cf4dc2425d662f63bdd40eceda53b36c0d46af650de41b"
+}

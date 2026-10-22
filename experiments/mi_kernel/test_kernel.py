@@ -5,15 +5,24 @@ import json
 import os
 from pathlib import Path
 import random
+import shutil
 import subprocess
 import tempfile
 import unittest
 import generate
+from rulang.cli import compiler_command
+from rulang.llvm_toolchain import find_clang
+from rulang.toolchain_environment import llvm_environment
 
 HERE=Path(__file__).resolve().parent
 MAX=2**32-1
 EXE=".exe" if os.name == "nt" else ""
 UBSAN=os.name != "nt"
+def compile_kernel(args):
+    selected = os.environ.get('CC') or shutil.which('gcc') or find_clang()
+    if not selected: raise AssertionError('需要 C 编译器或本地 LLVM 14')
+    defines = ['-D_CRT_SECURE_NO_WARNINGS'] if os.name == 'nt' else []
+    subprocess.run(compiler_command(selected) + defines + args, env=llvm_environment(), check=True)
 def executable(directory, name):
     return directory / (name + EXE)
 def sanitize_flags():
@@ -140,7 +149,7 @@ class KernelTests(unittest.TestCase):
             d=Path(d)
             c='#include "kernel.h"\n'+'\n'.join(cbodies)+'\nint main(void) { const uint8_t b[]={10,13,10};\n'+''.join(f'if(p{i}(b,3,0).count!=2) return 1;\n' for i in range(6))+'return 0; }'
             (d/'p.c').write_text(c)
-            subprocess.run([os.environ.get('CC','gcc'),'-std=c11','-O2','-I',str(HERE/'generated'),str(d/'p.c'),'-o',str(executable(d,'p'))],check=True)
+            compile_kernel(['-std=c11','-O2','-I',str(HERE/'generated'),str(d/'p.c'),'-o',str(executable(d,'p'))])
             subprocess.run([str(executable(d,'p'))],check=True)
             js='const MI_OK=0,MI_BOUNDS=1,MI_OVERFLOW=2;\n'+'\n'.join(jsbodies)+'\n'+''.join(f'if(p{i}(new Uint8Array([10,13,10]),3,0).count!==2) process.exit(1);' for i in range(6))
             subprocess.run(['node','-e',js],check=True)
@@ -153,7 +162,7 @@ class KernelTests(unittest.TestCase):
             d=Path(d)
             c='#include "kernel.h"\nstatic MiResult probe(const uint8_t *data,uint32_t length,uint32_t seed) {\n'+cbody+'\n}\nint main(void) { MiResult r=probe(NULL,0,40); return !(r.status==MI_BOUNDS && r.count==41); }\n'
             (d/'p.c').write_text(c)
-            subprocess.run([os.environ.get('CC','gcc'),'-std=c11','-O1',*sanitize_flags(),'-I',str(HERE/'generated'),str(d/'p.c'),'-o',str(executable(d,'p'))],check=True)
+            compile_kernel(['-std=c11','-O1',*sanitize_flags(),'-I',str(HERE/'generated'),str(d/'p.c'),'-o',str(executable(d,'p'))])
             subprocess.run([str(executable(d,'p'))],check=True)
             js='const MI_OK=0,MI_BOUNDS=1,MI_OVERFLOW=2; function probe(data,length,seed) {\n'+jsbody+'\n}\nconst r=probe(new Uint8Array(),0,40); if(r.status!==1 || r.count!==41) process.exit(1);'
             subprocess.run(['node','-e',js],check=True)
@@ -163,8 +172,7 @@ class KernelTests(unittest.TestCase):
         rows=cases();expected=[oracle(r) for r in rows]
         with tempfile.TemporaryDirectory() as d:
             d=Path(d);(d/'h.c').write_text(C_HARNESS);(d/'h.js').write_text(JS_HARNESS)
-            cc=os.environ.get('CC','gcc')
-            subprocess.run([cc,'-std=c11','-O2','-Wall','-Wextra','-Werror','-I',str(HERE/'generated'),str(d/'h.c'),'-o',str(executable(d,'h'))],check=True)
+            compile_kernel(['-std=c11','-O2','-Wall','-Wextra','-Werror','-I',str(HERE/'generated'),str(d/'h.c'),'-o',str(executable(d,'h'))])
             cinput=''.join(f'{h or "-"} {o} {n} {s} {closed}\n' for h,o,n,s,closed in rows)
             c=subprocess.run([str(executable(d,'h'))],input=cinput,text=True,capture_output=True,check=True)
             js=subprocess.run(['node',str(d/'h.js'),str(HERE/'generated/kernel.js')],input=json.dumps(rows),text=True,capture_output=True,check=True)
@@ -176,9 +184,9 @@ class KernelTests(unittest.TestCase):
             # Windows MinGW does not ship a usable UBSan runtime. All semantic
             # cases still run above; Linux CI requires this additional backend.
             if UBSAN:
-                subprocess.run([cc,'-std=c11','-O1','-g',*sanitize_flags(),'-I',str(HERE/'generated'),str(d/'h.c'),'-o',str(executable(d,'h-ubsan'))],check=True)
+                compile_kernel(['-std=c11','-O1','-g',*sanitize_flags(),'-I',str(HERE/'generated'),str(d/'h.c'),'-o',str(executable(d,'h-ubsan'))])
                 u=subprocess.run([str(executable(d,'h-ubsan'))],input=cinput,text=True,capture_output=True,check=True)
                 self.assertEqual(u.stdout,c.stdout);self.assertEqual(u.stderr,'')
-        (HERE/'semantic-results.json').write_text(json.dumps({'cases_per_backend':len(rows),'backends':['C GCC O2','JS Node'] + (['C UBSan'] if UBSAN else []),'ubsan_required_on_this_platform':UBSAN,'oracle':'independent CRLF token normalization','random_seed':649,'partial_count_on_overflow':'UINT32_MAX (previous increments retained; internal result only)','no_external_output_buffer':True},indent=2)+'\n')
+        (HERE/'semantic-results.json').write_text(json.dumps({'cases_per_backend':len(rows),'backends':['C O2','JS Node'] + (['C UBSan'] if UBSAN else []),'ubsan_required_on_this_platform':UBSAN,'oracle':'independent CRLF token normalization','random_seed':649,'partial_count_on_overflow':'UINT32_MAX (previous increments retained; internal result only)','no_external_output_buffer':True},indent=2)+'\n')
 
 if __name__=='__main__':unittest.main(verbosity=2)

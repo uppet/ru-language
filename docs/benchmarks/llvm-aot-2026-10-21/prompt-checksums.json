@@ -1,0 +1,26 @@
+[
+  {
+    "kind": "rushu",
+    "target": "python",
+    "bytes": 202003,
+    "sha256": "553547cbfbfa35abf3507119adcb46700903e64ad806390b966ef6ccf8dced1c"
+  },
+  {
+    "kind": "rushu",
+    "target": "browser-js",
+    "bytes": 202194,
+    "sha256": "75ccd7991b0939657e88c789112a5e7f052d41e127bb39cb01b673ea5d5fd4b1"
+  },
+  {
+    "kind": "ruguan",
+    "target": "python",
+    "bytes": 204693,
+    "sha256": "2afd88b5a02c88c0efe536031aea78973ca4dd6acfedcccc29afa5682061ed61"
+  },
+  {
+    "kind": "ruguan",
+    "target": "browser-js",
+    "bytes": 204884,
+    "sha256": "b20ab1f9bd51d2951d8e9cbc4994f156c6a8c0a8431ad19f8e31368df837a469"
+  }
+]

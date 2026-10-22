@@ -1,0 +1,984 @@
+{
+  "format": 1,
+  "milestone": "M4",
+  "platform": "linux",
+  "scope": "Declared native bootstrap frontend profile; not full Python frontend/package parity",
+  "m4_complete": true,
+  "gates": {
+    "source_ir_and_abi_fixed_point": true,
+    "native_binary_fixed_point": true,
+    "same_nonempty_suite_for_each_stage": true,
+    "every_planned_case_ran": true,
+    "every_case_passed_without_skips": true,
+    "test_runner_success_without_skips": true,
+    "inputs_unchanged": true,
+    "artifacts_unchanged_during_tests": true
+  },
+  "bootstrap": {
+    "platform": "linux",
+    "triple": "x86_64-pc-linux-gnu",
+    "llvm": "Ubuntu clang version 14.0.0-1ubuntu1.1",
+    "source_sha256": "5306d19826b62a4dd228f5cd5a660b7e343ec6d174e129ab351e575d8dad74c4",
+    "stage0_seconds": 10.99696699398919,
+    "stages": [
+      {
+        "source_ir_sha256": "6497e137a2a1578006b9859f1ade6805889a210256bbb786449a78814b8ac25e",
+        "metadata_sha256": "208fb8d09191cdad6d7fb2bc47840cebe4d0aa02420d5a5a401c6381825aea2d",
+        "binary_sha256": "396df1fcead59d6f1d0666040b7ce40ed8513b30153f634858eb1816ca85256b",
+        "frontend_seconds": 6.779915108985733,
+        "seconds": 17.754785807977896
+      },
+      {
+        "source_ir_sha256": "6497e137a2a1578006b9859f1ade6805889a210256bbb786449a78814b8ac25e",
+        "metadata_sha256": "208fb8d09191cdad6d7fb2bc47840cebe4d0aa02420d5a5a401c6381825aea2d",
+        "binary_sha256": "396df1fcead59d6f1d0666040b7ce40ed8513b30153f634858eb1816ca85256b",
+        "frontend_seconds": 6.898471374006476,
+        "seconds": 17.030093609995674
+      }
+    ],
+    "fixed_point": true
+  },
+  "native_comparison": {
+    "raw_equal": true,
+    "raw_sha256": [
+      "396df1fcead59d6f1d0666040b7ce40ed8513b30153f634858eb1816ca85256b",
+      "396df1fcead59d6f1d0666040b7ce40ed8513b30153f634858eb1816ca85256b"
+    ],
+    "normalized_equal": true,
+    "normalized_sha256": [
+      "396df1fcead59d6f1d0666040b7ce40ed8513b30153f634858eb1816ca85256b",
+      "396df1fcead59d6f1d0666040b7ce40ed8513b30153f634858eb1816ca85256b"
+    ],
+    "normalization": [
+      [],
+      []
+    ]
+  },
+  "planned_cases_by_stage": {
+    "1": [
+      "test_callable_reference_ambiguity_comments_and_reexports",
+      "test_checked_unicode_file_io_and_standard_input",
+      "test_closures_recursion_and_argument_evaluation_order",
+      "test_compile_error_locations_and_capability_boundaries",
+      "test_dependency_errors_are_checked_before_execution",
+      "test_elif_chain_and_explicit_nesting_share_structure_budget",
+      "test_elif_lazy_conditions_shared_scope_and_legacy_nesting",
+      "test_entry_arguments_independent_ir_and_deleted_source",
+      "test_invalid_assignment_does_not_evaluate_rhs",
+      "test_lazy_modules_failure_cache_scope_and_panic",
+      "test_native_frontend_runs_in_empty_directory_without_python_or_project",
+      "test_numeric_precision_truth_unicode_and_containers",
+      "test_objects_inheritance_and_shared_identity",
+      "test_ordinary_errors_are_not_rescued_and_preserve_origin",
+      "test_practical_array",
+      "test_practical_cyclic",
+      "test_practical_equality",
+      "test_practical_fixed",
+      "test_practical_math",
+      "test_practical_negative_zero",
+      "test_practical_panic",
+      "test_practical_pcg_golden",
+      "test_practical_references",
+      "test_practical_replace",
+      "test_practical_rng_identity",
+      "test_practical_shuffle",
+      "test_practical_snapshot",
+      "test_practical_split",
+      "test_practical_trim",
+      "test_receiver_selection_precedes_argument_mutation",
+      "test_relative_module_diamond_aliases_and_owner_scope",
+      "test_root_and_imported_source_aliases_cannot_be_overwritten",
+      "test_self_compilation_reaches_exact_native_frontend_fixed_point",
+      "test_short_circuit_procedures_loop_unwind_and_panic_order",
+      "test_source_errors_and_llvm_failure_preserve_previous_artifacts"
+    ],
+    "2": [
+      "test_callable_reference_ambiguity_comments_and_reexports",
+      "test_checked_unicode_file_io_and_standard_input",
+      "test_closures_recursion_and_argument_evaluation_order",
+      "test_compile_error_locations_and_capability_boundaries",
+      "test_dependency_errors_are_checked_before_execution",
+      "test_elif_chain_and_explicit_nesting_share_structure_budget",
+      "test_elif_lazy_conditions_shared_scope_and_legacy_nesting",
+      "test_entry_arguments_independent_ir_and_deleted_source",
+      "test_invalid_assignment_does_not_evaluate_rhs",
+      "test_lazy_modules_failure_cache_scope_and_panic",
+      "test_native_frontend_runs_in_empty_directory_without_python_or_project",
+      "test_numeric_precision_truth_unicode_and_containers",
+      "test_objects_inheritance_and_shared_identity",
+      "test_ordinary_errors_are_not_rescued_and_preserve_origin",
+      "test_practical_array",
+      "test_practical_cyclic",
+      "test_practical_equality",
+      "test_practical_fixed",
+      "test_practical_math",
+      "test_practical_negative_zero",
+      "test_practical_panic",
+      "test_practical_pcg_golden",
+      "test_practical_references",
+      "test_practical_replace",
+      "test_practical_rng_identity",
+      "test_practical_shuffle",
+      "test_practical_snapshot",
+      "test_practical_split",
+      "test_practical_trim",
+      "test_receiver_selection_precedes_argument_mutation",
+      "test_relative_module_diamond_aliases_and_owner_scope",
+      "test_root_and_imported_source_aliases_cannot_be_overwritten",
+      "test_self_compilation_reaches_exact_native_frontend_fixed_point",
+      "test_short_circuit_procedures_loop_unwind_and_panic_order",
+      "test_source_errors_and_llvm_failure_preserve_previous_artifacts"
+    ],
+    "3": [
+      "test_callable_reference_ambiguity_comments_and_reexports",
+      "test_checked_unicode_file_io_and_standard_input",
+      "test_closures_recursion_and_argument_evaluation_order",
+      "test_compile_error_locations_and_capability_boundaries",
+      "test_dependency_errors_are_checked_before_execution",
+      "test_elif_chain_and_explicit_nesting_share_structure_budget",
+      "test_elif_lazy_conditions_shared_scope_and_legacy_nesting",
+      "test_entry_arguments_independent_ir_and_deleted_source",
+      "test_invalid_assignment_does_not_evaluate_rhs",
+      "test_lazy_modules_failure_cache_scope_and_panic",
+      "test_native_frontend_runs_in_empty_directory_without_python_or_project",
+      "test_numeric_precision_truth_unicode_and_containers",
+      "test_objects_inheritance_and_shared_identity",
+      "test_ordinary_errors_are_not_rescued_and_preserve_origin",
+      "test_practical_array",
+      "test_practical_cyclic",
+      "test_practical_equality",
+      "test_practical_fixed",
+      "test_practical_math",
+      "test_practical_negative_zero",
+      "test_practical_panic",
+      "test_practical_pcg_golden",
+      "test_practical_references",
+      "test_practical_replace",
+      "test_practical_rng_identity",
+      "test_practical_shuffle",
+      "test_practical_snapshot",
+      "test_practical_split",
+      "test_practical_trim",
+      "test_receiver_selection_precedes_argument_mutation",
+      "test_relative_module_diamond_aliases_and_owner_scope",
+      "test_root_and_imported_source_aliases_cannot_be_overwritten",
+      "test_self_compilation_reaches_exact_native_frontend_fixed_point",
+      "test_short_circuit_procedures_loop_unwind_and_panic_order",
+      "test_source_errors_and_llvm_failure_preserve_previous_artifacts"
+    ]
+  },
+  "tests_run": 105,
+  "failures": 0,
+  "errors": 0,
+  "skipped": 0,
+  "stages": {
+    "1": [
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_callable_reference_ambiguity_comments_and_reexports",
+        "stage": 1,
+        "case": "test_callable_reference_ambiguity_comments_and_reexports",
+        "status": "passed",
+        "seconds": 1.949333205993753
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_checked_unicode_file_io_and_standard_input",
+        "stage": 1,
+        "case": "test_checked_unicode_file_io_and_standard_input",
+        "status": "passed",
+        "seconds": 2.469357524998486
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_closures_recursion_and_argument_evaluation_order",
+        "stage": 1,
+        "case": "test_closures_recursion_and_argument_evaluation_order",
+        "status": "passed",
+        "seconds": 2.1310814789903816
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_compile_error_locations_and_capability_boundaries",
+        "stage": 1,
+        "case": "test_compile_error_locations_and_capability_boundaries",
+        "status": "passed",
+        "seconds": 0.3740521990112029
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_dependency_errors_are_checked_before_execution",
+        "stage": 1,
+        "case": "test_dependency_errors_are_checked_before_execution",
+        "status": "passed",
+        "seconds": 0.32492023799568415
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_elif_chain_and_explicit_nesting_share_structure_budget",
+        "stage": 1,
+        "case": "test_elif_chain_and_explicit_nesting_share_structure_budget",
+        "status": "passed",
+        "seconds": 1.7597836600034498
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_elif_lazy_conditions_shared_scope_and_legacy_nesting",
+        "stage": 1,
+        "case": "test_elif_lazy_conditions_shared_scope_and_legacy_nesting",
+        "status": "passed",
+        "seconds": 2.059029878000729
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_entry_arguments_independent_ir_and_deleted_source",
+        "stage": 1,
+        "case": "test_entry_arguments_independent_ir_and_deleted_source",
+        "status": "passed",
+        "seconds": 2.293190667987801
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_invalid_assignment_does_not_evaluate_rhs",
+        "stage": 1,
+        "case": "test_invalid_assignment_does_not_evaluate_rhs",
+        "status": "passed",
+        "seconds": 1.8187546890112571
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_lazy_modules_failure_cache_scope_and_panic",
+        "stage": 1,
+        "case": "test_lazy_modules_failure_cache_scope_and_panic",
+        "status": "passed",
+        "seconds": 2.011617395997746
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_native_frontend_runs_in_empty_directory_without_python_or_project",
+        "stage": 1,
+        "case": "test_native_frontend_runs_in_empty_directory_without_python_or_project",
+        "status": "passed",
+        "seconds": 0.10729338097735308
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_numeric_precision_truth_unicode_and_containers",
+        "stage": 1,
+        "case": "test_numeric_precision_truth_unicode_and_containers",
+        "status": "passed",
+        "seconds": 2.4272392179991584
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_objects_inheritance_and_shared_identity",
+        "stage": 1,
+        "case": "test_objects_inheritance_and_shared_identity",
+        "status": "passed",
+        "seconds": 2.537832793983398
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_ordinary_errors_are_not_rescued_and_preserve_origin",
+        "stage": 1,
+        "case": "test_ordinary_errors_are_not_rescued_and_preserve_origin",
+        "status": "passed",
+        "seconds": 5.173090887023136
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_array",
+        "stage": 1,
+        "case": "test_practical_array",
+        "status": "passed",
+        "seconds": 2.8723343950114213
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_cyclic",
+        "stage": 1,
+        "case": "test_practical_cyclic",
+        "status": "passed",
+        "seconds": 2.833662577002542
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_equality",
+        "stage": 1,
+        "case": "test_practical_equality",
+        "status": "passed",
+        "seconds": 3.136495473998366
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_fixed",
+        "stage": 1,
+        "case": "test_practical_fixed",
+        "status": "passed",
+        "seconds": 3.116004770010477
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_math",
+        "stage": 1,
+        "case": "test_practical_math",
+        "status": "passed",
+        "seconds": 3.1577731290017255
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_negative_zero",
+        "stage": 1,
+        "case": "test_practical_negative_zero",
+        "status": "passed",
+        "seconds": 2.937742556008743
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_panic",
+        "stage": 1,
+        "case": "test_practical_panic",
+        "status": "passed",
+        "seconds": 3.0028482140041888
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_pcg_golden",
+        "stage": 1,
+        "case": "test_practical_pcg_golden",
+        "status": "passed",
+        "seconds": 2.913277885003481
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_references",
+        "stage": 1,
+        "case": "test_practical_references",
+        "status": "passed",
+        "seconds": 2.958769012999255
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_replace",
+        "stage": 1,
+        "case": "test_practical_replace",
+        "status": "passed",
+        "seconds": 2.982965563016478
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_rng_identity",
+        "stage": 1,
+        "case": "test_practical_rng_identity",
+        "status": "passed",
+        "seconds": 3.0651066589925904
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_shuffle",
+        "stage": 1,
+        "case": "test_practical_shuffle",
+        "status": "passed",
+        "seconds": 3.034289866016479
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_snapshot",
+        "stage": 1,
+        "case": "test_practical_snapshot",
+        "status": "passed",
+        "seconds": 3.1102267279929947
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_split",
+        "stage": 1,
+        "case": "test_practical_split",
+        "status": "passed",
+        "seconds": 3.0216224159812555
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_practical_trim",
+        "stage": 1,
+        "case": "test_practical_trim",
+        "status": "passed",
+        "seconds": 2.9584198830125388
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_receiver_selection_precedes_argument_mutation",
+        "stage": 1,
+        "case": "test_receiver_selection_precedes_argument_mutation",
+        "status": "passed",
+        "seconds": 1.995325542986393
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_relative_module_diamond_aliases_and_owner_scope",
+        "stage": 1,
+        "case": "test_relative_module_diamond_aliases_and_owner_scope",
+        "status": "passed",
+        "seconds": 2.5167974770010915
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_root_and_imported_source_aliases_cannot_be_overwritten",
+        "stage": 1,
+        "case": "test_root_and_imported_source_aliases_cannot_be_overwritten",
+        "status": "passed",
+        "seconds": 0.1119795810081996
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_self_compilation_reaches_exact_native_frontend_fixed_point",
+        "stage": 1,
+        "case": "test_self_compilation_reaches_exact_native_frontend_fixed_point",
+        "status": "passed",
+        "seconds": 0.013554048025980592
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_short_circuit_procedures_loop_unwind_and_panic_order",
+        "stage": 1,
+        "case": "test_short_circuit_procedures_loop_unwind_and_panic_order",
+        "status": "passed",
+        "seconds": 2.1295020139950793
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage1Tests.test_source_errors_and_llvm_failure_preserve_previous_artifacts",
+        "stage": 1,
+        "case": "test_source_errors_and_llvm_failure_preserve_previous_artifacts",
+        "status": "passed",
+        "seconds": 1.0186746520048473
+      }
+    ],
+    "2": [
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_callable_reference_ambiguity_comments_and_reexports",
+        "stage": 2,
+        "case": "test_callable_reference_ambiguity_comments_and_reexports",
+        "status": "passed",
+        "seconds": 1.8988746590039227
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_checked_unicode_file_io_and_standard_input",
+        "stage": 2,
+        "case": "test_checked_unicode_file_io_and_standard_input",
+        "status": "passed",
+        "seconds": 2.5424282909953035
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_closures_recursion_and_argument_evaluation_order",
+        "stage": 2,
+        "case": "test_closures_recursion_and_argument_evaluation_order",
+        "status": "passed",
+        "seconds": 2.2299309910158627
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_compile_error_locations_and_capability_boundaries",
+        "stage": 2,
+        "case": "test_compile_error_locations_and_capability_boundaries",
+        "status": "passed",
+        "seconds": 0.2093501970230136
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_dependency_errors_are_checked_before_execution",
+        "stage": 2,
+        "case": "test_dependency_errors_are_checked_before_execution",
+        "status": "passed",
+        "seconds": 0.19004960800521076
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_elif_chain_and_explicit_nesting_share_structure_budget",
+        "stage": 2,
+        "case": "test_elif_chain_and_explicit_nesting_share_structure_budget",
+        "status": "passed",
+        "seconds": 1.8854612059949432
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_elif_lazy_conditions_shared_scope_and_legacy_nesting",
+        "stage": 2,
+        "case": "test_elif_lazy_conditions_shared_scope_and_legacy_nesting",
+        "status": "passed",
+        "seconds": 2.10990078697796
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_entry_arguments_independent_ir_and_deleted_source",
+        "stage": 2,
+        "case": "test_entry_arguments_independent_ir_and_deleted_source",
+        "status": "passed",
+        "seconds": 2.3371461299830116
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_invalid_assignment_does_not_evaluate_rhs",
+        "stage": 2,
+        "case": "test_invalid_assignment_does_not_evaluate_rhs",
+        "status": "passed",
+        "seconds": 1.9403287860041019
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_lazy_modules_failure_cache_scope_and_panic",
+        "stage": 2,
+        "case": "test_lazy_modules_failure_cache_scope_and_panic",
+        "status": "passed",
+        "seconds": 2.136953695997363
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_native_frontend_runs_in_empty_directory_without_python_or_project",
+        "stage": 2,
+        "case": "test_native_frontend_runs_in_empty_directory_without_python_or_project",
+        "status": "passed",
+        "seconds": 0.10230177702032961
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_numeric_precision_truth_unicode_and_containers",
+        "stage": 2,
+        "case": "test_numeric_precision_truth_unicode_and_containers",
+        "status": "passed",
+        "seconds": 2.5176979060051963
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_objects_inheritance_and_shared_identity",
+        "stage": 2,
+        "case": "test_objects_inheritance_and_shared_identity",
+        "status": "passed",
+        "seconds": 2.5562200369895436
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_ordinary_errors_are_not_rescued_and_preserve_origin",
+        "stage": 2,
+        "case": "test_ordinary_errors_are_not_rescued_and_preserve_origin",
+        "status": "passed",
+        "seconds": 5.39119389699772
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_array",
+        "stage": 2,
+        "case": "test_practical_array",
+        "status": "passed",
+        "seconds": 2.8868379369960167
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_cyclic",
+        "stage": 2,
+        "case": "test_practical_cyclic",
+        "status": "passed",
+        "seconds": 2.8532470000209287
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_equality",
+        "stage": 2,
+        "case": "test_practical_equality",
+        "status": "passed",
+        "seconds": 2.8747910680249333
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_fixed",
+        "stage": 2,
+        "case": "test_practical_fixed",
+        "status": "passed",
+        "seconds": 2.912096099986229
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_math",
+        "stage": 2,
+        "case": "test_practical_math",
+        "status": "passed",
+        "seconds": 2.9444422619999386
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_negative_zero",
+        "stage": 2,
+        "case": "test_practical_negative_zero",
+        "status": "passed",
+        "seconds": 2.851731725007994
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_panic",
+        "stage": 2,
+        "case": "test_practical_panic",
+        "status": "passed",
+        "seconds": 2.9082832950225566
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_pcg_golden",
+        "stage": 2,
+        "case": "test_practical_pcg_golden",
+        "status": "passed",
+        "seconds": 2.9389164349995553
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_references",
+        "stage": 2,
+        "case": "test_practical_references",
+        "status": "passed",
+        "seconds": 2.8735380049911328
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_replace",
+        "stage": 2,
+        "case": "test_practical_replace",
+        "status": "passed",
+        "seconds": 2.835441080998862
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_rng_identity",
+        "stage": 2,
+        "case": "test_practical_rng_identity",
+        "status": "passed",
+        "seconds": 2.879848006006796
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_shuffle",
+        "stage": 2,
+        "case": "test_practical_shuffle",
+        "status": "passed",
+        "seconds": 2.920471888995962
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_snapshot",
+        "stage": 2,
+        "case": "test_practical_snapshot",
+        "status": "passed",
+        "seconds": 2.9216414609982166
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_split",
+        "stage": 2,
+        "case": "test_practical_split",
+        "status": "passed",
+        "seconds": 2.9025511110085063
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_practical_trim",
+        "stage": 2,
+        "case": "test_practical_trim",
+        "status": "passed",
+        "seconds": 2.930095749004977
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_receiver_selection_precedes_argument_mutation",
+        "stage": 2,
+        "case": "test_receiver_selection_precedes_argument_mutation",
+        "status": "passed",
+        "seconds": 2.337052498012781
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_relative_module_diamond_aliases_and_owner_scope",
+        "stage": 2,
+        "case": "test_relative_module_diamond_aliases_and_owner_scope",
+        "status": "passed",
+        "seconds": 2.689663710014429
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_root_and_imported_source_aliases_cannot_be_overwritten",
+        "stage": 2,
+        "case": "test_root_and_imported_source_aliases_cannot_be_overwritten",
+        "status": "passed",
+        "seconds": 0.1961716080259066
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_self_compilation_reaches_exact_native_frontend_fixed_point",
+        "stage": 2,
+        "case": "test_self_compilation_reaches_exact_native_frontend_fixed_point",
+        "status": "passed",
+        "seconds": 0.019597310019889846
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_short_circuit_procedures_loop_unwind_and_panic_order",
+        "stage": 2,
+        "case": "test_short_circuit_procedures_loop_unwind_and_panic_order",
+        "status": "passed",
+        "seconds": 2.116001882997807
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapStage2Tests.test_source_errors_and_llvm_failure_preserve_previous_artifacts",
+        "stage": 2,
+        "case": "test_source_errors_and_llvm_failure_preserve_previous_artifacts",
+        "status": "passed",
+        "seconds": 1.7668330870219506
+      }
+    ],
+    "3": [
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_callable_reference_ambiguity_comments_and_reexports",
+        "stage": 3,
+        "case": "test_callable_reference_ambiguity_comments_and_reexports",
+        "status": "passed",
+        "seconds": 2.033232916990528
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_checked_unicode_file_io_and_standard_input",
+        "stage": 3,
+        "case": "test_checked_unicode_file_io_and_standard_input",
+        "status": "passed",
+        "seconds": 2.5898537120083347
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_closures_recursion_and_argument_evaluation_order",
+        "stage": 3,
+        "case": "test_closures_recursion_and_argument_evaluation_order",
+        "status": "passed",
+        "seconds": 2.2232285700156353
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_compile_error_locations_and_capability_boundaries",
+        "stage": 3,
+        "case": "test_compile_error_locations_and_capability_boundaries",
+        "status": "passed",
+        "seconds": 0.40575306600658223
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_dependency_errors_are_checked_before_execution",
+        "stage": 3,
+        "case": "test_dependency_errors_are_checked_before_execution",
+        "status": "passed",
+        "seconds": 0.33829001401318237
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_elif_chain_and_explicit_nesting_share_structure_budget",
+        "stage": 3,
+        "case": "test_elif_chain_and_explicit_nesting_share_structure_budget",
+        "status": "passed",
+        "seconds": 1.9150112440111116
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_elif_lazy_conditions_shared_scope_and_legacy_nesting",
+        "stage": 3,
+        "case": "test_elif_lazy_conditions_shared_scope_and_legacy_nesting",
+        "status": "passed",
+        "seconds": 2.176045518979663
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_entry_arguments_independent_ir_and_deleted_source",
+        "stage": 3,
+        "case": "test_entry_arguments_independent_ir_and_deleted_source",
+        "status": "passed",
+        "seconds": 2.3984919780050404
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_invalid_assignment_does_not_evaluate_rhs",
+        "stage": 3,
+        "case": "test_invalid_assignment_does_not_evaluate_rhs",
+        "status": "passed",
+        "seconds": 1.8853736210148782
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_lazy_modules_failure_cache_scope_and_panic",
+        "stage": 3,
+        "case": "test_lazy_modules_failure_cache_scope_and_panic",
+        "status": "passed",
+        "seconds": 2.184189419989707
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_native_frontend_runs_in_empty_directory_without_python_or_project",
+        "stage": 3,
+        "case": "test_native_frontend_runs_in_empty_directory_without_python_or_project",
+        "status": "passed",
+        "seconds": 0.11281087298993953
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_numeric_precision_truth_unicode_and_containers",
+        "stage": 3,
+        "case": "test_numeric_precision_truth_unicode_and_containers",
+        "status": "passed",
+        "seconds": 2.59655484900577
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_objects_inheritance_and_shared_identity",
+        "stage": 3,
+        "case": "test_objects_inheritance_and_shared_identity",
+        "status": "passed",
+        "seconds": 2.620611780002946
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_ordinary_errors_are_not_rescued_and_preserve_origin",
+        "stage": 3,
+        "case": "test_ordinary_errors_are_not_rescued_and_preserve_origin",
+        "status": "passed",
+        "seconds": 5.363174336991506
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_array",
+        "stage": 3,
+        "case": "test_practical_array",
+        "status": "passed",
+        "seconds": 2.9339041259954683
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_cyclic",
+        "stage": 3,
+        "case": "test_practical_cyclic",
+        "status": "passed",
+        "seconds": 2.977973850007402
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_equality",
+        "stage": 3,
+        "case": "test_practical_equality",
+        "status": "passed",
+        "seconds": 2.9748630370013416
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_fixed",
+        "stage": 3,
+        "case": "test_practical_fixed",
+        "status": "passed",
+        "seconds": 3.1446472230018117
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_math",
+        "stage": 3,
+        "case": "test_practical_math",
+        "status": "passed",
+        "seconds": 3.346329941006843
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_negative_zero",
+        "stage": 3,
+        "case": "test_practical_negative_zero",
+        "status": "passed",
+        "seconds": 3.0053520200017374
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_panic",
+        "stage": 3,
+        "case": "test_practical_panic",
+        "status": "passed",
+        "seconds": 3.0654874439933337
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_pcg_golden",
+        "stage": 3,
+        "case": "test_practical_pcg_golden",
+        "status": "passed",
+        "seconds": 2.9801285800058395
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_references",
+        "stage": 3,
+        "case": "test_practical_references",
+        "status": "passed",
+        "seconds": 2.9642298750113696
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_replace",
+        "stage": 3,
+        "case": "test_practical_replace",
+        "status": "passed",
+        "seconds": 2.932711612986168
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_rng_identity",
+        "stage": 3,
+        "case": "test_practical_rng_identity",
+        "status": "passed",
+        "seconds": 3.0140704560035374
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_shuffle",
+        "stage": 3,
+        "case": "test_practical_shuffle",
+        "status": "passed",
+        "seconds": 2.977160542999627
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_snapshot",
+        "stage": 3,
+        "case": "test_practical_snapshot",
+        "status": "passed",
+        "seconds": 2.9896483829943463
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_split",
+        "stage": 3,
+        "case": "test_practical_split",
+        "status": "passed",
+        "seconds": 2.939254967990564
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_practical_trim",
+        "stage": 3,
+        "case": "test_practical_trim",
+        "status": "passed",
+        "seconds": 2.8915482820011675
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_receiver_selection_precedes_argument_mutation",
+        "stage": 3,
+        "case": "test_receiver_selection_precedes_argument_mutation",
+        "status": "passed",
+        "seconds": 1.9658979320083745
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_relative_module_diamond_aliases_and_owner_scope",
+        "stage": 3,
+        "case": "test_relative_module_diamond_aliases_and_owner_scope",
+        "status": "passed",
+        "seconds": 2.454697993991431
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_root_and_imported_source_aliases_cannot_be_overwritten",
+        "stage": 3,
+        "case": "test_root_and_imported_source_aliases_cannot_be_overwritten",
+        "status": "passed",
+        "seconds": 0.17793543697916903
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_self_compilation_reaches_exact_native_frontend_fixed_point",
+        "stage": 3,
+        "case": "test_self_compilation_reaches_exact_native_frontend_fixed_point",
+        "status": "passed",
+        "seconds": 0.019207483011996374
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_short_circuit_procedures_loop_unwind_and_panic_order",
+        "stage": 3,
+        "case": "test_short_circuit_procedures_loop_unwind_and_panic_order",
+        "status": "passed",
+        "seconds": 2.0319724550063256
+      },
+      {
+        "id": "_ru_bootstrap_acceptance.BootstrapTests.test_source_errors_and_llvm_failure_preserve_previous_artifacts",
+        "stage": 3,
+        "case": "test_source_errors_and_llvm_failure_preserve_previous_artifacts",
+        "status": "passed",
+        "seconds": 1.711812876019394
+      }
+    ]
+  },
+  "input_sha256": {
+    "bootstrap/compiler.ru": "5306d19826b62a4dd228f5cd5a660b7e343ec6d174e129ab351e575d8dad74c4",
+    "bootstrap/validation/practical.json": "8baa2d0f03e48f13b6534308dabad83775c5a80d6fc7649ed14428dd7baa7f21",
+    "rulang/__init__.py": "7b63cfa4bbaff40460a15db91cd38f4b5bb2fe71fe045089c7a7aaffaaa837ec",
+    "rulang/__main__.py": "79ee6f134c5c5193377cf9b189cbdcc3e2095e49ba9cec310114441c15a917c4",
+    "rulang/browser_compiler.py": "90dd82e50069a0a387da922b8cfd8df73537cd09876c41129705a0d9efeb6f57",
+    "rulang/c_runtime.py": "b98c4f53caf1ebf04f1b1a7e1b39df4addd651bd018ed8e51d9f95714b6a067d",
+    "rulang/cli.py": "6bc21a21244b47b0332d2759658ce3e44f000dcde0e739cde34ea6041033368d",
+    "rulang/compiler.py": "145ffdc8fa4256cfbb716c840a47dc1a753fe14f68cdd2a2467dc23229c9acde",
+    "rulang/contest_runtime.h": "780b65bfa634f1a03d6630bac0d854f792006dbc249929de262fb31b11700889",
+    "rulang/contest_runtime.py": "d6e05a04d735ce81be8d4039985bd458d49e82b52a16056fb8f835908505f2c9",
+    "rulang/diagnostics.py": "418f087f0003510739e64eecfe9b0885f05cb8a02eb810be1796b792af393a73",
+    "rulang/frontend.py": "eebc2325e3bd36e126664a4db6ba74642f029bd847c968a49845f698946c3e9a",
+    "rulang/generation.py": "054c7e312a6f133bc09ec67a4c3611ce39d7d0c950a20662cdb24138372d7c65",
+    "rulang/generation_trace.py": "287790991e3b55701025f1fe060d349aedf9a65fb5eff94da5ce03e3552035bd",
+    "rulang/graphics_runtime.py": "69b5541540ba4b881086714398d0de3a553d61003e7cc3d2688931d8a28bbc40",
+    "rulang/interpreter.py": "945e94a10dcad513381cca36b59bdb21d52d579d15749aa4e8685be9e55018ec",
+    "rulang/interpreter_frames.h": "d2d2e2d3fd9929139c6b959bae7f59772a4c5b886ac28e1f2be89b098d4c0062",
+    "rulang/interpreter_host.h": "5f289e7a51faf45a9b563cb65168caeac5d80825cc93430e58a95ade6663745b",
+    "rulang/interpreter_host.py": "ebb44494ec48cb7c0b0d08a5bf8c78aa44df9823bd6617a5aadfbc7a5506fdf3",
+    "rulang/io_runtime.h": "dce1243e6614bdf5bd639893cc1da2e2bed448ddcda83584a3275822ad5ab1f0",
+    "rulang/io_runtime.py": "208f36f98cdbdeadaad0fd12b775301ffba4b56a18ce2401121af031dd044ec0",
+    "rulang/js_compiler.py": "67d71e021418910a19a3211523d45ebc086558924e8986a6642c166d0648b1b6",
+    "rulang/llvm_compiler.py": "b2d55ddf83913eb93a2f2f33ca819b9c42ebdc9a15c08ec8b82cc6870d1c568c",
+    "rulang/llvm_runtime.h": "bf14b43aaee63e2bf5c2b854c366acbbd231ab1b1357a4c3f7dbe1dbf348222d",
+    "rulang/llvm_toolchain.py": "63972ae7efe9fd1c78ccd4493e47ef45a6e58959a9b06596f72224654fecffa4",
+    "rulang/modules.py": "ffef254c938d86a1836097b5393aeebc3f2d392b83c3b34409e9cc3ad9ffd9fa",
+    "rulang/native_c.py": "312ef1f558ee780aa1464db20de88ab863afbaf870ec7ba0a19421228f639e6d",
+    "rulang/native_c_runtime.py": "4a41d1e22de75566ade2b31602d1250c1ee476674a4e53d89e48a3c734ae7f73",
+    "rulang/native_platform_win64.h": "99d065cf90b233b8e510d7b99be5c054284e0ecdb7913e5625f742d87f176a7d",
+    "rulang/native_runtime.h": "1d20982db46d169952f3741d14646a1366739cd975b143d43edac5a64053af37",
+    "rulang/native_runtime.py": "e816b8bbb1be446c861055a525c96db242eb2c582142cf6eef88039d4ef58813",
+    "rulang/native_types.h": "be17a8b043a9d79552e25467f4631f5b7d5c3f7e49bcee1a1f024b5e2a9ae07b",
+    "rulang/package_registry.py": "138c86a32aeddb82b453ce2e6468bb12aa3b85cad149aef48b5473615354fc44",
+    "rulang/package_sources.py": "576adcb95ab267e863a8d376e04ea36c47174edc0816d7f48165b1879ec56510",
+    "rulang/packages.py": "d0ed091cad8d0fe0a03200ca4b447ca2507ede0bc8038e68cb576103bc3401af",
+    "rulang/practical_runtime.h": "cbc94456fe7ecb24876fa51f364e5860bc55fbd9631a82d0f44a712205a50ca6",
+    "rulang/practical_runtime.py": "dcaa7cc23c6fcacad83c151f9927763218c00ab9dea837145572cb72c829b70a",
+    "rulang/prompts.py": "2f75a96db8e99d83d302d2ac187e17f05a56147199efdc6c1f042e15b9b0859b",
+    "rulang/runtime.h": "0f262dc72cdb3798af6303bb36c6c2f8723e6cbd2782bd43cb64ab09769fee82",
+    "rulang/source_paths.py": "16cafcda6b876fcd678ee7bf68d6c0571dea6d73f677dc3c9968a526179a28d6",
+    "rulang/stdlib/如竞.ru": "9f00d06b16c1726ad86191487500fef2f0149bee1ef89ea4e000b48dae50159f",
+    "rulang/stdlib/如观.ru": "525fbb61f278bc5344f54944a98427bfd206f984b160c076a0fda923d761e935",
+    "rulang/stdlib/密.ru": "174a64c1c03499469ad825429db98577a314958cfb070d8c87bd03c4ca23700d",
+    "rulang/stdlib/数学.ru": "feeaf47b7cd3a83770146fc8de0b077f17cd84efac1a07949e6a4c058a92a12b",
+    "rulang/stdlib/文本.ru": "0219caa759fbc654f12da5eedf7ef91a09aef512fba00ca3b2dcafd7978f4dad",
+    "rulang/stdlib/随机.ru": "7f14bf1b958c794b6fe7de17514fc6150a0a5ee85162577305d58fcd5cde135a",
+    "rulang/stdlib_pruning.py": "962924db98f826120d469806a4cc624fec20bdc18f0baa0639283dd911b7ee28",
+    "rulang/thirdparty/如见/win32.ru": "2de4cc6ebc3c211ef0743839a7d98fe8941a3d25fc39ca436914a1edd5c8de43",
+    "rulang/thirdparty/如见/如见.ru": "0bd4513fd0fdba7e86384d40300bcee5fd51a8202290a1298d6e6d93d499d288",
+    "rulang/toolchain_environment.py": "55480f308e6239ce0020408e4df2c420cdcb515a687ed7b717196f23dc3c1696",
+    "tests/test_bootstrap.py": "3df6d1535820599541467264e83d4cb25f3380e2e0a75b97f9e5f5ab214dab5e",
+    "tools/bootstrap.py": "7c9486f914a2bfaaf880efc343783bb094ac730d583583f0fefc88912111ca67",
+    "tools/bootstrap_compare.py": "cf2803da4307b148b7afab961e0ecbbbbbeee3856067fdb16e088fa63ac26847",
+    "tools/bootstrap_verify.py": "4293f379a819d3557239eefc33a9fd46f95fd2d03f3cef6f2737a63d7f60aa19"
+  },
+  "artifact_sha256": {
+    "/mnt/s/bld/ru-toy/bin/bootstrap/linux/stage1": "b97667ef8cb063880320bde211cdf89586bc44607ac97aa02d23281e680f1ebf",
+    "/mnt/s/bld/ru-toy/bin/bootstrap/linux/stage2": "396df1fcead59d6f1d0666040b7ce40ed8513b30153f634858eb1816ca85256b",
+    "/mnt/s/bld/ru-toy/bin/bootstrap/linux/stage3": "396df1fcead59d6f1d0666040b7ce40ed8513b30153f634858eb1816ca85256b",
+    "/mnt/s/bld/ru-toy/bin/bootstrap/linux/stage2.ll": "a1d28016f723c69d097cbd0d36038714fd8343decab92e864427d9e3fe1eab27",
+    "/mnt/s/bld/ru-toy/bin/bootstrap/linux/stage3.ll": "7df288baff8ebe074eca39579046a07a37c2df991dbf00d6a2b34a62ffddda69",
+    "/mnt/s/bld/ru-toy/bin/bootstrap/linux/stage2.frontend.ll": "6497e137a2a1578006b9859f1ade6805889a210256bbb786449a78814b8ac25e",
+    "/mnt/s/bld/ru-toy/bin/bootstrap/linux/stage2.metadata.c": "208fb8d09191cdad6d7fb2bc47840cebe4d0aa02420d5a5a401c6381825aea2d",
+    "/mnt/s/bld/ru-toy/bin/bootstrap/linux/stage3.frontend.ll": "6497e137a2a1578006b9859f1ade6805889a210256bbb786449a78814b8ac25e",
+    "/mnt/s/bld/ru-toy/bin/bootstrap/linux/stage3.metadata.c": "208fb8d09191cdad6d7fb2bc47840cebe4d0aa02420d5a5a401c6381825aea2d"
+  }
+}

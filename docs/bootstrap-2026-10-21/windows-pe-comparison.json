@@ -1,0 +1,328 @@
+{
+  "date": "2026-10-21",
+  "scope": "Two currently retained Windows stage2/stage3 pairs; this inspects binaries without rebuilding or changing linker settings",
+  "method": "Read PE/COFF and debug-directory fields, verify with llvm-readobj-14, compare every byte; zero only the identified two four-byte timestamp fields in memory",
+  "pe_format_reference": "https://learn.microsoft.com/en-us/windows/win32/debug/pe-format",
+  "pairs": [
+    {
+      "directory": "bin/bootstrap/win32",
+      "files": [
+        "bin/bootstrap/win32/stage2.exe",
+        "bin/bootstrap/win32/stage3.exe"
+      ],
+      "size_bytes": 1423872,
+      "sha256": [
+        "d9efe4ea0022b2ac0c2ceee979e287d09646857c976b227ba7eb5ab3ee528fc8",
+        "00a9827992506d4d53e97c0f94b591d7282baad233f6f6063fbc76e7696f01b9"
+      ],
+      "different_bytes": 2,
+      "different_offsets": [
+        "0x100",
+        "0x151734"
+      ],
+      "timestamp_fields": [
+        {
+          "field": "IMAGE_FILE_HEADER.TimeDateStamp",
+          "offset": 256,
+          "offset_hex": "0x100",
+          "size": 4,
+          "values": [
+            1792585728,
+            1792585743
+          ],
+          "hex_values": [
+            "0x6ad8b000",
+            "0x6ad8b00f"
+          ],
+          "utc": [
+            "2026-10-21T12:28:48+00:00",
+            "2026-10-21T12:29:03+00:00"
+          ],
+          "asia_shanghai": [
+            "2026-10-21T20:28:48+08:00",
+            "2026-10-21T20:29:03+08:00"
+          ]
+        },
+        {
+          "field": "IMAGE_DEBUG_DIRECTORY[0].TimeDateStamp",
+          "debug_type": 13,
+          "offset": 1382196,
+          "offset_hex": "0x151734",
+          "size": 4,
+          "values": [
+            1792585728,
+            1792585743
+          ],
+          "hex_values": [
+            "0x6ad8b000",
+            "0x6ad8b00f"
+          ],
+          "utc": [
+            "2026-10-21T12:28:48+00:00",
+            "2026-10-21T12:29:03+00:00"
+          ],
+          "asia_shanghai": [
+            "2026-10-21T20:28:48+08:00",
+            "2026-10-21T20:29:03+08:00"
+          ]
+        }
+      ],
+      "sections": [
+        {
+          "name": ".text",
+          "rva": 4096,
+          "virtual_size": 1279200,
+          "raw_offset": 1024,
+          "raw_size": 1279488,
+          "equal": true,
+          "different_bytes": 0,
+          "sha256": [
+            "5ba4128d341cb5ce1f3b45f3cd5fad4b10653beee78d3c7bf2a04b1aed54de71",
+            "5ba4128d341cb5ce1f3b45f3cd5fad4b10653beee78d3c7bf2a04b1aed54de71"
+          ]
+        },
+        {
+          "name": ".rdata",
+          "rva": 1286144,
+          "virtual_size": 116776,
+          "raw_offset": 1280512,
+          "raw_size": 117248,
+          "equal": false,
+          "different_bytes": 1,
+          "sha256": [
+            "498a43daa3038f8219f28745579e93bfe0e61db5ea5fd93c731753e87884dbb0",
+            "4c1591dd35eec88d3998122e6fac3f2da353c6b3783cccc52e30cd030f3d6697"
+          ]
+        },
+        {
+          "name": ".data",
+          "rva": 1404928,
+          "virtual_size": 16936,
+          "raw_offset": 1397760,
+          "raw_size": 12288,
+          "equal": true,
+          "different_bytes": 0,
+          "sha256": [
+            "a60294cb168d5361b711788e5e01f0cea6fa73cc62993a6eaac864b69cfcf116",
+            "a60294cb168d5361b711788e5e01f0cea6fa73cc62993a6eaac864b69cfcf116"
+          ]
+        },
+        {
+          "name": ".pdata",
+          "rva": 1425408,
+          "virtual_size": 9048,
+          "raw_offset": 1410048,
+          "raw_size": 9216,
+          "equal": true,
+          "different_bytes": 0,
+          "sha256": [
+            "f1ee400f470225b969a36816f12ca608b821c327071d8b324f3f0ddf90045e99",
+            "f1ee400f470225b969a36816f12ca608b821c327071d8b324f3f0ddf90045e99"
+          ]
+        },
+        {
+          "name": ".fptable",
+          "rva": 1437696,
+          "virtual_size": 256,
+          "raw_offset": 1419264,
+          "raw_size": 512,
+          "equal": true,
+          "different_bytes": 0,
+          "sha256": [
+            "076a27c79e5ace2a3d47f9dd2e83e4ff6ea8872b3c2218f66c92b89b55f36560",
+            "076a27c79e5ace2a3d47f9dd2e83e4ff6ea8872b3c2218f66c92b89b55f36560"
+          ]
+        },
+        {
+          "name": ".reloc",
+          "rva": 1441792,
+          "virtual_size": 3744,
+          "raw_offset": 1419776,
+          "raw_size": 4096,
+          "equal": true,
+          "different_bytes": 0,
+          "sha256": [
+            "6fca4afa8e5826e86f60d04ca820e28c24df52cc886981192952105942a1bef0",
+            "6fca4afa8e5826e86f60d04ca820e28c24df52cc886981192952105942a1bef0"
+          ]
+        }
+      ],
+      "timestamp_normalized_equal": true,
+      "timestamp_normalized_sha256": "54505b41982b85f5e0e3a380c09a98ecf55bd82c20c753b87cba69ab0a1fd91e",
+      "normalized_fields_only_in_memory": true,
+      "original_binaries_modified": false,
+      "source_ir_equal": true,
+      "abi_metadata_equal": true,
+      "linked_ir_differences": [
+        "--- stage2.ll\n",
+        "+++ stage3.ll\n",
+        "@@ -1,4 +1,4 @@\n",
+        "-; ModuleID = 'S:\\bld\\ru-toy\\bin\\bootstrap\\win32\\.ru-bootstrap-mfd0ylq7\\optimized.bc'",
+        "+; ModuleID = 'S:\\bld\\ru-toy\\bin\\bootstrap\\win32\\.ru-bootstrap-3b7qpbhe\\optimized.bc'",
+        " source_filename = \"llvm-link\"",
+        " target datalayout = \"e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128\"",
+        " target triple = \"x86_64-pc-windows-msvc19.44.35211\""
+      ]
+    },
+    {
+      "directory": "bin/bootstrap/git-bash-verify",
+      "files": [
+        "bin/bootstrap/git-bash-verify/stage2.exe",
+        "bin/bootstrap/git-bash-verify/stage3.exe"
+      ],
+      "size_bytes": 1424384,
+      "sha256": [
+        "8713c7314788410734fc0fce3a7b6253f22b5edd7421fb2a8ae21ab162ad6270",
+        "5782563481a1fb987c920ff037966d6c571ca9601ddae0c9f0984770be7f9b60"
+      ],
+      "different_bytes": 2,
+      "different_offsets": [
+        "0x100",
+        "0x151824"
+      ],
+      "timestamp_fields": [
+        {
+          "field": "IMAGE_FILE_HEADER.TimeDateStamp",
+          "offset": 256,
+          "offset_hex": "0x100",
+          "size": 4,
+          "values": [
+            1792585425,
+            1792585441
+          ],
+          "hex_values": [
+            "0x6ad8aed1",
+            "0x6ad8aee1"
+          ],
+          "utc": [
+            "2026-10-21T12:23:45+00:00",
+            "2026-10-21T12:24:01+00:00"
+          ],
+          "asia_shanghai": [
+            "2026-10-21T20:23:45+08:00",
+            "2026-10-21T20:24:01+08:00"
+          ]
+        },
+        {
+          "field": "IMAGE_DEBUG_DIRECTORY[0].TimeDateStamp",
+          "debug_type": 13,
+          "offset": 1382436,
+          "offset_hex": "0x151824",
+          "size": 4,
+          "values": [
+            1792585425,
+            1792585441
+          ],
+          "hex_values": [
+            "0x6ad8aed1",
+            "0x6ad8aee1"
+          ],
+          "utc": [
+            "2026-10-21T12:23:45+00:00",
+            "2026-10-21T12:24:01+00:00"
+          ],
+          "asia_shanghai": [
+            "2026-10-21T20:23:45+08:00",
+            "2026-10-21T20:24:01+08:00"
+          ]
+        }
+      ],
+      "sections": [
+        {
+          "name": ".text",
+          "rva": 4096,
+          "virtual_size": 1279632,
+          "raw_offset": 1024,
+          "raw_size": 1280000,
+          "equal": true,
+          "different_bytes": 0,
+          "sha256": [
+            "55428a6540dc04654bc0e79f0f76ad425d3ff558bd2e1ab3735d19bd4847f0c6",
+            "55428a6540dc04654bc0e79f0f76ad425d3ff558bd2e1ab3735d19bd4847f0c6"
+          ]
+        },
+        {
+          "name": ".rdata",
+          "rva": 1286144,
+          "virtual_size": 116870,
+          "raw_offset": 1281024,
+          "raw_size": 117248,
+          "equal": false,
+          "different_bytes": 1,
+          "sha256": [
+            "7740274a3d0ae8188467ebf295f7260b7d79318c874d589a5d97aeb6d6e2c44a",
+            "2f6424179245338ddedcb3b11b888b3d781295c6b6f6aee4f6f2322484945f02"
+          ]
+        },
+        {
+          "name": ".data",
+          "rva": 1404928,
+          "virtual_size": 15472,
+          "raw_offset": 1398272,
+          "raw_size": 12288,
+          "equal": true,
+          "different_bytes": 0,
+          "sha256": [
+            "1593e8eeefcfdd306a11285b95e1bbf41f7680aebc44fbfaab8d3181a1b152b5",
+            "1593e8eeefcfdd306a11285b95e1bbf41f7680aebc44fbfaab8d3181a1b152b5"
+          ]
+        },
+        {
+          "name": ".pdata",
+          "rva": 1421312,
+          "virtual_size": 9192,
+          "raw_offset": 1410560,
+          "raw_size": 9216,
+          "equal": true,
+          "different_bytes": 0,
+          "sha256": [
+            "e08b0bf7efabf14f9468046b18c4d2f1b6ceedc2533d525bc642febebec2ad2d",
+            "e08b0bf7efabf14f9468046b18c4d2f1b6ceedc2533d525bc642febebec2ad2d"
+          ]
+        },
+        {
+          "name": ".fptable",
+          "rva": 1433600,
+          "virtual_size": 256,
+          "raw_offset": 1419776,
+          "raw_size": 512,
+          "equal": true,
+          "different_bytes": 0,
+          "sha256": [
+            "076a27c79e5ace2a3d47f9dd2e83e4ff6ea8872b3c2218f66c92b89b55f36560",
+            "076a27c79e5ace2a3d47f9dd2e83e4ff6ea8872b3c2218f66c92b89b55f36560"
+          ]
+        },
+        {
+          "name": ".reloc",
+          "rva": 1437696,
+          "virtual_size": 3732,
+          "raw_offset": 1420288,
+          "raw_size": 4096,
+          "equal": true,
+          "different_bytes": 0,
+          "sha256": [
+            "3cce60bde94a0425fa89bc4833e853a4eb12ee9e5bb6244c2e12a0dec0b19e90",
+            "3cce60bde94a0425fa89bc4833e853a4eb12ee9e5bb6244c2e12a0dec0b19e90"
+          ]
+        }
+      ],
+      "timestamp_normalized_equal": true,
+      "timestamp_normalized_sha256": "fe6228eeed63d87a750adc876d58dc33950ea8ce488fd3cf49477fcc8e2455bd",
+      "normalized_fields_only_in_memory": true,
+      "original_binaries_modified": false,
+      "source_ir_equal": true,
+      "abi_metadata_equal": true,
+      "linked_ir_differences": [
+        "--- stage2.ll\n",
+        "+++ stage3.ll\n",
+        "@@ -1,4 +1,4 @@\n",
+        "-; ModuleID = 'S:\\bld\\ru-toy\\bin\\bootstrap\\git-bash-verify\\.ru-bootstrap-ehv8njd7\\optimized.bc'",
+        "+; ModuleID = 'S:\\bld\\ru-toy\\bin\\bootstrap\\git-bash-verify\\.ru-bootstrap-of0k66e9\\optimized.bc'",
+        " source_filename = \"llvm-link\"",
+        " target datalayout = \"e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128\"",
+        " target triple = \"x86_64-pc-windows-msvc19.51.36260\""
+      ]
+    }
+  ]
+}

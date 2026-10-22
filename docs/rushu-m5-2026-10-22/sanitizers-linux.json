@@ -1,0 +1,26 @@
+{
+  "source_ir_sha256": "dfd58bd8adf0e54a85516ab0f54d1a195a0f4b14ae144fd7393235638d1f863f",
+  "metadata_sha256": "f303c33f37471f37c9d8795156dafbaeb07d4eb99cebbc95c233e55505809fc6",
+  "binary_sha256": "ce336a36c314bbc0ff6d7377289d45a8110b01ef35474e2e3fe61a8bc2d83de1",
+  "frontend_seconds": 16.502002622000873,
+  "seconds": 33.64429175600526,
+  "graphics_statuses": [
+    "ok"
+  ],
+  "statuses": [
+    "ok",
+    "error",
+    "ok",
+    "error",
+    "ok",
+    "ok",
+    "ok"
+  ],
+  "stdout": "[<循环>]\n[<循环>]\n[<循环>]\n[<循环>]\n[<循环>]\n[<循环>]\n[<循环>]\n[<循环>]\n2\n[<循环>]\n问：输入😀\n42\n42\n",
+  "stderr": "RU_GC live=0 freed=27072 collections=27072\n",
+  "exit": 0,
+  "asan": true,
+  "ubsan": true,
+  "lsan": true,
+  "gc_threshold": 1
+}

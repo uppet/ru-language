@@ -197,6 +197,9 @@ class MiSourcePlan:
             self.functions[id(fn)] = record; self.records.append(record)
 
     def compute_source(self, target):
+        if target == 'llvm':
+            from .mi_llvm import lower as lower_llvm
+            return '\n\n'.join(lower_llvm(r['ir'], r['symbol']) for r in self.records) + '\n'
         if target not in ('c', 'js'):
             raise ValueError('未知密后端')
         header = C_HEADER if target == 'c' else "'use strict';\nconst [RU_MI_OK, RU_MI_BOUNDS, RU_MI_OVERFLOW] = [0,1,2];\n"
@@ -204,8 +207,12 @@ class MiSourcePlan:
         if target == 'js': result += '\nmodule.exports = {' + ', '.join(r['symbol'] for r in self.records) + '};\n'
         return result
 
-    def bridge_source(self):
-        source = self.compute_source('c')
+    def bridge_source(self, target='c'):
+        if target == 'llvm':
+            from .mi_llvm import c_adapter
+            source = C_HEADER + '\n'.join(c_adapter(r['ir'], r['symbol']) for r in self.records)
+        else:
+            source = self.compute_source('c')
         source += '''
 static uint32_t ru_mi_scalar(Val value, uint32_t limit, int line)
 {
