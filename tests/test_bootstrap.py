@@ -120,6 +120,49 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual((result.returncode,result.stdout),(0,'1\n2\n720\n1\n2\n1\n[2, 4, 6]\n9\n'),result.stderr)
         self.assertIn('live=0',result.stderr)
 
+    def test_elif_lazy_conditions_shared_scope_and_legacy_nesting(self):
+        self.build("""
+算 问 号 答: 显 号. 得 答. 法.
+值 取 0.
+若 问 1 假 则 值 取 99.
+另若 问 2 真 则 值 取 7.
+另若 1/0 则 值 取 98.
+另 值 取 97. 然. 显 值.
+若 假 则 另 若 假 则 另若 真 则 显 3. 然. 显 4. 然.
+算 求 甲: 若 甲 == 1 则 得 1. 另若 甲 == 2 则 得 2. 另 得 3. 然. 法.
+作 停: 若 假 则 另若 真 则 完. 然. 显 99. 为. 停.
+循 3 次 若 假 则 另若 真 则 破. 然. 显 98. 环.
+试: 若 假 则 另若 真 则 卒 '因'. 然. 救 原因: 显 原因. 终.
+显 求 2. 若 假 则 另若 0 则 显 '真值'. 然.
+另若值 取 8. 显 另若值.
+""")
+        result = self.run_program(stress=True)
+        self.assertEqual((result.returncode,result.stdout),
+                         (0,'1\n2\n7\n3\n4\n因\n2\n真值\n8\n'),result.stderr)
+        self.assertIn('live=0',result.stderr)
+
+    def test_elif_chain_and_explicit_nesting_share_structure_budget(self):
+        program, metadata, sources = (self.root/name for name in ('frontend.ll','metadata.c','sources.json'))
+        for count in (1, 30, 90, 126, 127, 128, 129, 1000):
+            accepted=[]
+            for source in ('若 假 则 '+'另若 假 则 '*(count-1)+'另 显 7. 然.',
+                           '若 假 则 另 '*count+'显 7. '+'然. '*count):
+                self.source.write_text(source,encoding='utf-8')
+                result=subprocess.run([str(self.compiler),str(self.source),str(program),str(metadata),
+                                       TOOLCHAIN.triple,TOOLCHAIN.data_layout,str(self.root),str(sources)],
+                                      capture_output=True,text=True,encoding='utf-8',timeout=30)
+                accepted.append(result.returncode==0)
+                if result.returncode:
+                    # Existing native host-call limits may be reached before
+                    # the source structure ceiling; neither spelling may crash.
+                    self.assertTrue(any(message in result.stderr for message in
+                                        ('嵌套过深','函数调用深度超过')),(count,result.stderr))
+            self.assertEqual(accepted[0],accepted[1],count)
+            if count <= 30:
+                self.assertEqual(accepted,[True,True],count)
+            if count >= 128:
+                self.assertEqual(accepted,[False,False],count)
+
     def test_objects_inheritance_and_shared_identity(self):
         self.build("""
 形 基础:
@@ -200,6 +243,10 @@ class BootstrapTests(unittest.TestCase):
         self.binary.write_bytes(b'previous executable')
         self.ir.write_bytes(b'previous IR')
         for source in ('显 .', '若 假 则 未知 1. 然.', "若 假 则 模 取 外言 '如:密'. 然.",
+                       '另若 真 则 然.', '若 假 则 另 另若 真 则 然.',
+                       '若 假 则 另若 则 然.', '若 假 则 另若 真 显 1. 然.',
+                       '若 假 则 另若 真 则 然. 然.',
+                       '另若 取 1.', '算 甲 另若: 得 1. 法.', '形 盒: 另若 为 数. 象.',
                        '显 1e999.', '显 1.7976931348623159e308.', '显 其.', '作 错: 得 1. 为.',
                        '若 假 则 算 错: 得 1. 法. 然.', '段: 形 错: 象. 落.',
                        '形 错: 值 为 数. 值 为 数. 象.',

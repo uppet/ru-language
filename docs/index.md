@@ -4,11 +4,15 @@
 
 **[首页的小程序](../README.md) → [打开如书](stable-entry.md#取得同一套工具链) → [入门小路](first-steps.md) → 选一个小作品。**
 
-本目录面向如 0.23.0／如书 0.8.9 的 `main` 整合版本，包含包与具名模块、Windows x64 C 原生后端。使用接口前先核对[版本与执行目标](stable-entry.md)。
+本分支的基础文档包含包与具名模块、Windows x64 C 原生后端。使用接口前先核对[版本与执行目标](stable-entry.md)及下述工作线差异。
 
-本版包含 `另若` 条件链支持；功能分支合入前请以实际 `main` 的版本为准。当前[语言规范](../rulang/language-spec.md)描述本版，历史验收报告仍保留各自版本。
+本 `bs` 工作线已 rebase 到上游 `wip` 的 `ae1a994`，保留如 0.23.0 的 `另若` 条件链及编辑器更新，并同步如言自举前端和原生解释内核；[整合与复验记录](bs-wip-rebase-2026-10-22.md)单独保存。上游如书为 0.8.9，本工作线为 0.9.0 实验版。早期原生回调性能修复的[设计与验收范围](native-transient-roots-design.md)仍单独保留。
 
-`bs` 的 0.23.0 实验工作线提供 [LLVM AOT](llvm-aot.md) 和[自编译链](bootstrap.md)：直接 LLVM IR、独立原生产物与首批 Dart AOT 对照测量；[M4 固定点与逐代回归](bootstrap-m4-validation.md) 已在 Windows／WSL 验收，可用 `python3 tools/bootstrap.py verify` 重跑。独立如言前端仍有明确的语言范围，尚未接入如书编译内核。
+`bs` 的 0.23.0 实验工作线提供 [LLVM AOT](llvm-aot.md) 和[自编译链](bootstrap.md)：直接 LLVM IR、独立原生产物与首批 Dart AOT 对照测量；[M4 固定点与逐代回归](bootstrap-m4-validation.md) 已在 Windows／WSL 验收，可用 `python3 tools/bootstrap.py verify` 重跑。如书 0.9.0 新增可选的[如言原生解释内核与如观](rushu-native-interpreter.md)，代码格仍解释执行；原生前端完整覆盖、整个 HTTP 服务端自托管和 Dart 性能目标仍有后续工作。
+
+[M5 内核与如观验收](rushu-m5-validation.md)记录了两平台会话回归、真实浏览器、资源／回调清理与当前产物性能；默认 Python 与独立 JS Worker 路径继续保留。
+
+[如书去python计划](如书去python计划.md)列出 HTTP、系统接口、会话、AI 生成和浏览器 JS 编译的迁移顺序及无 Python 验收边界。
 
 ## 学习与小作品
 

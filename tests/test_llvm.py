@@ -18,6 +18,7 @@ from rulang.llvm_compiler import LLVMCompiler
 from rulang.llvm_toolchain import LLVMToolchain, find_clang, tool_error
 from rulang.modules import load_module_graph
 from rulang.toolchain_environment import llvm_environment
+from test_elif import ElifContract
 
 ROOT = Path(__file__).resolve().parents[1]
 LLVM_CLANG = find_clang()
@@ -415,6 +416,11 @@ class LLVMExecutionTests(unittest.TestCase):
         self.assertEqual(result.returncode,0,result.stderr)
         self.assertEqual(result.stdout,'恢复\n'*100+'102\n')
         self.assertIn('live=0',result.stderr)
+
+
+@unittest.skipUnless(HAS_LLVM, 'LLVM 14 toolchain required')
+class LLVMElifTests(ElifContract, unittest.TestCase):
+    backend = 'llvm'
 
 
 if __name__ == '__main__':

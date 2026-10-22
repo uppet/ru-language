@@ -29,7 +29,8 @@ def digest(data):
     return hashlib.sha256(data).hexdigest()
 
 
-def compile_native(compiler, source, output, toolchain, *, emit_llvm=None, keep_frontend=False):
+def compile_native(compiler, source, output, toolchain, *, emit_llvm=None, keep_frontend=False,
+                   interpreter_host=False):
     """No Python source parser, AST, module loader or code generator is called."""
     compiler, source, output = (Path(path).resolve() for path in (compiler, source, output))
     destinations = [output]
@@ -54,8 +55,18 @@ def compile_native(compiler, source, output, toolchain, *, emit_llvm=None, keep_
         if any(path in dependencies for path in destinations):
             raise ValueError('output path cannot overwrite an imported source')
         ir, descriptors = program.read_text(encoding='utf-8'), metadata.read_text(encoding='utf-8')
-        runtime = ('#define RU_ENABLE_MODULO 1\n'+runtime_source({}, '', full=True)+'\n'+
-                   (ROOT/'rulang/llvm_runtime.h').read_text(encoding='utf-8')+'\n'+descriptors)
+        runtime = runtime_source({}, '', full=True)+'\n'+(ROOT/'rulang/llvm_runtime.h').read_text(encoding='utf-8')
+        if interpreter_host:
+            from rulang.interpreter_host import integrate_host
+            runtime = integrate_host(runtime)
+            if sys.platform == 'win32':
+                # The interpreter has several native host frames per guest
+                # frame. Reserve stack for its checked, recoverable depth bound;
+                # keep the caller's toolchain and ordinary AOT defaults intact.
+                from copy import copy
+                toolchain = copy(toolchain)
+                toolchain.link_flags = [*toolchain.link_flags, '-Xlinker', '/STACK:16777216']
+        runtime = '#define RU_ENABLE_MODULO 1\n'+runtime+'\n'+descriptors
         executable, standalone = toolchain.compile(ir, runtime, stage)
         evidence = {'source_ir_sha256': digest(ir.encode()), 'metadata_sha256': digest(descriptors.encode()),
                     'binary_sha256': digest(executable.read_bytes()), 'frontend_seconds': frontend_finished-started,

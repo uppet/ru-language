@@ -1,0 +1,30 @@
+{
+  "binary_sha256": "ce336a36c314bbc0ff6d7377289d45a8110b01ef35474e2e3fe61a8bc2d83de1",
+  "exit": 0,
+  "graphics_statuses": [
+    "error",
+    "error"
+  ],
+  "done_statuses": [
+    "ok",
+    "ok",
+    "ok",
+    "ok",
+    "error",
+    "ok",
+    "error",
+    "ok"
+  ],
+  "error_messages": [
+    "未定义名称：未定义",
+    "如观事件须为有效 UTF-8，且不能含 NUL",
+    "宽须为范围内整数",
+    "宽须为范围内整数"
+  ],
+  "stdout": "42\n42\n42\n42\n",
+  "stderr": "RU_GC live=0 freed=16068 collections=16068\n",
+  "asan": true,
+  "ubsan": true,
+  "lsan": true,
+  "gc_threshold": 1
+}

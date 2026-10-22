@@ -1,0 +1,71 @@
+{
+  "schema": 1,
+  "date": "2026-10-22",
+  "branch": "bs",
+  "base_commit": "0a200bd85e84d2f907163c07fb3a1b86cc068855",
+  "uncommitted_source": true,
+  "upstream_fetched": "ae1a9947e1b1b1785499967fea93c7e3ca09b37b",
+  "upstream_integrated": false,
+  "ru": "0.23.0",
+  "rushu": "0.9.0",
+  "linux": {
+    "python": "3.10.12 (main, Mar  3 2026, 11:56:32) [GCC 11.4.0]",
+    "system": "Linux-6.18.40.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+    "llvm": "Ubuntu clang version 14.0.0-1ubuntu1.1"
+  },
+  "windows": {
+    "python": "3.12.4",
+    "llvm": "14.0.6",
+    "shell": "Windows Git Bash",
+    "browser": "155.0.8059.80"
+  },
+  "source_files": 283,
+  "binaries": {
+    "bin/rushu/native-kernel": "d89480b7d0b8caadbc3383ca3d0617bdc0680163823d4cf0d7085d9be0541aed",
+    "bin/rushu/native-kernel.exe": "1bd38535e87099b60400c05f6c5f096ba40ca8b4b04ca9211f799ce35d2b6b7c"
+  },
+  "verification": {
+    "linux_notebook_suite": {
+      "tests": 148,
+      "seconds": 136.299,
+      "passed": 148,
+      "failed": 0,
+      "skipped": 0
+    },
+    "windows_native_suite": {
+      "tests": 39,
+      "seconds": 40.154,
+      "passed": 39,
+      "failed": 0,
+      "skipped": 0
+    },
+    "linux_frame_contract": {
+      "tests": 1,
+      "seconds": 1.823,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "windows_frame_contract": {
+      "tests": 1,
+      "seconds": 1.962,
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    }
+  },
+  "browser": {
+    "scenarios": 6,
+    "execution_requests": 10,
+    "page_errors": 0,
+    "model_requests": 0
+  },
+  "limitations": [
+    "Python HTTP and process host retained",
+    "Graphics/callback bridge not implemented",
+    "Named modules/packages/locks and native DLLs not implemented",
+    "Shape map keys not implemented",
+    "No Dart AOT performance parity",
+    "No remote CI execution in this local record"
+  ]
+}

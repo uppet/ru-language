@@ -14,7 +14,7 @@ class StableEntryDocsTests(unittest.TestCase):
     def test_current_entry_versions_match_packages(self):
         entry = (ROOT / 'docs/stable-entry.md').read_text(encoding='utf-8')
         changelog = (ROOT / 'CHANGELOG.md').read_text(encoding='utf-8')
-        release_pattern = r'(\d+\.\d+\.\d+)／如书(?:保持 )?(\d+\.\d+\.\d+)'
+        release_pattern = r'(\d+\.\d+\.\d+)／如书(?:保持)?\s*(\d+\.\d+\.\d+)'
         stable = re.findall(r'^# ' + release_pattern + r'（main 稳定版）$',
                             changelog, re.MULTILINE)
         self.assertEqual(len(stable), 1, 'exactly one release must identify current main')

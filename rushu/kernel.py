@@ -406,7 +406,8 @@ class Session:
     Lock serializes requests and event ingestion. Generation checks prevent late
     events from an interrupted process contaminating its replacement.
     """
-    def __init__(self):
+    def __init__(self, native_kernel=None):
+        self.native_kernel = native_kernel
         self.id = secrets.token_hex(16)
         self.lock = threading.RLock()
         self.events = deque()
@@ -433,6 +434,16 @@ class Session:
         self._start()
 
     def _start(self):
+        if self.native_kernel is not None:
+            from .native_kernel import NativeConnection, NativeProcess
+            process = NativeProcess(self.native_kernel)
+            parent = NativeConnection(process)
+            self.connection, self.process = parent, process
+            self.collector = threading.Thread(target=self._collect,
+                args=(parent, None, self.generation),
+                name="rushu-events-" + self.id[:8], daemon=True)
+            self.collector.start()
+            return
         context = multiprocessing.get_context("spawn")
         parent, child = context.Pipe()
         process = context.Process(target=_worker, args=(child,), daemon=True,
@@ -567,11 +578,11 @@ class Session:
     def _collect(self, connection, sentinel, generation):
         try:
             while True:
-                ready = wait((connection, sentinel))
-                # Drain every already-ready event before reporting process exit.
-                # Never wait for pipe EOF after the process sentinel has fired.
-                if connection not in ready:
-                    break
+                if sentinel is not None:
+                    ready = wait((connection, sentinel))
+                    # Drain every already-ready event before reporting exit.
+                    if connection not in ready:
+                        break
                 event = connection.recv()
                 with self.lock:
                     if self.closed or generation != self.generation:
@@ -855,7 +866,8 @@ class Session:
 
 
 class SessionManager:
-    def __init__(self, limit=MAX_SESSIONS):
+    def __init__(self, limit=MAX_SESSIONS, native_kernel=None):
+        self.native_kernel = native_kernel
         self.sessions, self.lock, self.limit = {}, threading.RLock(), limit
         self.closed = False
 
@@ -865,7 +877,7 @@ class SessionManager:
                 raise KernelError("服务已关闭", 503)
             if len(self.sessions) >= self.limit:
                 raise KernelError("最多同时打开 16 个执行会话，请关闭不用的笔记本", 429)
-            session = Session()
+            session = Session(native_kernel=self.native_kernel)
             self.sessions[session.id] = session
             return session
 

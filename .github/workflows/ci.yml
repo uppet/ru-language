@@ -85,6 +85,10 @@ jobs:
           python -m unittest discover -s tests -p test_prepare_workspace.py -v
           python -m unittest discover -s tests -p test_llvm.py -v
           python tools/bootstrap.py verify
+      - name: Test the AOT-compiled Ru interpreter and notebook sessions
+        run: |
+          python -m unittest discover -s tests -p test_interpreter_host.py -v
+          python -m unittest discover -s tests -p test_rushu_native.py -v
       - name: Bootstrap from Windows Git Bash with POSIX search paths
         if: runner.os == 'Windows'
         shell: bash
@@ -97,6 +101,8 @@ jobs:
           python tools/bootstrap.py verify --directory bin/bootstrap/git-bash
           python tools/bootstrap.py build examples/hello.ru --compiler bin/bootstrap/git-bash/stage3.exe -o bin/hello-git-bash.exe
           ./bin/hello-git-bash.exe
+          python tools/build_rushu_kernel.py --compiler bin/bootstrap/git-bash/stage3.exe -o bin/rushu/git-bash-kernel.exe
+          ./bin/rushu/git-bash-kernel.exe examples/factorial.ru
   windows-console:
     runs-on: windows-latest
     timeout-minutes: 20

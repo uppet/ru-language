@@ -6,7 +6,7 @@
 
 以上组合适用于本提交已经合入 `main` 的情况；功能分支合入前，请以实际 `main` 的版本为准。本次新增 `另若` 条件链并同步编辑器，不代表已创建正式 release 或 tag。验证范围见[变更记录](../CHANGELOG.md)。
 
-`bs` 正在开发如／规范 0.23.0，增加 [LLVM AOT 实验目标](llvm-aot.md) 和[首次自编译链](bootstrap.md)，支持 LLVM 14／Linux 和 Windows x86-64；如书仍为 0.8.8。该工作线不改变 `main` 的稳定组合；独立如言前端尚未替换完整 Python 前端，也没有如书 AOT 内核或 Dart 性能达标声明。
+`bs` 正在开发如／规范 0.23.0，增加 [LLVM AOT 实验目标](llvm-aot.md) 和[自编译链](bootstrap.md)，支持 LLVM 14／Linux 和 Windows x86-64；如书 0.9.0 提供可选的[如言原生解释内核与如观](rushu-native-interpreter.md)。本工作线已整合上游 `另若`，但独立如言前端仍有明确范围，未替换完整 Python 前端；HTTP／构建驱动去 Python 见[计划](如书去python计划.md)，Dart 性能目标尚未达成。该工作线不改变 `main` 的稳定组合。
 
 需要已安装 Python 3.10+ 和 Git。仓库现已公开，可直接获取源码。全新安装：
 
