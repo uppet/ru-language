@@ -1,0 +1,14 @@
+{
+  "experimental": true,
+  "schema": 2,
+  "manifest_sha256": "495ab1ab02829cffa4c0eca47e1647e546603b59c496304fed7e75d8c27236df",
+  "source_count": 1,
+  "ordinary_bridge": "C NativeMemory synchronous readonly, explicit --experimental-mi-manifest",
+  "js_scope": "same IR compute semantics only, no NativeMemory or physical ABI promise",
+  "kernel_gc_allocations": 0,
+  "kernel_boxings": 0,
+  "kernel_input_copied_bytes": 0,
+  "boundary_allocations": "owner snapshot may allocate; ordinary adapters measured separately",
+  "ordinary_input_copy": "UTF8 adapter explicitly copies once per input block; never zero-copy",
+  "s1_acceptance": "not complete"
+}

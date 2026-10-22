@@ -42,6 +42,17 @@ jobs:
         run: git diff --exit-code -- experiments/mi_kernel/generated
       - name: C and JS oracle checks (Linux additionally requires UBSan)
         run: python experiments/mi_kernel/test_kernel.py
+      - name: Generate source-selected typed kernels (explicit internal manifest)
+        run: python experiments/mi_kernel/generate.py --manifest experiments/mi_source/manifest.json --entry experiments/mi_source/caller.ru
+      - name: Verify committed source-selected kernels
+        run: git diff --exit-code -- experiments/mi_source/generated
+      - name: Source AST, generic C/JS lowering, ordinary NativeMemory caller
+        run: python experiments/mi_source/test_source.py
+      - name: Source bridge UBSan (Linux only, test-only POSIX platform)
+        if: runner.os == 'Linux'
+        env:
+          MI_UBSAN: "1"
+        run: python experiments/mi_source/test_source.py
       - name: Real NativeMemory readonly bridge (native Windows or POSIX owner test adapter)
         run: python experiments/mi_borrow/test_bridge.py
       - name: Real NativeMemory bridge UBSan (Linux only)
@@ -70,3 +81,5 @@ jobs:
             experiments/mi_kernel/generated/
             experiments/mi_kernel/provenance.json
             experiments/mi_borrow/test-output/
+            experiments/mi_source/test-output/
+            experiments/mi_source/generated/

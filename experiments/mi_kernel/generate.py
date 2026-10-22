@@ -27,7 +27,7 @@ def signature(result, params):
     return normalized
 
 
-def validate(ir):
+def validate_legacy_fixture(ir):
     if set(ir) != {'version', 'params', 'locals', 'body', 'return'} or ir['version'] != 1:
         raise ValueError('实验 IR 版本／字段不支持')
     if ir['params'] != {'data': 'borrow_ro_u8', 'length': 'u32', 'seed': 'u32'}:
@@ -70,8 +70,8 @@ def validate(ir):
     return env
 
 
-def lower(ir, target):
-    env = validate(ir)
+def lower_legacy_fixture(ir, target):
+    env = validate_legacy_fixture(ir)
     names = {name: name for name in ir["params"]}
     names.update({name: f"local_{i}" for i, (name, _, _) in enumerate(ir["locals"])})
     count = names["count"]
@@ -129,7 +129,7 @@ static inline int mi_close(MiOwner *owner) {
 }
 static inline int mi_truth_u32(uint32_t value) { (void)value; return 1; }
 static MiResult mi_kernel(const uint8_t *data, uint32_t length, uint32_t seed) {
-'''+lower(ir,'c')+'''
+'''+lower_legacy_fixture(ir,'c')+'''
 }
 /* Internal scalar failure state is NOT a C ABI signature extension. */
 static MiResult mi_scan(MiOwner *owner, uint32_t offset, uint32_t length, uint32_t seed) {
@@ -159,7 +159,7 @@ static inline MiResult mi_scan_checked(MiOwner *owner, int64_t offset, int64_t l
 const [MI_OK, MI_BOUNDS, MI_OVERFLOW, MI_CLOSED, MI_BORROWED, MI_RANGE] = [0,1,2,3,4,5];
 function truthU32(value) { return true; }
 function kernel(data, length, seed) {
-'''+lower(ir,'js')+'''
+'''+lower_legacy_fixture(ir,'js')+'''
 }
 function u32(x) { return Number.isInteger(x) && x >= 0 && x <= 4294967295; }
 class Owner {
@@ -197,4 +197,69 @@ module.exports = {Owner, scan, truthU32};
     metadata={'experimental':True,'schema':1,'types':{name:{'legacy':t,'id':PRIMITIVE_IDS[t], 'c':C_TYPES[t], 'size':PRIMITIVES[t].size,'alignment':PRIMITIVES[t].alignment} for name,t in TYPES.items()}, 'scalar_signature_example':{'result':sig.result,'params':sig.params}, 'effects':['borrow-read','may-fail'],'abi_note':'mi_kernel uses internal status; not exported FFI','hot_c_gc_allocations':0,'hot_c_boxings':0,'hot_c_input_copied_bytes':0,'ordinary_boundary':'experimental owner wrapper; no Ru AST/CLI integration'}
     (out/'metadata.json').write_text(json.dumps(metadata,ensure_ascii=False,indent=2)+'\n', encoding='utf-8', newline='\n')
 
-if __name__=='__main__': generate()
+# v1 is retained only to reproduce historical line-terminator evidence. New
+# source compilation and v2 IR always use the fully signature-driven backend.
+from rulang.mi_ir import validate as validate_source_ir, lower as lower_source_ir
+
+
+def validate(ir):
+    return validate_source_ir(ir) if ir.get('version') == 2 else validate_legacy_fixture(ir)
+
+
+def lower(ir, target, symbol='ru_mi_kernel'):
+    return lower_source_ir(ir, target, symbol) if ir.get('version') == 2 else lower_legacy_fixture(ir, target)
+
+
+def generate_source(manifest, out, entry=None):
+    """Generate all signatures/bodies from source-selected frontend AST nodes."""
+    from hashlib import sha256
+    from rulang.frontend import parse
+    from rulang.modules import load_module_graph
+    from rulang.mi_source import MiSourcePlan, read_manifest
+    import os
+    manifest = Path(manifest).resolve()
+    document = read_manifest(manifest)
+    modules = {}
+    entries = [Path(entry).resolve()] if entry else [(manifest.parent / row['module']).resolve() for row in document['functions']]
+    for source in entries:
+        modules.update(load_module_graph(source, parse(source.read_text(encoding='utf-8'))))
+    plan = MiSourcePlan(modules, manifest)
+    out = Path(out); out.mkdir(parents=True, exist_ok=True)
+    for target, name in (('c', 'kernel.h'), ('js', 'kernel.js')):
+        (out / name).write_text(plan.compute_source(target), encoding='utf-8', newline='\n')
+    records = [{'module': Path(os.path.relpath(r['module'], manifest.parent)).as_posix(),
+                'function': r['function'], 'symbol': r['symbol'], 'ir': r['ir'], 'ranges': r['ranges'],
+                'source_sha256': sha256(Path(r['module']).read_bytes()).hexdigest()} for r in plan.records]
+    (out / 'ir.json').write_text(json.dumps(records, ensure_ascii=False, indent=2)+'\n', encoding='utf-8', newline='\n')
+    metadata = {'experimental': True, 'schema': 2, 'manifest_sha256': sha256(manifest.read_bytes()).hexdigest(),
+        'source_count': len(records), 'ordinary_bridge': 'C NativeMemory synchronous readonly, explicit --experimental-mi-manifest',
+        'js_scope': 'same IR compute semantics only, no NativeMemory or physical ABI promise',
+        'kernel_gc_allocations': 0, 'kernel_boxings': 0, 'kernel_input_copied_bytes': 0,
+        'boundary_allocations': 'owner snapshot may allocate; ordinary adapters measured separately',
+        'ordinary_input_copy': 'UTF8 adapter explicitly copies once per input block; never zero-copy',
+        's1_acceptance': 'not complete'}
+    (out / 'metadata.json').write_text(json.dumps(metadata, ensure_ascii=False, indent=2)+'\n', encoding='utf-8', newline='\n')
+    return plan
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description='Internal dense source/IR generator; no public dense syntax')
+    parser.add_argument('--manifest', type=Path)
+    parser.add_argument('--entry', type=Path)
+    parser.add_argument('--out', type=Path)
+    args = parser.parse_args()
+    from rulang.frontend import RuError
+    from rulang.cli import report
+    try:
+        if args.manifest:
+            generate_source(args.manifest, args.out or HERE.parent / 'mi_source' / 'generated', args.entry)
+        else:
+            generate(args.out or HERE / 'generated')
+    except RuError as error:
+        report(error, str(args.manifest or '<密实验>'))
+        raise SystemExit(1)
+    except (OSError, UnicodeError) as error:
+        report(RuError(str(error), category='编译错误'), str(args.manifest or '<密实验>'))
+        raise SystemExit(1)
+

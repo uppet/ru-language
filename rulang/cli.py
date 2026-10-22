@@ -126,7 +126,9 @@ def compiler_command(selected, windows=None):
     return parts
 
 
-def build(program, source_path, output, cc=None, emit_c=None, modules=None, target="c", full_runtime=False, allow_native=False, source_prefix_maps=(), style_check=None):
+def build(program, source_path, output, cc=None, emit_c=None, modules=None, target="c", full_runtime=False, allow_native=False, source_prefix_maps=(), style_check=None, mi_manifest=None):
+    if mi_manifest and target != "c":
+        raise RuError("密实验普通桥仅支持 C；JS 语义内核请用实验生成器", category="能力错误")
     if target not in ("c", "js"):
         raise RuError("编译目标须为 c 或 js", category="编译错误")
     if target == "js" and (cc is not None or emit_c is not None):
@@ -162,7 +164,7 @@ def build(program, source_path, output, cc=None, emit_c=None, modules=None, targ
             os.replace(script, output)
         return output, "JavaScript (Node.js)"
     generated = Compiler(program, str(source_path), modules=modules, full_runtime=full_runtime, allow_native=allow_native,
-                         source_prefix_maps=source_prefix_maps).compile()
+                         source_prefix_maps=source_prefix_maps, mi_manifest=mi_manifest).compile()
     if style_check is not None:
         style_check()
     if emit_c:
@@ -281,6 +283,7 @@ def make_parser():
     p.add_argument("--target", choices=("c", "js"), default="c", help="编译目标：c（默认）或 js（Node.js）")
     p.add_argument("--cc", help="C 编译器（默认依次查找 clang、gcc、cc；也支持 CC 环境变量）")
     p.add_argument("--emit-c", metavar="PATH", help="额外保存可审阅的独立 C99 源码")
+    p.add_argument("--experimental-mi-manifest", help="显式内部密算清单（实验；不定义公开密语法）")
     p.add_argument("--full-runtime", action="store_true", help="保留完整运行时及已导入标准库声明，供诊断对比")
     p.add_argument("--allow-native", action="store_true", help="信任原生代码，编译含 Windows x64 ABI 的独立程序；默认关闭，产物不依赖 Python")
     p.add_argument("--source-prefix-map", action="append", default=[], metavar="OLD=NEW",
@@ -458,7 +461,7 @@ def main(argv=None):
                                      else str(Path(args.source).with_suffix("")) + (".exe" if os.name == "nt" else ""))
             result, compiler = build(program, args.source, output, args.cc, args.emit_c,
                                      modules=modules, target=args.target, full_runtime=args.full_runtime, allow_native=args.allow_native,
-                                     source_prefix_maps=args.source_prefix_map, style_check=check_style)
+                                     source_prefix_maps=args.source_prefix_map, style_check=check_style, mi_manifest=args.experimental_mi_manifest)
             if args.target == "js":
                 print(f"已编译：{result}\n运行目标：{compiler}；未执行")
             else:
