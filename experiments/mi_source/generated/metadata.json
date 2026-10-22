@@ -1,0 +1,16 @@
+{
+  "experimental": true,
+  "schema": 2,
+  "manifest_sha256": "495ab1ab02829cffa4c0eca47e1647e546603b59c496304fed7e75d8c27236df",
+  "source_count": 1,
+  "ordinary_bridge": "C/LLVM NativeMemory synchronous readonly on Windows x64; scalar C/LLVM also on Linux; explicit --experimental-mi-manifest",
+  "llvm_scope": "direct checked IR to LLVM 14; pointer/u32 private ABI; no generated C kernel body",
+  "self_hosted_mi_frontend": false,
+  "js_scope": "same IR compute semantics only, no NativeMemory or physical ABI promise",
+  "kernel_gc_allocations": 0,
+  "kernel_boxings": 0,
+  "kernel_input_copied_bytes": 0,
+  "boundary_allocations": "owner snapshot may allocate; ordinary adapters measured separately",
+  "ordinary_input_copy": "UTF8 adapter explicitly copies once per input block; never zero-copy",
+  "s1_acceptance": "not complete"
+}

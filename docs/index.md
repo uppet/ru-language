@@ -14,6 +14,12 @@
 
 [如书去python计划](如书去python计划.md)列出 HTTP、系统接口、会话、AI 生成和浏览器 JS 编译的迁移顺序及无 Python 验收边界。
 
+[密模式 LLVM 适配](mi-llvm.md)提供显式清单、受检机器整数及同步只读 NativeMemory 计算核；常规构建前端仍为 Python，尚未接入自举前端和如书代码格。
+
+[ru_notepad Markdown 双撤销实验](notepad-mi-undo-2026-10-22.md)记录不可变 UTF-8 借用、如言密核与真实 Windows 的原 30 秒 GUI 门槛验证。
+
+[ru_notepad 增量算法对照](notepad-incremental-2026-10-22.md)进一步比较有界检查点和不变尾部复用，保留三轮原 GUI 数据及正确性对照。
+
 ## 学习与小作品
 
 - [入门小路](first-steps.md)：显示、赋值、循环、判断、函数和阵

@@ -121,10 +121,14 @@ class NativeScalar:
             _fault('原生浮点结果不是有限数')
 
 
+_mi_active_borrows = 0  # Internal synchronous dense bridge only.
+
+
 class NativeMemory:
     def __init__(self, storage, typ=None, parent=None, prefix=()):
         self.storage, self.typ, self.parent = storage, typ, parent
         self.closed = False
+        self.mi_read_borrows = 0
         self.prefix = prefix
         self.pins = {} if parent is None else parent.pins
 
@@ -133,6 +137,17 @@ class NativeMemory:
             _fault("原生缓冲已关闭")
         if self.parent is not None:
             self.parent.check()
+
+    @property
+    def root(self):
+        memory = self
+        while memory.parent is not None:
+            memory = memory.parent
+        return memory
+
+    def check_mutation(self):
+        if self.root.mi_read_borrows:
+            _fault("密只读借用期间不能关闭或写入同根缓冲")
 
     @property
     def address(self):
@@ -428,6 +443,8 @@ def _retain(value, keepalive, active):
 
 
 def _invoke(context, function, values):
+    if _mi_active_borrows:
+        _fault("密只读借用期间拒绝未知 effect 原生调用")
     context.check()
     function.library.check()
     if not isinstance(values, list) or len(values) != len(function.signature.params):
@@ -642,6 +659,7 @@ def _member(context, owner, node, obj, name, bind):
     elif isinstance(obj, NativeMemory):
         if name == '关闭':
             bind([])
+            obj.check_mutation()
             obj.closed = True
             if obj.parent is None:
                 obj.pins.clear()
@@ -698,6 +716,7 @@ def _member(context, owner, node, obj, name, bind):
                 pin_key = obj.prefix + (key,)
                 anchors = (obj.pins[pin_key],) if pin_key in obj.pins else ()
                 return NativeScalar(typ, 0 if raw is None else raw, anchors)
+            obj.check_mutation()
             if typ.kind == 'struct':
                 value = _expect(b['值'], NativeMemory, "嵌套结构写入需要同类型缓冲")
                 value.check()

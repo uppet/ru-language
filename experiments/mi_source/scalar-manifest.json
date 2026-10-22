@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "functions": [{
+    "module": "scalar.ru",
+    "function": "累加",
+    "params": {"次数": "u32"},
+    "result": "u32",
+    "locals": {"合计": "u32"},
+    "effects": ["borrow-read", "no-escape", "no-callback", "no-gc", "may-fail"]
+  }]
+}

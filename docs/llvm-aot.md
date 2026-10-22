@@ -71,12 +71,12 @@ python3 ru build examples/hello.ru --target llvm --llvm-clang /usr/lib/llvm-14/b
 | Python/C/JS 的既有源码语义 | 共享语义准备与运行时，增加直接 LLVM 差分回归 |
 | 独立 `.ll` 与独立可执行程序 | 支持；测试移除源码、换工作目录、清空 PATH 后执行并复编 IR |
 | macOS/ARM、MinGW、跨目标构建 | 尚未支持/验收，构建明确拒绝 |
-| 如:密、如见、DLL 回调 | 不支持，包含间接与不可达导入 |
+| 如:密、如见、DLL 回调 | 默认拒绝原生导入；Windows 显式密清单 + --allow-native 可用[实验 owner 桥](mi-llvm.md)，完整 DLL／如见／回调未验收 |
 | 如观、如书 AOT 持久会话 | 不支持；现有 Python/browser-js 代码格继续使用原执行方式 |
 | 首次自编译 | 独立如言前端与三代构建见 [自编译指南](bootstrap.md)；常规 build 前端仍是 Python |
 | Dart AOT 性能对齐 | 长期验收目标；本阶段只建立原始测量基线 |
 
-`--cc`、`--emit-c`、`--source-prefix-map`、`--allow-native` 不适用于 LLVM。`--full-runtime` 保留完整随附声明和运行时公共适配入口供对照；仍进行合法的 LLVM 优化，不改变语义。函数调用深度、文件访问权限等继续沿用现有运行时边界。
+`--cc`、`--emit-c`、`--source-prefix-map` 不适用于 LLVM；`--allow-native` 仅在显式 `--experimental-mi-manifest` 实验入口可用。`--full-runtime` 保留完整随附声明和运行时公共适配入口供对照；仍进行合法的 LLVM 优化，不改变语义。函数调用深度、文件访问权限等继续沿用现有运行时边界。
 
 ## 保留与复编独立 IR
 

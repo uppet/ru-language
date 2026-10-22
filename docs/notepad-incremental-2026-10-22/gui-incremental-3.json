@@ -1,0 +1,4104 @@
+{
+  "name": "main-gui-markdown",
+  "passed": true,
+  "executed": true,
+  "main_hwnd_seen": true,
+  "close_posted": true,
+  "cleanup_killed": false,
+  "detached_from_console": true,
+  "window_class": "RuNotepad.Main.0.1",
+  "menu_selection": true,
+  "fold_headers": true,
+  "collapse_expand": true,
+  "fold_option": true,
+  "plain_restores_visibility": true,
+  "clean_small_bytes": true,
+  "source_bytes_preserved": true,
+  "bounded_large_probes": true,
+  "real_edit_input_paint": true,
+  "undo_clean": true,
+  "exit_code": 0,
+  "seconds": 33.799,
+  "fixture_binary_sha256": {
+    "ru_notepad.exe": "57030f311f8d929c8009d0a72c86c44ffdee56e4ae1b6d46d64762a08efc0993",
+    "Scintilla.dll": "d3466923d92cf8ace04f78297121d55e045c69b1dae3457075d503353413fea1",
+    "Lexilla.dll": "1f2b2d4ce7cd86136c04004a8b99c267f543a526f797f0273e5a3aac2eae2cc1",
+    "RuSyntax.dll": "5dca8d728198f8a0501cb39982df0f807fbeb43ff4fab6469c4364cc9b91803e"
+  },
+  "markdown_performance": {
+    "measurement": "Detached production GUI; a 100 KB/5000-newline collapsed-heading input plus 1 MB single-line and unclosed-fence inputs, real WM_CHAR and Backspace, queued RIGHT/LEFT input and natural invalidated-region service requested after observing pending Markdown folds. Completion may follow pending work. Fixed 16-byte head/tail style samples, fold/status/length/dirty checks are not whole-content style proof. EOF caret/scroll requests ordinary native styling; no forced paint or full-document colourise. Elapsed time includes numeric status diagnostics and read-only process-memory sampling overhead. bulkLines/directLines count completed assignments, not distinct lines. ownedBufferBytes is the peak per-call owned plan/result capacity, not live process memory or total Ru/helper stack memory. bulkUs cumulatively measures the typed Apply FFI and result-wrapper interval per scan identity.",
+    "clock": {
+      "clock_name": "perf_counter",
+      "implementation": "QueryPerformanceCounter()",
+      "resolution": 1e-07,
+      "monotonic": true,
+      "adjustable": false
+    },
+    "cases": [
+      {
+        "kind": "many-lines",
+        "size": 100000,
+        "source_sha256": "c0ceb95e3e058c3caa0a1d1c6ebe7ab31c829a8f0d33d16d5b86f64cf63f71b4",
+        "style_probes": [
+          {
+            "offset": 0,
+            "length": 1,
+            "style": 6
+          },
+          {
+            "offset": 2,
+            "length": 7,
+            "style": 0
+          },
+          {
+            "offset": 99992,
+            "length": 8,
+            "style": 0
+          }
+        ],
+        "fold_probes": [
+          {
+            "line": 0,
+            "header": true
+          },
+          {
+            "line": 2,
+            "header": false
+          }
+        ],
+        "stages": [
+          {
+            "operation": "open",
+            "length": 100000,
+            "dirty": false,
+            "source_sha256": "c0ceb95e3e058c3caa0a1d1c6ebe7ab31c829a8f0d33d16d5b86f64cf63f71b4",
+            "wall_ms": 1835.703,
+            "probes": 32,
+            "observer": {
+              "response_interval_ms": 50,
+              "snapshot_interval_ms": 250,
+              "snapshot_message_limit": 32,
+              "scalar_calls": 54,
+              "wm_null_calls": 32,
+              "sendmessage_calls": 86,
+              "query_wall_ms": 169.353,
+              "max_query_ms": 10.805,
+              "snapshot_count": 8,
+              "snapshot_wall_ms": 40.361,
+              "max_snapshot_ms": 14.233,
+              "max_snapshot_messages": 30,
+              "snapshots": [
+                {
+                  "start_ms": 2.778,
+                  "wall_ms": 1.424,
+                  "messages": 2,
+                  "final": false
+                },
+                {
+                  "start_ms": 264.78,
+                  "wall_ms": 14.233,
+                  "messages": 7,
+                  "final": false
+                },
+                {
+                  "start_ms": 538.146,
+                  "wall_ms": 3.318,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 800.476,
+                  "wall_ms": 5.923,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1058.194,
+                  "wall_ms": 13.834,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1322.839,
+                  "wall_ms": 0.273,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1576.572,
+                  "wall_ms": 0.436,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1834.773,
+                  "wall_ms": 0.92,
+                  "messages": 30,
+                  "final": true
+                }
+              ],
+              "response_starts_ms": [
+                0.856,
+                57.268,
+                114.872,
+                179.913,
+                235.224,
+                300.635,
+                355.008,
+                411.889,
+                468.906,
+                530.421,
+                595.066,
+                654.785,
+                717.192,
+                777.188,
+                838.537,
+                892.35,
+                950.834,
+                1014.12,
+                1082.507,
+                1144.842,
+                1208.161,
+                1271.235,
+                1333.967,
+                1388.222,
+                1442.171,
+                1495.338,
+                1549.278,
+                1609.189,
+                1663.186,
+                1717.429,
+                1770.499,
+                1823.842
+              ]
+            },
+            "responsiveness": {},
+            "last_probe": {
+              "length": 100000,
+              "dirty": false,
+              "end_styled": 100000,
+              "status_done": true,
+              "styles_match": true,
+              "style_samples": {
+                "positions": [
+                  0,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  99992,
+                  99993,
+                  99994,
+                  99995,
+                  99996,
+                  99997,
+                  99998,
+                  99999
+                ],
+                "expected": [
+                  6,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "actual": [
+                  6,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              },
+              "folds_match": true,
+              "context_match": true,
+              "lexer": 98,
+              "tail_requested": true,
+              "children_visible": true
+            },
+            "last_progress": {
+              "opened": true,
+              "length": 100000,
+              "dirty": false,
+              "status": "complete",
+              "tail_requested": true,
+              "diagnostic": {
+                "seq": 12,
+                "via": 1,
+                "id": 5,
+                "gen": 3,
+                "rev": 0,
+                "phase": 4,
+                "pending": 0,
+                "length": 100000,
+                "feed": 100000,
+                "published": 5002,
+                "tick": 105,
+                "work_us": 1022236,
+                "gap_us": 551743,
+                "bulkCalls": 98,
+                "bulkLines": 5002,
+                "fallbackBatches": 0,
+                "directCalls": 0,
+                "directLines": 0,
+                "maxPlanBytes": 64,
+                "bulkUs": 67141,
+                "ownedBufferBytes": 1088,
+                "metric_valid": 1
+              }
+            },
+            "undo_commands": 0,
+            "collapsed_before_edit": false,
+            "memory": {
+              "measurement": "Read-only K32GetProcessMemoryInfo on the already-owned child process handle, once per existing at-most-4-Hz GUI snapshot. sampledWorkingSetPeak is the maximum observed working set, not an instantaneous stage peak or RSS delta. processPeakWorkingSet is the OS cumulative process-lifetime peak, including earlier stages. External API cost is separate from synchronous GUI-message cost; stage elapsed and snapshot wall time include both.",
+              "sample_count": 8,
+              "sampledWorkingSetPeak": 34156544,
+              "processPeakWorkingSet": 34312192,
+              "query_wall_ms": 0.044,
+              "max_query_ms": 0.007,
+              "samples": [
+                {
+                  "start_ms": 2.789,
+                  "query_wall_ms": 0.007,
+                  "workingSetBytes": 33406976,
+                  "processPeakWorkingSetBytes": 33406976
+                },
+                {
+                  "start_ms": 264.792,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 34103296,
+                  "processPeakWorkingSetBytes": 34312192
+                },
+                {
+                  "start_ms": 538.155,
+                  "query_wall_ms": 0.007,
+                  "workingSetBytes": 34136064,
+                  "processPeakWorkingSetBytes": 34312192
+                },
+                {
+                  "start_ms": 800.484,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 34136064,
+                  "processPeakWorkingSetBytes": 34312192
+                },
+                {
+                  "start_ms": 1058.201,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 34140160,
+                  "processPeakWorkingSetBytes": 34312192
+                },
+                {
+                  "start_ms": 1322.848,
+                  "query_wall_ms": 0.004,
+                  "workingSetBytes": 34148352,
+                  "processPeakWorkingSetBytes": 34312192
+                },
+                {
+                  "start_ms": 1576.578,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 34148352,
+                  "processPeakWorkingSetBytes": 34312192
+                },
+                {
+                  "start_ms": 1834.778,
+                  "query_wall_ms": 0.004,
+                  "workingSetBytes": 34156544,
+                  "processPeakWorkingSetBytes": 34312192
+                }
+              ]
+            }
+          },
+          {
+            "operation": "insert",
+            "length": 100001,
+            "dirty": true,
+            "source_sha256": "c0ceb95e3e058c3caa0a1d1c6ebe7ab31c829a8f0d33d16d5b86f64cf63f71b4",
+            "wall_ms": 1066.851,
+            "probes": 19,
+            "observer": {
+              "response_interval_ms": 50,
+              "snapshot_interval_ms": 250,
+              "snapshot_message_limit": 32,
+              "scalar_calls": 54,
+              "wm_null_calls": 19,
+              "sendmessage_calls": 73,
+              "query_wall_ms": 120.067,
+              "max_query_ms": 11.283,
+              "snapshot_count": 5,
+              "snapshot_wall_ms": 37.079,
+              "max_snapshot_ms": 22.827,
+              "max_snapshot_messages": 30,
+              "snapshots": [
+                {
+                  "start_ms": 6.39,
+                  "wall_ms": 0.426,
+                  "messages": 6,
+                  "final": false
+                },
+                {
+                  "start_ms": 260.984,
+                  "wall_ms": 12.457,
+                  "messages": 5,
+                  "final": false
+                },
+                {
+                  "start_ms": 533.095,
+                  "wall_ms": 0.268,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 787.451,
+                  "wall_ms": 22.827,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1065.742,
+                  "wall_ms": 1.101,
+                  "messages": 30,
+                  "final": true
+                }
+              ],
+              "response_starts_ms": [
+                4.739,
+                61.518,
+                115.443,
+                173.188,
+                234.864,
+                294.91,
+                350.494,
+                409.876,
+                471.079,
+                526.223,
+                586.998,
+                648.324,
+                702.541,
+                761.022,
+                821.414,
+                878.911,
+                933.745,
+                993.121,
+                1053.588
+              ]
+            },
+            "responsiveness": {
+              "navigation": [
+                {
+                  "key": "RIGHT",
+                  "before": 9,
+                  "after": 10,
+                  "request_pending": true,
+                  "wall_ms": 10.584
+                },
+                {
+                  "key": "LEFT",
+                  "before": 10,
+                  "after": 9,
+                  "request_pending": true,
+                  "wall_ms": 12.001
+                }
+              ],
+              "paint": {
+                "invalidations": 1,
+                "pending_observed": true,
+                "already_serviced": false,
+                "cleared": true,
+                "wall_ms": 10.692,
+                "request_pending": true
+              }
+            },
+            "last_probe": {
+              "length": 100001,
+              "dirty": true,
+              "end_styled": 100001,
+              "status_done": true,
+              "styles_match": true,
+              "style_samples": {
+                "positions": [
+                  0,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  99993,
+                  99994,
+                  99995,
+                  99996,
+                  99997,
+                  99998,
+                  99999,
+                  100000
+                ],
+                "expected": [
+                  6,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "actual": [
+                  6,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              },
+              "folds_match": true,
+              "context_match": true,
+              "lexer": 98,
+              "tail_requested": true,
+              "children_visible": true
+            },
+            "last_progress": {
+              "opened": true,
+              "length": 100001,
+              "dirty": true,
+              "status": "complete",
+              "tail_requested": true,
+              "diagnostic": {
+                "seq": 18,
+                "via": 0,
+                "id": 6,
+                "gen": 3,
+                "rev": 1,
+                "phase": 4,
+                "pending": 0,
+                "length": 100001,
+                "feed": 100001,
+                "published": 5002,
+                "tick": 206,
+                "work_us": 1996749,
+                "gap_us": 621204,
+                "bulkCalls": 98,
+                "bulkLines": 5002,
+                "fallbackBatches": 0,
+                "directCalls": 0,
+                "directLines": 0,
+                "maxPlanBytes": 64,
+                "bulkUs": 66411,
+                "ownedBufferBytes": 1088,
+                "metric_valid": 1
+              }
+            },
+            "undo_commands": 0,
+            "collapsed_before_edit": true,
+            "memory": {
+              "measurement": "Read-only K32GetProcessMemoryInfo on the already-owned child process handle, once per existing at-most-4-Hz GUI snapshot. sampledWorkingSetPeak is the maximum observed working set, not an instantaneous stage peak or RSS delta. processPeakWorkingSet is the OS cumulative process-lifetime peak, including earlier stages. External API cost is separate from synchronous GUI-message cost; stage elapsed and snapshot wall time include both.",
+              "sample_count": 5,
+              "sampledWorkingSetPeak": 34312192,
+              "processPeakWorkingSet": 34316288,
+              "query_wall_ms": 0.026,
+              "max_query_ms": 0.006,
+              "samples": [
+                {
+                  "start_ms": 6.395,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 34258944,
+                  "processPeakWorkingSetBytes": 34312192
+                },
+                {
+                  "start_ms": 260.989,
+                  "query_wall_ms": 0.004,
+                  "workingSetBytes": 34287616,
+                  "processPeakWorkingSetBytes": 34312192
+                },
+                {
+                  "start_ms": 533.102,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 34312192,
+                  "processPeakWorkingSetBytes": 34312192
+                },
+                {
+                  "start_ms": 787.459,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 34312192,
+                  "processPeakWorkingSetBytes": 34316288
+                },
+                {
+                  "start_ms": 1065.748,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 34312192,
+                  "processPeakWorkingSetBytes": 34316288
+                }
+              ]
+            }
+          },
+          {
+            "operation": "backspace",
+            "length": 100000,
+            "dirty": true,
+            "source_sha256": "c0ceb95e3e058c3caa0a1d1c6ebe7ab31c829a8f0d33d16d5b86f64cf63f71b4",
+            "wall_ms": 1089.871,
+            "probes": 19,
+            "observer": {
+              "response_interval_ms": 50,
+              "snapshot_interval_ms": 250,
+              "snapshot_message_limit": 32,
+              "scalar_calls": 55,
+              "wm_null_calls": 19,
+              "sendmessage_calls": 74,
+              "query_wall_ms": 130.772,
+              "max_query_ms": 10.111,
+              "snapshot_count": 5,
+              "snapshot_wall_ms": 50.11,
+              "max_snapshot_ms": 19.265,
+              "max_snapshot_messages": 30,
+              "snapshots": [
+                {
+                  "start_ms": 15.332,
+                  "wall_ms": 0.445,
+                  "messages": 6,
+                  "final": false
+                },
+                {
+                  "start_ms": 268.486,
+                  "wall_ms": 19.265,
+                  "messages": 5,
+                  "final": false
+                },
+                {
+                  "start_ms": 538.971,
+                  "wall_ms": 19.011,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 819.713,
+                  "wall_ms": 10.384,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1088.858,
+                  "wall_ms": 1.005,
+                  "messages": 30,
+                  "final": true
+                }
+              ],
+              "response_starts_ms": [
+                13.495,
+                67.578,
+                121.698,
+                181.755,
+                235.315,
+                298.831,
+                353.894,
+                408.511,
+                468.485,
+                527.351,
+                579.381,
+                640.86,
+                699.52,
+                758.34,
+                813.27,
+                872.977,
+                928.515,
+                987.733,
+                1046.356
+              ]
+            },
+            "responsiveness": {
+              "navigation": [
+                {
+                  "key": "RIGHT",
+                  "before": 8,
+                  "after": 9,
+                  "request_pending": true,
+                  "wall_ms": 10.86
+                },
+                {
+                  "key": "LEFT",
+                  "before": 9,
+                  "after": 8,
+                  "request_pending": true,
+                  "wall_ms": 19.313
+                }
+              ],
+              "paint": {
+                "invalidations": 1,
+                "pending_observed": true,
+                "already_serviced": false,
+                "cleared": true,
+                "wall_ms": 10.958,
+                "request_pending": true
+              }
+            },
+            "last_probe": {
+              "length": 100000,
+              "dirty": true,
+              "end_styled": 100000,
+              "status_done": true,
+              "styles_match": true,
+              "style_samples": {
+                "positions": [
+                  0,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  99992,
+                  99993,
+                  99994,
+                  99995,
+                  99996,
+                  99997,
+                  99998,
+                  99999
+                ],
+                "expected": [
+                  6,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "actual": [
+                  6,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              },
+              "folds_match": true,
+              "context_match": true,
+              "lexer": 98,
+              "tail_requested": true,
+              "children_visible": true
+            },
+            "last_progress": {
+              "opened": true,
+              "length": 100000,
+              "dirty": true,
+              "status": "complete",
+              "tail_requested": true,
+              "diagnostic": {
+                "seq": 23,
+                "via": 1,
+                "id": 7,
+                "gen": 3,
+                "rev": 2,
+                "phase": 4,
+                "pending": 0,
+                "length": 100000,
+                "feed": 100000,
+                "published": 5002,
+                "tick": 305,
+                "work_us": 2970718,
+                "gap_us": 678955,
+                "bulkCalls": 98,
+                "bulkLines": 5002,
+                "fallbackBatches": 0,
+                "directCalls": 0,
+                "directLines": 0,
+                "maxPlanBytes": 64,
+                "bulkUs": 66968,
+                "ownedBufferBytes": 1088,
+                "metric_valid": 1
+              }
+            },
+            "undo_commands": 0,
+            "collapsed_before_edit": true,
+            "memory": {
+              "measurement": "Read-only K32GetProcessMemoryInfo on the already-owned child process handle, once per existing at-most-4-Hz GUI snapshot. sampledWorkingSetPeak is the maximum observed working set, not an instantaneous stage peak or RSS delta. processPeakWorkingSet is the OS cumulative process-lifetime peak, including earlier stages. External API cost is separate from synchronous GUI-message cost; stage elapsed and snapshot wall time include both.",
+              "sample_count": 5,
+              "sampledWorkingSetPeak": 34459648,
+              "processPeakWorkingSet": 34459648,
+              "query_wall_ms": 0.026,
+              "max_query_ms": 0.006,
+              "samples": [
+                {
+                  "start_ms": 15.337,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 34324480,
+                  "processPeakWorkingSetBytes": 34324480
+                },
+                {
+                  "start_ms": 268.493,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 34373632,
+                  "processPeakWorkingSetBytes": 34373632
+                },
+                {
+                  "start_ms": 538.978,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 34373632,
+                  "processPeakWorkingSetBytes": 34377728
+                },
+                {
+                  "start_ms": 819.719,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 34377728,
+                  "processPeakWorkingSetBytes": 34377728
+                },
+                {
+                  "start_ms": 1088.864,
+                  "query_wall_ms": 0.004,
+                  "workingSetBytes": 34459648,
+                  "processPeakWorkingSetBytes": 34459648
+                }
+              ]
+            }
+          },
+          {
+            "operation": "undo",
+            "length": 100000,
+            "dirty": false,
+            "source_sha256": "c0ceb95e3e058c3caa0a1d1c6ebe7ab31c829a8f0d33d16d5b86f64cf63f71b4",
+            "wall_ms": 2169.71,
+            "probes": 37,
+            "observer": {
+              "response_interval_ms": 50,
+              "snapshot_interval_ms": 250,
+              "snapshot_message_limit": 32,
+              "scalar_calls": 61,
+              "wm_null_calls": 37,
+              "sendmessage_calls": 98,
+              "query_wall_ms": 292.545,
+              "max_query_ms": 10.125,
+              "snapshot_count": 9,
+              "snapshot_wall_ms": 99.894,
+              "max_snapshot_ms": 31.448,
+              "max_snapshot_messages": 30,
+              "snapshots": [
+                {
+                  "start_ms": 3.131,
+                  "wall_ms": 11.16,
+                  "messages": 5,
+                  "final": false
+                },
+                {
+                  "start_ms": 266.541,
+                  "wall_ms": 18.445,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 550.333,
+                  "wall_ms": 1.385,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 808.386,
+                  "wall_ms": 6.006,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1064.824,
+                  "wall_ms": 3.205,
+                  "messages": 5,
+                  "final": false
+                },
+                {
+                  "start_ms": 1334.646,
+                  "wall_ms": 31.448,
+                  "messages": 5,
+                  "final": false
+                },
+                {
+                  "start_ms": 1626.056,
+                  "wall_ms": 9.943,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1894.839,
+                  "wall_ms": 17.372,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 2168.772,
+                  "wall_ms": 0.93,
+                  "messages": 30,
+                  "final": true
+                }
+              ],
+              "response_starts_ms": [
+                2.55,
+                57.364,
+                115.503,
+                174.994,
+                238.517,
+                295.73,
+                352.084,
+                411.495,
+                472.453,
+                531.549,
+                594.705,
+                649.36,
+                709.648,
+                770.151,
+                835.903,
+                890.198,
+                949.216,
+                1012.207,
+                1078.624,
+                1132.877,
+                1195.977,
+                1258.489,
+                1316.222,
+                1376.609,
+                1431.833,
+                1492.177,
+                1546.545,
+                1608.185,
+                1668.206,
+                1731.198,
+                1786.543,
+                1845.515,
+                1922.992,
+                1979.407,
+                2035.273,
+                2095.783,
+                2157.893
+              ]
+            },
+            "responsiveness": {},
+            "last_probe": {
+              "length": 100000,
+              "dirty": false,
+              "end_styled": 100000,
+              "status_done": true,
+              "styles_match": true,
+              "style_samples": {
+                "positions": [
+                  0,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  99992,
+                  99993,
+                  99994,
+                  99995,
+                  99996,
+                  99997,
+                  99998,
+                  99999
+                ],
+                "expected": [
+                  6,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "actual": [
+                  6,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              },
+              "folds_match": true,
+              "context_match": true,
+              "lexer": 98,
+              "tail_requested": true,
+              "children_visible": true
+            },
+            "last_progress": {
+              "opened": true,
+              "length": 100000,
+              "dirty": false,
+              "status": "complete",
+              "tail_requested": true,
+              "diagnostic": {
+                "seq": 33,
+                "via": 1,
+                "id": 9,
+                "gen": 3,
+                "rev": 4,
+                "phase": 4,
+                "pending": 0,
+                "length": 100000,
+                "feed": 100000,
+                "published": 5002,
+                "tick": 505,
+                "work_us": 4948139,
+                "gap_us": 796529,
+                "bulkCalls": 98,
+                "bulkLines": 5002,
+                "fallbackBatches": 0,
+                "directCalls": 0,
+                "directLines": 0,
+                "maxPlanBytes": 64,
+                "bulkUs": 67637,
+                "ownedBufferBytes": 1088,
+                "metric_valid": 1
+              }
+            },
+            "undo_commands": 2,
+            "collapsed_before_edit": false,
+            "memory": {
+              "measurement": "Read-only K32GetProcessMemoryInfo on the already-owned child process handle, once per existing at-most-4-Hz GUI snapshot. sampledWorkingSetPeak is the maximum observed working set, not an instantaneous stage peak or RSS delta. processPeakWorkingSet is the OS cumulative process-lifetime peak, including earlier stages. External API cost is separate from synchronous GUI-message cost; stage elapsed and snapshot wall time include both.",
+              "sample_count": 9,
+              "sampledWorkingSetPeak": 34521088,
+              "processPeakWorkingSet": 34525184,
+              "query_wall_ms": 0.043,
+              "max_query_ms": 0.006,
+              "samples": [
+                {
+                  "start_ms": 3.134,
+                  "query_wall_ms": 0.003,
+                  "workingSetBytes": 34512896,
+                  "processPeakWorkingSetBytes": 34512896
+                },
+                {
+                  "start_ms": 266.548,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 34512896,
+                  "processPeakWorkingSetBytes": 34516992
+                },
+                {
+                  "start_ms": 550.342,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 34512896,
+                  "processPeakWorkingSetBytes": 34516992
+                },
+                {
+                  "start_ms": 808.393,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 34512896,
+                  "processPeakWorkingSetBytes": 34516992
+                },
+                {
+                  "start_ms": 1064.83,
+                  "query_wall_ms": 0.004,
+                  "workingSetBytes": 34516992,
+                  "processPeakWorkingSetBytes": 34516992
+                },
+                {
+                  "start_ms": 1334.654,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 34516992,
+                  "processPeakWorkingSetBytes": 34521088
+                },
+                {
+                  "start_ms": 1626.063,
+                  "query_wall_ms": 0.004,
+                  "workingSetBytes": 34521088,
+                  "processPeakWorkingSetBytes": 34521088
+                },
+                {
+                  "start_ms": 1894.845,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 34521088,
+                  "processPeakWorkingSetBytes": 34525184
+                },
+                {
+                  "start_ms": 2168.777,
+                  "query_wall_ms": 0.004,
+                  "workingSetBytes": 34521088,
+                  "processPeakWorkingSetBytes": 34525184
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "kind": "singleline",
+        "size": 1000000,
+        "source_sha256": "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0",
+        "style_probes": [
+          {
+            "offset": 0,
+            "length": 8,
+            "style": 0
+          },
+          {
+            "offset": 999992,
+            "length": 8,
+            "style": 0
+          }
+        ],
+        "fold_probes": [
+          {
+            "line": 0,
+            "header": false
+          }
+        ],
+        "stages": [
+          {
+            "operation": "open",
+            "length": 1000000,
+            "dirty": false,
+            "source_sha256": "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0",
+            "wall_ms": 1851.991,
+            "probes": 32,
+            "observer": {
+              "response_interval_ms": 50,
+              "snapshot_interval_ms": 250,
+              "snapshot_message_limit": 32,
+              "scalar_calls": 52,
+              "wm_null_calls": 32,
+              "sendmessage_calls": 84,
+              "query_wall_ms": 185.811,
+              "max_query_ms": 37.727,
+              "snapshot_count": 8,
+              "snapshot_wall_ms": 46.968,
+              "max_snapshot_ms": 14.409,
+              "max_snapshot_messages": 28,
+              "snapshots": [
+                {
+                  "start_ms": 2.768,
+                  "wall_ms": 1.212,
+                  "messages": 2,
+                  "final": false
+                },
+                {
+                  "start_ms": 269.078,
+                  "wall_ms": 14.409,
+                  "messages": 7,
+                  "final": false
+                },
+                {
+                  "start_ms": 537.251,
+                  "wall_ms": 4.846,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 799.091,
+                  "wall_ms": 0.254,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1052.757,
+                  "wall_ms": 7.087,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1319.578,
+                  "wall_ms": 6.121,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1586.56,
+                  "wall_ms": 11.971,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1850.916,
+                  "wall_ms": 1.068,
+                  "messages": 28,
+                  "final": true
+                }
+              ],
+              "response_starts_ms": [
+                1.222,
+                58.292,
+                113.383,
+                206.025,
+                264.206,
+                327.5,
+                382.56,
+                442.01,
+                502.625,
+                563.78,
+                619.923,
+                680.768,
+                737.342,
+                793.065,
+                854.018,
+                913.812,
+                974.378,
+                1035.725,
+                1092.85,
+                1153.1,
+                1214.264,
+                1272.993,
+                1336.786,
+                1394.857,
+                1450.469,
+                1511.789,
+                1570.937,
+                1631.586,
+                1688.921,
+                1743.577,
+                1796.75,
+                1850.845
+              ]
+            },
+            "responsiveness": {},
+            "last_probe": {
+              "length": 1000000,
+              "dirty": false,
+              "end_styled": 1000000,
+              "status_done": true,
+              "styles_match": true,
+              "style_samples": {
+                "positions": [
+                  0,
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7,
+                  999992,
+                  999993,
+                  999994,
+                  999995,
+                  999996,
+                  999997,
+                  999998,
+                  999999
+                ],
+                "expected": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "actual": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              },
+              "folds_match": true,
+              "context_match": true,
+              "lexer": 98,
+              "tail_requested": true,
+              "children_visible": true
+            },
+            "last_progress": {
+              "opened": true,
+              "length": 1000000,
+              "dirty": false,
+              "status": "complete",
+              "tail_requested": true,
+              "diagnostic": {
+                "seq": 40,
+                "via": 1,
+                "id": 10,
+                "gen": 4,
+                "rev": 0,
+                "phase": 4,
+                "pending": 0,
+                "length": 1000000,
+                "feed": 1000000,
+                "published": 1,
+                "tick": 673,
+                "work_us": 6216938,
+                "gap_us": 954997,
+                "bulkCalls": 1,
+                "bulkLines": 1,
+                "fallbackBatches": 0,
+                "directCalls": 0,
+                "directLines": 0,
+                "maxPlanBytes": 48,
+                "bulkUs": 75,
+                "ownedBufferBytes": 1088,
+                "metric_valid": 1
+              }
+            },
+            "undo_commands": 0,
+            "collapsed_before_edit": false,
+            "memory": {
+              "measurement": "Read-only K32GetProcessMemoryInfo on the already-owned child process handle, once per existing at-most-4-Hz GUI snapshot. sampledWorkingSetPeak is the maximum observed working set, not an instantaneous stage peak or RSS delta. processPeakWorkingSet is the OS cumulative process-lifetime peak, including earlier stages. External API cost is separate from synchronous GUI-message cost; stage elapsed and snapshot wall time include both.",
+              "sample_count": 8,
+              "sampledWorkingSetPeak": 43216896,
+              "processPeakWorkingSet": 43442176,
+              "query_wall_ms": 0.049,
+              "max_query_ms": 0.007,
+              "samples": [
+                {
+                  "start_ms": 2.774,
+                  "query_wall_ms": 0.007,
+                  "workingSetBytes": 34598912,
+                  "processPeakWorkingSetBytes": 34598912
+                },
+                {
+                  "start_ms": 269.086,
+                  "query_wall_ms": 0.007,
+                  "workingSetBytes": 42967040,
+                  "processPeakWorkingSetBytes": 43442176
+                },
+                {
+                  "start_ms": 537.258,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 43130880,
+                  "processPeakWorkingSetBytes": 43442176
+                },
+                {
+                  "start_ms": 799.097,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 43151360,
+                  "processPeakWorkingSetBytes": 43442176
+                },
+                {
+                  "start_ms": 1052.763,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 43184128,
+                  "processPeakWorkingSetBytes": 43442176
+                },
+                {
+                  "start_ms": 1319.587,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 43184128,
+                  "processPeakWorkingSetBytes": 43442176
+                },
+                {
+                  "start_ms": 1586.568,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 43216896,
+                  "processPeakWorkingSetBytes": 43442176
+                },
+                {
+                  "start_ms": 1850.922,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 43216896,
+                  "processPeakWorkingSetBytes": 43442176
+                }
+              ]
+            }
+          },
+          {
+            "operation": "insert",
+            "length": 1000001,
+            "dirty": true,
+            "source_sha256": "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0",
+            "wall_ms": 1697.788,
+            "probes": 28,
+            "observer": {
+              "response_interval_ms": 50,
+              "snapshot_interval_ms": 250,
+              "snapshot_message_limit": 32,
+              "scalar_calls": 57,
+              "wm_null_calls": 28,
+              "sendmessage_calls": 85,
+              "query_wall_ms": 248.246,
+              "max_query_ms": 61.746,
+              "snapshot_count": 7,
+              "snapshot_wall_ms": 87.032,
+              "max_snapshot_ms": 65.657,
+              "max_snapshot_messages": 28,
+              "snapshots": [
+                {
+                  "start_ms": 78.874,
+                  "wall_ms": 65.657,
+                  "messages": 6,
+                  "final": false
+                },
+                {
+                  "start_ms": 402.568,
+                  "wall_ms": 4.189,
+                  "messages": 5,
+                  "final": false
+                },
+                {
+                  "start_ms": 659.854,
+                  "wall_ms": 2.489,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 914.374,
+                  "wall_ms": 2.679,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1174.838,
+                  "wall_ms": 5.394,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1431.862,
+                  "wall_ms": 5.753,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1696.909,
+                  "wall_ms": 0.871,
+                  "messages": 28,
+                  "final": true
+                }
+              ],
+              "response_starts_ms": [
+                64.683,
+                155.609,
+                218.213,
+                276.216,
+                337.966,
+                395.275,
+                461.348,
+                519.525,
+                577.085,
+                638.133,
+                695.424,
+                753.022,
+                808.678,
+                863.8,
+                927.962,
+                988.569,
+                1048.697,
+                1106.243,
+                1161.339,
+                1224.454,
+                1282.005,
+                1341.147,
+                1397.822,
+                1459.417,
+                1516.718,
+                1578.298,
+                1632.398,
+                1686.082
+              ]
+            },
+            "responsiveness": {
+              "navigation": [
+                {
+                  "key": "RIGHT",
+                  "before": 9,
+                  "after": 10,
+                  "request_pending": true,
+                  "wall_ms": 13.735
+                },
+                {
+                  "key": "LEFT",
+                  "before": 10,
+                  "after": 9,
+                  "request_pending": true,
+                  "wall_ms": 16.18
+                }
+              ],
+              "paint": {
+                "invalidations": 1,
+                "pending_observed": true,
+                "already_serviced": false,
+                "cleared": true,
+                "wall_ms": 13.833,
+                "request_pending": true
+              }
+            },
+            "last_probe": {
+              "length": 1000001,
+              "dirty": true,
+              "end_styled": 1000001,
+              "status_done": true,
+              "styles_match": true,
+              "style_samples": {
+                "positions": [
+                  0,
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7,
+                  999993,
+                  999994,
+                  999995,
+                  999996,
+                  999997,
+                  999998,
+                  999999,
+                  1000000
+                ],
+                "expected": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "actual": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              },
+              "folds_match": true,
+              "context_match": true,
+              "lexer": 98,
+              "tail_requested": true,
+              "children_visible": true
+            },
+            "last_progress": {
+              "opened": true,
+              "length": 1000001,
+              "dirty": true,
+              "status": "complete",
+              "tail_requested": true,
+              "diagnostic": {
+                "seq": 47,
+                "via": 1,
+                "id": 11,
+                "gen": 4,
+                "rev": 1,
+                "phase": 4,
+                "pending": 0,
+                "length": 1000001,
+                "feed": 1000001,
+                "published": 1,
+                "tick": 843,
+                "work_us": 7509168,
+                "gap_us": 1147015,
+                "bulkCalls": 1,
+                "bulkLines": 1,
+                "fallbackBatches": 0,
+                "directCalls": 0,
+                "directLines": 0,
+                "maxPlanBytes": 48,
+                "bulkUs": 65,
+                "ownedBufferBytes": 1088,
+                "metric_valid": 1
+              }
+            },
+            "undo_commands": 0,
+            "collapsed_before_edit": false,
+            "memory": {
+              "measurement": "Read-only K32GetProcessMemoryInfo on the already-owned child process handle, once per existing at-most-4-Hz GUI snapshot. sampledWorkingSetPeak is the maximum observed working set, not an instantaneous stage peak or RSS delta. processPeakWorkingSet is the OS cumulative process-lifetime peak, including earlier stages. External API cost is separate from synchronous GUI-message cost; stage elapsed and snapshot wall time include both.",
+              "sample_count": 7,
+              "sampledWorkingSetPeak": 43401216,
+              "processPeakWorkingSet": 49221632,
+              "query_wall_ms": 0.041,
+              "max_query_ms": 0.008,
+              "samples": [
+                {
+                  "start_ms": 78.882,
+                  "query_wall_ms": 0.008,
+                  "workingSetBytes": 43212800,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 402.576,
+                  "query_wall_ms": 0.007,
+                  "workingSetBytes": 43331584,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 659.863,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 43335680,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 914.38,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 43368448,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 1174.844,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 43368448,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 1431.87,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 43401216,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 1696.914,
+                  "query_wall_ms": 0.004,
+                  "workingSetBytes": 43401216,
+                  "processPeakWorkingSetBytes": 49221632
+                }
+              ]
+            }
+          },
+          {
+            "operation": "backspace",
+            "length": 1000000,
+            "dirty": true,
+            "source_sha256": "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0",
+            "wall_ms": 1661.118,
+            "probes": 27,
+            "observer": {
+              "response_interval_ms": 50,
+              "snapshot_interval_ms": 250,
+              "snapshot_message_limit": 32,
+              "scalar_calls": 58,
+              "wm_null_calls": 27,
+              "sendmessage_calls": 85,
+              "query_wall_ms": 270.423,
+              "max_query_ms": 57.791,
+              "snapshot_count": 7,
+              "snapshot_wall_ms": 37.248,
+              "max_snapshot_ms": 12.752,
+              "max_snapshot_messages": 28,
+              "snapshots": [
+                {
+                  "start_ms": 74.501,
+                  "wall_ms": 0.301,
+                  "messages": 6,
+                  "final": false
+                },
+                {
+                  "start_ms": 335.989,
+                  "wall_ms": 12.752,
+                  "messages": 5,
+                  "final": false
+                },
+                {
+                  "start_ms": 603.856,
+                  "wall_ms": 2.845,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 865.372,
+                  "wall_ms": 4.244,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1131.042,
+                  "wall_ms": 7.119,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1395.979,
+                  "wall_ms": 9.018,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1660.142,
+                  "wall_ms": 0.969,
+                  "messages": 28,
+                  "final": true
+                }
+              ],
+              "response_starts_ms": [
+                74.457,
+                152.965,
+                209.04,
+                265.783,
+                328.032,
+                392.614,
+                454.867,
+                516.518,
+                576.483,
+                639.557,
+                696.486,
+                756.595,
+                815.794,
+                880.435,
+                939.966,
+                1002.788,
+                1065.041,
+                1119.495,
+                1171.175,
+                1232.778,
+                1290.377,
+                1350.789,
+                1416.003,
+                1471.604,
+                1530.803,
+                1584.938,
+                1638.712
+              ]
+            },
+            "responsiveness": {
+              "navigation": [
+                {
+                  "key": "RIGHT",
+                  "before": 8,
+                  "after": 9,
+                  "request_pending": true,
+                  "wall_ms": 13.85
+                },
+                {
+                  "key": "LEFT",
+                  "before": 9,
+                  "after": 8,
+                  "request_pending": true,
+                  "wall_ms": 12.44
+                }
+              ],
+              "paint": {
+                "invalidations": 1,
+                "pending_observed": true,
+                "already_serviced": false,
+                "cleared": true,
+                "wall_ms": 67.317,
+                "request_pending": true
+              }
+            },
+            "last_probe": {
+              "length": 1000000,
+              "dirty": true,
+              "end_styled": 1000000,
+              "status_done": true,
+              "styles_match": true,
+              "style_samples": {
+                "positions": [
+                  0,
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7,
+                  999992,
+                  999993,
+                  999994,
+                  999995,
+                  999996,
+                  999997,
+                  999998,
+                  999999
+                ],
+                "expected": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "actual": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              },
+              "folds_match": true,
+              "context_match": true,
+              "lexer": 98,
+              "tail_requested": true,
+              "children_visible": true
+            },
+            "last_progress": {
+              "opened": true,
+              "length": 1000000,
+              "dirty": true,
+              "status": "complete",
+              "tail_requested": true,
+              "diagnostic": {
+                "seq": 54,
+                "via": 1,
+                "id": 12,
+                "gen": 4,
+                "rev": 2,
+                "phase": 4,
+                "pending": 0,
+                "length": 1000000,
+                "feed": 1000000,
+                "published": 1,
+                "tick": 1009,
+                "work_us": 8765886,
+                "gap_us": 1308410,
+                "bulkCalls": 1,
+                "bulkLines": 1,
+                "fallbackBatches": 0,
+                "directCalls": 0,
+                "directLines": 0,
+                "maxPlanBytes": 48,
+                "bulkUs": 37,
+                "ownedBufferBytes": 1088,
+                "metric_valid": 1
+              }
+            },
+            "undo_commands": 0,
+            "collapsed_before_edit": false,
+            "memory": {
+              "measurement": "Read-only K32GetProcessMemoryInfo on the already-owned child process handle, once per existing at-most-4-Hz GUI snapshot. sampledWorkingSetPeak is the maximum observed working set, not an instantaneous stage peak or RSS delta. processPeakWorkingSet is the OS cumulative process-lifetime peak, including earlier stages. External API cost is separate from synchronous GUI-message cost; stage elapsed and snapshot wall time include both.",
+              "sample_count": 7,
+              "sampledWorkingSetPeak": 43433984,
+              "processPeakWorkingSet": 49221632,
+              "query_wall_ms": 0.038,
+              "max_query_ms": 0.007,
+              "samples": [
+                {
+                  "start_ms": 74.505,
+                  "query_wall_ms": 0.004,
+                  "workingSetBytes": 43401216,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 335.996,
+                  "query_wall_ms": 0.007,
+                  "workingSetBytes": 43401216,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 603.864,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 43401216,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 865.379,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 43401216,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 1131.048,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 43401216,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 1395.985,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 43433984,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 1660.148,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 43433984,
+                  "processPeakWorkingSetBytes": 49221632
+                }
+              ]
+            }
+          },
+          {
+            "operation": "undo",
+            "length": 1000000,
+            "dirty": false,
+            "source_sha256": "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0",
+            "wall_ms": 3288.255,
+            "probes": 55,
+            "observer": {
+              "response_interval_ms": 50,
+              "snapshot_interval_ms": 250,
+              "snapshot_message_limit": 32,
+              "scalar_calls": 71,
+              "wm_null_calls": 55,
+              "sendmessage_calls": 126,
+              "query_wall_ms": 412.498,
+              "max_query_ms": 60.473,
+              "snapshot_count": 13,
+              "snapshot_wall_ms": 138.426,
+              "max_snapshot_ms": 60.79,
+              "max_snapshot_messages": 28,
+              "snapshots": [
+                {
+                  "start_ms": 62.156,
+                  "wall_ms": 16.341,
+                  "messages": 5,
+                  "final": false
+                },
+                {
+                  "start_ms": 333.786,
+                  "wall_ms": 1.356,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 595.157,
+                  "wall_ms": 2.741,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 859.303,
+                  "wall_ms": 7.545,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1125.644,
+                  "wall_ms": 7.947,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1394.602,
+                  "wall_ms": 12.344,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1662.021,
+                  "wall_ms": 60.79,
+                  "messages": 5,
+                  "final": false
+                },
+                {
+                  "start_ms": 1974.746,
+                  "wall_ms": 4.631,
+                  "messages": 5,
+                  "final": false
+                },
+                {
+                  "start_ms": 2233.513,
+                  "wall_ms": 0.697,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 2490.594,
+                  "wall_ms": 3.648,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 2750.605,
+                  "wall_ms": 0.271,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 3011.523,
+                  "wall_ms": 18.998,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 3287.13,
+                  "wall_ms": 1.117,
+                  "messages": 28,
+                  "final": true
+                }
+              ],
+              "response_starts_ms": [
+                61.531,
+                122.754,
+                194.422,
+                250.028,
+                311.247,
+                367.898,
+                424.508,
+                485.894,
+                543.525,
+                609.039,
+                669.614,
+                725.706,
+                787.141,
+                847.798,
+                899.959,
+                961.655,
+                1021.237,
+                1076.545,
+                1144.805,
+                1206.495,
+                1266.911,
+                1322.602,
+                1382.097,
+                1439.283,
+                1498.461,
+                1552.567,
+                1607.135,
+                1661.949,
+                1733.741,
+                1792.987,
+                1852.126,
+                1913.685,
+                1974.562,
+                2034.256,
+                2093.633,
+                2151.235,
+                2208.842,
+                2267.104,
+                2324.028,
+                2384.719,
+                2439.469,
+                2505.18,
+                2568.263,
+                2629.451,
+                2688.992,
+                2746.26,
+                2805.882,
+                2867.138,
+                2929.66,
+                2989.803,
+                3041.608,
+                3099.577,
+                3160.623,
+                3221.561,
+                3276.06
+              ]
+            },
+            "responsiveness": {},
+            "last_probe": {
+              "length": 1000000,
+              "dirty": false,
+              "end_styled": 1000000,
+              "status_done": true,
+              "styles_match": true,
+              "style_samples": {
+                "positions": [
+                  0,
+                  1,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7,
+                  999992,
+                  999993,
+                  999994,
+                  999995,
+                  999996,
+                  999997,
+                  999998,
+                  999999
+                ],
+                "expected": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ],
+                "actual": [
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0
+                ]
+              },
+              "folds_match": true,
+              "context_match": true,
+              "lexer": 98,
+              "tail_requested": true,
+              "children_visible": true
+            },
+            "last_progress": {
+              "opened": true,
+              "length": 1000000,
+              "dirty": false,
+              "status": "complete",
+              "tail_requested": true,
+              "diagnostic": {
+                "seq": 68,
+                "via": 1,
+                "id": 14,
+                "gen": 4,
+                "rev": 4,
+                "phase": 4,
+                "pending": 0,
+                "length": 1000000,
+                "feed": 1000000,
+                "published": 1,
+                "tick": 1345,
+                "work_us": 11315928,
+                "gap_us": 1608807,
+                "bulkCalls": 1,
+                "bulkLines": 1,
+                "fallbackBatches": 0,
+                "directCalls": 0,
+                "directLines": 0,
+                "maxPlanBytes": 48,
+                "bulkUs": 55,
+                "ownedBufferBytes": 1088,
+                "metric_valid": 1
+              }
+            },
+            "undo_commands": 2,
+            "collapsed_before_edit": false,
+            "memory": {
+              "measurement": "Read-only K32GetProcessMemoryInfo on the already-owned child process handle, once per existing at-most-4-Hz GUI snapshot. sampledWorkingSetPeak is the maximum observed working set, not an instantaneous stage peak or RSS delta. processPeakWorkingSet is the OS cumulative process-lifetime peak, including earlier stages. External API cost is separate from synchronous GUI-message cost; stage elapsed and snapshot wall time include both.",
+              "sample_count": 13,
+              "sampledWorkingSetPeak": 43433984,
+              "processPeakWorkingSet": 49221632,
+              "query_wall_ms": 0.077,
+              "max_query_ms": 0.008,
+              "samples": [
+                {
+                  "start_ms": 62.162,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 43433984,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 333.794,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 43433984,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 595.164,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 43433984,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 859.311,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 43433984,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 1125.652,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 43433984,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 1394.61,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 43433984,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 1662.027,
+                  "query_wall_ms": 0.008,
+                  "workingSetBytes": 43433984,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 1974.753,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 43433984,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 2233.521,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 43433984,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 2490.6,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 43433984,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 2750.612,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 43433984,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 3011.532,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 43433984,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 3287.139,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 43433984,
+                  "processPeakWorkingSetBytes": 49221632
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "kind": "unclosed-fence",
+        "size": 1000000,
+        "source_sha256": "2d9f79ee715b217c00792cf18a67485cdec96a14ea2ac86689156941a022c719",
+        "style_probes": [
+          {
+            "offset": 0,
+            "length": 1,
+            "style": 6
+          },
+          {
+            "offset": 2,
+            "length": 7,
+            "style": 0
+          },
+          {
+            "offset": 999992,
+            "length": 8,
+            "style": 21
+          }
+        ],
+        "fold_probes": [
+          {
+            "line": 0,
+            "header": true
+          },
+          {
+            "line": 2,
+            "header": false
+          }
+        ],
+        "stages": [
+          {
+            "operation": "open",
+            "length": 1000000,
+            "dirty": false,
+            "source_sha256": "2d9f79ee715b217c00792cf18a67485cdec96a14ea2ac86689156941a022c719",
+            "wall_ms": 15698.548,
+            "probes": 275,
+            "observer": {
+              "response_interval_ms": 50,
+              "snapshot_interval_ms": 250,
+              "snapshot_message_limit": 32,
+              "scalar_calls": 212,
+              "wm_null_calls": 275,
+              "sendmessage_calls": 487,
+              "query_wall_ms": 907.167,
+              "max_query_ms": 8.796,
+              "snapshot_count": 61,
+              "snapshot_wall_ms": 297.217,
+              "max_snapshot_ms": 17.621,
+              "max_snapshot_messages": 29,
+              "snapshots": [
+                {
+                  "start_ms": 2.885,
+                  "wall_ms": 1.321,
+                  "messages": 2,
+                  "final": false
+                },
+                {
+                  "start_ms": 261.504,
+                  "wall_ms": 2.623,
+                  "messages": 7,
+                  "final": false
+                },
+                {
+                  "start_ms": 517.387,
+                  "wall_ms": 0.314,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 770.608,
+                  "wall_ms": 1.223,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1034.123,
+                  "wall_ms": 16.923,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1316.628,
+                  "wall_ms": 3.223,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1573.775,
+                  "wall_ms": 0.286,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 1834.453,
+                  "wall_ms": 3.415,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 2098.318,
+                  "wall_ms": 2.872,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 2358.272,
+                  "wall_ms": 0.351,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 2613.25,
+                  "wall_ms": 4.694,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 2873.775,
+                  "wall_ms": 9.778,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 3145.968,
+                  "wall_ms": 3.442,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 3405.434,
+                  "wall_ms": 0.279,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 3662.888,
+                  "wall_ms": 4.008,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 3919.2,
+                  "wall_ms": 10.614,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 4182.026,
+                  "wall_ms": 0.265,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 4438.581,
+                  "wall_ms": 0.356,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 4699.477,
+                  "wall_ms": 12.503,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 4970.705,
+                  "wall_ms": 8.247,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 5234.526,
+                  "wall_ms": 9.036,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 5499.431,
+                  "wall_ms": 7.433,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 5763.7,
+                  "wall_ms": 8.667,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 6030.444,
+                  "wall_ms": 8.537,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 6294.233,
+                  "wall_ms": 0.254,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 6554.024,
+                  "wall_ms": 2.373,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 6814.874,
+                  "wall_ms": 3.528,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 7072.976,
+                  "wall_ms": 0.285,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 7332.698,
+                  "wall_ms": 3.394,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 7586.496,
+                  "wall_ms": 0.36,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 7842.885,
+                  "wall_ms": 10.042,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 8105.526,
+                  "wall_ms": 15.206,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 8373.31,
+                  "wall_ms": 0.275,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 8625.238,
+                  "wall_ms": 0.282,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 8889.578,
+                  "wall_ms": 10.446,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 9159.876,
+                  "wall_ms": 3.416,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 9421.695,
+                  "wall_ms": 0.342,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 9687.052,
+                  "wall_ms": 0.286,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 9942.981,
+                  "wall_ms": 4.031,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 10207.79,
+                  "wall_ms": 3.995,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 10466.644,
+                  "wall_ms": 11.451,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 10728.408,
+                  "wall_ms": 10.268,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 11002.858,
+                  "wall_ms": 3.785,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 11260.224,
+                  "wall_ms": 2.526,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 11522.136,
+                  "wall_ms": 0.236,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 11777.509,
+                  "wall_ms": 11.804,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 12044.802,
+                  "wall_ms": 11.763,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 12320.519,
+                  "wall_ms": 3.852,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 12575.809,
+                  "wall_ms": 0.317,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 12831.838,
+                  "wall_ms": 3.282,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 13089.675,
+                  "wall_ms": 10.571,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 13357.532,
+                  "wall_ms": 12.13,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 13622.525,
+                  "wall_ms": 0.291,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 13881.258,
+                  "wall_ms": 17.621,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 14153.465,
+                  "wall_ms": 9.865,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 14416.593,
+                  "wall_ms": 0.261,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 14671.94,
+                  "wall_ms": 0.419,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 14927.058,
+                  "wall_ms": 3.421,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 15181.532,
+                  "wall_ms": 0.318,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 15443.222,
+                  "wall_ms": 3.13,
+                  "messages": 3,
+                  "final": false
+                },
+                {
+                  "start_ms": 15697.56,
+                  "wall_ms": 0.981,
+                  "messages": 29,
+                  "final": true
+                }
+              ],
+              "response_starts_ms": [
+                1.272,
+                58.881,
+                117.435,
+                174.206,
+                228.755,
+                286.308,
+                341.752,
+                402.086,
+                462.904,
+                517.326,
+                572.091,
+                625.598,
+                681.13,
+                736.023,
+                793.62,
+                854.029,
+                909.466,
+                966.241,
+                1020.661,
+                1083.838,
+                1139.093,
+                1201.972,
+                1255.714,
+                1310.573,
+                1374.164,
+                1429.594,
+                1491.824,
+                1546.352,
+                1606.514,
+                1660.327,
+                1720.242,
+                1774.745,
+                1829.827,
+                1892.758,
+                1954.118,
+                2014.376,
+                2069.785,
+                2133.808,
+                2189.026,
+                2247.642,
+                2302.296,
+                2358.209,
+                2413.418,
+                2470.761,
+                2525.913,
+                2580.798,
+                2639.837,
+                2693.968,
+                2750.931,
+                2807.834,
+                2862.47,
+                2916.279,
+                2972.89,
+                3030.104,
+                3084.744,
+                3139.503,
+                3204.256,
+                3264.875,
+                3320.298,
+                3380.872,
+                3438.728,
+                3494.167,
+                3549.365,
+                3606.747,
+                3660.889,
+                3721.101,
+                3781.579,
+                3835.566,
+                3890.933,
+                3951.799,
+                4006.59,
+                4064.215,
+                4122.788,
+                4181.977,
+                4236.469,
+                4294.522,
+                4348.773,
+                4405.502,
+                4460.225,
+                4513.663,
+                4569.402,
+                4630.67,
+                4685.318,
+                4745.118,
+                4809.058,
+                4868.909,
+                4923.66,
+                4989.882,
+                5045.473,
+                5105.483,
+                5159.933,
+                5217.448,
+                5276.031,
+                5331.334,
+                5387.471,
+                5449.329,
+                5517.594,
+                5574.082,
+                5628.265,
+                5684.392,
+                5739.278,
+                5794.263,
+                5853.772,
+                5907.849,
+                5963.85,
+                6018.325,
+                6071.965,
+                6126.757,
+                6183.709,
+                6238.141,
+                6294.183,
+                6348.331,
+                6405.098,
+                6465.785,
+                6520.547,
+                6578.59,
+                6638.77,
+                6698.684,
+                6753.044,
+                6808.926,
+                6872.666,
+                6934.141,
+                6988.918,
+                7044.652,
+                7106.212,
+                7160.375,
+                7217.72,
+                7276.325,
+                7331.708,
+                7390.758,
+                7444.796,
+                7504.408,
+                7560.103,
+                7619.825,
+                7674.408,
+                7729.486,
+                7784.168,
+                7840.036,
+                7896.035,
+                7950.878,
+                8005.352,
+                8059.977,
+                8131.569,
+                8187.695,
+                8245.578,
+                8299.869,
+                8359.012,
+                8416.573,
+                8474.88,
+                8533.317,
+                8588.351,
+                8647.364,
+                8706.829,
+                8761.706,
+                8816.123,
+                8872.618,
+                8932.351,
+                8986.733,
+                9045.363,
+                9099.858,
+                9154.342,
+                9218.084,
+                9271.829,
+                9332.359,
+                9386.806,
+                9443.819,
+                9499.901,
+                9558.009,
+                9612.732,
+                9670.962,
+                9731.166,
+                9786.058,
+                9843.264,
+                9904.59,
+                9968.737,
+                10029.143,
+                10089.041,
+                10143.25,
+                10196.977,
+                10255.367,
+                10310.513,
+                10365.215,
+                10423.374,
+                10489.063,
+                10549.156,
+                10603.413,
+                10661.741,
+                10717.315,
+                10770.935,
+                10825.665,
+                10885.885,
+                10940.624,
+                10998.243,
+                11060.412,
+                11121.551,
+                11177.365,
+                11238.108,
+                11295.352,
+                11351.444,
+                11411.078,
+                11465.465,
+                11522.092,
+                11576.809,
+                11637.485,
+                11691.968,
+                11749.965,
+                11810.696,
+                11865.289,
+                11924.461,
+                11978.894,
+                12033.758,
+                12089.056,
+                12148.113,
+                12203.299,
+                12262.614,
+                12316.849,
+                12379.125,
+                12434.155,
+                12488.19,
+                12542.753,
+                12597.544,
+                12657.047,
+                12714.431,
+                12768.432,
+                12828.511,
+                12889.943,
+                12949.449,
+                13003.686,
+                13061.345,
+                13122.235,
+                13182.947,
+                13238.049,
+                13292.564,
+                13346.423,
+                13401.964,
+                13455.779,
+                13510.509,
+                13565.375,
+                13622.455,
+                13677.416,
+                13734.383,
+                13792.091,
+                13848.087,
+                13909.678,
+                13966.93,
+                14020.662,
+                14075.685,
+                14131.359,
+                14185.43,
+                14244.849,
+                14299.407,
+                14358.682,
+                14416.518,
+                14471.235,
+                14528.405,
+                14585.41,
+                14648.479,
+                14705.224,
+                14759.751,
+                14815.328,
+                14870.667,
+                14925.034,
+                14985.32,
+                15040.101,
+                15096.437,
+                15153.554,
+                15214.724,
+                15275.522,
+                15329.914,
+                15386.032,
+                15441.203,
+                15501.354,
+                15558.348,
+                15612.566,
+                15665.191
+              ]
+            },
+            "responsiveness": {},
+            "last_probe": {
+              "length": 1000000,
+              "dirty": false,
+              "end_styled": 1000000,
+              "status_done": true,
+              "styles_match": true,
+              "style_samples": {
+                "positions": [
+                  0,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  999992,
+                  999993,
+                  999994,
+                  999995,
+                  999996,
+                  999997,
+                  999998,
+                  999999
+                ],
+                "expected": [
+                  6,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21
+                ],
+                "actual": [
+                  6,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21
+                ]
+              },
+              "folds_match": true,
+              "context_match": true,
+              "lexer": 98,
+              "tail_requested": true,
+              "children_visible": true
+            },
+            "last_progress": {
+              "opened": true,
+              "length": 1000000,
+              "dirty": false,
+              "status": "complete",
+              "tail_requested": true,
+              "diagnostic": {
+                "seq": 129,
+                "via": 1,
+                "id": 15,
+                "gen": 5,
+                "rev": 0,
+                "phase": 4,
+                "pending": 0,
+                "length": 1000000,
+                "feed": 1000000,
+                "published": 100002,
+                "tick": 2329,
+                "work_us": 18251484,
+                "gap_us": 10080566,
+                "bulkCalls": 1953,
+                "bulkLines": 100002,
+                "fallbackBatches": 0,
+                "directCalls": 0,
+                "directLines": 0,
+                "maxPlanBytes": 80,
+                "bulkUs": 1371470,
+                "ownedBufferBytes": 1088,
+                "metric_valid": 1
+              }
+            },
+            "undo_commands": 0,
+            "collapsed_before_edit": false,
+            "memory": {
+              "measurement": "Read-only K32GetProcessMemoryInfo on the already-owned child process handle, once per existing at-most-4-Hz GUI snapshot. sampledWorkingSetPeak is the maximum observed working set, not an instantaneous stage peak or RSS delta. processPeakWorkingSet is the OS cumulative process-lifetime peak, including earlier stages. External API cost is separate from synchronous GUI-message cost; stage elapsed and snapshot wall time include both.",
+              "sample_count": 61,
+              "sampledWorkingSetPeak": 47411200,
+              "processPeakWorkingSet": 49221632,
+              "query_wall_ms": 0.361,
+              "max_query_ms": 0.012,
+              "samples": [
+                {
+                  "start_ms": 2.891,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 43560960,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 261.509,
+                  "query_wall_ms": 0.004,
+                  "workingSetBytes": 47353856,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 517.392,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 47378432,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 770.616,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47394816,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 1034.131,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47394816,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 1316.636,
+                  "query_wall_ms": 0.007,
+                  "workingSetBytes": 47394816,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 1573.783,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47394816,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 1834.461,
+                  "query_wall_ms": 0.007,
+                  "workingSetBytes": 47394816,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 2098.326,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 47394816,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 2358.278,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47394816,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 2613.258,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 47394816,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 2873.786,
+                  "query_wall_ms": 0.007,
+                  "workingSetBytes": 47394816,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 3145.978,
+                  "query_wall_ms": 0.008,
+                  "workingSetBytes": 47394816,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 3405.44,
+                  "query_wall_ms": 0.004,
+                  "workingSetBytes": 47394816,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 3662.897,
+                  "query_wall_ms": 0.007,
+                  "workingSetBytes": 47403008,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 3919.209,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47403008,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 4182.031,
+                  "query_wall_ms": 0.004,
+                  "workingSetBytes": 47403008,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 4438.588,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47407104,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 4699.485,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 4970.712,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 5234.534,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 5499.438,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 5763.708,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 6030.452,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 6294.237,
+                  "query_wall_ms": 0.004,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 6554.032,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 6814.882,
+                  "query_wall_ms": 0.007,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 7072.981,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 7332.706,
+                  "query_wall_ms": 0.007,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 7586.504,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 7842.892,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 8105.534,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 8373.316,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 8625.245,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 8889.586,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 9159.885,
+                  "query_wall_ms": 0.012,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 9421.702,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 9687.059,
+                  "query_wall_ms": 0.004,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 9942.988,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 10207.798,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 10466.651,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 10728.416,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 11002.866,
+                  "query_wall_ms": 0.007,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 11260.232,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 11522.14,
+                  "query_wall_ms": 0.004,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 11777.517,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 12044.81,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 12320.527,
+                  "query_wall_ms": 0.007,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 12575.815,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 12831.847,
+                  "query_wall_ms": 0.008,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 13089.683,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 13357.538,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 13622.534,
+                  "query_wall_ms": 0.008,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 13881.268,
+                  "query_wall_ms": 0.007,
+                  "workingSetBytes": 47411200,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 14153.476,
+                  "query_wall_ms": 0.007,
+                  "workingSetBytes": 47382528,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 14416.599,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 47382528,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 14671.949,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47382528,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 14927.066,
+                  "query_wall_ms": 0.007,
+                  "workingSetBytes": 47382528,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 15181.54,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47382528,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 15443.229,
+                  "query_wall_ms": 0.007,
+                  "workingSetBytes": 47382528,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 15697.566,
+                  "query_wall_ms": 0.004,
+                  "workingSetBytes": 47382528,
+                  "processPeakWorkingSetBytes": 49221632
+                }
+              ]
+            }
+          },
+          {
+            "operation": "insert",
+            "length": 1000001,
+            "dirty": true,
+            "source_sha256": "2d9f79ee715b217c00792cf18a67485cdec96a14ea2ac86689156941a022c719",
+            "wall_ms": 527.709,
+            "probes": 10,
+            "observer": {
+              "response_interval_ms": 50,
+              "snapshot_interval_ms": 250,
+              "snapshot_message_limit": 32,
+              "scalar_calls": 46,
+              "wm_null_calls": 10,
+              "sendmessage_calls": 56,
+              "query_wall_ms": 38.311,
+              "max_query_ms": 9.164,
+              "snapshot_count": 3,
+              "snapshot_wall_ms": 3.73,
+              "max_snapshot_ms": 2.377,
+              "max_snapshot_messages": 29,
+              "snapshots": [
+                {
+                  "start_ms": 8.162,
+                  "wall_ms": 0.345,
+                  "messages": 6,
+                  "final": false
+                },
+                {
+                  "start_ms": 264.722,
+                  "wall_ms": 2.377,
+                  "messages": 5,
+                  "final": false
+                },
+                {
+                  "start_ms": 526.693,
+                  "wall_ms": 1.008,
+                  "messages": 29,
+                  "final": true
+                }
+              ],
+              "response_starts_ms": [
+                5.944,
+                70.06,
+                124.419,
+                178.58,
+                232.926,
+                288.469,
+                342.778,
+                396.73,
+                451.463,
+                505.02
+              ]
+            },
+            "responsiveness": {
+              "navigation": [
+                {
+                  "key": "RIGHT",
+                  "before": 9,
+                  "after": 10,
+                  "request_pending": true,
+                  "wall_ms": 18.975
+                },
+                {
+                  "key": "LEFT",
+                  "before": 10,
+                  "after": 9,
+                  "request_pending": true,
+                  "wall_ms": 21.101
+                }
+              ],
+              "paint": {
+                "invalidations": 1,
+                "pending_observed": true,
+                "already_serviced": false,
+                "cleared": true,
+                "wall_ms": 29.576,
+                "request_pending": true
+              }
+            },
+            "last_probe": {
+              "length": 1000001,
+              "dirty": true,
+              "end_styled": 1000001,
+              "status_done": true,
+              "styles_match": true,
+              "style_samples": {
+                "positions": [
+                  0,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  999993,
+                  999994,
+                  999995,
+                  999996,
+                  999997,
+                  999998,
+                  999999,
+                  1000000
+                ],
+                "expected": [
+                  6,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21
+                ],
+                "actual": [
+                  6,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21
+                ]
+              },
+              "folds_match": true,
+              "context_match": true,
+              "lexer": 98,
+              "tail_requested": true,
+              "children_visible": true
+            },
+            "last_progress": {
+              "opened": true,
+              "length": 1000001,
+              "dirty": true,
+              "status": "complete",
+              "tail_requested": true,
+              "diagnostic": {
+                "seq": 131,
+                "via": 1,
+                "id": 16,
+                "gen": 5,
+                "rev": 1,
+                "phase": 4,
+                "pending": 0,
+                "length": 1000001,
+                "feed": 1000001,
+                "published": 104,
+                "tick": 2332,
+                "work_us": 18271199,
+                "gap_us": 10092065,
+                "bulkCalls": 2,
+                "bulkLines": 104,
+                "fallbackBatches": 0,
+                "directCalls": 0,
+                "directLines": 0,
+                "maxPlanBytes": 80,
+                "bulkUs": 1433,
+                "ownedBufferBytes": 1088,
+                "metric_valid": 1
+              }
+            },
+            "undo_commands": 0,
+            "collapsed_before_edit": false,
+            "memory": {
+              "measurement": "Read-only K32GetProcessMemoryInfo on the already-owned child process handle, once per existing at-most-4-Hz GUI snapshot. sampledWorkingSetPeak is the maximum observed working set, not an instantaneous stage peak or RSS delta. processPeakWorkingSet is the OS cumulative process-lifetime peak, including earlier stages. External API cost is separate from synchronous GUI-message cost; stage elapsed and snapshot wall time include both.",
+              "sample_count": 3,
+              "sampledWorkingSetPeak": 47452160,
+              "processPeakWorkingSet": 49221632,
+              "query_wall_ms": 0.017,
+              "max_query_ms": 0.006,
+              "samples": [
+                {
+                  "start_ms": 8.167,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47452160,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 264.728,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 47452160,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 526.701,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47452160,
+                  "processPeakWorkingSetBytes": 49221632
+                }
+              ]
+            }
+          },
+          {
+            "operation": "backspace",
+            "length": 1000000,
+            "dirty": true,
+            "source_sha256": "2d9f79ee715b217c00792cf18a67485cdec96a14ea2ac86689156941a022c719",
+            "wall_ms": 530.479,
+            "probes": 10,
+            "observer": {
+              "response_interval_ms": 50,
+              "snapshot_interval_ms": 250,
+              "snapshot_message_limit": 32,
+              "scalar_calls": 47,
+              "wm_null_calls": 10,
+              "sendmessage_calls": 57,
+              "query_wall_ms": 19.418,
+              "max_query_ms": 6.665,
+              "snapshot_count": 3,
+              "snapshot_wall_ms": 4.517,
+              "max_snapshot_ms": 2.276,
+              "max_snapshot_messages": 29,
+              "snapshots": [
+                {
+                  "start_ms": 5.746,
+                  "wall_ms": 0.348,
+                  "messages": 6,
+                  "final": false
+                },
+                {
+                  "start_ms": 265.735,
+                  "wall_ms": 2.276,
+                  "messages": 5,
+                  "final": false
+                },
+                {
+                  "start_ms": 528.577,
+                  "wall_ms": 1.893,
+                  "messages": 29,
+                  "final": true
+                }
+              ],
+              "response_starts_ms": [
+                5.702,
+                60.047,
+                114.257,
+                168.706,
+                222.274,
+                278.711,
+                333.361,
+                387.74,
+                441.797,
+                495.42
+              ]
+            },
+            "responsiveness": {
+              "navigation": [
+                {
+                  "key": "RIGHT",
+                  "before": 8,
+                  "after": 9,
+                  "request_pending": true,
+                  "wall_ms": 17.852
+                },
+                {
+                  "key": "LEFT",
+                  "before": 9,
+                  "after": 8,
+                  "request_pending": true,
+                  "wall_ms": 12.782
+                }
+              ],
+              "paint": {
+                "invalidations": 1,
+                "pending_observed": true,
+                "already_serviced": false,
+                "cleared": true,
+                "wall_ms": 19.678,
+                "request_pending": true
+              }
+            },
+            "last_probe": {
+              "length": 1000000,
+              "dirty": true,
+              "end_styled": 1000000,
+              "status_done": true,
+              "styles_match": true,
+              "style_samples": {
+                "positions": [
+                  0,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  999992,
+                  999993,
+                  999994,
+                  999995,
+                  999996,
+                  999997,
+                  999998,
+                  999999
+                ],
+                "expected": [
+                  6,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21
+                ],
+                "actual": [
+                  6,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21
+                ]
+              },
+              "folds_match": true,
+              "context_match": true,
+              "lexer": 98,
+              "tail_requested": true,
+              "children_visible": true
+            },
+            "last_progress": {
+              "opened": true,
+              "length": 1000000,
+              "dirty": true,
+              "status": "complete",
+              "tail_requested": true,
+              "diagnostic": {
+                "seq": 133,
+                "via": 1,
+                "id": 17,
+                "gen": 5,
+                "rev": 2,
+                "phase": 4,
+                "pending": 0,
+                "length": 1000000,
+                "feed": 1000000,
+                "published": 104,
+                "tick": 2335,
+                "work_us": 18298865,
+                "gap_us": 10109797,
+                "bulkCalls": 2,
+                "bulkLines": 104,
+                "fallbackBatches": 0,
+                "directCalls": 0,
+                "directLines": 0,
+                "maxPlanBytes": 80,
+                "bulkUs": 1331,
+                "ownedBufferBytes": 1088,
+                "metric_valid": 1
+              }
+            },
+            "undo_commands": 0,
+            "collapsed_before_edit": false,
+            "memory": {
+              "measurement": "Read-only K32GetProcessMemoryInfo on the already-owned child process handle, once per existing at-most-4-Hz GUI snapshot. sampledWorkingSetPeak is the maximum observed working set, not an instantaneous stage peak or RSS delta. processPeakWorkingSet is the OS cumulative process-lifetime peak, including earlier stages. External API cost is separate from synchronous GUI-message cost; stage elapsed and snapshot wall time include both.",
+              "sample_count": 3,
+              "sampledWorkingSetPeak": 47517696,
+              "processPeakWorkingSet": 49221632,
+              "query_wall_ms": 0.014,
+              "max_query_ms": 0.005,
+              "samples": [
+                {
+                  "start_ms": 5.749,
+                  "query_wall_ms": 0.004,
+                  "workingSetBytes": 47517696,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 265.741,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 47517696,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 528.584,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 47517696,
+                  "processPeakWorkingSetBytes": 49221632
+                }
+              ]
+            }
+          },
+          {
+            "operation": "undo",
+            "length": 1000000,
+            "dirty": false,
+            "source_sha256": "2d9f79ee715b217c00792cf18a67485cdec96a14ea2ac86689156941a022c719",
+            "wall_ms": 783.916,
+            "probes": 15,
+            "observer": {
+              "response_interval_ms": 50,
+              "snapshot_interval_ms": 250,
+              "snapshot_message_limit": 32,
+              "scalar_calls": 45,
+              "wm_null_calls": 15,
+              "sendmessage_calls": 60,
+              "query_wall_ms": 11.761,
+              "max_query_ms": 2.962,
+              "snapshot_count": 4,
+              "snapshot_wall_ms": 8.672,
+              "max_snapshot_ms": 3.379,
+              "max_snapshot_messages": 29,
+              "snapshots": [
+                {
+                  "start_ms": 3.945,
+                  "wall_ms": 1.754,
+                  "messages": 5,
+                  "final": false
+                },
+                {
+                  "start_ms": 266.325,
+                  "wall_ms": 3.379,
+                  "messages": 5,
+                  "final": false
+                },
+                {
+                  "start_ms": 530.227,
+                  "wall_ms": 2.499,
+                  "messages": 5,
+                  "final": false
+                },
+                {
+                  "start_ms": 782.869,
+                  "wall_ms": 1.04,
+                  "messages": 29,
+                  "final": true
+                }
+              ],
+              "response_starts_ms": [
+                3.283,
+                59.619,
+                113.812,
+                168.004,
+                222.55,
+                280.679,
+                334.827,
+                388.817,
+                442.952,
+                497.597,
+                554.304,
+                608.64,
+                662.813,
+                717.219,
+                771.812
+              ]
+            },
+            "responsiveness": {},
+            "last_probe": {
+              "length": 1000000,
+              "dirty": false,
+              "end_styled": 1000000,
+              "status_done": true,
+              "styles_match": true,
+              "style_samples": {
+                "positions": [
+                  0,
+                  2,
+                  3,
+                  4,
+                  5,
+                  6,
+                  7,
+                  8,
+                  999992,
+                  999993,
+                  999994,
+                  999995,
+                  999996,
+                  999997,
+                  999998,
+                  999999
+                ],
+                "expected": [
+                  6,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21
+                ],
+                "actual": [
+                  6,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  0,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21,
+                  21
+                ]
+              },
+              "folds_match": true,
+              "context_match": true,
+              "lexer": 98,
+              "tail_requested": true,
+              "children_visible": true
+            },
+            "last_progress": {
+              "opened": true,
+              "length": 1000000,
+              "dirty": false,
+              "status": "complete",
+              "tail_requested": true,
+              "diagnostic": {
+                "seq": 137,
+                "via": 1,
+                "id": 19,
+                "gen": 5,
+                "rev": 4,
+                "phase": 4,
+                "pending": 0,
+                "length": 1000000,
+                "feed": 1000000,
+                "published": 104,
+                "tick": 2341,
+                "work_us": 18348215,
+                "gap_us": 10130774,
+                "bulkCalls": 2,
+                "bulkLines": 104,
+                "fallbackBatches": 0,
+                "directCalls": 0,
+                "directLines": 0,
+                "maxPlanBytes": 80,
+                "bulkUs": 1300,
+                "ownedBufferBytes": 1088,
+                "metric_valid": 1
+              }
+            },
+            "undo_commands": 2,
+            "collapsed_before_edit": false,
+            "memory": {
+              "measurement": "Read-only K32GetProcessMemoryInfo on the already-owned child process handle, once per existing at-most-4-Hz GUI snapshot. sampledWorkingSetPeak is the maximum observed working set, not an instantaneous stage peak or RSS delta. processPeakWorkingSet is the OS cumulative process-lifetime peak, including earlier stages. External API cost is separate from synchronous GUI-message cost; stage elapsed and snapshot wall time include both.",
+              "sample_count": 4,
+              "sampledWorkingSetPeak": 47525888,
+              "processPeakWorkingSet": 49221632,
+              "query_wall_ms": 0.022,
+              "max_query_ms": 0.006,
+              "samples": [
+                {
+                  "start_ms": 3.951,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47517696,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 266.332,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 47525888,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 530.234,
+                  "query_wall_ms": 0.006,
+                  "workingSetBytes": 47525888,
+                  "processPeakWorkingSetBytes": 49221632
+                },
+                {
+                  "start_ms": 782.875,
+                  "query_wall_ms": 0.005,
+                  "workingSetBytes": 47525888,
+                  "processPeakWorkingSetBytes": 49221632
+                }
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
+  "process_wall_seconds": 34.0,
+  "runtime_sha256": {
+    "ru_notepad.exe": "57030f311f8d929c8009d0a72c86c44ffdee56e4ae1b6d46d64762a08efc0993",
+    "Scintilla.dll": "d3466923d92cf8ace04f78297121d55e045c69b1dae3457075d503353413fea1",
+    "Lexilla.dll": "1f2b2d4ce7cd86136c04004a8b99c267f543a526f797f0273e5a3aac2eae2cc1",
+    "RuSyntax.dll": "5dca8d728198f8a0501cb39982df0f807fbeb43ff4fab6469c4364cc9b91803e"
+  },
+  "original_gui_gate_sha256": "c1a793bf7d96267adc47d70bd459b3c050cb54f67c9768a57041cad5a732142a",
+  "application_base": "d964ea9f7e27065aa5bbcced8d6c7526a6224dd1",
+  "full_product_acceptance": false
+}

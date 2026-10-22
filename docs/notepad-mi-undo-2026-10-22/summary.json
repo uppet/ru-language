@@ -1,0 +1,194 @@
+{
+  "date": "2026-10-22",
+  "application_base": "d964ea9f7e27065aa5bbcced8d6c7526a6224dd1",
+  "ru_base": "e8ce196543ef16c81e06adf1f0ae6aa98dfd2db5",
+  "compiler_status": "current uncommitted bs working tree; identified by source hashes",
+  "candidate": "dist/ru-notepad-mi-undo-candidate/ru_notepad.exe",
+  "candidate_exe_sha256": "fbfc83df95c903316560fcd6cf810c673c90372c6b3093d024b688e01ef81a31",
+  "direct_llvm_scope": "selected Mi kernels; C backend for ordinary application",
+  "all_original_markdown_gui_stages_passed": true,
+  "stage_count": 12,
+  "stage_limit_ms": 30000,
+  "both_undo_commands_share_one_stage_clock": true,
+  "matched_pair_single_activation_byte_difference": true,
+  "same_kernel_ir_and_dependencies": true,
+  "measurement_scope": "one same-machine sequential ordinary/dense complete GUI pair; no CPU affinity or cold-cache/p95 claim",
+  "timings": [
+    {
+      "kind": "many-lines",
+      "operation": "open",
+      "ordinary_ms": 1852.343,
+      "dense_ms": 1604.549,
+      "ordinary_over_dense": 1.1544321800082142,
+      "time_reduction_percent": 13.377328065050587
+    },
+    {
+      "kind": "many-lines",
+      "operation": "insert",
+      "ordinary_ms": 1079.333,
+      "dense_ms": 1337.396,
+      "ordinary_over_dense": 0.8070406969962525,
+      "time_reduction_percent": -23.90948854524042
+    },
+    {
+      "kind": "many-lines",
+      "operation": "backspace",
+      "ordinary_ms": 1071.396,
+      "dense_ms": 1335.833,
+      "ordinary_over_dense": 0.8020433691936042,
+      "time_reduction_percent": -24.68153698539104
+    },
+    {
+      "kind": "many-lines",
+      "operation": "undo",
+      "ordinary_ms": 2638.98,
+      "dense_ms": 2644.289,
+      "ordinary_over_dense": 0.9979922769409848,
+      "time_reduction_percent": -0.20117621202131453
+    },
+    {
+      "kind": "singleline",
+      "operation": "open",
+      "ordinary_ms": 8397.007,
+      "dense_ms": 1847.621,
+      "ordinary_over_dense": 4.544767027436904,
+      "time_reduction_percent": 77.99667190940772
+    },
+    {
+      "kind": "singleline",
+      "operation": "insert",
+      "ordinary_ms": 9341.284,
+      "dense_ms": 1469.243,
+      "ordinary_over_dense": 6.357889062598903,
+      "time_reduction_percent": 84.27150914156984
+    },
+    {
+      "kind": "singleline",
+      "operation": "backspace",
+      "ordinary_ms": 8233.478,
+      "dense_ms": 1644.087,
+      "ordinary_over_dense": 5.007933278470056,
+      "time_reduction_percent": 80.03168284411521
+    },
+    {
+      "kind": "singleline",
+      "operation": "undo",
+      "ordinary_ms": 17024.946,
+      "dense_ms": 3356.265,
+      "ordinary_over_dense": 5.072586938158936,
+      "time_reduction_percent": 80.28619297823325
+    },
+    {
+      "kind": "unclosed-fence",
+      "operation": "open",
+      "ordinary_ms": 16365.875,
+      "dense_ms": 15705.019,
+      "ordinary_over_dense": 1.0420792868827475,
+      "time_reduction_percent": 4.038012021966441
+    },
+    {
+      "kind": "unclosed-fence",
+      "operation": "insert",
+      "ordinary_ms": 11585.344,
+      "dense_ms": 7595.554,
+      "ordinary_over_dense": 1.5252796570204095,
+      "time_reduction_percent": 34.43825232984018
+    },
+    {
+      "kind": "unclosed-fence",
+      "operation": "backspace",
+      "ordinary_ms": 11723.718,
+      "dense_ms": 7545.195,
+      "ordinary_over_dense": 1.553799205984736,
+      "time_reduction_percent": 35.64161983425396
+    },
+    {
+      "kind": "unclosed-fence",
+      "operation": "undo",
+      "ordinary_ms": 23432.626,
+      "dense_ms": 14595.112,
+      "ordinary_over_dense": 1.605511900148488,
+      "time_reduction_percent": 37.71456942128467
+    }
+  ],
+  "whole_program_direct_llvm_attempt_passed": false,
+  "whole_program_direct_llvm_failure": "unclosed-fence dual Undo exceeded 30 seconds; original failed observation preserved",
+  "ci_retested": false,
+  "full_product_acceptance": false,
+  "installed_application_replaced": false,
+  "committed_or_pushed": false,
+  "mi_self_hosted_frontend": false,
+  "policy_checks": {
+    "full_state_returns": 56529,
+    "error_checks": 324,
+    "range_pauses": 8,
+    "uniform_kernel_calls": 72618,
+    "batch_calls": 2158,
+    "batch_hits": 965,
+    "gc_live_zero": true,
+    "windows_abi_execution": true
+  },
+  "bootstrap": {
+    "linux": {
+      "passed": 105,
+      "skipped": 0,
+      "gates_all_true": true
+    },
+    "windows": {
+      "passed": 105,
+      "skipped": 0,
+      "gates_all_true": true
+    }
+  },
+  "unit_tests": {
+    "utf8_linux": {
+      "discovered": 16,
+      "passed": 16,
+      "skipped": 0,
+      "seconds": 23.826,
+      "raw_log_sha256": "1d9941e7778c2ca1cef21f8db0156d8f71ddcd77ce6751c9a4506930b48a029b"
+    },
+    "utf8_windows": {
+      "discovered": 16,
+      "passed": 16,
+      "skipped": 0,
+      "seconds": 29.357,
+      "raw_log_sha256": "fc3fa0beab26148d91e961580d7769af5dd0dca643306a06bee3c21984d895c8"
+    },
+    "mi_windows": {
+      "discovered": 22,
+      "passed": 22,
+      "skipped": 0,
+      "seconds": 63.99,
+      "raw_log_sha256": "ac1767555711b03acbe141b482f0f7b60154508965590a2a61b99e7dfd57628b"
+    },
+    "stdlib_pruning_linux": {
+      "discovered": 22,
+      "passed": 22,
+      "skipped": 0,
+      "seconds": 2.068,
+      "raw_log_sha256": "da88bff17b6526b4e417dbeb97e9841424504fffc3321d214bb6383052a759ce"
+    },
+    "mi_linux": {
+      "discovered": 22,
+      "passed": 21,
+      "skipped": 1,
+      "seconds": 47.694,
+      "raw_log_sha256": "59732d6052029246c59a559d6abfc1621b60244eae695885a39282173923805a"
+    },
+    "native_borrow_linux": {
+      "discovered": 7,
+      "passed": 7,
+      "skipped": 0,
+      "seconds": 0.796,
+      "raw_log_sha256": "3b684fcfac69e00bf21a17b289e2bc71eab3a8c4d5dad15cc750d8fe67cba4c0"
+    },
+    "legacy_kernel_linux": {
+      "discovered": 6,
+      "passed": 6,
+      "skipped": 0,
+      "seconds": 1.35,
+      "raw_log_sha256": "4406444b98c15843cc505babf1cd57236f151dd51e7ef5d9c924b4c1fcb80d35"
+    }
+  }
+}

@@ -126,29 +126,34 @@ def compiler_command(selected, windows=None):
     return parts
 
 
-def build(program, source_path, output, cc=None, emit_c=None, modules=None, target="c", full_runtime=False, allow_native=False, source_prefix_maps=(), style_check=None, emit_llvm=None, llvm_clang=None):
+def build(program, source_path, output, cc=None, emit_c=None, modules=None, target="c", full_runtime=False, allow_native=False, source_prefix_maps=(), style_check=None, emit_llvm=None, llvm_clang=None, mi_manifest=None):
     if target not in ("c", "js", "llvm"):
         raise RuError("编译目标须为 c、js 或 llvm", category="编译错误")
     if target != 'llvm' and (emit_llvm is not None or llvm_clang is not None):
         raise RuError('--emit-llvm 和 --llvm-clang 只适用于 LLVM 目标', category='编译错误')
-    if target == 'llvm' and (cc is not None or emit_c is not None or allow_native):
+    if mi_manifest and target not in ('c', 'llvm'):
+        raise RuError('密实验普通桥仅支持 C／LLVM；JS 语义内核请用实验生成器', category='能力错误')
+    if target == 'llvm' and (cc is not None or emit_c is not None or (allow_native and not mi_manifest)):
         raise RuError('LLVM AOT M1 不支持 --cc、--emit-c 或 --allow-native；编译器请用 --llvm-clang 指定', category='能力错误')
     if target == "js" and (cc is not None or emit_c is not None):
         raise RuError("JavaScript 目标不能使用 --cc 或 --emit-c", category="编译错误")
     if source_prefix_maps and target != 'c':
         raise RuError('源码路径映射只适用于 C 编译目标', category='编译错误')
-    if allow_native and target != "c":
+    if allow_native and target != "c" and not (target == 'llvm' and mi_manifest):
         raise RuError("--allow-native 只适用于本地 Windows x64 Python 运行或 C 原生编译；JavaScript 不支持", category="能力错误")
     source_path = Path(source_path).resolve()
     modules = load_module_graph(source_path, program) if modules is None else modules
     output = Path(output).resolve()
     source_paths = {Path(path).resolve() for path in modules} | {source_path}
+    if mi_manifest:
+        source_paths.add(Path(mi_manifest).resolve())
     if output in source_paths:
         raise RuError("输出路径不能覆盖源文件或外言依赖", category="编译错误")
     if target == 'llvm':
         from .llvm_toolchain import build_llvm
         return build_llvm(program, source_path, output, modules=modules, clang=llvm_clang,
-                          emit_llvm=emit_llvm, full_runtime=full_runtime, style_check=style_check)
+                          emit_llvm=emit_llvm, full_runtime=full_runtime, style_check=style_check,
+                          mi_manifest=mi_manifest, allow_native=allow_native)
     if emit_c:
         cpath = Path(emit_c).resolve()
         if cpath in source_paths or cpath == output:
@@ -170,7 +175,7 @@ def build(program, source_path, output, cc=None, emit_c=None, modules=None, targ
             os.replace(script, output)
         return output, "JavaScript (Node.js)"
     generated = Compiler(program, str(source_path), modules=modules, full_runtime=full_runtime, allow_native=allow_native,
-                         source_prefix_maps=source_prefix_maps).compile()
+                         source_prefix_maps=source_prefix_maps, mi_manifest=mi_manifest).compile()
     if style_check is not None:
         style_check()
     if emit_c:
@@ -299,6 +304,7 @@ def make_parser():
     p.add_argument("--cc", help="C 编译器（默认依次查找 clang、gcc、cc；也支持 CC 环境变量）")
     p.add_argument("--emit-c", metavar="PATH", help="额外保存可审阅的独立 C99 源码")
     p.add_argument("--emit-llvm", metavar="PATH", help="仅 LLVM：保存已链接运行时、验证并优化的独立 .ll，可由 clang-14 复编")
+    p.add_argument("--experimental-mi-manifest", help="显式内部密算清单（C／LLVM 实验，不定义公开密语法）")
     p.add_argument("--llvm-clang", metavar="COMMAND", help="仅 LLVM：指定 LLVM 14 Clang（也可设置 RU_LLVM_CLANG）")
     p.add_argument("--full-runtime", action="store_true", help="保留完整运行时及已导入标准库声明，供诊断对比")
     p.add_argument("--allow-native", action="store_true", help="信任原生代码，编译含 Windows x64 ABI 的独立程序；默认关闭，产物不依赖 Python")
@@ -365,7 +371,7 @@ def main(argv=None):
         parser.error('--source-prefix-map 只适用于 --target c')
     if args.command == 'build' and args.target != 'llvm' and (args.emit_llvm is not None or args.llvm_clang is not None):
         parser.error('--emit-llvm 和 --llvm-clang 只适用于 --target llvm')
-    if args.command == 'build' and args.target == 'llvm' and (args.cc is not None or args.emit_c is not None or args.allow_native or args.source_prefix_map):
+    if args.command == 'build' and args.target == 'llvm' and (args.cc is not None or args.emit_c is not None or (args.allow_native and not args.experimental_mi_manifest) or args.source_prefix_map):
         parser.error('LLVM AOT M1 不支持 --cc、--emit-c、--allow-native 或 --source-prefix-map；编译器请用 --llvm-clang 指定')
     if args.command in (None, "repl"):
         return repl()
@@ -485,7 +491,8 @@ def main(argv=None):
             result, compiler = build(program, args.source, output, args.cc, args.emit_c,
                                      modules=modules, target=args.target, full_runtime=args.full_runtime, allow_native=args.allow_native,
                                      source_prefix_maps=args.source_prefix_map, style_check=check_style,
-                                     emit_llvm=args.emit_llvm, llvm_clang=args.llvm_clang)
+                                     emit_llvm=args.emit_llvm, llvm_clang=args.llvm_clang,
+                                     mi_manifest=args.experimental_mi_manifest)
             if args.target == "js":
                 print(f"已编译：{result}\n运行目标：{compiler}；未执行")
             elif args.target == 'llvm':

@@ -11,6 +11,10 @@ htmlcov/
 /bin/
 /dist/
 /.build_tools/
+/experiments/mi_kernel/semantic-results.json
+/experiments/mi_kernel/benchmark-output/
+/experiments/mi_borrow/test-output/
+/experiments/mi_source/test-output/
 /SHA256SUMS.txt
 .ru-build-*/
 *.o

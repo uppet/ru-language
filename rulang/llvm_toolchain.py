@@ -116,9 +116,11 @@ class LLVMToolchain:
 
 
 def build_llvm(program, source_path, output, *, modules, clang=None, emit_llvm=None,
-               full_runtime=False, style_check=None):
+               full_runtime=False, style_check=None, mi_manifest=None, allow_native=False):
     source_path, output = Path(source_path).resolve(), Path(output).resolve()
     source_paths = {Path(path).resolve() for path in modules} | {source_path}
+    if mi_manifest:
+        source_paths.add(Path(mi_manifest).resolve())
     destinations = [output]
     if emit_llvm is not None:
         destinations.append(Path(emit_llvm).resolve())
@@ -128,7 +130,10 @@ def build_llvm(program, source_path, output, *, modules, clang=None, emit_llvm=N
         raise tool_error('LLVM 输出路径不能覆盖源文件或外言依赖。')
     if any(path.is_dir() for path in destinations):
         raise tool_error('LLVM 输出路径不能是目录。')
-    compiler = LLVMCompiler(program, str(source_path), modules=modules, full_runtime=full_runtime)
+    compiler = LLVMCompiler(program, str(source_path), modules=modules, full_runtime=full_runtime,
+                            mi_manifest=mi_manifest, allow_native=allow_native)
+    if compiler.native_enabled and sys.platform != 'win32':
+        raise tool_error('密实验 NativeMemory 普通调用桥仅支持 Windows x64；Linux 可编译无视图的标量密算。')
     compiler.compile()  # Validate the entire program before starting tools.
     if style_check is not None:
         style_check()

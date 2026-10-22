@@ -1,0 +1,10 @@
+{
+  "sources_identical": true,
+  "compiler_inputs_identical": true,
+  "manifest_identical": true,
+  "dependencies_identical": true,
+  "llvm_kernel_bytes_identical": true,
+  "generated_c_byte_difference_count": 1,
+  "difference": "v_fact(0) -> v_fact(1)",
+  "difference_offset": 9034186
+}

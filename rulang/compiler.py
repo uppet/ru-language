@@ -20,8 +20,14 @@ def cstr(value):
 
 class Compiler:
     supports_browser_graphics = False
+    supports_mi_llvm = False
 
-    def __init__(self, program, source_name='<源码>', modules=None, full_runtime=False, allow_native=False, source_prefix_maps=()):
+    def __init__(self, program, source_name='<源码>', modules=None, full_runtime=False, allow_native=False, source_prefix_maps=(), mi_manifest=None, mi_backend='c'):
+        if mi_backend not in ('c', 'llvm') or (mi_backend == 'llvm' and not mi_manifest):
+            raise RuError('独立密后端须为 c／llvm，LLVM 密核需要显式清单', category='能力错误')
+        self.mi_backend = mi_backend
+        self.mi_manifest = mi_manifest
+        self.mi_plan = None
         self.full_runtime = full_runtime
         self.allow_native = bool(allow_native)
         from .source_paths import SourcePathMapper
@@ -33,7 +39,8 @@ class Compiler:
             modules = load_module_graph(source_name, program)
         from .native_runtime import _native_nodes, reject_native_backend
         self.native_enabled = bool(list(_native_nodes((program, modules))))
-        if self.native_enabled and (not self.allow_native or type(self) is not Compiler):
+        if self.native_enabled and (not self.allow_native or
+                (type(self) is not Compiler and not (self.supports_mi_llvm and mi_manifest))):
             reject_native_backend((program, modules))
         for node in import_nodes(modules or program):
             if not self.supports_browser_graphics and (node.data.get("path") == "如:观" or Path(node.data.get("resolved", "")).resolve() == (Path(__file__).parent / "stdlib" / "如观.ru").resolve()):
@@ -99,10 +106,19 @@ class Compiler:
                 pruned_modules.update(pruned)
                 pruned_modules.sources = source_texts
                 self.__init__(program, source_name, modules=pruned_modules, full_runtime=True, allow_native=allow_native,
-                              source_prefix_maps=self.source_path_mapper)
+                              source_prefix_maps=self.source_path_mapper, mi_manifest=mi_manifest, mi_backend=mi_backend)
                 self.source_texts = source_texts
                 self.full_runtime = False
                 self.can_panic = self.native_enabled or any(n.kind in ('panic', 'try') for n in walk_nodes(self.modules))
+
+        if mi_manifest:
+            if type(self) is not Compiler and not self.supports_mi_llvm:
+                raise RuError('密实验普通调用桥支持 C／LLVM；JS 仅提供独立语义内核', category='能力错误')
+            from .mi_source import MiSourcePlan
+            from .mi_ir import VIEW
+            self.mi_plan = MiSourcePlan(self.modules, mi_manifest)
+            if any(VIEW in r['input_contracts'].values() for r in self.mi_plan.records) and not self.native_enabled:
+                raise RuError('密实验视图桥需要显式导入如:密并使用 --allow-native', category='能力错误')
 
     def _exports(self, path):
         if path in self.exports:
@@ -675,6 +691,9 @@ class Compiler:
                 raise AssertionError(n.kind)
 
     def emit_function(self, path, fn):
+        if self.mi_plan and id(fn) in self.mi_plan.functions:
+            self.mi_plan.emit_wrapper(self, fn)
+            return
         ident = self.function_ids[id(fn)]
         self.current_function = fn
         self.current_path, self.functions = path, self._functions(path, fn)
@@ -719,6 +738,8 @@ class Compiler:
         if uses_modulo(self.modules):
             self.line('#define RU_ENABLE_MODULO 1')
         runtime_position = len(self.lines)
+        if self.mi_plan:
+            self.line(self.mi_plan.bridge_source(self.mi_backend))
         for path, ident in self.module_ids.items():
             self.line(f'static Env {ident}_env; static int {ident}_state;')
             if self.can_panic:

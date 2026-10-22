@@ -1,0 +1,12 @@
+{
+  "passed": true,
+  "target": "c",
+  "stdout": "FULL_STATE_RETURNS 56529\nERROR_CHECKS 324\nRANGE_PAUSES 8\nDIFFERENTIAL_PASS\n",
+  "kernel_calls": 72618,
+  "oracle_sha256": "e9658000e1c5fbe5fb49403af2a27eb11a0efb9d4bf5261617b760688ea2d720",
+  "gc_live_zero": true,
+  "test_only_kernel_boundary_counter": true,
+  "windows_abi_execution": false,
+  "batch_calls": 2158,
+  "batch_hits": 965
+}

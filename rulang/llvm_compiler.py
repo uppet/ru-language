@@ -55,6 +55,8 @@ ABI = {
 
 
 class LLVMCompiler(Compiler):
+    supports_mi_llvm = True
+
     def compile(self, triple=None, data_layout=None):
         self.strings, self.constants, self.bodies = {}, [], []
         self.llvm_counter = 0
@@ -72,6 +74,8 @@ class LLVMCompiler(Compiler):
             if n.kind not in kinds:
                 self.error(n, 'LLVM AOT 尚不支持语法节点：' + n.kind)
         for path, fn in self.all_functions:
+            if self.mi_plan and id(fn) in self.mi_plan.functions:
+                continue
             self.emit_body(path, fn, fn.data['body'], self.function_ids[id(fn)] + '_llvm')
         for path, body in self.modules.items():
             self.emit_body(path, None, body, self.module_ids[path] + '_llvm')
@@ -84,6 +88,8 @@ class LLVMCompiler(Compiler):
         if data_layout:
             header.append(f'target datalayout = "{data_layout}"')
         root = self.module_indices[self.root]
+        if self.mi_plan:
+            self.bodies.append(self.mi_plan.compute_source('llvm'))
         main = ('define i32 @main(i32 %argc, i8** %argv) {\nentry:\n'
                 f'  %status = call i32 @rul_main(i32 %argc, i8** %argv, i32 {root}, i32 {int(bool(self.entry))})\n'
                 '  ret i32 %status\n}')
@@ -470,8 +476,10 @@ class LLVMCompiler(Compiler):
 
     def runtime_c(self):
         """Runtime plus ABI descriptors/bridges only; no user AST-to-C lowering."""
-        lines = ['#define RU_ENABLE_MODULO 1', runtime_source(self.modules, '', full=True),
+        lines = ['#define RU_ENABLE_MODULO 1', runtime_source(self.modules, '', full=True, native_plan=self.native_plan),
                  Path(__file__).with_name('llvm_runtime.h').read_text(encoding='utf-8')]
+        if self.mi_plan:
+            lines.append(self.mi_plan.bridge_source('llvm'))
         for path, ident in self.module_ids.items():
             lines.extend([f'static Env {ident}_env;', f'static int {ident}_state;',
                           f'static RuModuleFailure {ident}_failure;', f'static Val {ident}_init(void);'])
@@ -482,9 +490,14 @@ class LLVMCompiler(Compiler):
             return name
         for _, fn in self.all_functions:
             ident = self.function_ids[id(fn)]
-            lines.extend([f'extern void {ident}_llvm(void *, void *, int32_t, void *, void *);',
-                          f'static Val {ident}_bridge(Env *env, Val self, int line, Val *args) {{',
-                          f'Val out=v_null(); {ident}_llvm(env,&self,line,args,&out); return out; }}'])
+            if self.mi_plan and id(fn) in self.mi_plan.functions:
+                self.lines, self.indent = [], 0
+                self.mi_plan.emit_wrapper(self, fn, ident + '_bridge')
+                lines.extend(self.lines)
+            else:
+                lines.extend([f'extern void {ident}_llvm(void *, void *, int32_t, void *, void *);',
+                              f'static Val {ident}_bridge(Env *env, Val self, int line, Val *args) {{',
+                              f'Val out=v_null(); {ident}_llvm(env,&self,line,args,&out); return out; }}'])
             keys = strings(ident+'_names', [p[0] for p in fn.data['params']])
             types = strings(ident+'_types', [p[1] for p in fn.data['params']])
             lines.append(f'static RuFunction {ident}_descriptor = {{{cstr(fn.data["name"])}, {len(fn.data["params"])}, {keys}, {types}, {ident}_bridge, {int(fn.data["procedure"])}}};')
@@ -511,13 +524,14 @@ class LLVMCompiler(Compiler):
         lines.extend([f'static RuClass *rul_classes[] = {{{classes}}};',
                       'static RuClass *rul_class_descriptor(int32_t id) { return rul_classes[id]; }'])
         for path, ident in self.module_ids.items():
+            builtins = 'ru_native_builtins(ru_practical_builtins())' if self.native_enabled else 'ru_practical_builtins()'
             lines.extend([f'extern void {ident}_llvm(void *, void *, int32_t, void *, void *);',
                           f'static Val {ident}_init(void) {{',
                           f'if ({ident}_state==2) return v_module(&{ident}_env);',
                           f'if ({ident}_state==3) return ru_module_failure_raise(&{ident}_failure);',
                           f'if ({ident}_state==1) ru_fail(1,"循环外言");',
                           f'{ident}_state=1; const char *old=ru_source; ru_source={cstr(display_text(path))};',
-                          f'env_init(&{ident}_env,ru_practical_builtins()); Val out=v_null();',
+                          f'env_init(&{ident}_env,{builtins}); Val out=v_null();',
                           f'{ident}_llvm(&{ident}_env,NULL,0,NULL,&out); v_drop(out);',
                           f'if (ru_panicking) {{ ru_module_failure_save(&{ident}_failure); {ident}_state=3; ru_source=old; return v_null(); }}',
                           f'{ident}_state=2; ru_source=old; return v_module(&{ident}_env); }}'])

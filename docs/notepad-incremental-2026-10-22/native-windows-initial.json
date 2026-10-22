@@ -1,0 +1,6 @@
+{
+  "passed": true,
+  "stdout": "NATIVE_ALL_FOLDS 40\nINCREMENTAL_NATIVE_PASS\n",
+  "gc_live_zero": true,
+  "binary_sha256": "1a73290ed80a07663e34ed01d621e9926223a00a02057e87f986f4181fbd7896"
+}

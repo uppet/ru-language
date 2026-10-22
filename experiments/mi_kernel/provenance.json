@@ -1,0 +1,10 @@
+{
+  "base_repository": "https://github.com/uppet/ru-language",
+  "base_commit": "649d98c399f74f1cf0a6bb89a1989bd44c8a8f4d",
+  "base_git_tree": "1e2d5713c64c5cd82f10ed1efd5c4d7dfc7de38f",
+  "verified_existing_blobs": 381,
+  "modified_existing_blobs": 0,
+  "source_scope": "new files under experiments/mi_kernel and one new experimental workflow; existing production files unchanged",
+  "license": "repository root LICENSE (MIT)",
+  "status": "internal IR experiment, dedicated experimental branch CI; no parser/runtime/FFI integration or release"
+}
