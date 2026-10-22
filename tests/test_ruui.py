@@ -99,6 +99,20 @@ def rects(commands):
     return [c for c in commands if c.get('op') == 'rect']
 
 
+def ops(commands, op):
+    return [c for c in commands if c.get('op') == op]
+
+
+def png_bytes(width, height):
+    return (b'\x89PNG\r\n\x1a\n' + (13).to_bytes(4, 'big') + b'IHDR'
+            + width.to_bytes(4, 'big') + height.to_bytes(4, 'big')
+            + b'\x08\x06\x00\x00\x00' + b'\x00\x00\x00\x00')
+
+
+def jpeg_bytes(width, height):
+    return b'\xff\xd8\xff\xc0\x00\x11\x08' + height.to_bytes(2, 'big') + width.to_bytes(2, 'big')
+
+
 def run_python(source, inputs=()):
     events = []
     host = GraphicsHost(Interpreter(), events.append)
@@ -398,6 +412,219 @@ class RuUIParityTests(unittest.TestCase):
                 host.handle({'type': 'mouse_down', 'x': 'a', 'y': 1, 'button': 0})
         finally:
             host.close()
+
+    # ---------- 3a：图载／件载／件目（宿主资源协议） ----------
+
+    def load_program(self, directory, filename='a.png'):
+        return f"""
+尽取 外言 '如UI'.
+
+果 取 [''].
+机 取 新 应用 宽: 360 高: 640 件目: '{directory}' 构: (算:
+    得 列 [
+        (图载 '{filename}' 120 (作 宽 为 数 高 为 数 错 为 句:
+            果[0] 取 (宽 为 句) + 'x' + (高 为 句) + ':' + 错.
+            为)),
+        (文 (果 其 位 0))
+    ].
+法).
+机 其 跑.
+"""
+
+    def test_image_head_size_recognises_png_and_jpeg(self):
+        from rulang.graphics_runtime import _image_head_size
+        self.assertEqual(_image_head_size(png_bytes(4, 3)), (4, 3))
+        self.assertEqual(_image_head_size(jpeg_bytes(640, 480)), (640, 480))
+        with self.assertRaisesRegex(RuError, '不识别的图像格式'):
+            _image_head_size(b'not an image at all')
+        with self.assertRaisesRegex(RuError, '图像尺寸无效'):
+            _image_head_size(png_bytes(0, 3))
+
+    def test_image_load_python_host_auto_load(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            (path / 'a.png').write_bytes(png_bytes(4, 3))
+            events = run_python(self.load_program(directory))
+        # 首帧装帧不绘，宿主读头成功后第二帧等比绘制 160x120 居中。
+        self.assertEqual(len(events), 2)
+        drawn = ops(events[-1]['commands'], 'draw_image')
+        self.assertEqual(len(drawn), 1)
+        self.assertTrue(math.isclose(drawn[0]['x'], 100.0), drawn[0])
+        self.assertTrue(math.isclose(drawn[0]['width'], 160.0), drawn[0])
+        self.assertIn('4x3:', texts(events[-1]['commands']))
+
+    def test_image_load_failure_fires_callback_once(self):
+        with tempfile.TemporaryDirectory() as directory:
+            events = run_python(self.load_program(directory, 'missing.png'))
+        self.assertEqual(len(events), 2)
+        self.assertIn('0x0:读不到文件', texts(events[-1]['commands']))
+        self.assertEqual(ops(events[-1]['commands'], 'draw_image'), [])
+
+    def test_image_load_parity_injected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / 'a.png').write_bytes(png_bytes(4, 3))
+            # Python 宿主自动装载；JS 由注入事件驱动：双路须殊途同归。
+            events = self.compare(
+                self.load_program(directory),
+                [{'type': 'image_ready', 'id': 1, 'width': 4, 'height': 3},
+                 {'type': 'image_ready', 'id': 1, 'width': 4, 'height': 3}])
+        self.assertEqual(len(events), 2)
+        drawn = ops(events[-1]['commands'], 'draw_image')
+        self.assertEqual(len(drawn), 1)
+        self.assertIn('4x3:', texts(events[-1]['commands']))
+
+    def test_image_load_parity_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            events = self.compare(
+                self.load_program(directory, 'missing.png'),
+                [{'type': 'image_failed', 'id': 1, 'error': '读不到文件'}])
+        self.assertEqual(len(events), 2)
+        self.assertIn('0x0:读不到文件', texts(events[-1]['commands']))
+
+    def test_image_page_switch_releases_and_reloads(self):
+        source = """
+尽取 外言 '如UI'.
+
+果 取 [''].
+二页 取 (算:
+    得 列 [(图载 'c.png' 120 (作 宽 为 数 高 为 数 错 为 句:
+        果[0] 取 (宽 为 句) + 'x' + (高 为 句). 为)),
+        (文 (果 其 位 0))
+    ].
+法).
+机 取 新 应用 宽: 360 高: 640 件目: '{d}' 构: (算:
+    得 列 [
+        (图载 'a.png' 120 (作 宽 为 数 高 为 数 错 为 句: 果[0] 取 (宽 为 句). 为)),
+        (钮 '换' (作: 机 其 页 二页. 为))
+    ].
+法).
+机 其 跑.
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            (path / 'a.png').write_bytes(png_bytes(4, 3))
+            (path / 'c.png').write_bytes(png_bytes(5, 2))
+            host_events = []
+            host = GraphicsHost(Interpreter(), host_events.append)
+            try:
+                host.interpreter.execute(parse(source.format(d=directory)))
+                host.flush()
+                button = self.find_rect(host_events[0]['commands'], '#4677ff')
+                x, y = self.center(button)
+                for event in self.tap(x, y):
+                    host.handle(event)
+            finally:
+                host.close()
+            events = [e for e in host_events if e['type'] == 'graphics']
+            released = [c for e in events for c in ops(e['commands'], 'image_release')]
+            self.assertEqual([c['id'] for c in released], [1])
+            requested = [c for e in events for c in ops(e['commands'], 'image_request')]
+            self.assertEqual([(c['id'], c['source']) for c in requested],
+                             [(1, str(path / 'a.png')), (2, str(path / 'c.png'))])
+            self.assertIn('5x2', texts(events[-1]['commands']))
+            switched = [e for e in events if ops(e['commands'], 'image_release')]
+            self.assertTrue(switched)
+            self.assertEqual(ops(switched[-1]['commands'], 'image_release')[0]['id'], 1)
+
+    def test_file_load_parity_text_and_base64(self):
+        source = """
+尽取 外言 '如UI'.
+
+果 取 [''].
+机 取 新 应用 宽: 360 高: 640 件目: '{d}' 构: (算:
+    得 列 [(文 果[0])].
+法).
+机 其 跑.
+机 其 件载 'note.txt' (作 字 为 句 错 为 句: 果[0] 取 字 + '/' + 错. 为) '文' 假.
+机 其 件载 'data.bin' (作 字 为 句 错 为 句: 果[0] 取 果[0] + '|' + 字. 为) 'base64' 假.
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            (path / 'note.txt').write_text('你好', encoding='utf-8')
+            (path / 'data.bin').write_bytes(bytes([0, 255]))
+            events = self.compare(
+                source.format(d=directory),
+                [{'type': 'file_ready', 'id': 1, 'text': '你好'},
+                 {'type': 'file_ready', 'id': 2, 'text': 'AP8='}])
+        self.assertIn('你好/|AP8=', texts(events[-1]['commands']))
+
+    def test_source_resolution_rejects_bad_paths(self):
+        base = """
+尽取 外言 '如UI'.
+机 取 新 应用 宽: 360 高: 640 {extra} 构: (算: 得 列 [(文 'x')]. 法).
+机 其 跑.
+机 其 件载 '{src}' (作 字 为 句 错 为 句: 为) '文' 假.
+"""
+        cases = [
+            ('', '../x', '源 越出件目'),
+            ('', 'a/../../x', '源 越出件目'),
+            ("件目: '/tmp'", '../x', '源 越出件目'),
+            ('', '/tmp/x', '源 不可为绝对路径'),
+            ('', '', '源 不可为空串'),
+        ]
+        for extra, src, message in cases:
+            with self.assertRaises(RuError) as caught:
+                run_python(base.format(extra=extra, src=src))
+            self.assertIn(message, str(caught.exception))
+
+    def test_file_mode_and_text_quota_enforced(self):
+        source = """
+尽取 外言 '如UI'.
+机 取 新 应用 宽: 360 高: 640 构: (算: 得 列 [(文 'x')]. 法).
+机 其 跑.
+机 其 件载 'a' (作 字 为 句 错 为 句: 为) 'binary' 假.
+"""
+        with self.assertRaisesRegex(RuError, '只支持 文 或 base64'):
+            run_python(source)
+
+    def test_load_handle_cap_enforced(self):
+        lines = '\n'.join(
+            "机 其 件载 '第{0}件.txt' (作 字 为 句 错 为 句: 为) '文' 假.".format(i)
+            for i in range(65))
+        source = """
+尽取 外言 '如UI'.
+机 取 新 应用 宽: 360 高: 640 构: (算: 得 列 [(文 'x')]. 法).
+机 其 跑.
+{lines}
+"""
+        with self.assertRaisesRegex(RuError, '如观文件装载最多 64 项'):
+            run_python(source.format(lines=lines))
+
+    def test_host_event_validation_and_quiety(self):
+        events = []
+        host = GraphicsHost(Interpreter(), events.append, auto_load=False)
+        try:
+            host.interpreter.execute(parse(self.load_program('/nonexistent')))
+            host.flush()
+            graphics = [e for e in events if e['type'] == 'graphics']
+            self.assertEqual(len(graphics), 1)
+            # auto_load=False：请求只入队不装载，无后续帧。
+            host.flush()
+            self.assertEqual(len([e for e in events if e['type'] == 'graphics']), 1)
+            # 未绑定的装载就绪事件静默忽略。
+            host.handle({'type': 'image_ready', 'id': 1, 'width': 4, 'height': 3})
+            self.assertEqual(len([e for e in events if e['type'] == 'graphics']), 1)
+            bad = [
+                {'type': 'image_ready', 'id': -1, 'width': 4, 'height': 3},
+                {'type': 'image_ready', 'id': 1, 'width': 0, 'height': 3},
+                {'type': 'image_failed', 'id': 1, 'error': ''},
+                {'type': 'file_ready', 'id': 1, 'text': 'x' * 9000000},
+                {'type': 'image_ready', 'id': 1, 'width': 4, 'height': 3, 'extra': 1},
+            ]
+            for event in bad:
+                with self.assertRaises(RuError):
+                    host.handle(event)
+        finally:
+            host.close()
+
+    def test_host_image_quota_enforced(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)
+            big = path / 'big.png'
+            with big.open('wb') as handle:
+                handle.truncate(64 * 1024 * 1024 + 1)
+            events = run_python(self.load_program(directory, 'big.png'))
+        self.assertIn('0x0:图像超过配额', texts(events[-1]['commands']))
 
 
 if __name__ == '__main__':

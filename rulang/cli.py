@@ -126,7 +126,7 @@ def compiler_command(selected, windows=None):
     return parts
 
 
-def build(program, source_path, output, cc=None, emit_c=None, modules=None, target="c", full_runtime=False, allow_native=False, source_prefix_maps=(), style_check=None):
+def build(program, source_path, output, cc=None, emit_c=None, modules=None, target="c", full_runtime=False, allow_native=False, source_prefix_maps=(), style_check=None, assets=None):
     if target not in ("c", "js", "ui"):
         raise RuError("编译目标须为 c、js 或 ui", category="编译错误")
     if target == "ui" and (cc is not None or emit_c is not None):
@@ -169,7 +169,7 @@ def build(program, source_path, output, cc=None, emit_c=None, modules=None, targ
         return output, "JavaScript (Node.js)"
     if target == "ui":
         from .app_builder import build_app_html
-        generated = build_app_html(source_path.read_text(encoding="utf-8"), title=source_path.stem)
+        generated = build_app_html(source_path.read_text(encoding="utf-8"), title=source_path.stem, assets_dir=assets)
         if style_check is not None:
             style_check()
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -299,6 +299,7 @@ def make_parser():
     p.add_argument("--strict-style", action="store_true", help="将缺少完整语句结束句点的书写提示作为错误；默认只在标准错误提示")
     p.add_argument("-o", "--output", help="输出路径；C 默认去掉源文件扩展名，JS 默认为同名 .js")
     p.add_argument("--target", choices=("c", "js", "ui"), default="c", help="编译目标：c（默认）、js（Node.js）或 ui（如UI 自包含网页，浏览器打开即交互）")
+    p.add_argument("--assets", metavar="目录", help="仅 --target ui：内嵌资产目录，供 件目/图载/件载 以相对路径访问；图像转 data URL、文本内联、其余转 base64，总量 ≤16 MiB")
     p.add_argument("--cc", help="C 编译器（默认依次查找 clang、gcc、cc；也支持 CC 环境变量）")
     p.add_argument("--emit-c", metavar="PATH", help="额外保存可审阅的独立 C99 源码")
     p.add_argument("--full-runtime", action="store_true", help="保留完整运行时及已导入标准库声明，供诊断对比")
@@ -364,6 +365,8 @@ def main(argv=None):
         parser.error("--target js 不能使用 --cc 或 --emit-c")
     if args.command == 'build' and args.target == 'js' and args.source_prefix_map:
         parser.error('--source-prefix-map 只适用于 --target c')
+    if args.command == 'build' and args.assets and args.target != 'ui':
+        parser.error('--assets 只适用于 --target ui')
     if args.command in (None, "repl"):
         return repl()
     source, name = "", getattr(args, "source", getattr(args, "document", "<输入>"))
@@ -479,7 +482,7 @@ def main(argv=None):
                                      else str(Path(args.source).with_suffix("")) + (".exe" if os.name == "nt" else ""))
             result, compiler = build(program, args.source, output, args.cc, args.emit_c,
                                      modules=modules, target=args.target, full_runtime=args.full_runtime, allow_native=args.allow_native,
-                                     source_prefix_maps=args.source_prefix_map, style_check=check_style)
+                                     source_prefix_maps=args.source_prefix_map, style_check=check_style, assets=args.assets)
             if args.target == "js":
                 print(f"已编译：{result}\n运行目标：{compiler}；未执行")
             elif args.target == "ui":

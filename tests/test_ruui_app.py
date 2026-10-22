@@ -110,6 +110,23 @@ class AppPageSmokeTest(unittest.TestCase):
         self.assertIn('mouse_down', html)  # host forwards pointer events
         self.assertIn('requestAnimationFrame', html)  # host drives the frame loop
 
+    def test_assets_dir_embeds_into_page(self):
+        code = (ROOT / 'examples' / 'ruui-counter.ru').read_text(encoding='utf-8')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            # 1x1 PNG
+            (root / 'dot.png').write_bytes(bytes.fromhex(
+                '89504e470d0a1a0a0000000d494844520000000100000001080600000'
+                '01f15c4890000000d4944415478da63fcffff3f030005fe02fea735814'
+                '40000000049454e44ae426082'))
+            (root / 'note.txt').write_text('你好资产', encoding='utf-8')
+            (root / 'blob.bin').write_bytes(b'\x00\xff\x10')
+            html = build_app_html(code, assets_dir=root)
+        # PNG → data URL；UTF-8 文本内联；其余 base64。
+        self.assertIn('data:image/png;base64,', html)
+        self.assertIn('你好资产', html)
+        self.assertIn('AP8Q', html)  # b'\x00\xff\x10' 的 base64
+
 
 if __name__ == '__main__':
     unittest.main()
