@@ -13,6 +13,166 @@ spec.loader.exec_module(diag)
 
 
 class DiagnosticPolicyTests(unittest.TestCase):
+    def test_command_timeout_contract_keeps_llvm120_and_existing600(self):
+        from types import SimpleNamespace
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp); rows=[];seen=[]
+            def invoked(argv,**kwargs):
+                seen.append(kwargs['timeout']);kwargs['stdout'].write(b'out\r\n');kwargs['stderr'].write(b'')
+                return SimpleNamespace(returncode=0)
+            with patch.object(diag.subprocess,'run',invoked):
+                self.assertEqual(diag.command(['tool'],root,{},'default',rows),'out\r\n')
+                self.assertEqual(diag.command(['tool'],root,{},'llvm',rows,input='',timeout=120),'out\r\n')
+            self.assertEqual(seen,[600,120])
+            self.assertEqual([r['timeout_seconds'] for r in rows],[600,120])
+            self.assertEqual(rows[0]['stdout']['sha256'],hashlib.sha256(b'out\r\n').hexdigest())
+
+    def test_three_controls_have_fixed_order_and_independent_failures(self):
+        for failed in ('none','gcc','llvm','both'):
+            calls=[]
+            def build(name):
+                calls.append('build-'+name)
+                if failed in (name,'both'): raise ValueError('failed '+name)
+                return name
+            def run(name): calls.append('run-'+name); return {'passed':True}
+            rows=diag.run_three(lambda:build('gcc'),run,lambda:build('llvm'),run,
+                lambda:calls.append('stage3') or {'passed':False,'censored':True})
+            self.assertEqual(calls[-1],'stage3')
+            self.assertEqual(list(rows),list(diag.ORDER))
+            self.assertFalse(rows['stage3-llvm']['passed'])
+            self.assertFalse(rows['python-c-baseline']['passed']) if failed in ('gcc','both') else None
+            self.assertFalse(rows['python-c-via-llvm-control']['passed']) if failed in ('llvm','both') else None
+
+    def test_c_via_llvm_keeps_main_and_explicit_pure_object_link(self):
+        # Protocol model only: no claim this fake is Windows/LLVM execution.
+        import json
+        class Gate:
+            @staticmethod
+            def verify_identity(record):
+                if diag.identity(record['path']) != record: raise ValueError('identity changed')
+                return Path(record['path'])
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp).resolve(); generated=root/'probe.c';generated.write_bytes(b'int main(int argc,char **argv){return 0;}\n')
+            names=('clang','llvm-as','llvm-link','opt','llvm-dis','llc','linker')
+            tools={name:str(root/(name+'.exe')) for name in names}
+            for path in tools.values(): Path(path).write_bytes(b'locked tool')
+            reused={}
+            for name in ('launcher.obj','application.res'):
+                path=root/name;path.write_bytes(name.encode());reused[name]=diag.identity(path)
+            receipt={'tool_paths':tools,'tool_sha256':{k:diag.identity(v)['sha256'] for k,v in tools.items()},
+                     'target_triple':'x86_64-pc-windows-msvc19.0','data_layout':'e-m:w','linked_inputs':reused}
+            selections=[];commands=[]
+            class Driver:
+                @staticmethod
+                def validate_toolchain(paths,hashes):
+                    for name,path in paths.items():
+                        if diag.identity(path)['sha256'] != hashes[name]: raise ValueError('tool changed')
+                @staticmethod
+                def explicit_linker_flags(record): return ['-fuse-ld=link.exe','-B'+str(root)]
+                @staticmethod
+                def inspect_linker_command(argv,record,env,cwd,triple):
+                    self.assertEqual(argv[1],'--target='+triple)
+                    selections.append(list(argv));return {'command':list(argv)}
+                @staticmethod
+                def verify_linker_selection(selection,tools,expected_command,triple): self.assertEqual(selection['command'],expected_command)
+                @staticmethod
+                def link_commands(tools,ir,wrapper,app,directory,triple):
+                    return [[tools['llc'],str(ir),'-o',str(directory/'application.obj')],
+                            [tools['clang'],'--target='+triple,str(directory/'application.obj'),str(directory/'launcher.obj'),str(directory/'application.res'),'-o',str(directory/'ru_notepad.exe'),*Driver.explicit_linker_flags({})]]
+                @staticmethod
+                def verify_gui_pe(path): self.assertTrue(path.is_file())
+            class Chain:
+                def __init__(self,clang):
+                    self.clang=[clang];self.tools={k:tools[k] for k in names if k not in ('clang','linker')}
+                    self.triple=receipt['target_triple'];self.data_layout=receipt['data_layout']
+                    self.run([clang,'--version'])
+                def compile(self,program,runtime,directory,full_runtime):
+                    self_test.assertFalse(full_runtime)
+                    (directory/'program.ll').write_bytes(program.encode());(directory/'runtime.c').write_bytes(runtime.encode())
+                    for name in ('program.bc','runtime.bc','linked.bc','optimized.bc','standalone.ll','program.o'):
+                        self.run([self.tools['llc'],'-o',str(directory/name)])
+                    self.run(self.clang+[str(directory/'program.o'),'-o',str(directory/'program.exe'),*self.link_flags])
+                    return directory/'program.exe',directory/'standalone.ll'
+            self_test=self
+            def fake_command(argv,cwd,env,label,evidence,input=None,timeout=600):
+                commands.append(list(argv));evidence.append({'argv':argv})
+                if '-o' in argv: Path(argv[argv.index('-o')+1]).write_bytes(b'generated output')
+                return 'clang version 14.0.6'
+            result={'control_source_graph':{'generated_c':diag.identity(generated)}}
+            with patch.object(diag,'command',fake_command):
+                binary=diag.compile_c_via_llvm(Chain,generated,root/'build',receipt,Driver,Gate,{},result,lambda:None)
+            self.assertEqual(len(selections),2)
+            self.assertEqual((root/'build/runtime.c').read_bytes(),generated.read_bytes())
+            self.assertEqual((root/'build/program.ll').read_text(), 'target datalayout = "e-m:w"\ntarget triple = "x86_64-pc-windows-msvc19.0"\n')
+            self.assertFalse(result['llvm_control']['bootstrap_proof'])
+            self.assertFalse(result['llvm_control']['release_permission'])
+            self.assertEqual(binary['path'],str(root/'build/ru_notepad.exe'))
+            self.assertEqual(result['llvm_control']['reused_gui_inputs'],reused)
+            # No frontend subprocess or generated-C rewrite in this worker.
+            self.assertTrue(all(argv[0] in tools.values() for argv in commands))
+            class WrongTarget(Chain):
+                def __init__(self,clang): super().__init__(clang); self.triple='x86_64-pc-windows-msvcOTHER'
+            with patch.object(diag,'command',fake_command):
+                with self.assertRaisesRegex(ValueError,'target/layout differs'):
+                    diag.compile_c_via_llvm(WrongTarget,generated,root/'wrong-target',receipt,Driver,Gate,{},result,lambda:None)
+            class WrongTools(Chain):
+                def __init__(self,clang): super().__init__(clang); self.tools['llc']='untrusted-llc'
+            with patch.object(diag,'command',fake_command):
+                with self.assertRaisesRegex(ValueError,'different tools'):
+                    diag.compile_c_via_llvm(WrongTools,generated,root/'wrong-tools',receipt,Driver,Gate,{},result,lambda:None)
+            class BadLink(Chain):
+                def compile(self,program,runtime,directory,full_runtime):
+                    self.run(self.clang+[str(directory/'program.o'),'-o',str(directory/'program.exe')])
+            with patch.object(diag,'command',fake_command):
+                with self.assertRaisesRegex(ValueError,'unexpected LLVM console linker argv'):
+                    diag.compile_c_via_llvm(BadLink,generated,root/'implicit-link',receipt,Driver,Gate,{},result,lambda:None)
+            def mutate_runtime(argv,cwd,env,label,evidence,input=None,timeout=600):
+                output=fake_command(argv,cwd,env,label,evidence,input)
+                if (cwd/'runtime.c').exists(): (cwd/'runtime.c').write_bytes(b'changed runtime')
+                return output
+            with patch.object(diag,'command',mutate_runtime):
+                with self.assertRaisesRegex(ValueError,'identity changed'):
+                    diag.compile_c_via_llvm(Chain,generated,root/'runtime-mutation',receipt,Driver,Gate,{},result,lambda:None)
+            def mutate_tool(argv,cwd,env,label,evidence,input=None,timeout=600):
+                output=fake_command(argv,cwd,env,label,evidence,input)
+                Path(tools['llc']).write_bytes(b'replaced tool')
+                return output
+            with patch.object(diag,'command',mutate_tool):
+                with self.assertRaisesRegex(ValueError,'tool changed'):
+                    diag.compile_c_via_llvm(Chain,generated,root/'tool-mutation',receipt,Driver,Gate,{},result,lambda:None)
+            Path(tools['llc']).write_bytes(b'locked tool')
+            # Load the actual repository class, stubbing only unrelated imports
+            # and OS/tool responses. Its constructor/compile bodies are unedited.
+            import types, sys
+            package=types.ModuleType('_diagnostic_real');package.__path__=[]
+            frontend=types.ModuleType('_diagnostic_real.frontend');frontend.RuError=ValueError
+            compiler=types.ModuleType('_diagnostic_real.llvm_compiler');compiler.LLVMCompiler=object
+            environment=types.ModuleType('_diagnostic_real.toolchain_environment');environment.llvm_environment=lambda:{}
+            cli=types.ModuleType('_diagnostic_real.cli');cli.compiler_command=lambda selected:[selected]
+            spec=importlib.util.spec_from_file_location('_diagnostic_real.llvm_toolchain',PATH.parents[1]/'rulang/llvm_toolchain.py')
+            module=importlib.util.module_from_spec(spec)
+            stubs={m.__name__:m for m in (package,frontend,compiler,environment,cli)}
+            with patch.dict(sys.modules,stubs): spec.loader.exec_module(module)
+            limits=[]
+            def real_command(argv,cwd,env,label,evidence,input=None,timeout=600):
+                limits.append((label,timeout));fake_command(argv,cwd,env,label,evidence,input,timeout)
+                if '--version' in argv: return 'clang version 14.0.6' if argv[0] == tools['clang'] else 'LLVM version 14.0.6'
+                if '-S' in argv: return 'target datalayout = "e-m:w"\ntarget triple = "x86_64-pc-windows-msvc19.0"\n'
+                return ''
+            with patch.dict(sys.modules,stubs),patch.object(module.sys,'platform','win32'), \
+                 patch.object(module.platform,'machine',return_value='AMD64'),patch.object(module.os,'access',return_value=True), \
+                 patch.object(diag,'command',real_command):
+                diag.compile_c_via_llvm(module.LLVMToolchain,generated,root/'real-chain',receipt,Driver,Gate,{},result,lambda:None)
+            self.assertTrue(all(seconds == (120 if label.startswith('llvm-') else 600) for label,seconds in limits))
+            actual=result['llvm_control']['commands']
+            passes=[arg for cmd in actual for arg in cmd['argv'] if arg.startswith('-passes=')]
+            self.assertEqual(passes,['-passes=internalize,default<O2>,globaldce'])
+            self.assertEqual(len(result['llvm_control']['linker_selections']),2)
+            generated.write_bytes(b'changed')
+            with self.assertRaisesRegex(ValueError,'shared generated C changed'):
+                diag.compile_c_via_llvm(Chain,generated,root/'rejected',receipt,Driver,Gate,{},result,lambda:None)
+
+
     def test_control_failure_does_not_skip_bootstrap(self):
         calls = []
         def failed(): calls.append('C-build'); raise ValueError('compiler timeout')

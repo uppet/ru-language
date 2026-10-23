@@ -22,7 +22,7 @@ import time
 
 SCHEMA = 'ru-notepad-same-runner-diagnostic-v1'
 ENTRY = 'tests/bootstrap_pipeline/dll_abi_probe.ru'
-ORDER = ('python-c-baseline', 'stage3-llvm')
+ORDER = ('python-c-baseline', 'python-c-via-llvm-control', 'stage3-llvm')
 
 
 def require(condition, message):
@@ -94,19 +94,24 @@ def phase(result, name, callback):
         row['seconds'] = time.monotonic() - start
 
 
-def command(argv, cwd, env, label, evidence):
+def command(argv, cwd, env, label, evidence, input=None, timeout=600):
     stdout, stderr = cwd/(label+'.stdout.log'), cwd/(label+'.stderr.log')
     record = {'argv': list(map(str, argv)), 'cwd': str(cwd), 'environment': env,
               'environment_sha256': hashlib.sha256(json.dumps(env, sort_keys=True).encode()).hexdigest(),
-              'timeout_seconds': 600, 'returncode': None}
+              'timeout_seconds': timeout, 'returncode': None}
     evidence.append(record)
+    stdin = None if input is None else input.encode('utf-8')
+    record['stdin_sha256'] = None if stdin is None else hashlib.sha256(stdin).hexdigest()
     try:
         with stdout.open('xb') as out, stderr.open('xb') as err:
-            done = subprocess.run(record['argv'], cwd=cwd, env=env, stdout=out, stderr=err, timeout=600)
+            done = subprocess.run(record['argv'], cwd=cwd, env=env, stdout=out, stderr=err, input=stdin, timeout=timeout)
         record['returncode'] = done.returncode
         require(done.returncode == 0, 'diagnostic command failed: '+label)
     finally:
         record['stdout'], record['stderr'] = identity(stdout), identity(stderr)
+    raw = stdout.read_bytes()
+    require(hashlib.sha256(raw).hexdigest() == record['stdout']['sha256'] and len(raw) == record['stdout']['size'], 'diagnostic stdout changed before parse')
+    return raw.decode('utf-8')
 
 
 def stage(binary, directory, dependencies, gate):
@@ -214,7 +219,106 @@ def run_pair(build_control, run_control, run_bootstrap, rows=None):
         rows.setdefault(ORDER[0], {'executed': False})
         rows[ORDER[0]].update(passed=False, error=str(exc))
     # This call independently validates frozen inputs before launching anything.
-    rows[ORDER[1]] = run_bootstrap()
+    rows[ORDER[-1]] = run_bootstrap()
+    return rows
+
+
+def compile_c_via_llvm(toolchain_type, generated, directory, receipt, driver, gate, environment, result, revalidate):
+    """Python-generated C control, NOT a stage3 build or bootstrap proof."""
+    tools = receipt['tool_paths']
+    triple, layout = receipt['target_triple'], receipt['data_layout']
+    generated_record = identity(generated)
+    require(generated_record == result['control_source_graph']['generated_c'], 'shared generated C changed')
+    raw = generated.read_bytes()
+    require(identity(generated) == generated_record, 'shared generated C changed while reading')
+    directory.mkdir(exist_ok=False)
+    evidence = {'frontend': 'Python Compiler C emission (diagnostic control only)',
+                'backend': 'LLVMToolchain.compile internalize/default<O2>/globaldce then llc',
+                'bootstrap_proof': False, 'release_permission': False, 'generated_c': generated_record,
+                'target_triple': triple, 'data_layout': layout, 'commands': [], 'artifacts': [],
+                'linker_selections': [], 'environment': environment,
+                'environment_sha256': hashlib.sha256(json.dumps(environment, sort_keys=True).encode()).hexdigest()}
+    result['llvm_control'] = evidence
+    linker_record = identity(tools['linker'])
+    driver.validate_toolchain(tools, receipt['tool_sha256'])
+    def frozen():
+        require(identity(generated) == generated_record, 'shared generated C changed during LLVM control')
+        driver.validate_toolchain(tools, receipt['tool_sha256'])
+        for record in evidence['artifacts']: gate.verify_identity(record)
+    pipeline_names = ('program.ll','runtime.c','program.bc','runtime.bc','linked.bc','optimized.bc','standalone.ll','program.o','program.exe')
+    def freeze_pipeline_outputs():
+        frozen()
+        seen = {record['path'] for record in evidence['artifacts']}
+        for name in pipeline_names:
+            path = directory/name
+            if path.is_file() and str(path.resolve()) not in seen:
+                evidence['artifacts'].append(identity(path))
+    class ControlToolchain(toolchain_type):
+        def run(self, argv, input=None):
+            argv = list(map(str,argv))
+            require(argv and argv[0] in tools.values(), 'LLVM control attempted unpinned executable')
+            # Same pure-object link, exact target and locked linker; no IR rewrite.
+            pure_link = argv == [tools['clang'], str(directory/'program.o'), '-o', str(directory/'program.exe'),
+                                 *driver.explicit_linker_flags(linker_record)]
+            require(str(directory/'program.exe') not in argv or pure_link, 'unexpected LLVM console linker argv')
+            if pure_link: argv.insert(1, '--target='+triple)
+            freeze_pipeline_outputs()
+            selection = None
+            if pure_link:
+                selection = driver.inspect_linker_command(argv,linker_record,environment,str(directory),triple)
+                evidence['linker_selections'].append(selection)
+            value = command(argv,directory,environment,'llvm-'+str(len(evidence['commands'])),evidence['commands'], input=input, timeout=120)
+            if selection: driver.verify_linker_selection(selection,tools,expected_command=argv,triple=triple)
+            freeze_pipeline_outputs()
+            return value
+    chain = ControlToolchain(tools['clang'])
+    require(chain.clang == [tools['clang']] and chain.tools == {name:tools[name] for name in ('llvm-as','llvm-link','opt','llvm-dis','llc')}, 'LLVM control selected different tools')
+    require(chain.triple == triple and chain.data_layout == layout, 'LLVM control target/layout differs')
+    chain.link_flags = driver.explicit_linker_flags(linker_record)
+    program = 'target datalayout = '+json.dumps(layout)+'\ntarget triple = '+json.dumps(triple)+'\n'
+    console, ir = chain.compile(program,raw.decode('utf-8'),directory,full_runtime=False)
+    require(len(evidence['linker_selections']) == 1, 'LLVM control pure-object explicit link not observed')
+    names = ('program.ll','runtime.c','program.bc','runtime.bc','linked.bc','optimized.bc','standalone.ll','program.o','program.exe')
+    require({Path(record['path']).name for record in evidence['artifacts']} == set(names), 'incomplete LLVM pipeline evidence')
+    require((directory/'runtime.c').read_bytes() == raw, 'LLVM runtime C differs from shared C')
+    require((directory/'program.ll').read_bytes() == program.encode(), 'empty target module changed')
+    # Reuse the proven fixed C launcher object and original SDK resource bytes.
+    # main stays main in the LLVM module; no textual IR/name transformation.
+    evidence['reused_gui_inputs'] = {name:receipt['linked_inputs'][name] for name in ('launcher.obj','application.res')}
+    for name, record in evidence['reused_gui_inputs'].items():
+        shutil.copyfile(gate.verify_identity(record),directory/name)
+        copied = identity(directory/name)
+        require((copied['sha256'],copied['size']) == (record['sha256'],record['size']), 'reused GUI input changed')
+        evidence['artifacts'].append(copied)
+    plan = driver.link_commands(tools,ir,Path('unused-fixed-wrapper'),Path('unused-app'),directory,triple)
+    frozen()
+    command(plan[0],directory,environment,'gui-llc',evidence['commands'])
+    evidence['artifacts'].append(identity(directory/'application.obj'))
+    frozen()
+    selection = driver.inspect_linker_command(plan[-1],linker_record,environment,str(directory),triple)
+    evidence['linker_selections'].append(selection)
+    command(plan[-1],directory,environment,'gui-link',evidence['commands'])
+    driver.verify_linker_selection(selection,tools,expected_command=plan[-1],triple=triple)
+    frozen()
+    binary = directory/'ru_notepad.exe'
+    driver.verify_gui_pe(binary)
+    evidence['artifacts'].append(identity(binary))
+    for record in evidence['reused_gui_inputs'].values(): gate.verify_identity(record)
+    revalidate()
+    evidence['complete'] = True
+    return identity(binary)
+
+
+def run_three(build_control, run_control, build_llvm, run_llvm, run_bootstrap, rows=None):
+    """Each named control can fail independently; bootstrap still runs once."""
+    rows = {} if rows is None else rows
+    for label, build, run in ((ORDER[0],build_control,run_control),(ORDER[1],build_llvm,run_llvm)):
+        try:
+            rows[label] = run(build())
+        except Exception as exc:
+            rows.setdefault(label, {'executed': False})
+            rows[label].update(passed=False,error=str(exc))
+    rows[ORDER[2]] = run_bootstrap()
     return rows
 
 
@@ -247,7 +351,7 @@ def diagnose(config):
               'stage3_receipt': identity(gate_config['dll_probe_receipt']),
               'inputs': [*[identity(language/name) for name in diagnostic_paths], identity(sys.executable), identity(app/'packaging/diagnostic_launcher.c')],
               'tool_paths': dependencies['tool_paths'], 'tool_sha256': dependencies['tool_sha256'],
-              'limitations': ['fixed order may have warm-cache/time effects', 'GCC+C versus LLVM+stage3 does not isolate one causal factor', '60s incomplete observations remain censored']}
+              'limitations': ['fixed order may have warm-cache/time effects', 'C-via-LLVM controls toolchain differences but frontend/runtime representation and fixed-order effects remain', '60s incomplete observations remain censored']}
     env = deps.dependency_environment(dependencies['tool_paths'], os.environ)
     env.update(PYTHONUTF8='1', PYTHONDONTWRITEBYTECODE='1')
     result['runtime_environment'] = env
@@ -258,7 +362,7 @@ def diagnose(config):
     def revalidate():
         gate.validate_receipts(gate_config)
         deps.validate_receipt(Path(gate_config['dependencies_receipt']))
-        for record in [*result['inputs'], *result['copies'], result['entry'], result['dependencies_receipt'], result['stage3_receipt']]:
+        for record in [*result['inputs'], *result['copies'], *result.get('llvm_control',{}).get('artifacts',[]), result['entry'], result['dependencies_receipt'], result['stage3_receipt']]:
             gate.verify_identity(record)
     def build_control():
         revalidate()
@@ -295,6 +399,23 @@ def diagnose(config):
         gate.verify_gui_pe(binary)
         revalidate()
         return identity(binary)
+    def build_llvm_control():
+        revalidate()
+        sys.path.insert(0,str(language))
+        from rulang.llvm_toolchain import LLVMToolchain
+        from rulang.toolchain_environment import llvm_environment
+        require(Path(sys.modules['rulang.llvm_toolchain'].__file__).resolve() == language/'rulang/llvm_toolchain.py'
+                and Path(sys.modules['rulang.toolchain_environment'].__file__).resolve() == language/'rulang/toolchain_environment.py', 'wrong pinned LLVM control module')
+        driver = importlib.import_module('build_bootstrap_release')
+        require(Path(driver.__file__).resolve() == app/'tools/build_bootstrap_release.py', 'wrong pinned GUI build driver')
+        for name in ('rulang/llvm_toolchain.py','rulang/toolchain_environment.py'):
+            require(dll_receipt['source_sha256']['ru_source'].get(name) == identity(language/name)['sha256'], 'LLVM control code not tracked in frozen source')
+            result['inputs'].append(identity(language/name))
+        llvm_env = llvm_environment()
+        require(not any(llvm_env.get(k) for k in ('CL','_CL_','LINK','_LINK_')), 'ambient LLVM control flags forbidden')
+        sdk = {k:v for k,v in llvm_env.items() if k.upper() in {'PATH','INCLUDE','LIB','LIBPATH','WINDOWSSDKDIR','WINDOWSSDKVERSION','VCTOOLSINSTALLDIR','VCTOOLSVERSION'}}
+        require(sdk == dll_receipt['sdk_crt_environment'], 'LLVM control SDK/CRT environment differs from bootstrap')
+        return phase(result,'control-c-via-llvm',lambda: compile_c_via_llvm(LLVMToolchain,owned/'c-build/probe.c',owned/'c-llvm-build',dll_receipt,driver,gate,llvm_env,result,revalidate))
     def run_backend(label, binary):
         revalidate()
         exe, copies = stage(binary, owned/label, dependencies, gate)
@@ -308,9 +429,10 @@ def diagnose(config):
         return row
     result['results'] = {}
     try:
-        run_pair(build_control,
+        run_three(build_control,
             lambda binary: run_backend(ORDER[0], binary),
-            lambda: run_backend(ORDER[1], dll_receipt['final_binary']), result['results'])
+            build_llvm_control, lambda binary: run_backend(ORDER[1], binary),
+            lambda: run_backend(ORDER[2], dll_receipt['final_binary']), result['results'])
         result['status'] = 'diagnostic-complete'
     except Exception as exc:
         result.update(status='diagnostic-failed', error=str(exc))
