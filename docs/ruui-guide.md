@@ -43,7 +43,7 @@ ru build examples/ruui-counter.ru --target ui
 | `重载` | `(重载 件)` | 重新装载 `图载`／`件载` 件（跳过结果去重） |
 | `文入` | `(文入 值 占位 遇改)` | 文本输入框；回调以新串调用：`(作 新文 为 句: … 为)`（见「文入协议」节） |
 | `多行` | `(多行 件)` | 修饰 `文入`：多行模式（回车插入换行；单行回车＝提交失焦） |
-| `应用.服务` | `机 其 服务 名` | 取宿主服务门面（档服务：写／添写／列，见「宿主服务协议」节） |
+| `应用.服务` | `机 其 服务 名` | 取宿主服务门面（档服务：写／添写／列；网服务：拉／投，见「宿主服务协议」节） |
 | `应用.能` | `机 其 能 名` | 查某服务当前可用（服务告投递后生效；未广告过恒假） |
 
 横向均分示例（三柱等宽、两钮等宽）：
@@ -164,8 +164,9 @@ ru build examples/ruui-counter.ru --target ui
 - **Python 宿主**：GraphicsHost 服务队列在 flush 内同帧应答；档根＝程序目录，路径越件目拒绝（沿用 `件目` 语义）。
 - **浏览器宿主**：`createRuntime(host)` 的 `host.services()`（服务名表）与 `host.handleService(canvas_id, request)`（执行请求、以 `host.emit` 回 `service_response`）。无桥的纯浏览器里 `能` 恒假、服务请在下一拍事件自动回失败——同「测文三档」的能力诚实先例。
 - **如UI 门面**：`档 取 (机 其 服务 '档').`；`档 其 写 径 文 (作 果 误: …)`；`档 其 添写 径 文 (作 果 误: …)`；`档 其 列 径 (作 果 名表 误: …)`（名表＝文件名字符串数组，空目录为空表）。读档复用 `件载`。
+- **网服务**：`网 取 (机 其 服务 '网').`；`网 其 拉 网址 (作 果 值 误: …)`（GET，两参）；`网 其 投 网址 内容 旗 (作 果 值 误: …)`（POST，四参；旗真则 Content-Type 为 application/json，否则 text/plain；UTF-8）。回执值＝响应体文本；错误原文回传（`网 HTTP <code>`、`网 只识 http/https`、`网 不识此操作：<动作>`、`网 取文失败` 及 DNS／CORS 原文），≤512 字节。Python 宿主以 urllib 实现（10 秒超时，体 ≥8 MiB 拒）；浏览器宿主有 fetch 时由运行时本地拦截执行（10 秒 AbortController 超时），桌面壳（WebKitGTK／WebView2／WKWebView）零改动获得网能力——浏览器 CORS 由页面所在源决定，失败原文如实回传，不做隐式代理。无 fetch 且桥不识 `网` 时按能力诚实自动回失败。
 - **配额预检**：库先拒 路径 >128 字、文 >2,000,000 字（UTF-8 约 ≤8 MiB）的请求，本地回失败不进宿主。
-- **示例／测试**：`examples/ruui-notepad.ru`；`tests/test_ruui_services.py`。
+- **示例／测试**：`examples/ruui-notepad.ru`；`tests/test_ruui_services.py`；`tests/test_ruui_net.py`。
 
 ## 桌面目标（--target desktop）
 
@@ -199,4 +200,5 @@ WebView 量级（百 MB 级）、Linux 需系统 WebKitGTK。WebKitGTK 路径在
 
 - `tests/test_ruui.py`：双后端逐命令比对（计数器、测验、滚动与拖拽钳位、滑杆、调色盘均分／预设／主题、非法事件拒绝、提示与切页、图载／件载成功失败配额、切页重载、源解析、就绪注入与噪音静默、文入聚焦打字／编辑键／回车两模式／剪贴剥换行／IME 组合恰一次遇改／失焦提交与翻页失焦，以及测文缺省逐位兼容／注入驱动光标／实测钩 parity／非法注入拒绝），44 例。
 - `tests/test_ruui_services.py`：宿主服务通道与档服务 13 例——双端服务告投递与 `能` 生效（无桥诚实无档／注入假桥有档）、写／添写／覆盖与状态回执、列目录回执、未知服务与不识操作回误、原始 `服务请`／`服务回` 成员直通、事件校验六例，以及记事本示例首帧 parity。
+- `tests/test_ruui_net.py`：网服务 7 例双端（Python urllib／JS fetch）——服务告含 `网`、GET 回体、POST 回显、JSON Content-Type、HTTP 错误原文、仅 http/https、不识操作回误。
 - `tests/test_ruui_app.py`：`--target ui` 产物级冒烟——Node + DOM 桩运行整页，模拟点击加一按钮并推进帧时钟，断言重绘值为 1；文入页聚焦几何／打字／退格／IME 定字恰一次／失焦，以及页主实测度量驱动光标 x；另断言页面自包含（单 script、无外部 src/link）。

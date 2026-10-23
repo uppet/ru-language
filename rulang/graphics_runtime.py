@@ -14,6 +14,8 @@ import re
 import secrets
 import sys
 import time
+import urllib.error
+import urllib.request
 import tracemalloc
 from types import MappingProxyType
 
@@ -437,7 +439,7 @@ class GraphicsHost:
         # 宿主服务通道：宿主声明所供服务（默认 档），画布创建后投递一次
         # 服务告；服务请求排队、帧外迭代执行，与装载管线同节奏。
         self.auto_services = bool(auto_services)
-        self.services = ("档",) if services is None else tuple(services)
+        self.services = ("档", "网") if services is None else tuple(services)
         self.service_queue = deque()
         self._draining_services = False
         # 测文协议：下游渲染宿主可注入真实字度表与实测钩（如书前端等）。
@@ -596,6 +598,8 @@ class GraphicsHost:
             return {"type": "service_response", "id": handle_id, "ok": False,
                     "value": None, "error": message[:512] or "服务失败"}
 
+        if job["service"] == "网":
+            return self._run_net_job(job, ok, bad)
         if job["service"] != "档":
             return bad("宿主无此服务：" + job["service"])
         path = job["path"]
@@ -618,6 +622,35 @@ class GraphicsHost:
                 return bad("列档结果超过配额")
             return ok(value)
         return bad("档 不识此操作：" + job["action"])
+
+    def _run_net_job(self, job, ok, bad):
+        """网服务：取（GET）/投（POST 附文）；错误按能力诚实原则回失败。"""
+        url = job["path"]
+        if not url:
+            return bad("网 网址不可为空")
+        if not url.startswith(("http://", "https://")):
+            return bad("网 只识 http/https")
+        if job["action"] not in ("拉", "投"):
+            return bad("网 不识此操作：" + job["action"])
+        try:
+            if job["action"] == "投":
+                request = urllib.request.Request(
+                    url, data=(job["text"] or "").encode("utf-8"), method="POST",
+                    headers={"Content-Type": "application/json" if job["flag"]
+                             else "text/plain; charset=utf-8"})
+            else:
+                request = urllib.request.Request(
+                    url, headers={"Accept": "text/plain, */*;q=0.8"})
+            with urllib.request.urlopen(request, timeout=10) as response:
+                raw = response.read(MAX_FILE_LOAD_BYTES + 1)
+        except urllib.error.HTTPError as error:
+            return bad("网 HTTP %s" % error.code)
+        except (urllib.error.URLError, OSError, ValueError) as error:
+            reason = getattr(error, "reason", None)
+            return bad("网 " + (str(reason) if reason else str(error) or "取文失败"))
+        if len(raw) > MAX_FILE_LOAD_BYTES:
+            return bad("网 响应超过配额")
+        return ok(raw.decode("utf-8", errors="replace"))
 
     def _load_image_job(self, job):
         try:

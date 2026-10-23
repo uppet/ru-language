@@ -247,9 +247,10 @@
       if(typeof a.文!=='string'||browserEncoder.encode(a.文).length>8388608)bad('如观服务文 最长 8 MiB');
       if(typeof a.旗!=='boolean')bad('如观服务旗 须为真假');
       command({op:'service_request',id,service:a.服务,action:a.操作,path:a.径,text:a.文,flag:a.旗});
-      // 宿主服务通道：有桥（--target desktop 壳）交给桥执行；无桥按能力
-      // 诚实原则自动回失败（同 测文三档 先例），下一拍事件投递。
-      if(__ruHost&&typeof __ruHost.handleService==='function')__ruHost.handleService(c.id,{id,service:a.服务,action:a.操作,path:a.径,text:a.文,flag:a.旗});
+      // 网服务双端本地实现（fetch，10 秒超时）：有 fetch 先拦，其余交桥；
+      // 无桥不识别者按能力诚实原则自动回失败，与 测文三档 同先例。
+      if(a.服务==='网'&&typeof fetch==='function')browserNetRequest(c.id,{id,service:a.服务,action:a.操作,path:a.径,text:a.文,flag:a.旗});
+      else if(__ruHost&&typeof __ruHost.handleService==='function')__ruHost.handleService(c.id,{id,service:a.服务,action:a.操作,path:a.径,text:a.文,flag:a.旗});
       else c.servicePending.push({id,service:a.服务});
     }else if(name==='入焦点'){
       if(typeof a.文!=='string'||browserEncoder.encode(a.文).length>8388608)bad('如观文入文本 须为句，最长 8 MiB');
@@ -356,16 +357,46 @@
     // 服务请求按能力诚实原则自动回失败，与当前事件同批投递（先于其回调）。
     const c=browserCanvas;
     if(!c||c.closed)return;
+    // 网服务：取（GET）/投（POST 附文）；回执异步经事件投递（fetch 回调），
+    // 与宿主桥回执同一事件形状。错误按能力诚实原则原文回失败。
     if(!c.serviceAdSent&&c.callbacks.service_ad){
       c.serviceAdSent=true;
       const list=(typeof __ruHost==='object'&&__ruHost&&typeof __ruHost.services==='function')?__ruHost.services():[];
-      browserDispatch({canvas_id:c.id,event:{type:'service_ad',services:Array.isArray(list)?list.join(' '):''}});
+      const merged=Array.isArray(list)?list.slice():[];
+      if(typeof fetch==='function'&&merged.indexOf('网')<0)merged.push('网');
+      browserDispatch({canvas_id:c.id,event:{type:'service_ad',services:merged.join(' ')}});
     }
     while(c.servicePending.length){
       const pending=c.servicePending.shift();
       browserDispatch({canvas_id:c.id,event:{type:'service_response',id:pending.id,ok:false,value:null,error:'宿主无此服务：'+pending.service}});
     }
   }
+  function browserNetRequest(canvasId,job){
+    const finish=(ok,value,error)=>browserDispatch({canvas_id:canvasId,event:{type:'service_response',id:job.id,ok,value:ok?value:null,error:ok?null:String(error||'网 取文失败').slice(0,512)}});
+    const url=job.path;
+    if(!url)return finish(false,null,'网 网址不可为空');
+    if(!/^https?:\/\//.test(url))return finish(false,null,'网 只识 http/https');
+    if(job.action!=='拉'&&job.action!=='投')return finish(false,null,'网 不识此操作：'+job.action);
+    const abort=typeof AbortController==='function'?new AbortController():null;
+    const timer=abort?setTimeout(()=>abort.abort(),10000):null;
+    fetch(url,{
+      method:job.action==='投'?'POST':'GET',
+      headers:job.action==='投'?{'Content-Type':job.flag?'application/json':'text/plain; charset=utf-8'}:{'Accept':'text/plain, */*;q=0.8'},
+      body:job.action==='投'?(job.text||''):undefined,
+      signal:abort?abort.signal:undefined,
+    }).then(response=>{
+      if(!response.ok)throw new Error('网 HTTP '+response.status);
+      return response.text();
+    }).then(text=>{
+      if(timer)clearTimeout(timer);
+      if(browserEncoder.encode(text).length>8388608)return finish(false,null,'网 响应超过配额');
+      finish(true,text,null);
+    }).catch(error=>{
+      if(timer)clearTimeout(timer);
+      finish(false,null,error&&error.message?error.message:error);
+    });
+  }
+
   function browserDispatch(request){
     const c=browserCanvas;
     if(!c||!request||request.canvas_id!==c.id)throw new Error('如观画布已关闭或事件已失效');
