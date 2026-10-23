@@ -39,6 +39,7 @@ MAX_FILE_TEXT_BYTES = 8 * 1024 * 1024
 MAX_LOAD_HANDLES = 64
 MAX_SOURCE_CHARS = 512
 MAX_LOAD_EVENTS_PER_FLUSH = 256
+MAX_SERVICE_NAME_CHARS = 64
 LOAD_MODES = frozenset(("文", "base64"))
 ASYNC_EVENTS = frozenset(("image_ready", "image_failed", "file_ready", "file_failed"))
 # 背景重置整帧绘制，但装载管理命令不是绘制：图请求／件请求／图释放须在
@@ -61,7 +62,9 @@ EVENT_PARAMS = {"frame": ("每帧", ["帧"]), "mouse_down": ("鼠标按下", ["�
                 "file_failed": ("件失败", ["号", "错"]),
                 "text_key": ("键按下", ["键"]), "text_char": ("字符", ["文"]),
                 "text_paste": ("剪贴", ["文"]), "text_comp_start": ("组开始", []),
-                "text_comp_update": ("组更新", ["组", "光标"]), "text_comp_end": ("组结束", ["文"])}
+                "text_comp_update": ("组更新", ["组", "光标"]), "text_comp_end": ("组结束", ["文"]),
+                "service_response": ("服务回", ["号", "成", "值", "误"]),
+                "service_ad": ("服务告", ["表"])}
 CALLBACK_NAMES = {name: kind for kind, (name, _) in EVENT_PARAMS.items()}
 
 
@@ -78,6 +81,7 @@ CANVAS_PARAMS = MappingProxyType({"背景": ("色",), "填色": ("色",), "描�
               "缓存": ("宽", "高", "绘制"), "贴图": ("图像", "横", "纵"),
               "图请求": ("号", "源"), "绘图": ("号", "横", "纵", "宽", "高"),
               "图释放": ("号",), "件请求": ("号", "源", "式"),
+              "服务请": ("号", "服务", "操作", "径", "文", "旗"),
               "入焦点": ("横", "纵", "宽", "高", "文", "标"), "入失焦": (),
               "入更新": ("文", "标"),
               "帧率": ("率",), "停": (), "继续": (), "关闭": (), "宽": (), "高": (), "帧": (),
@@ -106,7 +110,7 @@ def install_graphics(owner):
 READ_MEMBERS = frozenset(("宽", "高", "帧", "经过秒", "间隔秒", "字度", "测文"))
 RECORDER_MEMBERS = frozenset(CANVAS_PARAMS) - frozenset(CALLBACK_NAMES) - {
     "缓存", "贴图", "帧率", "停", "继续", "关闭", "帧", "经过秒", "间隔秒",
-    "图请求", "绘图", "图释放", "件请求", "入焦点", "入失焦", "入更新",
+    "图请求", "绘图", "图释放", "件请求", "服务请", "入焦点", "入失焦", "入更新",
     "字度", "测文"}
 
 # 缺省字度（号的倍数）：与如UI 早期近似度量逐位一致，保证不注入时行为不变。
@@ -408,7 +412,8 @@ class DrawingRecorder(Canvas):
 
 
 class GraphicsHost:
-    def __init__(self, interpreter, emit, *, now_seconds=None, auto_load=True):
+    def __init__(self, interpreter, emit, *, now_seconds=None, auto_load=True,
+                 auto_services=True, services=None):
         self.interpreter, self.emit = interpreter, emit
         self.canvas = None
         self.phase = "initialization"
@@ -424,6 +429,12 @@ class GraphicsHost:
         self.auto_load = bool(auto_load)
         self.load_queue = deque()
         self._draining = False
+        # 宿主服务通道：宿主声明所供服务（默认 档），画布创建后投递一次
+        # 服务告；服务请求排队、帧外迭代执行，与装载管线同节奏。
+        self.auto_services = bool(auto_services)
+        self.services = ("档",) if services is None else tuple(services)
+        self.service_queue = deque()
+        self._draining_services = False
         # 测文协议：下游渲染宿主可注入真实字度表与实测钩（如书前端等）。
         self.text_metrics = None
         self.text_measurer = None
@@ -483,6 +494,9 @@ class GraphicsHost:
             self.owns_tracing = True
         self.canvas = Canvas(self, width, height, origin)
         self.canvas.metrics = self._resolve_text_metrics()
+        if self.services:
+            self.service_queue.append({"kind": "ad", "canvas_id": self.canvas.id,
+                                       "services": " ".join(self.services)})
         instance = Instance(_TYPES["canvas"], {})
         instance.graphics_canvas = self.canvas
         return instance
@@ -514,6 +528,7 @@ class GraphicsHost:
             self.emit(event)
             canvas.dirty = False
         self._drain_loads()
+        self._drain_services()
 
     def _drain_loads(self):
         # Load jobs queue host-issued readiness events. Deliver them iteratively
@@ -539,6 +554,65 @@ class GraphicsHost:
                     self.handle(event)
         finally:
             self._draining = False
+
+    def _drain_services(self):
+        # 服务邮件排队、帧外迭代投递（同装载管线）：执行期回调再入队的
+        # 链式请求保持浅层。广告在 服务告 未绑定时留在队首，等库注册后再送。
+        if self._draining_services:
+            return
+        self._draining_services = True
+        try:
+            delivered = 0
+            while self.service_queue and delivered < MAX_LOAD_EVENTS_PER_FLUSH:
+                job = self.service_queue.popleft()
+                delivered += 1
+                canvas = self.canvas
+                if canvas is None or canvas.closed or canvas.id != job["canvas_id"]:
+                    continue
+                if job.get("kind") == "ad":
+                    if "service_ad" in canvas.callbacks:
+                        self.handle({"type": "service_ad", "services": job["services"]})
+                    else:
+                        self.service_queue.appendleft(job)
+                        break
+                    continue
+                self.handle(self._run_service_job(job))
+        finally:
+            self._draining_services = False
+
+    def _run_service_job(self, job):
+        handle_id = job["handle"]
+
+        def ok(value=""):
+            return {"type": "service_response", "id": handle_id, "ok": True,
+                    "value": value, "error": None}
+
+        def bad(message):
+            return {"type": "service_response", "id": handle_id, "ok": False,
+                    "value": None, "error": message[:512] or "服务失败"}
+
+        if job["service"] != "档":
+            return bad("宿主无此服务：" + job["service"])
+        path = job["path"]
+        if not path:
+            return bad("档 路径不可为空")
+        if job["action"] == "写":
+            try:
+                with open(path, "a" if job["flag"] else "w", encoding="utf-8", newline="") as stream:
+                    stream.write(job["text"])
+                return ok()
+            except OSError as error:
+                return bad("[errno %s] %s" % (error.errno, error.strerror or "写档失败"))
+        if job["action"] == "列":
+            try:
+                names = sorted(os.listdir(path))
+            except OSError as error:
+                return bad("[errno %s] %s" % (error.errno, error.strerror or "列档失败"))
+            value = "\n".join(names)
+            if len(value.encode("utf-8")) > MAX_FILE_LOAD_BYTES:
+                return bad("列档结果超过配额")
+            return ok(value)
+        return bad("档 不识此操作：" + job["action"])
 
     def _load_image_job(self, job):
         try:
@@ -636,15 +710,31 @@ class GraphicsHost:
             allowed.add("text")
             if not isinstance(event.get("text"), str) or len(event["text"]) > MAX_COMPOSITION_CHARS:
                 raise RuError("无效如观输入法定字", category="运行错误")
+        elif kind == "service_response":
+            allowed |= {"id", "ok", "value", "error"}
+            ok_flag = event.get("ok")
+            value, error = event.get("value"), event.get("error")
+            if (not isinstance(ok_flag, bool)
+                    or (value is not None and not isinstance(value, str))
+                    or (value is not None and len(value.encode("utf-8")) > MAX_FILE_TEXT_BYTES)
+                    or (error is not None and (not isinstance(error, str)
+                                               or not 1 <= len(error.encode("utf-8")) <= 512))):
+                raise RuError("无效如观服务响应", category="运行错误")
+        elif kind == "service_ad":
+            allowed.add("services")
+            if (not isinstance(event.get("services"), str)
+                    or len(event["services"].encode("utf-8")) > 4096):
+                raise RuError("无效如观服务广告", category="运行错误")
         if set(event) - allowed:
             raise RuError("如观事件含未知字段", category="运行错误")
         if kind == "close":
             self.close()
             return
         callback = canvas.callbacks.get(kind)
-        if kind in ASYNC_EVENTS and callback is None:
-            # 未绑定的装载就绪事件按清理噪音静默忽略。
-            return
+        if kind in ASYNC_EVENTS or kind in ("service_response", "service_ad"):
+            if callback is None:
+                # 未绑定的装载就绪与服务邮件按清理噪音静默忽略。
+                return
         if kind != "frame" and callback is None:
             raise RuError("如观事件未启用", category="运行错误")
         if kind == "frame" and not canvas.running:
@@ -687,6 +777,15 @@ class GraphicsHost:
             if not isinstance(error, str) or not 1 <= len(error.encode("utf-8")) <= 512:
                 raise RuError("无效如观装载错误", category="运行错误")
             event = {"type": kind, "id": handle_id, "error": error}
+        elif kind == "service_response":
+            handle_id = event["id"]
+            if (isinstance(handle_id, bool) or not isinstance(handle_id, int)
+                    or not 0 <= handle_id <= 10000000):
+                raise RuError("无效如观服务句柄", category="运行错误")
+            event = {"type": kind, "id": handle_id, "ok": event["ok"],
+                     "value": event.get("value"), "error": event.get("error")}
+        elif kind == "service_ad":
+            event = {"type": kind, "services": event["services"]}
         if kind in ASYNC_EVENTS:
             # 只对真正在途的装载句柄送就绪：未知句柄（从未请求或已释放）
             # 与重复就绪都按噪音忽略，帧数保持确定。校验先行，坏事件仍须报错。
@@ -720,6 +819,12 @@ class GraphicsHost:
             values = [event["text"], float(event["cursor"])]
         elif kind == "text_comp_start":
             values = []
+        elif kind == "service_response":
+            values = [float(event["id"]), event["ok"],
+                      event["value"] if event["value"] is not None else "",
+                      event["error"] if event["error"] is not None else ""]
+        elif kind == "service_ad":
+            values = [event["services"]]
         else:
             values = [event["key"]]
         # Frames are complete scenes. Input callbacks can change style/data;
@@ -939,6 +1044,31 @@ def graphics_member(owner, n, receiver, name, args):
         if canvas.host.auto_load:
             canvas.host.load_queue.append({"kind": "file", "canvas_id": canvas.id, "handle": handle_id,
                                            "source": source, "mode": mode})
+    elif name == "服务请":
+        handle_id = number(bound["号"], "号", 1, 10000000, True)
+        service = bound["服务"]
+        action = bound["操作"]
+        if (not isinstance(service, str) or not service
+                or len(service.encode("utf-8")) > MAX_SERVICE_NAME_CHARS):
+            fail("如观服务名 须为非空句，最长 64 字节")
+        if (not isinstance(action, str) or not action
+                or len(action.encode("utf-8")) > MAX_SERVICE_NAME_CHARS):
+            fail("如观服务操作 须为非空句，最长 64 字节")
+        path = bound["径"]
+        if not isinstance(path, str) or len(path.encode("utf-8")) > MAX_SOURCE_CHARS:
+            fail("如观服务径 最长 512 字节")
+        text = bound["文"]
+        if not isinstance(text, str) or len(text.encode("utf-8")) > MAX_FILE_TEXT_BYTES:
+            fail("如观服务文 最长 8 MiB")
+        flag = bound["旗"]
+        if not isinstance(flag, bool):
+            fail("如观服务旗 须为真假")
+        canvas.command({"op": "service_request", "id": handle_id, "service": service,
+                        "action": action, "path": path, "text": text, "flag": flag}, fail)
+        if canvas.host.auto_services:
+            canvas.host.service_queue.append({"canvas_id": canvas.id, "handle": handle_id,
+                                              "service": service, "action": action,
+                                              "path": path, "text": text, "flag": flag})
     elif name == "入焦点":
         text = bound["文"]
         if not isinstance(text, str) or len(text.encode("utf-8")) > MAX_FILE_TEXT_BYTES:
