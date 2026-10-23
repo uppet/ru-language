@@ -54,7 +54,33 @@ def prohibit_python_frontend():
         yield
 
 
-class LegacyMonotonicSlots(LLVMCompiler):
+class UncachedReuseSlots(LLVMCompiler):
+    """Exact prior925 address emission, with the same normal slot reuse."""
+    def slot(self):
+        ident = '%' + self.fresh('v')
+        self.entry_allocations.append(f'  {ident} = call i8* @rul_slot(i8* %frame, i32 {self.slot_count})')
+        self.slot_count += 1
+        self.slot_peak = max(self.slot_peak, self.slot_count)
+        return ident
+
+
+def canonical_addresses(ir):
+    table, aliases, output = {}, {}, []
+    for line in ir.splitlines(True):
+        if line.startswith('define '):
+            table, aliases = {}, {}
+        match = re.fullmatch(r'  (%v\d+) = call i8\* @rul_slot\(i8\* %frame, i32 (\d+)\)\n', line)
+        if match:
+            name, index = match.groups()
+            if index in table:
+                aliases[name] = table[index]
+                continue
+            table[index] = name
+        output.append(re.sub(r'%v\d+\b', lambda value: aliases.get(value[0], value[0]), line))
+    return ''.join(output)
+
+
+class LegacyMonotonicSlots(UncachedReuseSlots):
     """Test-only old physical allocation rule, not an alternate compiler path."""
     def clear_temporaries(self):
         self.call_abi('clear', '%frame')
@@ -123,7 +149,10 @@ class BootstrapSlotStructureTests(unittest.TestCase):
             with self.subTest(case=name):
                 old, old_runtime = lower(LegacyMonotonicSlots, source)
                 new, new_runtime = lower(LLVMCompiler, source)
-                self.assertEqual(normalize(old), normalize(new))
+                uncached, uncached_runtime = lower(UncachedReuseSlots, source)
+                self.assertEqual(normalize(old), normalize(uncached))
+                self.assertEqual(canonical_addresses(uncached), new)
+                self.assertEqual(old_runtime, uncached_runtime)
                 self.assertEqual(old_runtime, new_runtime)
                 self.assertEqual(len(frames(old)), len(frames(new)))
                 self.assertTrue(all(new_size <= old_size for old_size,new_size in zip(frames(old),frames(new))))
@@ -136,6 +165,8 @@ class BootstrapSlotStructureTests(unittest.TestCase):
             extent = frames(body)[0]
             indices = [int(value) for value in re.findall(r'@rul_slot\(i8\* %frame, i32 (\d+)\)', body)]
             self.assertEqual(extent, max(indices, default=-1)+1)
+            self.assertEqual(len(indices), len(set(indices)))
+            self.assertEqual(indices, list(range(extent)))
 
     def test_reuse_and_success_edge_differ_from_unsafe_unwind_rule(self):
         old, _ = lower(LegacyMonotonicSlots, '显 1. '*100)

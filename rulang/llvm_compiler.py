@@ -139,9 +139,13 @@ class LLVMCompiler(Compiler):
 
     def slot(self):
         ident = '%' + self.fresh('v')
-        self.entry_allocations.append(f'  {ident} = call i8* @rul_slot(i8* %frame, i32 {self.slot_count})')
+        index = self.slot_count
         self.slot_count += 1
         self.slot_peak = max(self.slot_peak, self.slot_count)
+        if index < len(self.slot_addresses):
+            return self.slot_addresses[index]
+        self.entry_allocations.append(f'  {ident} = call i8* @rul_slot(i8* %frame, i32 {index})')
+        self.slot_addresses.append(ident)
         return ident
 
     def clear_temporaries(self):
@@ -455,6 +459,7 @@ class LLVMCompiler(Compiler):
         self.functions, self.known_values = self._functions(path, fn), self._values(path, fn)
         self.body, self.entry_allocations, self.slot_count = [], [], 0
         self.slot_peak = 0
+        self.slot_addresses = []
         self.terminated = False
         self.llvm_envs, self.llvm_handlers, self.llvm_loops = [], [], []
         self.finish_label, self.panic_label = self.fresh('finish'), self.fresh('panic')

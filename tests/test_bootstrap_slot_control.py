@@ -40,13 +40,13 @@ class SlotControlTests(unittest.TestCase):
         func=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='language_delta')
         allowed=ast.literal_eval(func.body[0].value)
         digests={
-            'bootstrap/compiler.ru':'d83691c0eb9af56d8954224b49906b1fb8b910e520577ead43efc9671e269a60',
-            'rulang/llvm_compiler.py':'1edd71ceaa97b5eed6e8ea519dbe32bfc88b510df54b33f3af1c787bbb7b6f26',
+            'bootstrap/compiler.ru':'002f6995e9ca20307691ad015ca849a2570ada1043f1c089f8027a858cf34d7f',
+            'rulang/llvm_compiler.py':'c4a1baa913c82fa24bbfba1d359f57699df4283b43945a42095c8f3721710dd2',
             'tests/test_bootstrap_editor_diagnostic.py':'0a257f51a6f90c4b78a6a9524366f5f92e71497d6b565e9b0a352ad2cf5365e2'}
         old={'rulang/runtime.h':'unchanged',**dict.fromkeys(digests,'old')}
         new={**old,**dict.fromkeys(allowed,'added'),**digests}
         self.assertEqual(control.language_delta(old,new),sorted(allowed))
-        for bad in ({**new,'rulang/runtime.h':'changed'},{**new,'bootstrap/compiler.ru':'wrong'}, {k:v for k,v in new.items() if k!='rulang/runtime.h'}, {k:v for k,v in new.items() if k!='tools/bootstrap_slot_old_artifact.py'}):
+        for bad in ({**new,'bootstrap/compiler.ru':'d83691c0eb9af56d8954224b49906b1fb8b910e520577ead43efc9671e269a60'}, {**new,'rulang/llvm_compiler.py':'1edd71ceaa97b5eed6e8ea519dbe32bfc88b510df54b33f3af1c787bbb7b6f26'}, {**new,'tools/unreviewed.py':'extra'}, {**new,'rulang/runtime.h':'changed'},{**new,'bootstrap/compiler.ru':'wrong'}, {k:v for k,v in new.items() if k!='rulang/runtime.h'}, {k:v for k,v in new.items() if k!='tools/bootstrap_slot_old_artifact.py'}):
             with self.assertRaises(ValueError): control.language_delta(old,bad)
 
     def test_read_raw_binding_and_frozen_changes(self):

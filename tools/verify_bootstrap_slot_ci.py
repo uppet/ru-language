@@ -27,7 +27,8 @@ digest = native.digest
 
 
 def checkout_identity():
-    require(os.environ.get('GITHUB_REF') == 'refs/heads/feature/bootstrap-slot-reuse-20261023',
+    require(os.environ.get('GITHUB_REF') in ('refs/heads/feature/bootstrap-slot-reuse-20261023',
+            'refs/heads/feature/bootstrap-slot-address-20261023'),
             'slot experiment requires its isolated branch')
     expected=os.environ.get('GITHUB_SHA','')
     require(re.fullmatch('[a-f0-9]{40}',expected), 'exact CI commit required')
@@ -57,6 +58,10 @@ def evidence_inputs(kind):
     paths = [Path(__file__).resolve(), ROOT/'tools/verify_bootstrap_native_ci.py',
              ROOT/'tests'/(MODULES[kind]+'.py'), ROOT/'tests/test_bootstrap_slot_ci.py',
              ROOT/'.github/workflows/bootstrap-slot-reuse.yml', ROOT/'tests/test_bootstrap_slot_workflow.py',
+             ROOT/'.github/workflows/bootstrap-slot-address.yml', ROOT/'tests/test_bootstrap_address_workflow.py',
+             ROOT/'tools/measure_bootstrap_addresses.py', ROOT/'tools/bootstrap_address_build.py',
+             ROOT/'tools/bootstrap_address_artifact.py', ROOT/'tests/test_bootstrap_address_measurement.py',
+             ROOT/'tests/test_bootstrap_address_build.py', ROOT/'tests/test_bootstrap_address_artifact.py',
              ROOT/'tests/bootstrap_slot_cases.py',
              ROOT/'tools/bootstrap_slot_old_artifact.py', ROOT/'tools/diagnose_bootstrap_slot_control.py',
              ROOT/'tests/test_bootstrap_slot_old_artifact.py', ROOT/'tests/test_bootstrap_slot_control.py']
@@ -274,7 +279,9 @@ def units(directory):
     buffer = io.StringIO()
     try:
         paths = [ROOT/'tests'/name for name in ('test_bootstrap_slot_ci.py','test_bootstrap_slot_workflow.py',
-                 'test_bootstrap_slot_old_artifact.py','test_bootstrap_slot_control.py')]
+                 'test_bootstrap_slot_old_artifact.py','test_bootstrap_slot_control.py',
+                 'test_bootstrap_address_workflow.py','test_bootstrap_address_measurement.py',
+                 'test_bootstrap_address_build.py','test_bootstrap_address_artifact.py')]
         require(all(p.is_file() for p in paths), 'required portable gate source missing')
         before = {p.relative_to(ROOT).as_posix():digest(p) for p in paths}
         suite = unittest.TestSuite()

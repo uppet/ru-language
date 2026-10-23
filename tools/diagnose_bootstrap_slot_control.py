@@ -81,12 +81,20 @@ def language_delta(old, new):
         'tests/test_bootstrap_slot_workflow.py', 'tools/verify_bootstrap_slot_ci.py',
         'tools/bootstrap_slot_old_artifact.py', 'tests/test_bootstrap_slot_old_artifact.py',
         'tools/diagnose_bootstrap_slot_control.py', 'tests/test_bootstrap_slot_control.py',
+        '.github/workflows/bootstrap-slot-address.yml',
+        'tools/bootstrap_address_build.py',
+        'tools/bootstrap_address_artifact.py',
+        'tools/measure_bootstrap_addresses.py',
+        'tests/test_bootstrap_address_build.py',
+        'tests/test_bootstrap_address_artifact.py',
+        'tests/test_bootstrap_address_measurement.py',
+        'tests/test_bootstrap_address_workflow.py',
     }
     changed = {name for name in old.keys() | new.keys() if old.get(name) != new.get(name)}
     require(changed == allowed and not old.keys() - new.keys(), 'unreviewed old/new language delta')
     for name, digest in {
-        'bootstrap/compiler.ru':'d83691c0eb9af56d8954224b49906b1fb8b910e520577ead43efc9671e269a60',
-        'rulang/llvm_compiler.py':'1edd71ceaa97b5eed6e8ea519dbe32bfc88b510df54b33f3af1c787bbb7b6f26',
+        'bootstrap/compiler.ru':'002f6995e9ca20307691ad015ca849a2570ada1043f1c089f8027a858cf34d7f',
+        'rulang/llvm_compiler.py':'c4a1baa913c82fa24bbfba1d359f57699df4283b43945a42095c8f3721710dd2',
         'tests/test_bootstrap_editor_diagnostic.py':'0a257f51a6f90c4b78a6a9524366f5f92e71497d6b565e9b0a352ad2cf5365e2',
     }.items():
         require(new.get(name) == digest, 'unreviewed production/mock-fix patch')
