@@ -96,7 +96,11 @@ class DiagnosticPolicyTests(unittest.TestCase):
             self_test=self
             def fake_command(argv,cwd,env,label,evidence,input=None,timeout=600):
                 commands.append(list(argv));evidence.append({'argv':argv})
-                if '-o' in argv: Path(argv[argv.index('-o')+1]).write_bytes(b'generated output')
+                if '-o' in argv:
+                    output = argv[argv.index('-o')+1]
+                    if output != '-':
+                        target = Path(output)
+                        (target if target.is_absolute() else cwd/target).write_bytes(b'generated output')
                 return 'clang version 14.0.6'
             result={'control_source_graph':{'generated_c':diag.identity(generated)}}
             with patch.object(diag,'command',fake_command):
@@ -159,10 +163,23 @@ class DiagnosticPolicyTests(unittest.TestCase):
                 if '--version' in argv: return 'clang version 14.0.6' if argv[0] == tools['clang'] else 'LLVM version 14.0.6'
                 if '-S' in argv: return 'target datalayout = "e-m:w"\ntarget triple = "x86_64-pc-windows-msvc19.0"\n'
                 return ''
-            with patch.dict(sys.modules,stubs),patch.object(module.sys,'platform','win32'), \
-                 patch.object(module.platform,'machine',return_value='AMD64'),patch.object(module.os,'access',return_value=True), \
-                 patch.object(diag,'command',real_command):
-                diag.compile_c_via_llvm(module.LLVMToolchain,generated,root/'real-chain',receipt,Driver,Gate,{},result,lambda:None)
+            original_write = Path.write_bytes
+            def owned_write(path, data):
+                self.assertTrue(path.resolve().is_relative_to(root), 'mock wrote outside owned temporary fixture: '+str(path))
+                return original_write(path, data)
+            import os
+            previous_cwd = Path.cwd()
+            with tempfile.TemporaryDirectory() as clean_cwd:
+                os.chdir(clean_cwd)
+                try:
+                    before = list(Path.cwd().iterdir())
+                    with patch.object(Path,'write_bytes',owned_write),patch.dict(sys.modules,stubs),patch.object(module.sys,'platform','win32'), \
+                         patch.object(module.platform,'machine',return_value='AMD64'),patch.object(module.os,'access',return_value=True), \
+                         patch.object(diag,'command',real_command):
+                        diag.compile_c_via_llvm(module.LLVMToolchain,generated,root/'real-chain',receipt,Driver,Gate,{},result,lambda:None)
+                    self.assertEqual(list(Path.cwd().iterdir()), before, 'LLVM mock polluted caller cwd')
+                finally:
+                    os.chdir(previous_cwd)
             self.assertTrue(all(seconds == (120 if label.startswith('llvm-') else 600) for label,seconds in limits))
             actual=result['llvm_control']['commands']
             passes=[arg for cmd in actual for arg in cmd['argv'] if arg.startswith('-passes=')]
