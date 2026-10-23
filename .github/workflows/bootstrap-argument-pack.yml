@@ -1,0 +1,518 @@
+name: Experimental bootstrap owned argument pack acceptance and measurement
+
+on:
+  push:
+    branches: [feature/bootstrap-argument-pack-20261023]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  pack-bootstrap:
+    # Experimental ordinary boxed-value slot allocation only, not dense specialization.
+    # Preserve existing deadlines and native/105 gates; no release or default changes.
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    defaults:
+      run:
+        working-directory: language
+    env:
+      PYTHONUTF8: '1'
+      CC: gcc
+      GIT_CONFIG_COUNT: '1'
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: 'false'
+    steps:
+      - name: Exact candidate checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: language
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.10'
+      - name: Require exact isolated experiment checkout
+        run: python tools/verify_bootstrap_pack_ci.py checkout --directory bin/bootstrap/native-ci
+      - name: Install Linux LLVM 14
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y clang-14 llvm-14
+      - name: Prepare pinned project-local Windows LLVM 14
+        if: runner.os == 'Windows'
+        run: python tools/prepare_workspace.py --with-llvm
+      - name: Check independent C fixture compiler
+        run: gcc --version
+      - name: Check LLVM toolchain
+        run: python -c "from rulang.llvm_toolchain import LLVMToolchain; print(LLVMToolchain().version)"
+      - name: Create persistent evidence before any acceptance unit
+        run: python -c "from pathlib import Path; Path('bin/bootstrap/native-ci').mkdir(parents=True, exist_ok=True)"
+      - name: Slot runner fail-closed and workflow contracts
+        run: python tools/verify_bootstrap_slot_ci.py units --directory bin/bootstrap/native-ci
+      - name: Pack runner artifact build measurement and workflow portable contracts
+        run: python tools/verify_bootstrap_pack_ci.py units --directory bin/bootstrap/native-ci
+      - name: Host safety contracts
+        run: python -m unittest discover -s tests -p test_bootstrap_native_host.py -v
+      - name: Fail-closed CI evidence checker unit tests
+        run: python -m unittest discover -s tests -p test_bootstrap_native_ci.py -v
+      - name: Build stage1, stage2, stage3 and verify existing complete M4 suite
+        run: python tools/bootstrap.py verify --directory bin/bootstrap/native-ci
+      - name: Require 105 actual passes, zero skips, IR/ABI/native fixed point
+        run: python tools/verify_bootstrap_native_ci.py report --directory bin/bootstrap/native-ci
+      - name: Stage3 native frontend positive and fail-closed negative contracts
+        run: python tools/verify_bootstrap_native_ci.py frontend --directory bin/bootstrap/native-ci
+      - name: Real Win64 DLL calls, callbacks, GC, owner, reentry and errors
+        if: runner.os == 'Windows'
+        run: python tools/verify_bootstrap_native_ci.py windows --directory bin/bootstrap/native-ci
+      - name: Required LLVM14 two-frontends lifetime GC and wrong-unwind negative controls
+        run: python tools/verify_bootstrap_slot_ci.py runtime --directory bin/bootstrap/native-ci
+      - name: Required ordinary Win64 slot lifetime callback errors and retry
+        if: runner.os == 'Windows'
+        run: python tools/verify_bootstrap_slot_ci.py windows --directory bin/bootstrap/native-ci
+      - name: Require all new and original native gates with bound identities
+        run: python tools/verify_bootstrap_slot_ci.py report --directory bin/bootstrap/native-ci
+      - name: Required LLVM14 owned-result pack GC and effective negative controls
+        run: python tools/verify_bootstrap_pack_ci.py runtime --directory bin/bootstrap/native-ci
+      - name: Required ordinary Win64 pack fastpath consumption callbacks and retry
+        if: runner.os == 'Windows'
+        run: python tools/verify_bootstrap_pack_ci.py windows --directory bin/bootstrap/native-ci
+      - name: Require all new pack and original native slot gates with bound identities
+        run: python tools/verify_bootstrap_pack_ci.py report --directory bin/bootstrap/native-ci
+      - name: Checkout exact public editor baseline, not current main or wij
+        if: runner.os == 'Windows'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: uppet/ru_notepad
+          ref: d964ea9f7e27065aa5bbcced8d6c7526a6224dd1
+          path: editor
+          persist-credentials: false
+      - name: Stage3 complete d964 editor graph and LLVM console link (not GUI acceptance)
+        if: runner.os == 'Windows'
+        run: python tools/verify_bootstrap_native_ci.py editor --directory bin/bootstrap/native-ci --editor-root ../editor
+      - name: Preflight bounded current compiler and pack evidence bundle
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          @'
+          import io,json,os,re,zipfile
+          from pathlib import Path
+          from tools import bootstrap_pack_artifact as loader
+          source = Path('bin/bootstrap/native-ci').resolve()
+          parent = Path(os.environ['RUNNER_TEMP']).resolve()
+          loader.no_links(source); loader.no_links(parent)
+          output = parent/'bootstrap-pack-compiler-bundle'
+          loader.require(not output.exists() and not output.is_symlink(), 'fresh pack bundle required')
+          names = set(loader.CURRENT_CORE)
+          for path in source.rglob('*'):
+              name = path.relative_to(source).as_posix()
+              if path.is_file() and re.fullmatch(r'pack-(?:runtime|windows)-artifacts-[a-f0-9]{32}/.+', name):
+                  names.add(name)
+          loader.validate_member_names(sorted(names))
+          loader.require(len(names) <= 512, 'pack bundle member bound')
+          files = {name:loader.read_fixed(source/name, loader.MAX_MEMBER) for name in sorted(names)}
+          loader.require(sum(map(len,files.values())) <= loader.MAX_EXPANDED, 'pack bundle expanded bound')
+          raw = io.BytesIO()
+          with zipfile.ZipFile(raw, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+              for name,data in files.items(): archive.writestr(name,data)
+          checked = loader.extract_core(raw.getvalue(), current=True)
+          loader.require(checked == files, 'pack bundle ZIP preflight mismatch')
+          identity = {'COMMIT':os.environ['GITHUB_SHA'], 'STAGE3_SHA256':loader.digest(files['stage3.exe']),
+              'VERIFICATION_SHA256':loader.digest(files['verification.json']), 'current':True}
+          loader.validate_pack_bundle(files, identity)
+          loader.require(all(loader.read_fixed(source/name,loader.MAX_MEMBER)==data for name,data in files.items()),
+              'pack source changed during bundle preflight')
+          output.mkdir()
+          for name,data in files.items():
+              path = output/name; path.parent.mkdir(parents=True,exist_ok=True)
+              loader.no_links(path.parent)
+              with path.open('xb') as stream: stream.write(data)
+          loader.require(all(loader.read_fixed(output/name,loader.MAX_MEMBER)==data for name,data in files.items()),
+              'saved pack bundle changed')
+          receipt = {'complete':True,'commit':os.environ['GITHUB_SHA'],'members':len(files),
+              'expanded_bytes':sum(map(len,files.values())),'preflight_zip_bytes':len(raw.getvalue()),
+              'files':{name:loader.digest(data) for name,data in files.items()}}
+          (source/'pack-bundle-preflight.json').write_text(json.dumps(receipt,indent=2)+'\n',encoding='utf-8')
+          '@ | python -
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Preserve native build identities and partial evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: bootstrap-pack-full-${{ matrix.os }}-${{ github.sha }}
+          path: language/bin/bootstrap/native-ci/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Upload exact bounded current Windows compiler and pack evidence
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: bootstrap-pack-windows-latest-${{ github.sha }}
+          path: ${{ runner.temp }}/bootstrap-pack-compiler-bundle/
+          if-no-files-found: error
+          retention-days: 14
+
+  bootstrap-editor-gui:
+    permissions:
+      contents: read
+      actions: read
+    # Isolated functional evidence only; never a release or a replacement for
+    # the existing editor's 30/120-second performance/product acceptance gates.
+    runs-on: windows-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: language
+        shell: pwsh
+    env:
+      PYTHONUTF8: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+      CC: gcc
+      GIT_CONFIG_COUNT: '1'
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: 'false'
+      EDITOR_COMMIT: 2cb3b8c81ba300745b244c51b50d5625430fbe4f
+      EDITOR_TREE: 5c63f94cd9e3816608cc95b834f91428bbeb3c49
+    steps:
+      - name: Exact language second-stage checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: language
+          persist-credentials: false
+      - name: Exact d964 plus isolated eleven-file pipeline checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: uppet/ru_notepad
+          ref: 2cb3b8c81ba300745b244c51b50d5625430fbe4f
+          path: editor-bootstrap
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.10'
+      - name: Require exact isolated experiment checkout
+        run: python tools/verify_bootstrap_pack_ci.py checkout --directory bin/bootstrap/gui-ci
+      - name: Prepare native DLL-only MinGW tools
+        id: gui-msys2
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
+      - name: Set real x64 SDK and CRT environment
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (!$vs -or $LASTEXITCODE) { throw 'x64 Visual Studio tools unavailable' }
+          $vars = & cmd.exe /d /s /c "call `"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul && set"
+          if ($LASTEXITCODE) { throw 'vcvars64 failed' }
+          $allow = @('PATH','INCLUDE','LIB','LIBPATH','WindowsSdkDir','WindowsSDKVersion','VCToolsInstallDir','VCToolsVersion')
+          foreach ($line in $vars) {
+            $pair = $line -split '=', 2
+            if ($pair.Length -eq 2 -and $allow -contains $pair[0]) { "$($pair[0])=$($pair[1])" >> $env:GITHUB_ENV }
+          }
+          $owned = Join-Path ([System.IO.Path]::GetFullPath($env:RUNNER_TEMP)) 'bootstrap-gui-evidence'
+          if (Test-Path $owned) { throw 'Expected fresh private evidence directory' }
+          New-Item -ItemType Directory $owned | Out-Null
+          "GUI_EVIDENCE=$owned" >> $env:GITHUB_ENV
+      - name: Prepare pinned LLVM 14 and execute native toolchain self-check
+        run: python tools/prepare_workspace.py --with-llvm
+      - name: Lock exact sources and all application/helper tools before bootstrap
+        env:
+          GUI_MSYS_ROOT: ${{ steps.gui-msys2.outputs.msys2-location }}
+        run: |
+          @'
+          import hashlib,json,os,subprocess,sys
+          from pathlib import Path
+          from rulang.llvm_toolchain import LLVMToolchain
+          ru=Path.cwd().resolve(); app=(ru.parent/'editor-bootstrap').resolve(); out=Path(os.environ['GUI_EVIDENCE']).resolve()
+          def require(condition,message):
+              if not condition: raise RuntimeError(message)
+          def git(root,*args): return subprocess.check_output(['git','-C',str(root),*args],text=True,encoding='utf-8').strip()
+          def pin(root,expected):
+              actual=git(root,'rev-parse','HEAD'); require(actual==expected,'unexpected checkout HEAD: '+actual)
+              require(not git(root,'status','--porcelain','--untracked-files=all'),'dirty source')
+              return {'path':str(root),'commit':actual,'tree':git(root,'rev-parse','HEAD^{tree}')}
+          language=pin(ru,os.environ['GITHUB_SHA']); editor=pin(app,os.environ['EDITOR_COMMIT'])
+          require(editor['tree']==os.environ['EDITOR_TREE'],'unexpected editor tree')
+          t=LLVMToolchain(); require(len(t.clang)==1,'unexpected compiler argv')
+          tools={'clang':str(Path(t.clang[0]).resolve()),**{k:str(Path(v).resolve()) for k,v in t.tools.items()},
+            'linker':str((Path(os.environ['VCToolsInstallDir'])/'bin/Hostx64/x64/link.exe').resolve()),
+            'resource-compiler':str((Path(os.environ['WindowsSdkDir'])/'bin'/os.environ['WindowsSDKVersion'].rstrip('\\/')/'x64/rc.exe').resolve())}
+          mingw=Path(os.environ['GUI_MSYS_ROOT'])/'mingw64/bin'
+          native={k:str((mingw/v).resolve()) for k,v in {'cc':'gcc.exe','cxx':'g++.exe','make':'mingw32-make.exe','windres':'windres.exe','ar':'ar.exe','ranlib':'ranlib.exe','objdump':'objdump.exe'}.items()}
+          def hashes(paths):
+              result={}
+              for key,value in paths.items():
+                  p=Path(value); require(p.is_file() and not p.is_symlink(),'unsafe tool path: '+value)
+                  result[key]=hashlib.sha256(p.read_bytes()).hexdigest()
+              return result
+          config={'schema':'ru-notepad-bootstrap-llvm-config-v1','ru_source':language,'app_source':editor,
+            'app_baseline':{'commit':'d964ea9f7e27065aa5bbcced8d6c7526a6224dd1','tree':'2522d03114c808480e42911be850b75e0ae14206'},
+            'bootstrap_directory':str(ru/'bin/bootstrap/gui-ci'),'verification':str(ru/'bin/bootstrap/gui-ci/verification.json'),
+            'tool_paths':tools,'tool_sha256':hashes(tools),'mingw_tool_paths':native,'mingw_tool_sha256':hashes(native)}
+          (out/'base-config.json').write_text(json.dumps(config,indent=2),encoding='utf-8')
+          with open(os.environ['GITHUB_ENV'],'a',encoding='utf-8') as f:
+              f.write('RU_LLVM_CLANG='+tools['clang']+'\n')
+              f.write('PATH='+str(mingw)+';'+os.environ['PATH']+'\n')
+          '@ | python -
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Pipeline policy and explicit linker host contracts
+        run: |
+          python -m unittest discover -s tests -p test_bootstrap_editor_diagnostic.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m unittest discover -s tests -p test_bootstrap_native_host.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -m unittest discover -s ../editor-bootstrap/tests -p 'test_bootstrap*.py' -v
+      - name: Fresh three-stage bootstrap and complete fixed-point report
+        run: python tools/bootstrap.py verify --directory bin/bootstrap/gui-ci
+      - name: Independently require all 105 cases and native fixed point
+        run: python tools/verify_bootstrap_native_ci.py report --directory bin/bootstrap/gui-ci
+      - name: Build only pinned source DLLs and fixed-C native helpers
+        run: python ../editor-bootstrap/tools/prepare_bootstrap_dependencies.py --config "$env:GUI_EVIDENCE/base-config.json" --output "$env:GUI_EVIDENCE/dependencies"
+      - name: Stage3 LLVM build of actual editor and exact GUI probes
+        id: gui_build
+        run: |
+          @'
+          import json,os,subprocess,sys
+          from pathlib import Path
+          out=Path(os.environ['GUI_EVIDENCE']); base=json.loads((out/'base-config.json').read_text(encoding='utf-8'))
+          app=Path(base['app_source']['path'])
+          sys.path.insert(0,str(app/'tools'))
+          import build_bootstrap_release as driver
+          if Path(driver.__file__).resolve() != (app/'tools/build_bootstrap_release.py').resolve():
+              raise RuntimeError('unexpected GUI driver source')
+          for name,entry in [('app','src/main.ru'),('argv','tests/bootstrap_pipeline/argv_probe.ru'),('dll','tests/bootstrap_pipeline/dll_abi_probe.ru')]:
+              config={**base,'entry_source':entry}; path=out/(name+'-config.json')
+              path.write_text(json.dumps(config,indent=2),encoding='utf-8')
+              try:
+                  driver.build(config,out/name)
+              except subprocess.CalledProcessError as error:
+                  def text(value): return value.decode('utf-8','replace') if isinstance(value,bytes) else (value or '')
+                  log=json.dumps({'command':error.cmd,'returncode':error.returncode},default=str)+'\n'+text(error.stdout)+'\n'+text(error.stderr)
+                  (out/(name+'-build-failure.log')).write_text(log,encoding='utf-8')
+                  raise
+          gate={key:str(out/name/'build-receipt.json') for key,name in [('app_receipt','app'),('argv_probe_receipt','argv'),('dll_probe_receipt','dll')]}
+          gate.update(dependencies_receipt=str(out/'dependencies/dependencies-receipt.json'),owned_root=str(out/'owned-runtime'))
+          (out/'gate-config.json').write_text(json.dumps(gate,indent=2),encoding='utf-8')
+          '@ | python -
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Real owned-process GUI resources Unicode argv DLL ABI callbacks and window lifecycle
+        run: python ../editor-bootstrap/tools/verify_bootstrap_editor_windows.py --config "$env:GUI_EVIDENCE/gate-config.json" --output "$env:GUI_EVIDENCE/gui-acceptance.json"
+      - name: Same-runner C control versus bootstrap fixture diagnostic only
+        if: ${{ !cancelled() && steps.gui_build.outcome == 'success' }}
+        run: |
+          @'
+          import json,os
+          from pathlib import Path
+          out=Path(os.environ['GUI_EVIDENCE'])
+          base=json.loads((out/'base-config.json').read_bytes())
+          gate=json.loads((out/'gate-config.json').read_bytes())
+          config={'editor_root':base['app_source']['path'],'gate_config':gate,'owned_root':str(out/'controlled-runtime')}
+          (out/'controlled-config.json').write_text(json.dumps(config,indent=2),encoding='utf-8')
+          '@ | python -
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python tools/diagnose_bootstrap_editor_fixture.py --config "$env:GUI_EVIDENCE/controlled-config.json" --output "$env:GUI_EVIDENCE/controlled-diagnostic.json"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Preserve JSON and logs only, never runtime binaries or packages
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: bootstrap-pack-editor-gui-evidence-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/bootstrap-gui-evidence/**/*.json
+            ${{ runner.temp }}/bootstrap-gui-evidence/**/*.log
+            language/bin/bootstrap/gui-ci/verification.json
+          if-no-files-found: error
+          retention-days: 14
+
+  pack-measurement:
+    needs: [pack-bootstrap, bootstrap-editor-gui]
+    permissions:
+      contents: read
+      actions: read
+    # Isolated functional evidence only; never a release or a replacement for
+    # the existing editor's 30/120-second performance/product acceptance gates.
+    runs-on: windows-latest
+    timeout-minutes: 75
+    defaults:
+      run:
+        working-directory: language
+        shell: pwsh
+    env:
+      PYTHONUTF8: '1'
+      PYTHONDONTWRITEBYTECODE: '1'
+      CC: gcc
+      GIT_CONFIG_COUNT: '1'
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: 'false'
+      EDITOR_COMMIT: 2cb3b8c81ba300745b244c51b50d5625430fbe4f
+      EDITOR_TREE: 5c63f94cd9e3816608cc95b834f91428bbeb3c49
+    steps:
+      - name: Exact language second-stage checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: language
+          persist-credentials: false
+      - name: Exact d964 plus isolated eleven-file pipeline checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: uppet/ru_notepad
+          ref: 2cb3b8c81ba300745b244c51b50d5625430fbe4f
+          path: editor-bootstrap
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.10'
+      - name: Require exact isolated experiment checkout
+        run: python tools/verify_bootstrap_pack_ci.py checkout --directory bin/bootstrap/pack-current
+      - name: Prepare native DLL-only MinGW tools
+        id: gui-msys2
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
+      - name: Set real x64 SDK and CRT environment
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (!$vs -or $LASTEXITCODE) { throw 'x64 Visual Studio tools unavailable' }
+          $vars = & cmd.exe /d /s /c "call `"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul && set"
+          if ($LASTEXITCODE) { throw 'vcvars64 failed' }
+          $allow = @('PATH','INCLUDE','LIB','LIBPATH','WindowsSdkDir','WindowsSDKVersion','VCToolsInstallDir','VCToolsVersion')
+          foreach ($line in $vars) {
+            $pair = $line -split '=', 2
+            if ($pair.Length -eq 2 -and $allow -contains $pair[0]) { "$($pair[0])=$($pair[1])" >> $env:GITHUB_ENV }
+          }
+          $owned = Join-Path ([System.IO.Path]::GetFullPath($env:RUNNER_TEMP)) 'bootstrap-pack-measurement'
+          if (Test-Path $owned) { throw 'Expected fresh private evidence directory' }
+          New-Item -ItemType Directory $owned | Out-Null
+          "PACK_EVIDENCE=$owned" >> $env:GITHUB_ENV
+      - name: Prepare pinned LLVM 14 and execute native toolchain self-check
+        run: python tools/prepare_workspace.py --with-llvm
+      - name: Lock exact sources and all application/helper tools before bootstrap
+        env:
+          GUI_MSYS_ROOT: ${{ steps.gui-msys2.outputs.msys2-location }}
+        run: |
+          @'
+          import hashlib,json,os,subprocess,sys
+          from pathlib import Path
+          from rulang.llvm_toolchain import LLVMToolchain
+          ru=Path.cwd().resolve(); app=(ru.parent/'editor-bootstrap').resolve(); out=Path(os.environ['PACK_EVIDENCE']).resolve()
+          def require(condition,message):
+              if not condition: raise RuntimeError(message)
+          def git(root,*args): return subprocess.check_output(['git','-C',str(root),*args],text=True,encoding='utf-8').strip()
+          def pin(root,expected):
+              actual=git(root,'rev-parse','HEAD'); require(actual==expected,'unexpected checkout HEAD: '+actual)
+              require(not git(root,'status','--porcelain','--untracked-files=all'),'dirty source')
+              return {'path':str(root),'commit':actual,'tree':git(root,'rev-parse','HEAD^{tree}')}
+          language=pin(ru,os.environ['GITHUB_SHA']); editor=pin(app,os.environ['EDITOR_COMMIT'])
+          require(editor['tree']==os.environ['EDITOR_TREE'],'unexpected editor tree')
+          t=LLVMToolchain(); require(len(t.clang)==1,'unexpected compiler argv')
+          tools={'clang':str(Path(t.clang[0]).resolve()),**{k:str(Path(v).resolve()) for k,v in t.tools.items()},
+            'linker':str((Path(os.environ['VCToolsInstallDir'])/'bin/Hostx64/x64/link.exe').resolve()),
+            'resource-compiler':str((Path(os.environ['WindowsSdkDir'])/'bin'/os.environ['WindowsSDKVersion'].rstrip('\\/')/'x64/rc.exe').resolve())}
+          mingw=Path(os.environ['GUI_MSYS_ROOT'])/'mingw64/bin'
+          native={k:str((mingw/v).resolve()) for k,v in {'cc':'gcc.exe','cxx':'g++.exe','make':'mingw32-make.exe','windres':'windres.exe','ar':'ar.exe','ranlib':'ranlib.exe','objdump':'objdump.exe'}.items()}
+          def hashes(paths):
+              result={}
+              for key,value in paths.items():
+                  p=Path(value); require(p.is_file() and not p.is_symlink(),'unsafe tool path: '+value)
+                  result[key]=hashlib.sha256(p.read_bytes()).hexdigest()
+              return result
+          config={'schema':'ru-notepad-bootstrap-llvm-config-v1','ru_source':language,'app_source':editor,
+            'app_baseline':{'commit':'d964ea9f7e27065aa5bbcced8d6c7526a6224dd1','tree':'2522d03114c808480e42911be850b75e0ae14206'},
+            'bootstrap_directory':str(ru/'bin/bootstrap/pack-current'),'verification':str(ru/'bin/bootstrap/pack-current/verification.json'),
+            'tool_paths':tools,'tool_sha256':hashes(tools),'mingw_tool_paths':native,'mingw_tool_sha256':hashes(native)}
+          (out/'base-config.json').write_text(json.dumps(config,indent=2),encoding='utf-8')
+          with open(os.environ['GITHUB_ENV'],'a',encoding='utf-8') as f:
+              f.write('RU_LLVM_CLANG='+tools['clang']+'\n')
+              f.write('PATH='+str(mingw)+';'+os.environ['PATH']+'\n')
+          '@ | python -
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Checkout immutable prior46c address-cache source without pack reuse
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: uppet/ru-language
+          ref: 46c81ccfde815b8917be9107288b9a80b08758c9
+          path: pack-old-language
+          persist-credentials: false
+      - name: Prepare only the fixed compiler artifact parent with reparse guards
+        run: |
+          @'
+          from pathlib import Path
+          from tools import bootstrap_pack_artifact as loader
+          parent = Path.cwd() / 'bin' / 'bootstrap'
+          output = parent / 'pack-current'
+          for ancestor in (parent, *parent.parents):
+              try:
+                  ancestor.lstat()
+              except FileNotFoundError:
+                  continue
+              loader.no_links(ancestor)
+              loader.require(ancestor.is_dir(), 'artifact ancestor must be a directory')
+          parent.mkdir(parents=True, exist_ok=True)
+          loader.no_links(parent)
+          loader.require(not output.exists() and not output.is_symlink(), 'artifact output must remain fresh')
+          '@ | python -
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Download exact old46c and current successful Windows compiler evidence
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          python tools/bootstrap_pack_artifact.py old --output "$env:PACK_EVIDENCE/old-bootstrap" --receipt-output "$env:PACK_EVIDENCE/old-download-pin.json"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python tools/bootstrap_pack_artifact.py current --output "$env:GITHUB_WORKSPACE/language/bin/bootstrap/pack-current" --receipt-output "$env:PACK_EVIDENCE/new-download-pin.json"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Build identical pinned DLL dependencies for every measurement process
+        run: python ../editor-bootstrap/tools/prepare_bootstrap_dependencies.py --config "$env:PACK_EVIDENCE/base-config.json" --output "$env:PACK_EVIDENCE/dependencies"
+      - name: Freeze three-strategy build inputs with honest separate old source provenance
+        run: |
+          @'
+          import hashlib,json,os
+          from pathlib import Path
+          root=Path.cwd().resolve(); out=Path(os.environ['PACK_EVIDENCE']).resolve()
+          base=json.loads((out/'base-config.json').read_bytes())
+          new={**base,'entry_source':'tests/bootstrap_pipeline/dll_abi_probe.ru'}
+          old={**new,'ru_source':{'path':str((root.parent/'pack-old-language').resolve()),
+            'commit':'46c81ccfde815b8917be9107288b9a80b08758c9','tree':'19c4199f3381bca19be01d5e703ef0b691ec7f8b'},
+            'bootstrap_directory':str(out/'old-bootstrap'),'verification':str(out/'old-bootstrap/verification.json')}
+          from tools.bootstrap_pack_build import MEASUREMENT_INPUTS
+          names = MEASUREMENT_INPUTS
+          def identity(p):
+              raw=p.read_bytes(); return {'path':str(p),'sha256':hashlib.sha256(raw).hexdigest(),'size':len(raw)}
+          config={'schema':'ru-bootstrap-pack-build-config-v1','editor_root':str((root.parent/'editor-bootstrap').resolve()),
+            'owned_root':str(out/'builds'),'dependencies_receipt':str(out/'dependencies/dependencies-receipt.json'),
+            'build_configs':{'A':old,'B':new},
+            'artifact_receipts':{'A':json.loads((out/'old-download-pin.json').read_bytes()),'B':json.loads((out/'new-download-pin.json').read_bytes())},
+            'measurement_inputs':[identity(root/name) for name in names]}
+          (out/'build-config.json').write_text(json.dumps(config,indent=2),encoding='utf-8')
+          '@ | python -
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Build each complete strategy under its own strict 600 second aggregate watchdog
+        run: python tools/bootstrap_pack_build.py --config "$env:PACK_EVIDENCE/build-config.json" --output "$env:PACK_EVIDENCE/builds/prepared.json"
+      - name: Six balanced rounds all eighteen fixed 60 second owned-process observations
+        run: python tools/measure_bootstrap_packs.py --prepared "$env:PACK_EVIDENCE/builds/prepared.json" --owned-root "$env:PACK_EVIDENCE/builds/samples" --output "$env:PACK_EVIDENCE/builds/samples/measurement.json"
+      - name: Preserve all measurement JSON and logs including refused or incomplete observations
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: bootstrap-pack-measurement-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/bootstrap-pack-measurement/**/*.json
+            ${{ runner.temp }}/bootstrap-pack-measurement/**/*.log
+          if-no-files-found: error
+          retention-days: 14

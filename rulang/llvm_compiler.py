@@ -199,12 +199,21 @@ class LLVMCompiler(Compiler):
         return out
 
     def pack(self, args):
-        # Evaluate every value first, in source order, then copy into contiguous
-        # frame slots. No host Val layout leaks into LLVM pointer arithmetic.
-        values = [self.expr(value) for _, value in args]
-        packed = [self.slot() for _ in values]
-        for out, value in zip(packed, values):
-            self.call_abi('copy', out, value)
+        # Evaluate all arguments left-to-right before choosing their layout.
+        # Every expression result already owns a frame root. One result, or
+        # results that each consumed one slot, need no second retained copy.
+        # Keep those original roots until the existing normal/unwind clear.
+        values, contiguous = [], True
+        for _, value in args:
+            before = self.slot_count
+            values.append(self.expr(value))
+            contiguous = contiguous and self.slot_count == before + 1
+        if len(values) == 1 or contiguous:
+            packed = values
+        else:
+            packed = [self.slot() for _ in values]
+            for out, value in zip(packed, values):
+                self.call_abi('copy', out, value)
         if not args:
             return '0', 'null', 'null'
         keys = [self.string(key) if key is not None else 'null' for key, _ in args]

@@ -28,7 +28,8 @@ digest = native.digest
 
 def checkout_identity():
     require(os.environ.get('GITHUB_REF') in ('refs/heads/feature/bootstrap-slot-reuse-20261023',
-            'refs/heads/feature/bootstrap-slot-address-20261023'),
+            'refs/heads/feature/bootstrap-slot-address-20261023',
+            'refs/heads/feature/bootstrap-argument-pack-20261023'),
             'slot experiment requires its isolated branch')
     expected=os.environ.get('GITHUB_SHA','')
     require(re.fullmatch('[a-f0-9]{40}',expected), 'exact CI commit required')
