@@ -26,6 +26,8 @@ def archive(change=None, *, current=False, extra=()):
     with zipfile.ZipFile(stream, 'w') as z:
         for name in sorted((m.CURRENT_CORE if current else m.CORE | m.IGNORED) | set(extra)):
             info = zipfile.ZipInfo(name)
+            # Preserve deliberately invalid raw names; ZipInfo otherwise normalizes them.
+            info.filename = name
             info.external_attr = (stat.S_IFREG | 0o644) << 16
             if change:
                 change(info)
@@ -281,11 +283,55 @@ class CanonicalZipTests(unittest.TestCase):
     def test_current_paths_reject_ads_traversal_devices_and_aliases(self):
         prefix='pack-runtime-artifacts-'+'a'*32+'/'
         for suffix in ('a:stream','a/../b','./x','x.','CON.txt','a\\x','x\u00e9'):
-            with self.subTest(suffix=suffix),self.assertRaises(RuntimeError):
-                m.extract_core(archive(current=True,extra=(prefix+suffix,)),current=True)
+            with self.subTest(suffix=suffix):
+                raw=archive(current=True,extra=(prefix+suffix,))
+                with zipfile.ZipFile(io.BytesIO(raw)) as z:
+                    self.assertIn(prefix+suffix,[entry.orig_filename for entry in z.infolist()])
+                with self.assertRaises(RuntimeError):m.extract_core(raw,current=True)
         for extra in ((prefix+'A',prefix+'a'),(prefix+'A',prefix+'a/child')):
             with self.subTest(extra=extra),self.assertRaises(RuntimeError):
                 m.extract_core(archive(current=True,extra=extra),current=True)
+
+    def test_raw_names_survive_both_writer_reader_models_and_are_rejected(self):
+        prefix='pack-runtime-artifacts-'+'a'*32+'/'
+        for writer in ('/','\\'):
+            for suffix in ('a\\x','a\0hidden','../x','a:stream','CON.txt'):
+                name=prefix+suffix
+                with patch.object(zipfile.os,'sep',writer):raw=archive(current=True,extra=(name,))
+                for reader in ('/','\\'):
+                    with self.subTest(writer=writer,reader=reader,suffix=suffix),patch.object(zipfile.os,'sep',reader):
+                        with zipfile.ZipFile(io.BytesIO(raw)) as z:
+                            entry=next(item for item in z.infolist() if item.orig_filename==name)
+                            expected=name.split('\0')[0].replace(reader,'/')
+                            self.assertEqual(entry.filename,expected)
+                        with self.assertRaises(RuntimeError):m.extract_core(raw,current=True)
+            with patch.object(zipfile.os,'sep',writer):
+                good=archive(current=True,extra=(prefix+'a/x',))
+                unknown=archive(current=True,extra=('unknown.txt',))
+            for reader in ('/','\\'):
+                with patch.object(zipfile.os,'sep',reader):
+                    self.assertEqual(set(m.extract_core(good,current=True)),m.CURRENT_CORE|{prefix+'a/x'})
+                    with self.assertRaises(RuntimeError):m.extract_core(unknown,current=True)
+
+    def test_raw_name_guard_negative_control_exposes_reader_aliases(self):
+        import inspect
+        source=inspect.getsource(m.extract_core)
+        guard="            require(all(entry.orig_filename == entry.filename for entry in entries),\n                    'unsafe ZIP member')\n"
+        self.assertEqual(source.count(guard),1)
+        namespace=dict(vars(m))
+        exec(compile(source.replace(guard,'',1),'<raw-name-guard-negative-control>','exec'),namespace)
+        unsafe=namespace['extract_core']
+        prefix='pack-runtime-artifacts-'+'a'*32+'/'
+        for suffix in ('a\\x','a\0hidden'):
+            name=prefix+suffix
+            for writer in ('/','\\'):
+                with patch.object(zipfile.os,'sep',writer):raw=archive(current=True,extra=(name,))
+                with self.subTest(writer=writer,suffix=suffix),patch.object(zipfile.os,'sep','\\'):
+                    with zipfile.ZipFile(io.BytesIO(raw)) as z:
+                        self.assertIn(name,[entry.orig_filename for entry in z.infolist()])
+                    with self.assertRaises(RuntimeError):m.extract_core(raw,current=True)
+                    normalized=name.split('\0')[0].replace('\\','/')
+                    self.assertIn(normalized,unsafe(raw,current=True))
 
     def test_windows_reparse_zip_attribute_rejected(self):
         def change(info):

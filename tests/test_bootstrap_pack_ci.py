@@ -34,10 +34,42 @@ class PackCiEvidenceTests(unittest.TestCase):
         for kind,name in gate.MODULES.items():
             spec=importlib.util.spec_from_file_location(name,gate.ROOT/'tests'/(name+'.py'))
             module=importlib.util.module_from_spec(spec)
-            with patch.dict(sys.modules,{name:module}):
+            # Restore only the temporary test module, not imports it causes.
+            # Rolling back sys.modules leaves stale package attributes which
+            # Python 3.10's string-target mock resolver can incorrectly reuse.
+            missing=object();previous=sys.modules.get(name,missing)
+            sys.modules[name]=module
+            try:
                 spec.loader.exec_module(module)
                 suite=unittest.defaultTestLoader.loadTestsFromModule(module)
                 gate.require_cases(list(gate.suite_cases(suite)),kind)
+            finally:
+                if previous is missing: sys.modules.pop(name,None)
+                else: sys.modules[name]=previous
+
+    def test_required_inventory_preserves_cold_import_module_identity(self):
+        import subprocess,sys
+        # A fresh interpreter makes this independent of the other unit modules'
+        # import order.  No actual toolchain is instantiated by the mock check.
+        script = '''
+import importlib.util, sys
+spec=importlib.util.spec_from_file_location('pack_import_regression',sys.argv[1])
+module=importlib.util.module_from_spec(spec)
+sys.modules[spec.name]=module
+spec.loader.exec_module(module)
+import rulang
+case=module.PackCiEvidenceTests()
+case.assertNotIn('rulang.llvm_toolchain',sys.modules,'fixture is not a cold import')
+case.test_actual_required_modules_match_frozen_case_ids()
+case.assertIs(rulang.llvm_toolchain,sys.modules.get('rulang.llvm_toolchain'),'inventory erased a dependency but retained its package attribute')
+case.test_clang_wrappers_cannot_satisfy_required_identity()
+print('cold import identity and constructor interception verified')
+'''
+        result=subprocess.run([sys.executable,'-B','-c',script,str(Path(__file__).resolve())],
+                              cwd=gate.ROOT,capture_output=True,text=True,encoding='utf-8',timeout=30)
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertEqual(result.stdout,'cold import identity and constructor interception verified\n')
+        self.assertEqual(result.stderr,'')
 
     def test_isolated_branch_and_exact_commit_required(self):
         with patch.dict(gate.os.environ,{'GITHUB_REF':'refs/heads/feature/bootstrap-argument-pack-20261023','GITHUB_SHA':'a'*40}), patch.object(gate.subprocess,'check_output',return_value='a'*40+'\n'):
@@ -145,8 +177,13 @@ class PackCiEvidenceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp).resolve()
             output = directory/'pack-verification.json';output.write_text('{"complete":true}', encoding='utf-8')
-            with patch.object(gate.native,'stage3',side_effect=RuntimeError('missing')):
-                with self.assertRaises(RuntimeError): gate.combined(directory)
+            (directory/'verification.json').write_text('{"synthetic":true}',encoding='utf-8')
+            with patch.object(gate,'checkout_identity',return_value='a'*40) as checkout, \
+                    patch.object(gate.native,'stage3',side_effect=RuntimeError('missing new stage3')) as stage3:
+                with self.assertRaisesRegex(RuntimeError,'^missing new stage3$'):
+                    gate.combined(directory)
+                checkout.assert_called_once_with()
+                stage3.assert_called_once_with(directory)
             self.assertIs(json.loads(output.read_text(encoding='utf-8'))['complete'],False)
 
     def test_real_artifact_inventory_must_be_nonempty_and_changes_are_visible(self):
@@ -176,8 +213,9 @@ class PackCiEvidenceTests(unittest.TestCase):
         from types import SimpleNamespace
         tc = SimpleNamespace(version='clang version 14.0.0',triple='x86_64-pc-linux-gnu',
                              clang=['python','fake-clang.py'])
-        with patch.object(gate.sys,'platform','linux'), patch('rulang.llvm_toolchain.LLVMToolchain',return_value=tc):
+        with patch.object(gate.sys,'platform','linux'), patch('rulang.llvm_toolchain.LLVMToolchain',return_value=tc) as constructor:
             with self.assertRaisesRegex(RuntimeError,'wrappers'): gate.toolchain_identity()
+            constructor.assert_called_once_with()
 
     def test_identity_captures_clang_argv_resolved_path_and_link_flags(self):
         from types import SimpleNamespace

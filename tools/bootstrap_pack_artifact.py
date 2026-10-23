@@ -167,6 +167,9 @@ def extract_core(raw, *, current=False):
     try:
         with zipfile.ZipFile(io.BytesIO(raw)) as archive:
             entries = archive.infolist()
+            # ZipInfo normalizes Windows separators and truncates at NUL while reading.
+            require(all(entry.orig_filename == entry.filename for entry in entries),
+                    'unsafe ZIP member')
             names = [entry.filename for entry in entries]
             require(len(names) <= 512 and len(names) == len(set(names)) and
                     (set(names) == CORE | IGNORED if not current else
