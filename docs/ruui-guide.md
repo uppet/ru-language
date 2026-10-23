@@ -167,6 +167,25 @@ ru build examples/ruui-counter.ru --target ui
 - **配额预检**：库先拒 路径 >128 字、文 >2,000,000 字（UTF-8 约 ≤8 MiB）的请求，本地回失败不进宿主。
 - **示例／测试**：`examples/ruui-notepad.ru`；`tests/test_ruui_services.py`。
 
+## 桌面目标（--target desktop）
+
+`ru build 程序.ru --target desktop` 产出可双击分发目录：
+
+- `index.html`：自包含页面（桌面胶仅当壳注入了 `window.ruDesktop` 时激活）。
+- `run-webkitgtk.py`：Linux 原生 WebKitGTK 壳（仅需系统 PyGObject + WebKitGTK GI；`--smoke` 可无人值守烟测）。
+- `run-pywebview.py`：跨平台壳（Windows WebView2／macOS WKWebView／Linux WebKitGTK，`pip install pywebview`）。
+- 档服务（写/添写/列）落到分发目录（程序目录语义，件目越界拒绝）。
+
+壳的职责两件：**开窗嵌 WebView**、**实现通道的服务端**（文档起始注入
+`window.ruDesktop`；`request(json)` 出壳异步执行，壳回调
+`window.__ruServiceResponse` 送回回执）。窗口缩放走 `改尺寸` 回路、
+触屏走 `touch_*` 通道，都在页胶里，与壳无关。
+
+诚实定位：壳里跑的仍是 JS 运行时——启动暖 WebView（百毫秒级）、内存
+WebView 量级（百 MB 级）、Linux 需系统 WebKitGTK。WebKitGTK 路径在本
+仓库开发机真机核验；WebView2/WKWebView 与 WebKitGTK 同构但未经真机
+核验。这不是原生壳，原生壳看计划 D2 SDL2。
+
 ## 事件与帧
 
 - 帧回调：`画布 其 每帧 (作 帧: 我 其 _帧 帧. 为)。` 在 `运行` 内注册；宿主按画布 fps（默认 30）用 rAF 驱动。

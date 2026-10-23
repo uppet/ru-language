@@ -493,9 +493,22 @@ const RuHost = (() => {
     });
   }
 
+  // 桌面烟测挂钩：壳可用 window.__ruFrames 等待首帧后再截图。
+  if (typeof desktopBridge === 'function' && desktopBridge()) {
+    const hostEmit = host.emit.bind(host);
+    host.emit = (e) => {
+      if (e.type === 'graphics' && typeof window !== 'undefined')
+        window.__ruFrames = (window.__ruFrames || 0) + 1;
+      hostEmit(e);
+    };
+  }
+
+  // __DESKTOP_GLUE__
+
   return {
     start(create) {
-      runtime = create(host);
+      const bridge = typeof desktopBridge === 'function' ? desktopBridge() : null;
+      runtime = create(bridge ? Object.assign({}, host, bridge) : host);
     },
   };
 })();
@@ -525,9 +538,103 @@ RuHost.start(createRuntime);
 </html>
 """
 
+_PAGE_DESKTOP = """<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title}</title>
+<style>
+  html, body {{ margin: 0; padding: 0; background: #16181d; height: 100%; overflow: hidden; }}
+  canvas {{ display: block; width: 100vw; height: 100vh; touch-action: none; }}
+</style>
+</head>
+<body>
+<canvas id="ru-canvas"></canvas>
+<script type="module">
+{module_js}
+{host_js}
+const ASSETS = {assets_js};
+RuHost.start(createRuntime);
+</script>
+</body>
+</html>
+"""
 
-def build_app_html(code, title="如UI 应用", assets_dir=None):
-    """Compile Ru source to a self-contained interactive HTML app."""
+# 桌面壳胶（--target desktop）：壳在文档起始注入 window.ruDesktop（services 静态
+# 可知；request(json) 出壳异步执行），本胶只在其存在时激活。开窗缩放→改尺寸
+# 事件→应用重排（缩放回路）；pointer 事件→touch_*（多点 pointerId 一等公民）。
+_DESKTOP_GLUE = r"""
+  function desktopBridge() {
+    if (typeof window === 'undefined' || !window.ruDesktop) return null;
+    return {
+      services() {
+        const list = window.ruDesktop.services;
+        return typeof list === 'string' ? list.split(' ').filter(Boolean) : [];
+      },
+      handleService(canvasId, request) {
+        if (typeof window.ruDesktop.request === 'function')
+          window.ruDesktop.request(JSON.stringify(request));
+      },
+    };
+  }
+
+  // 壳完成文件操作后经 evaluate_javascript 回调此函数，把回执作为
+  // service_response 事件送回运行时（与 Python 宿主同帧应答同一形状）。
+  function desktopServiceResponse(json) {
+    if (!runtime || canvasId === null) return;
+    let event = null;
+    try { event = JSON.parse(json); } catch (error) { return; }
+    if (!event || typeof event !== 'object') return;
+    runtime.dispatch({ canvas_id: canvasId, event: {
+      type: 'service_response', id: event.id, ok: event.ok === true,
+      value: typeof event.value === 'string' ? event.value : null,
+      error: typeof event.error === 'string' ? event.error : null,
+    } });
+  }
+  if (typeof window !== 'undefined') window.__ruServiceResponse = desktopServiceResponse;
+
+  function desktopInputGlue() {
+    if (typeof window === 'undefined' || !window.ruDesktop) return;
+    window.addEventListener('resize', () => {
+      if (canvasId === null || !runtime) return;
+      const width = Math.round(canvas.clientWidth || window.innerWidth || 0);
+      const height = Math.round(canvas.clientHeight || window.innerHeight || 0);
+      if (width > 0 && height > 0)
+        runtime.dispatch({ canvas_id: canvasId, event: { type: 'resize', width, height } });
+    });
+    const activePointers = new Set();
+    canvas.addEventListener('pointerdown', (event) => {
+      if (canvasId === null) return;
+      activePointers.add(event.pointerId);
+      const p = pointer(event);
+      runtime.dispatch({ canvas_id: canvasId, event: { type: 'touch_start', id: event.pointerId, x: p.x, y: p.y } });
+      event.preventDefault();
+    });
+    canvas.addEventListener('pointermove', (event) => {
+      if (canvasId === null || !activePointers.has(event.pointerId)) return;
+      const p = pointer(event);
+      runtime.dispatch({ canvas_id: canvasId, event: { type: 'touch_move', id: event.pointerId, x: p.x, y: p.y } });
+    });
+    const pointerUp = (event) => {
+      if (!activePointers.has(event.pointerId)) return;
+      activePointers.delete(event.pointerId);
+      const p = pointer(event);
+      runtime.dispatch({ canvas_id: canvasId, event: { type: 'touch_end', id: event.pointerId, x: p.x, y: p.y } });
+    };
+    canvas.addEventListener('pointerup', pointerUp);
+    canvas.addEventListener('pointercancel', pointerUp);
+  }
+  desktopInputGlue();
+"""
+
+
+def build_app_html(code, title="如UI 应用", assets_dir=None, desktop=False):
+    """Compile Ru source to a self-contained interactive HTML app.
+
+    desktop=True 产出 WebView 壳页：画布铺满窗口、开窗缩放走 改尺寸 回路、
+    pointer 事件走 touch_* 多点通道、window.ruDesktop 存在时接 档 服务桥。
+    """
     module_js = compile_browser(code)
     if "export default function createRuntime" not in module_js:
         raise RuError("浏览器编译产物缺少默认导出", category="编译错误")
@@ -538,4 +645,6 @@ def build_app_html(code, title="如UI 应用", assets_dir=None):
     # of the script element if it ever appeared in a Ru string literal.
     inlined = module_js.replace("export default function createRuntime", "function createRuntime", 1)
     inlined = inlined.replace("</script", "<\\/script")
-    return _PAGE.format(title=title, module_js=inlined, host_js=HOST_JS, assets_js=assets_js)
+    host_js = HOST_JS.replace("// __DESKTOP_GLUE__", _DESKTOP_GLUE) if desktop else HOST_JS
+    page = _PAGE_DESKTOP if desktop else _PAGE
+    return page.format(title=title, module_js=inlined, host_js=host_js, assets_js=assets_js)

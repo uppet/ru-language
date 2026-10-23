@@ -1,5 +1,7 @@
 # 0.23.0／如书 0.9.0（bs 如言原生解释内核实验，尚未发布到 main）
 
+- 新增如UI 桌面目标 `--target desktop`：产出可双击分发目录（`index.html` + `run-webkitgtk.py` + `run-pywebview.py` + `README.txt`）。壳的职责两件：开窗嵌系统 WebView，以及在文档起始注入 `window.ruDesktop`（`services` 静态可知；`request(json)` 经各引擎消息通道出壳异步执行，完成后由壳回调 `window.__ruServiceResponse` 把回执送回运行时——与 Python 宿主同形状）。桌面页胶（仅 `ruDesktop` 存在时激活，网页目标不受影响）：窗口缩放 → `改尺寸` 事件 → 应用重排（P2 回路落地）、pointer 事件 → `touch_*` 多点通道、档服务桥。档桥语义与 Python GraphicsHost 一致（根＝index.html 目录、拒绝对径与 `..` 越件目、写/添写/列）。WebKitGTK 壳经 `xvfb-run python3 run-webkitgtk.py --smoke` 真机烟测（等首帧后截屏断言非纯色）；pywebview 壳覆盖 Windows WebView2／macOS WKWebView／Linux WebKitGTK，同构路径未经真机核验，如实标注。壳内仍是 JS 运行时（启动暖 WebView、内存 WebView 量级）。诚实定位不变：这不是原生壳，原生壳看 D2 SDL2。
+
 - 新增如观触屏多点事件与窗口缩放回路（如观层，不计如UI 词表）：画布事件 `touch_start`／`touch_move`／`touch_end`（成员名 `触下`／`触移`／`触松`，参 号／横／纵，指针号 0–100000）与 `resize`（`改尺寸`，参 宽／高，1–100000）；画布新增可写成员 `尺寸`（宽 高，1–100000；recorder 禁用）。如UI 应用自动接线：多点协议一等公民、控件语义只跟主指针（首个按下），其余指针记录不转发，主指针抬起提升剩余最早者且未转发过按下的指针不补发松开（不会凭空触发控件）；`改尺寸` 回调更新应用宽高、画布尺寸并重排重绘（`构` 每帧重布局，窗口缩放→应用重排回路闭合）。校验与双端 parity 见 `tests/test_ruui_touch_resize.py`。
 
 - 新增如观宿主服务通道与档服务（如UI 部件词表 20 → 22，新增 `服务`／`能`）：画布原生成员 `服务请`（六参）入通道，`服务回`（号／成／值／误）与 `服务告`（表）出通道；Python 宿主经 GraphicsHost 服务队列同帧应答，浏览器宿主经 `__ruHost.services()`／`handleService` 桥、无桥时按能力诚实原则在下一拍事件自动回失败（同 测文三档 先例）。如UI 库门面：`机 其 服务 '档'` 取档门面，`写`／`添写`／`列` 三成员各自带回执回调，`机 其 能 '档'` 查能力，读档继续复用 `件载`。新增 `examples/ruui-notepad.ru` 记事本示例与 `tests/test_ruui_services.py` 双端行为校验（档根＝程序目录，路径越界拒绝语义沿用 件目）。
