@@ -109,7 +109,7 @@
   function browserDrawingTarget(width,height){
     return {width,height,commands:[],bytes:2,fill:'#4677ff',stroke:'#202530',lineWidth:1,textSize:16,textAlign:'left',textBaseline:'top',transform:browserIdentity(),clips:[],stack:[],dirty:false,closed:false};
   }
-  const browserEvents={每帧:['frame',1],鼠标按下:['mouse_down',3],鼠标松开:['mouse_up',3],鼠标移动:['mouse_move',2],按键:['key_down',1],松键:['key_up',1],图就绪:['image_ready',3],图失败:['image_failed',2],件就绪:['file_ready',2],件失败:['file_failed',2],键按下:['text_key',1],字符:['text_char',1],剪贴:['text_paste',1],组开始:['text_comp_start',0],组更新:['text_comp_update',2],组结束:['text_comp_end',1],服务回:['service_response',4],服务告:['service_ad',1]};
+  const browserEvents={每帧:['frame',1],鼠标按下:['mouse_down',3],鼠标松开:['mouse_up',3],鼠标移动:['mouse_move',2],触下:['touch_start',3],触移:['touch_move',3],触松:['touch_end',3],改尺寸:['resize',2],按键:['key_down',1],松键:['key_up',1],图就绪:['image_ready',3],图失败:['image_failed',2],件就绪:['file_ready',2],件失败:['file_failed',2],键按下:['text_key',1],字符:['text_char',1],剪贴:['text_paste',1],组开始:['text_comp_start',0],组更新:['text_comp_update',2],组结束:['text_comp_end',1],服务回:['service_response',4],服务告:['service_ad',1]};
   const browserTextKeys=new Set(['退格','删除','左','右','上','下','家','终','回车','空格','跳格','逃脱']);
   const browserParams={背景:['色'],填色:['色'],描边:['色'],线宽:['粗'],字号:['大小'],文字对齐:['横向','纵向'],矩形:['横','纵','宽','高'],椭圆:['横','纵','宽','高'],线:['横一','纵一','横二','纵二'],文字:['文','横','纵'],三角形:['横一','纵一','横二','纵二','横三','纵三'],多边形:['点阵'],平移:['横','纵'],旋转:['弧度'],缩放:['横倍率','纵倍率'],保存:[],恢复:[],变换:['a','b','c','d','e','f'],重置变换:[],裁剪:['横','纵','宽','高'],取消裁剪:[],帧率:['率'],停:[],继续:[],关闭:[],宽:[],高:[],帧:[],经过秒:[],间隔秒:[]};
   for(const name of Object.keys(browserEvents))browserParams[name]=['回调'];
@@ -120,12 +120,13 @@
   browserParams.图释放=['号'];
   browserParams.件请求=['号','源','式'];
   browserParams.服务请=['号','服务','操作','径','文','旗'];
+  browserParams.尺寸=['宽','高'];
   browserParams.入焦点=['横','纵','宽','高','文','标'];
   browserParams.入失焦=[];
   browserParams.入更新=['文','标'];
   browserParams.字度=[];
   browserParams.测文=['文'];
-  const browserRecorderForbidden=new Set(['缓存','贴图','图请求','绘图','图释放','件请求','入焦点','入失焦','入更新','字度','测文','帧率','停','继续','关闭','帧','经过秒','间隔秒',...Object.keys(browserEvents)]);
+  const browserRecorderForbidden=new Set(['缓存','贴图','图请求','绘图','图释放','件请求','入焦点','入失焦','入更新','字度','测文','帧率','停','继续','关闭','帧','经过秒','间隔秒','尺寸',...Object.keys(browserEvents)]);
   browserParams.弧=['横','纵','宽','高','始角','转角'];
   browserParams.扇形=['横','纵','宽','高','始角','转角'];
   browserParams.折线=['点阵'];
@@ -264,6 +265,11 @@
       c.callbacks[event]={fn,m,loc};if(event==='frame')browserSetRunning(c,true);
     }else if(name==='宽')return c.width;
     else if(name==='高')return c.height;
+    else if(name==='尺寸'){
+      const w=num(a.宽,'宽',1,100000,true),h=num(a.高,'高',1,100000,true);
+      c.width=w;c.height=h;c.dirty=true;
+      return;
+    }
     else if(name==='帧')return c.frame;
     else if(name==='经过秒')return c.elapsed;
     else if(name==='间隔秒')return c.delta;
@@ -367,9 +373,11 @@
     if(Object.keys(request).some(key=>!['canvas_id','event'].includes(key)))throw new Error('如观请求含未知字段');
     const event=request.event;
     if(!event||typeof event!=='object'||Array.isArray(event)||
-        !['frame','close','mouse_down','mouse_up','mouse_move','key_down','key_up','image_ready','image_failed','file_ready','file_failed','text_key','text_char','text_paste','text_comp_start','text_comp_update','text_comp_end','service_response','service_ad'].includes(event.type))throw new Error('无效如观事件');
+        !['frame','close','mouse_down','mouse_up','mouse_move','touch_start','touch_move','touch_end','resize','key_down','key_up','image_ready','image_failed','file_ready','file_failed','text_key','text_char','text_paste','text_comp_start','text_comp_update','text_comp_end','service_response','service_ad'].includes(event.type))throw new Error('无效如观事件');
     const allowed=['type'];
     if(event.type.startsWith('mouse_'))allowed.push('x','y','button');
+    else if(event.type.startsWith('touch_'))allowed.push('id','x','y');
+    else if(event.type==='resize')allowed.push('width','height');
     else if(event.type.startsWith('key_'))allowed.push('key');
     else if(event.type==='image_ready')allowed.push('id','width','height');
     else if(event.type==='image_failed'||event.type==='file_failed')allowed.push('id','error');
@@ -436,6 +444,13 @@
     }else if(event.type==='service_ad'){
       if(typeof event.services!=='string'||browserEncoder.encode(event.services).length>4096)fail(m,'无效如观服务广告',loc);
       values=[event.services];
+    }else if(event.type.startsWith('touch_')){
+      if(!Number.isInteger(event.id)||event.id<0||event.id>100000)fail(m,'无效如观触屏指针',loc);
+      if(!Number.isFinite(event.x)||!Number.isFinite(event.y)||Math.abs(event.x)>100000||Math.abs(event.y)>100000)fail(m,'无效如观触屏坐标',loc);
+      values=[event.id,event.x,event.y];
+    }else if(event.type==='resize'){
+      if(!Number.isInteger(event.width)||event.width<1||event.width>100000||!Number.isInteger(event.height)||event.height<1||event.height>100000)fail(m,'无效如观尺寸',loc);
+      values=[event.width,event.height];
     }else{
       if(!Number.isFinite(event.x)||!Number.isFinite(event.y)||Math.abs(event.x)>100000||Math.abs(event.y)>100000)fail(m,'无效如观鼠标坐标',loc);
       values=[event.x,event.y];

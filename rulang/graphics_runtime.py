@@ -55,6 +55,10 @@ _TYPES = None
 EVENT_PARAMS = {"frame": ("每帧", ["帧"]), "mouse_down": ("鼠标按下", ["横", "纵", "键"]),
                 "mouse_up": ("鼠标松开", ["横", "纵", "键"]),
                 "mouse_move": ("鼠标移动", ["横", "纵"]),
+                "touch_start": ("触下", ["号", "横", "纵"]),
+                "touch_move": ("触移", ["号", "横", "纵"]),
+                "touch_end": ("触松", ["号", "横", "纵"]),
+                "resize": ("改尺寸", ["宽", "高"]),
                 "key_down": ("按键", ["键"]), "key_up": ("松键", ["键"]),
                 "image_ready": ("图就绪", ["号", "宽", "高"]),
                 "image_failed": ("图失败", ["号", "错"]),
@@ -83,6 +87,7 @@ CANVAS_PARAMS = MappingProxyType({"背景": ("色",), "填色": ("色",), "描�
               "图释放": ("号",), "件请求": ("号", "源", "式"),
               "服务请": ("号", "服务", "操作", "径", "文", "旗"),
               "入焦点": ("横", "纵", "宽", "高", "文", "标"), "入失焦": (),
+              "尺寸": ("宽", "高"),
               "入更新": ("文", "标"),
               "帧率": ("率",), "停": (), "继续": (), "关闭": (), "宽": (), "高": (), "帧": (),
               "字度": (), "测文": ("文",),
@@ -111,7 +116,7 @@ READ_MEMBERS = frozenset(("宽", "高", "帧", "经过秒", "间隔秒", "字度
 RECORDER_MEMBERS = frozenset(CANVAS_PARAMS) - frozenset(CALLBACK_NAMES) - {
     "缓存", "贴图", "帧率", "停", "继续", "关闭", "帧", "经过秒", "间隔秒",
     "图请求", "绘图", "图释放", "件请求", "服务请", "入焦点", "入失焦", "入更新",
-    "字度", "测文"}
+    "字度", "测文", "尺寸"}
 
 # 缺省字度（号的倍数）：与如UI 早期近似度量逐位一致，保证不注入时行为不变。
 _DEFAULT_TEXT_METRICS = {"全": 1.0, "半": 0.56, "行": 1.5}
@@ -673,6 +678,24 @@ class GraphicsHost:
             button = event.get("button", 0)
             if isinstance(button, bool) or not isinstance(button, int) or not 0 <= button <= 4:
                 raise RuError("无效如观鼠标键", category="运行错误")
+        elif kind.startswith("touch_"):
+            allowed |= {"id", "x", "y"}
+            for key in ("x", "y"):
+                value = event.get(key)
+                if (isinstance(value, bool) or not isinstance(value, (int, float))
+                        or not -100000 <= value <= 100000 or not math.isfinite(value)):
+                    raise RuError("无效如观触屏坐标", category="运行错误")
+            pointer = event.get("id")
+            if (isinstance(pointer, bool) or not isinstance(pointer, int)
+                    or not 0 <= pointer <= 100000):
+                raise RuError("无效如观触屏指针", category="运行错误")
+        elif kind == "resize":
+            allowed |= {"width", "height"}
+            for key in ("width", "height"):
+                value = event.get(key)
+                if (isinstance(value, bool) or not isinstance(value, int)
+                        or not 1 <= value <= 100000):
+                    raise RuError("无效如观尺寸", category="运行错误")
         elif kind.startswith("key_"):
             allowed.add("key")
             if not isinstance(event.get("key"), str) or len(event["key"]) > 64:
@@ -807,6 +830,10 @@ class GraphicsHost:
             values = [float(event["x"]), float(event["y"])]
             if kind != "mouse_move":
                 values.append(float(event.get("button", 0)))
+        elif kind.startswith("touch_"):
+            values = [float(event["id"]), float(event["x"]), float(event["y"])]
+        elif kind == "resize":
+            values = [float(event["width"]), float(event["height"])]
         elif kind == "image_ready":
             values = [float(event["id"]), float(event["width"]), float(event["height"])]
         elif kind in ("image_failed", "file_failed"):
@@ -1104,6 +1131,10 @@ def graphics_member(owner, n, receiver, name, args):
             canvas.set_running(True)
     elif name in ("宽", "高", "帧"):
         return True, float({"宽": canvas.width, "高": canvas.height, "帧": canvas.frame}[name])
+    elif name == "尺寸":
+        canvas.width = float(number(bound["宽"], "宽", 1, 100000, True))
+        canvas.height = float(number(bound["高"], "高", 1, 100000, True))
+        canvas.dirty = True
     elif name in ("经过秒", "间隔秒"):
         return True, canvas._elapsed if name == "经过秒" else canvas._delta
     elif name == "字度":
