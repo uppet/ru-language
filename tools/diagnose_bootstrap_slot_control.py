@@ -13,8 +13,8 @@ import time
 
 OLD = '6e03236c4fecf5a5219eb28a3ba1c46bfeb36d65'
 TREE = 'd7f53f270006729fc8761e3328d1bf8110c99b97'
-APP = '90c87d2da6bf6b4e8814f7551f8ad6161b25d483'
-APP_TREE = '1cd4b863714a705789ed095dbf83089dcec31310'
+APP = '2cb3b8c81ba300745b244c51b50d5625430fbe4f'
+APP_TREE = '5c63f94cd9e3816608cc95b834f91428bbeb3c49'
 ENTRY = 'tests/bootstrap_pipeline/dll_abi_probe.ru'
 SCHEMA = 'ru-slot-old-stage3-control-v1'
 
@@ -218,6 +218,7 @@ def run(config, config_record, prepared_path, three_path):
     require(prepared['old_receipt'] == str(Path(config['owned_root']).resolve()/'build/build-receipt.json'), 'old receipt outside prepared build')
     old, records, sources = validate_old(prepared['old_receipt'], config, new, driver, gate)
     require(sources == prepared['source_graph'], 'prepared comparison changed')
+    validate_progress_graph(sources)
     three, three_record = read(three_path)
     require(three.get('schema') == diag.SCHEMA and three.get('fixed_order') == list(diag.ORDER) and three.get('runtime_seconds_per_child') == 60, 'missing original three-route diagnostic')
     require(three['runtime_environment'] == env and three['runtime_environment_sha256'] == hashlib.sha256(json.dumps(env, sort_keys=True).encode()).hexdigest(), 'old/new runtime environment differs')
@@ -250,13 +251,182 @@ def run(config, config_record, prepared_path, three_path):
         'old_source_provenance':old['source_pins']['ru_source'], 'new_source_provenance':new['source_pins']['ru_source']}
 
 
-# Exact reviewed old6e/B fixture prefix at the 1MB scan entry. Only the four
-# measured 100KB timing values are masked; work/count/PASS sequence is exact.
-CENSORED_PREFIX_SHA256 = '4c87940caa755bd72e2fe0e65a4ad8d0f1fb23501321632aa36589afa691a2a4'
+# Frozen233 complete149-assertion oracle: successful C-to-LLVM and stage3
+# transcripts agree after only the explicitly listed timing fields are masked.
+PROGRESS_GRAPH_SHA256 = '9d9d898ca7efd0e1ada3616cff234df7f6063fa6970d658b7d4b8d9cc2ae6ca7'
+FULL_PROGRESS_LINES = ('Ru Notepad diagnostic log',
+ '[launcher] Starting Ru program.',
+ 'PASS: production bulk decoder matches all six old-decoder fields across a full 64-event batch',
+ 'PASS: production bulk decoder checks high bits in the last event of a full batch',
+ 'PASS: production bulk decoder preserves exact near-32-MB event coordinates and unsigned metadata',
+ 'PASS: production bulk decoder rejects high-bit corruption 0 before combining words',
+ 'PASS: production bulk decoder rejects high-bit corruption 1 before combining words',
+ 'PASS: production bulk decoder rejects high-bit corruption 2 before combining words',
+ 'PASS: production bulk decoder ignores stale event bytes when the native count is zero',
+ 'PASS: production bulk decoder rejects a count exceeding its 1024-byte event capacity',
+ 'PASS: production bulk decoder rejects a negative count',
+ 'PASS: production bulk decoder rejects a fractional count',
+ 'PASS: production bulk decoder rejects malformed kind/style/length/position/line 0',
+ 'PASS: production bulk decoder rejects malformed kind/style/length/position/line 1',
+ 'PASS: production bulk decoder rejects malformed kind/style/length/position/line 2',
+ 'PASS: production bulk decoder rejects malformed kind/style/length/position/line 3',
+ 'PASS: production bulk decoder rejects malformed kind/style/length/position/line 4',
+ 'PASS: production bulk decoder rejects malformed kind/style/length/position/line 5',
+ 'PASS: production bulk decoder rejects malformed kind/style/length/position/line 6',
+ 'PASS: production bulk decoder rejects malformed kind/style/length/position/line 7',
+ 'PASS: production bulk decoder rejects a non-token before the styled range',
+ 'PASS: production bulk decoder preserves long identifier events starting before the styled range',
+ 'PASS: production bulk decoder preserves the 64-byte delayed keyword boundary',
+ 'PASS: production bulk decoder rejects decreasing event positions',
+ 'PASS: production bulk decoder preserves equal-position event ordering',
+ 'PASS: decoded event rows remain detached after source mutation and closure',
+ 'PASS: checked low49 decoding preserves event coordinates near the 32 MB boundary',
+ 'PASS: corrupt high event bits fail ordinarily before any lossy native conversion',
+ 'PASS: initial checkpoint failure releases the already-created native context exactly once',
+ 'PASS: failed initialization returns no released context or checkpoint to the plain fallback',
+ 'PASS: initial checkpoint failure keeps its specific visible warning outside rescue scope',
+ 'PASS: Ru attaches independently of Lexilla availability',
+ 'PASS: Ru uses real SCLEX_CONTAINER instead of borrowed lexer',
+ 'PASS: selection never performs eager lexical scanning',
+ 'PASS: real SCN_STYLENEEDED reaches the owning container bridge',
+ 'PASS: style-needed notification queues without synchronous rescanning',
+ 'PASS: container queue drains without fallback',
+ 'PASS: every UTF-8 byte of 算 is a keyword',
+ 'PASS: Han function name retains identifier style',
+ 'PASS: every Han and emoji byte in quoted string is styled',
+ 'PASS: number following multibyte source has correct byte offset',
+ 'PASS: function header has base fold level and header flag',
+ 'PASS: if header nests exactly once',
+ 'PASS: function and if body has depth two',
+ 'PASS: 法 closes matching function level',
+ 'PASS: styling and folding preserve exact UTF-8 text',
+ 'PASS: styling and folding never dirty a clean document',
+ 'PASS: styling and folding create no undo entry',
+ 'PASS: styling preserves selection anchor and caret',
+ 'PASS: Ru palette preserves line-number style',
+ 'PASS: dedicated fold margin is visible',
+ 'PASS: fold action accepts completed owning document',
+ 'PASS: collapse actually hides nested native lines',
+ 'PASS: collapse changes native expanded flag',
+ 'PASS: expand restores native line visibility',
+ 'PASS: plain switch reveals every previously hidden line',
+ 'PASS: plain switch clears old fold levels',
+ 'PASS: plain switch clears all Ru style bytes',
+ 'PASS: plain switch cancels scanner state',
+ 'PASS: C++ switch reveals every Ru fold even without Lexilla',
+ 'PASS: JSON switch reveals every Ru fold even without Lexilla',
+ 'PASS: first typing into empty Ru document restarts a nonterminal checkpoint',
+ 'PASS: EOF append never restores a finished scanner',
+ 'PASS: EOF undo and redo remain incrementally highlighted',
+ 'PASS: multiline quote initially styles Han bytes',
+ 'PASS: deleting opening quote invalidates multiline lexical state',
+ 'PASS: undo restores multiline quote state',
+ 'PASS: Ru block comment spans Han and emoji bytes',
+ 'PASS: Ru keyword resumes after the real 释. block-comment terminator',
+ 'PASS: same-length comment opener replacement invalidates lexical suffix',
+ 'PASS: undo restores Ru multiline comment state',
+ 'PASS: real native insert/delete notifications reached owning bridge',
+ 'PASS: style and fold notifications are observed without recursive text invalidation',
+ 'PASS: UTF-8 quote and emoji styles cross checkpoint boundary correctly',
+ 'PASS: deleting LF from checkpoint-adjacent CRLF safely resumes lexical state',
+ 'PASS: keyword offset adjusts correctly after CRLF partial deletion',
+ 'PASS: bounded timer returns before a large initial scan completes',
+ 'PASS: edit during incomplete work invalidates suffix without unsafe reuse',
+ 'PASS: unclosed BOF comment propagates through previously pending source',
+ 'PASS: removing existing collapsed function headers with BOF comment reveals every old hidden line',
+ 'PASS: tentative reference-call opener starts without a fold header',
+ 'PASS: temporary statement confirms an opener before the restart checkpoint',
+ 'PASS: checkpoint restore retracts a previously published earlier header and reveals its lines',
+ 'PASS: BOF insertion unequal edit queues its own revision and preserves exact dirty text',
+ 'PASS: BOF insertion incremental text/styles/all fold levels equal an independent fresh scan',
+ 'PASS: BOF insertion highlighting preserves one-edit undo and the original savepoint',
+ 'PASS: BOF deletion unequal edit queues its own revision and preserves exact dirty text',
+ 'PASS: BOF deletion incremental text/styles/all fold levels equal an independent fresh scan',
+ 'PASS: BOF deletion highlighting preserves one-edit undo and the original savepoint',
+ 'PASS: middle insertion unequal edit queues its own revision and preserves exact dirty text',
+ 'PASS: middle insertion incremental text/styles/all fold levels equal an independent fresh scan',
+ 'PASS: middle insertion highlighting preserves one-edit undo and the original savepoint',
+ 'PASS: middle deletion unequal edit queues its own revision and preserves exact dirty text',
+ 'PASS: middle deletion incremental text/styles/all fold levels equal an independent fresh scan',
+ 'PASS: middle deletion highlighting preserves one-edit undo and the original savepoint',
+ 'PASS: EOF insertion unequal edit queues its own revision and preserves exact dirty text',
+ 'PASS: EOF insertion incremental text/styles/all fold levels equal an independent fresh scan',
+ 'PASS: EOF insertion highlighting preserves one-edit undo and the original savepoint',
+ 'PASS: EOF deletion unequal edit queues its own revision and preserves exact dirty text',
+ 'PASS: EOF deletion incremental text/styles/all fold levels equal an independent fresh scan',
+ 'PASS: EOF deletion highlighting preserves one-edit undo and the original savepoint',
+ 'PASS: matrix multiline edit has published a bounded prefix while work remains pending',
+ 'PASS: repeated edits during pending work discard old states and match every fresh byte style and fold level',
+ 'PASS: edit in later function preserves unaffected collapsed earlier fold',
+ 'PASS: editing one HWND preserves another document byte styles',
+ 'PASS: editing one HWND never invalidates another document generation',
+ 'PASS: SETDOCPOINTER rejects queued stale document state',
+ 'PASS: replacement document obtains a fresh generation',
+ 'PASS: explicit release removes lifecycle state',
+ 'PASS: large Ru selection only queues work',
+ 'PASS: large Ru initial scan completes',
+ 'PASS: initial scan reads source exactly once in bounded chunks',
+ 'PASS: no native range exceeds 1024 UTF-8 bytes',
+ 'PASS: same-byte edit proves full-state checkpoint convergence',
+ 'PASS: ordinary edit does not rescan the full document',
+ 'PASS: performance edit preserves document length',
+ 'PASS: same-byte replacement retains Ru identifier byte style',
+ 'PASS: background styling preserves edited dirty state',
+ 'PASS: single undo after background scan reaches original savepoint',
+ 'PERF_RU size=100000 initial_ms=<timing> edit_ms=<timing> initial_read_bytes=100000 edit_read_bytes=32768 '
+ 'reused_bytes=67232 max_read=1024 max_tick_ms=<timing> max_chunk_ms=<timing>',
+ 'PASS: two distant coalesced replacements converge only after both changed ranges',
+ 'PASS: both coalesced replacements receive correct byte styles',
+ 'PASS: two edits retain their original undo history through convergence',
+ 'PASS: insertion and deletion at different positions can safely converge',
+ 'PASS: net-zero shifted replacement has correct combined identifier style',
+ 'PASS: net-zero edit revisits styles published beyond an intermediate checkpoint',
+ 'PASS: large Ru selection only queues work',
+ 'PASS: large Ru initial scan completes',
+ 'PASS: initial scan reads source exactly once in bounded chunks',
+ 'PASS: no native range exceeds 1024 UTF-8 bytes',
+ 'PASS: same-byte edit proves full-state checkpoint convergence',
+ 'PASS: ordinary edit does not rescan the full document',
+ 'PASS: performance edit preserves document length',
+ 'PASS: same-byte replacement retains Ru identifier byte style',
+ 'PASS: background styling preserves edited dirty state',
+ 'PASS: single undo after background scan reaches original savepoint',
+ 'PERF_RU size=1000000 initial_ms=<timing> edit_ms=<timing> initial_read_bytes=1000000 edit_read_bytes=32768 '
+ 'reused_bytes=967232 max_read=1024 max_tick_ms=<timing> max_chunk_ms=<timing>',
+ 'PASS: GUI-equivalent synchronous corpus has the exact Unicode character and byte counts',
+ 'PASS: core synchronous fixture retains Scintilla default all-modification notifications',
+ 'PASS: GUI-equivalent synchronous selection queues work without draining it',
+ 'RU_GUI_SYNC size=1000000 source_chars=636370 wall_ms=<timing> read_bytes=1000000 max_read=1023 max_tick_ms=<timing> '
+ 'max_chunk_ms=<timing> chunks=8798',
+ 'PASS: GUI-equivalent synchronous scan finishes with exact bounded reads',
+ 'PASS: GUI-equivalent synchronous scan matches all sixteen head and tail style bytes',
+ 'PASS: GUI-equivalent synchronous styling preserves exact source, line count, savepoint and empty undo',
+ 'PASS: STYLES_NONE document suppresses Ru even when currently empty',
+ 'PASS: large-document mode schedules no scanning',
+ 'PASS: large-document styles storage remains disabled',
+ 'PASS: unexpected structural complexity reports plain fallback',
+ 'PASS: complexity fallback preserves exact clean source',
+ 'PASS: complexity fallback leaves all lines visible',
+ 'PASS: complexity fallback clears partial style bytes',
+ 'PASS: destroyed HWND cannot resume a stale queue',
+ 'PASS: surviving editor remains independently styled after sibling destroy',
+ 'PASS: all current and shared checkpoint roots explicitly close and release at final teardown',
+ 'TOTAL PASS: 149',
+ 'BOOTSTRAP_DLL_ABI_PASS:ru',
+ '[launcher] Ru program returned with status 0.')
+TIMING_FIELDS = {'PERF_RU': {'max_tick_ms', 'initial_ms', 'edit_ms', 'max_chunk_ms'}, 'RU_GUI_SYNC': {'max_tick_ms', 'wall_ms', 'max_chunk_ms'}}
+METRIC_FIELDS = {
+    'PERF_RU': {'max_read', 'max_chunk_ms', 'reused_bytes', 'size', 'edit_read_bytes', 'max_tick_ms', 'edit_ms', 'initial_read_bytes', 'initial_ms'},
+    'RU_GUI_SYNC': {'max_read', 'source_chars', 'chunks', 'size', 'max_tick_ms', 'max_chunk_ms', 'read_bytes', 'wall_ms'},
+}
+
+def validate_progress_graph(sources):
+    digest = hashlib.sha256(json.dumps(sources, sort_keys=True, separators=(',',':')).encode()).hexdigest()
+    require(digest == PROGRESS_GRAPH_SHA256, 'progress oracle source graph differs')
 
 
 def finite_time(value):
-    return type(value) in (int,float) and math.isfinite(value) and 60 <= value <= 65
+    return type(value) in (int,float) and math.isfinite(value) and value >= 0
 
 
 def classify_observation(row, directory, diagnostic):
@@ -267,8 +437,18 @@ def classify_observation(row, directory, diagnostic):
         require(isinstance(row,dict), 'old observation is not an object')
         require(row.get('executed') is True and type(row.get('pid')) is int and row['pid'] > 0, 'owned process identity missing')
         observation = row.get('observation')
-        require(isinstance(observation,dict) and set(observation) == {'schema','deadline_events','first_error','nondeadline_errors','cleanup'} and observation['schema'] == 'ru-notepad-child-observation-v1', 'structured observation missing')
+        require(isinstance(observation,dict) and set(observation) == {'schema','clock','deadline_events','first_error','nondeadline_errors','cleanup'} and observation['schema'] == 'ru-notepad-child-observation-v2', 'structured observation missing')
         require(observation['nondeadline_errors'] == [], 'nondeadline runtime errors present or unknown')
+        clock = observation['clock']
+        require(isinstance(clock,dict) and set(clock) == {'started_monotonic','deadline_monotonic','finished_monotonic','budget_seconds'}, 'absolute clock evidence missing')
+        require(type(clock['budget_seconds']) is int and clock['budget_seconds'] == 60, 'absolute clock budget differs')
+        started, deadline, finished = [clock[key] for key in ('started_monotonic','deadline_monotonic','finished_monotonic')]
+        require(all(finite_time(value) for value in (started,deadline,finished)) and deadline == started+60 and deadline > started and finished >= started, 'absolute clock identity invalid')
+        require(finite_time(row.get('seconds')) and row['seconds'] == finished-started, 'elapsed result differs from absolute clock')
+        def observed(record):
+            now = record.get('observed_monotonic')
+            require(finite_time(now) and deadline <= now <= finished and record.get('elapsed_seconds') == now-started, 'deadline not reached or elapsed evidence differs')
+            return now
         cleanup = observation['cleanup']
         require(isinstance(cleanup,dict) and set(cleanup) == {'pid','errors','process_reaped','exit_code','windows_remaining','handshake_closed','watchdog_stopped'}, 'cleanup schema missing')
         require(cleanup['pid'] == row['pid'] and type(cleanup['pid']) is int and cleanup['errors'] == [] and
@@ -281,22 +461,23 @@ def classify_observation(row, directory, diagnostic):
         require(isinstance(events,list), 'deadline event list missing')
         if row.get('passed') is True:
             require(row.get('cleanup_killed') is False and not row.get('error') and cleanup['exit_code'] == 0 and
-                    observation['first_error'] is None and events == [], 'completed observation contradicts success')
+                    observation['first_error'] is None and events == [] and finished <= deadline, 'completed observation contradicts success')
             return {'outcome':'passed','evidence_complete':True,'program_passed':True}
         require(row.get('passed') is False and row.get('cleanup_killed') is True and cleanup['exit_code'] != 0, 'not an owned terminated old observation')
-        require(finite_time(row.get('seconds')), 'not the bounded 60s observation')
+        require(deadline <= finished <= deadline+5, 'not the bounded absolute 60s observation')
         first = observation['first_error']
-        require(isinstance(first,dict) and set(first) == {'code','phase','elapsed_seconds','exception_type','message'} and first['code'] == 'deadline' and first['exception_type'] == 'FunctionalDeadlineError' and first['phase'] in ('runtime','acceptance'), 'first error is not a structured deadline')
-        require(finite_time(first['elapsed_seconds']) and first['elapsed_seconds'] <= row['seconds'] and
-                all(isinstance(first[name],str) and bool(first[name]) for name in ('phase','exception_type','message')), 'invalid first deadline event')
+        require(isinstance(first,dict) and set(first) == {'code','phase','observed_monotonic','elapsed_seconds','exception_type','message'} and first['code'] == 'deadline' and first['exception_type'] == 'FunctionalDeadlineError' and first['phase'] in ('runtime','acceptance'), 'first error is not a structured deadline')
+        observed(first)
+        require(all(isinstance(first[name],str) and bool(first[name]) for name in ('phase','exception_type','message')), 'invalid first deadline event')
         require(1 <= len(events) <= 3, 'deadline event count invalid')
         sources = []
         for event in events:
-            require(isinstance(event,dict) and set(event) == {'source','budget_seconds','elapsed_seconds'}, 'deadline event schema invalid')
+            require(isinstance(event,dict) and set(event) == {'source','budget_seconds','observed_monotonic','elapsed_seconds'}, 'deadline event schema invalid')
             require(event['source'] in ('watchdog','poll-loop','elapsed-postcheck') and type(event['budget_seconds']) is int and
-                    event['budget_seconds'] == 60 and finite_time(event['elapsed_seconds']) and event['elapsed_seconds'] <= row['seconds'], 'deadline event identity invalid')
+                    event['budget_seconds'] == 60, 'deadline event identity invalid')
+            observed(event)
             sources.append(event['source'])
-        require(len(sources) == len(set(sources)) and any(event['source'] in ('watchdog','poll-loop') and event['elapsed_seconds'] <= first['elapsed_seconds'] for event in events), 'no causal owned deadline event before first error')
+        require(len(sources) == len(set(sources)) and any(event['source'] in ('watchdog','poll-loop') and event['observed_monotonic'] <= first['observed_monotonic'] for event in events), 'no causal owned deadline event before first error')
         modules = row.get('diagnostic_module_observations',{})
         require(modules.get('pid') == row['pid'] and modules.get('complete') is True and type(modules.get('snapshots')) is int and modules['snapshots'] > 0, 'actual old DLL observation incomplete')
         names = ('Scintilla.dll','Lexilla.dll','RuSyntax.dll')
@@ -314,21 +495,23 @@ def classify_observation(row, directory, diagnostic):
         text = raw.decode('utf-8').replace('\r\n','\n')
         require('\r' not in text and text.endswith('\n'), 'old partial log framing invalid')
         normalized = []; metrics = []
-        for line in text.split('\n'):
+        for line in text[:-1].split('\n'):
             if line.startswith(('PERF_RU ','RU_GUI_SYNC ')):
                 metric = diagnostic.metric(line); metrics.append(metric)
-                require(metric['kind'] == 'PERF_RU' and metric['fields']['size'] == '100000', 'unexpected completed workload in censored prefix')
-                timing = {'initial_ms','edit_ms','max_tick_ms','max_chunk_ms'}
-                require(all(0 <= float(metric['fields'][name]) <= 60000 for name in timing), 'timing exceeds fixed observation budget')
+                require(metric['kind'] in TIMING_FIELDS and set(metric['fields']) == METRIC_FIELDS[metric['kind']], 'unexpected progress metric schema')
+                timing = TIMING_FIELDS[metric['kind']]
+                require(all(math.isfinite(float(metric['fields'][name])) and 0 <= float(metric['fields'][name]) <= 60000 for name in timing), 'timing exceeds fixed observation budget')
                 parts = line.split()
                 line = ' '.join(parts[:1]+[item.split('=')[0]+'=<timing>' if item.split('=')[0] in timing else item for item in parts[1:]])
             normalized.append(line)
-        require(len(metrics) == 1 and metrics == partial.get('metrics'), 'old partial metrics missing/changed')
-        require(hashlib.sha256('\n'.join(normalized).encode('utf-8')).hexdigest() == CENSORED_PREFIX_SHA256, 'not the exact known 1MB scan-entry prefix')
+        require(metrics == partial.get('metrics'), 'old partial metrics missing/changed')
+        require(0 < len(normalized) < len(FULL_PROGRESS_LINES) and tuple(normalized) == FULL_PROGRESS_LINES[:len(normalized)], 'partial log is not a strict prefix of the frozen complete fixture oracle')
         require(identity(logs[0], max_bytes=1024*1024) == partial['identity'], 'old partial log changed after validation')
         return {'outcome':'valid_censored','evidence_complete':True,'program_passed':False,
-                'deadline_seconds':60,'missing_metrics':['1MB completion','whole-fixture completion'],
-                'log_identity':partial['identity'],'normalized_prefix_sha256':CENSORED_PREFIX_SHA256}
+                'deadline_seconds':60,
+                'completed_metrics':[metric['kind']+':'+metric['fields']['size'] for metric in metrics],
+                'missing_metrics':[name for name in ('PERF_RU:100000','PERF_RU:1000000','RU_GUI_SYNC:1000000') if name not in {metric['kind']+':'+metric['fields']['size'] for metric in metrics}]+['whole-fixture completion'],
+                'log_identity':partial['identity'],'normalized_prefix_sha256':hashlib.sha256(('\n'.join(normalized)+'\n').encode()).hexdigest(), 'complete_oracle_sha256':hashlib.sha256(('\n'.join(FULL_PROGRESS_LINES)+'\n').encode()).hexdigest(), 'not_proof_of_progress_or_no_hang':True}
     except (ValueError,KeyError,TypeError,OverflowError,OSError) as exc:
         return invalid(str(exc))
 

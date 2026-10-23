@@ -31,14 +31,14 @@ def validate(text):
     expected=base.split('  bootstrap-editor-gui:\n',1)[1].replace('name: bootstrap-editor-gui-evidence-${{ github.sha }}','name: bootstrap-slot-editor-gui-evidence-${{ github.sha }}')
     # Only the three reviewed editor pins differ from the byte-frozen native workflow.
     assert expected.count('5a900a037cd54f4f89c3658e246195bbf3d389d3') == 2
-    assert gui.count('90c87d2da6bf6b4e8814f7551f8ad6161b25d483') == 2
-    expected = expected.replace('5a900a037cd54f4f89c3658e246195bbf3d389d3', '90c87d2da6bf6b4e8814f7551f8ad6161b25d483')
+    assert gui.count('2cb3b8c81ba300745b244c51b50d5625430fbe4f') == 2
+    expected = expected.replace('5a900a037cd54f4f89c3658e246195bbf3d389d3', '2cb3b8c81ba300745b244c51b50d5625430fbe4f')
     assert expected.count('06eefc5de1fb864cbb7676e5950acc23752d53c5') == 1
-    assert gui.count('1cd4b863714a705789ed095dbf83089dcec31310') == 1
+    assert gui.count('5c63f94cd9e3816608cc95b834f91428bbeb3c49') == 1
     control = (ROOT/'tools/diagnose_bootstrap_slot_control.py').read_text(encoding='utf-8')
-    assert re.search(r"^APP = '([0-9a-f]{40})'$", control, re.M).group(1) == '90c87d2da6bf6b4e8814f7551f8ad6161b25d483'
-    assert re.search(r"^APP_TREE = '([0-9a-f]{40})'$", control, re.M).group(1) == '1cd4b863714a705789ed095dbf83089dcec31310'
-    expected = expected.replace('06eefc5de1fb864cbb7676e5950acc23752d53c5', '1cd4b863714a705789ed095dbf83089dcec31310')
+    assert re.search(r"^APP = '([0-9a-f]{40})'$", control, re.M).group(1) == '2cb3b8c81ba300745b244c51b50d5625430fbe4f'
+    assert re.search(r"^APP_TREE = '([0-9a-f]{40})'$", control, re.M).group(1) == '5c63f94cd9e3816608cc95b834f91428bbeb3c49'
+    expected = expected.replace('06eefc5de1fb864cbb7676e5950acc23752d53c5', '5c63f94cd9e3816608cc95b834f91428bbeb3c49')
     assert gui==expected, 'GUI source pins, three-way diagnostic, budgets or artifact policy changed'
     commands=[line.strip()[5:] for line in text.splitlines() if line.startswith('        run: ')]
     for command in [
@@ -68,7 +68,7 @@ class SlotWorkflowTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(BASE.read_bytes()).hexdigest(),'54e49702a83c285899f0772ba38c9646650a5362283b600322bd3b8b7f143cf2')
     def test_mutation_guards(self):
         source=WORKFLOW.read_text(encoding='utf-8')
-        for old,new in [('1cd4b863714a705789ed095dbf83089dcec31310','06eefc5de1fb864cbb7676e5950acc23752d53c5'),('timeout-minutes: 45','timeout-minutes: 90'),('cancel-in-progress: false','cancel-in-progress: true'),('if: always()','if: success()'),('runtime --directory','runtime-optional --directory'),('90c87d2da6bf6b4e8814f7551f8ad6161b25d483','main'),('90c87d2da6bf6b4e8814f7551f8ad6161b25d483','5a900a037cd54f4f89c3658e246195bbf3d389d3'),('test_bootstrap_native_host.py','test_missing.py'),('actions: read','actions: write'),('persist-credentials: false','persist-credentials: true'),('$threeExit = $LASTEXITCODE','$threeExit = 0'),('6e03236c4fecf5a5219eb28a3ba1c46bfeb36d65','main')]:
+        for old,new in [('5c63f94cd9e3816608cc95b834f91428bbeb3c49','06eefc5de1fb864cbb7676e5950acc23752d53c5'),('timeout-minutes: 45','timeout-minutes: 90'),('cancel-in-progress: false','cancel-in-progress: true'),('if: always()','if: success()'),('runtime --directory','runtime-optional --directory'),('2cb3b8c81ba300745b244c51b50d5625430fbe4f','main'),('2cb3b8c81ba300745b244c51b50d5625430fbe4f','5a900a037cd54f4f89c3658e246195bbf3d389d3'),('test_bootstrap_native_host.py','test_missing.py'),('actions: read','actions: write'),('persist-credentials: false','persist-credentials: true'),('$threeExit = $LASTEXITCODE','$threeExit = 0'),('6e03236c4fecf5a5219eb28a3ba1c46bfeb36d65','main')]:
             with self.subTest(old=old),self.assertRaises(AssertionError):validate(source.replace(old,new))
 
 if __name__=='__main__':unittest.main()
