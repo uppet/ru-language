@@ -460,11 +460,16 @@
           // 随后的补帧会全量重绘最新场景。
         }else{
           if(event.type!=='frame'&&!c.commands.length){
-            // Ignored inputs retain the previous complete scene (phase-2
-            // contract: re-publish the restored frame).
-            c.commands=previous;c.bytes=previousBytes;c.referenceIds=previousIds;c.referenceBytes=previousReferenceBytes;c.referenceCommands=previousReferenceCommands;
+            if(event.type!=='service_response'&&event.type!=='service_ad'){
+              // Ignored inputs retain the previous complete scene (phase-2
+              // contract: re-publish the restored frame). Service mail is
+              // internal delivery: silent callbacks stay silent.
+              c.commands=previous;c.bytes=previousBytes;c.referenceIds=previousIds;c.referenceBytes=previousReferenceBytes;c.referenceCommands=previousReferenceCommands;
+              c.dirty=true;
+            }
+          }else{
+            c.dirty=true;
           }
-          c.dirty=true;
         }
       }
       browserFlush();

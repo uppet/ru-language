@@ -896,9 +896,15 @@ class GraphicsHost:
             else:
                 if not canvas.commands and kind != "frame":
                     # Ignored inputs retain the previous complete scene (phase-2
-                    # contract: re-publish the restored frame).
-                    canvas.commands, canvas.command_bytes = previous, previous_bytes
-                canvas.dirty = True
+                    # contract: re-publish the restored frame). Service mail is
+                    # internal delivery, not user input: silent callbacks stay
+                    # silent (parity with the browser host, which repaints only
+                    # when the app drew something).
+                    if kind not in ("service_response", "service_ad"):
+                        canvas.commands, canvas.command_bytes = previous, previous_bytes
+                        canvas.dirty = True
+                else:
+                    canvas.dirty = True
         try:
             self.flush()
         except BaseException:
