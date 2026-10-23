@@ -420,6 +420,25 @@ jobs:
           ref: 925707005a80cf935d12ea4fc88316d941452955
           path: address-old-language
           persist-credentials: false
+      - name: Prepare only the fixed compiler artifact parent with reparse guards
+        run: |
+          @'
+          from pathlib import Path
+          from tools import bootstrap_address_artifact as loader
+          parent = Path.cwd() / 'bin' / 'bootstrap'
+          output = parent / 'address-current'
+          for ancestor in (parent, *parent.parents):
+              try:
+                  ancestor.lstat()
+              except FileNotFoundError:
+                  continue
+              loader.no_links(ancestor)
+              loader.require(ancestor.is_dir(), 'artifact ancestor must be a directory')
+          parent.mkdir(parents=True, exist_ok=True)
+          loader.no_links(parent)
+          loader.require(not output.exists() and not output.is_symlink(), 'artifact output must remain fresh')
+          '@ | python -
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Download exact old925 and current successful Windows compiler evidence
         env:
           GITHUB_TOKEN: ${{ github.token }}
