@@ -99,8 +99,8 @@ jobs:
       GIT_CONFIG_COUNT: '1'
       GIT_CONFIG_KEY_0: core.autocrlf
       GIT_CONFIG_VALUE_0: 'false'
-      EDITOR_COMMIT: 5a900a037cd54f4f89c3658e246195bbf3d389d3
-      EDITOR_TREE: 06eefc5de1fb864cbb7676e5950acc23752d53c5
+      EDITOR_COMMIT: bc06efe06f1c013e91223e3a2db6a9160d68ed5d
+      EDITOR_TREE: 20a50caf71487c73554aeb7dffad7f322232089a
     steps:
       - name: Exact language second-stage checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -111,7 +111,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: uppet/ru_notepad
-          ref: 5a900a037cd54f4f89c3658e246195bbf3d389d3
+          ref: bc06efe06f1c013e91223e3a2db6a9160d68ed5d
           path: editor-bootstrap
           fetch-depth: 0
           persist-credentials: false
@@ -188,11 +188,27 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Pipeline policy and explicit linker host contracts
         run: |
+          python -m unittest discover -s tests -p test_bootstrap_launcher_diagnostic.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_bootstrap_editor_diagnostic.py -v
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_bootstrap_native_host.py -v
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m unittest discover -s ../editor-bootstrap/tests -p 'test_bootstrap*.py' -v
+      - name: Fixed-C production wrapper diagnostic only before editor bootstrap
+        id: launcher_diag
+        continue-on-error: true
+        run: python tools/diagnose_bootstrap_launcher_windows.py --config "$env:GUI_EVIDENCE/base-config.json" --owned-root "$env:GUI_EVIDENCE/launcher-owned" --output "$env:GUI_EVIDENCE/launcher-preflight.json"
+      - name: Upload early fixed-wrapper diagnostics without executable products
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: fixed-wrapper-diagnostic-${{ github.sha }}
+          path: |
+            ${{ env.GUI_EVIDENCE }}/launcher-preflight.json
+            ${{ env.GUI_EVIDENCE }}/launcher-owned/**/*.log
+          if-no-files-found: warn
+          retention-days: 14
       - name: Fresh three-stage bootstrap and complete fixed-point report
         run: python tools/bootstrap.py verify --directory bin/bootstrap/gui-ci
       - name: Independently require all 105 cases and native fixed point
@@ -242,6 +258,10 @@ jobs:
           '@ | python -
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python tools/diagnose_bootstrap_editor_fixture.py --config "$env:GUI_EVIDENCE/controlled-config.json" --output "$env:GUI_EVIDENCE/controlled-diagnostic.json"
+      - name: Preserve fixed-wrapper diagnostic failure after the real editor gates
+        if: always()
+        run: |
+          if ('${{ steps.launcher_diag.outcome }}' -ne 'success') { exit 1 }
       - name: Preserve JSON and logs only, never runtime binaries or packages
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
