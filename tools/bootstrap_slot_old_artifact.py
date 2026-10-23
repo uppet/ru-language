@@ -1,0 +1,326 @@
+#!/usr/bin/env python3
+"""Read-only pinned old-slot Windows artifact loader; never bootstrap acceptance.
+
+The existing B source/provenance validator must subsequently bind the untouched
+verification bytes to the separate clean 6e source checkout and trusted tools.
+No API writes, arbitrary URL/identity flags, source execution, or token receipts.
+"""
+import argparse
+import hashlib
+import io
+import json
+import os
+from pathlib import Path, PurePosixPath, PureWindowsPath
+import re
+import stat
+import struct
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+import zipfile
+
+REPOSITORY = 'uppet/ru-language'
+COMMIT = '6e03236c4fecf5a5219eb28a3ba1c46bfeb36d65'
+TREE = 'd7f53f270006729fc8761e3328d1bf8110c99b97'
+RUN = 39883389402
+JOB = 120185807654
+ARTIFACT = 12472690151
+ZIP_SHA256 = 'd7d14b845705f5453672a0222953c713aa3d5fbdc5556431443ad605cc0ab6aa'
+ZIP_SIZE = 18806196
+STAGE3_SHA256 = '56ee6aa1ed66a2bd12d408b087a46c542a4099c9714784c00e783451017e58db'
+VERIFICATION_SHA256 = '6dd13d785848b5760c82941c42d92454db08aa2304eb1002b14b1066f96c6400'
+API = 'https://api.github.com/repos/' + REPOSITORY + '/actions/'
+MAX_JSON = 4 * 1024 * 1024
+MAX_ZIP = 32 * 1024 * 1024
+MAX_EXPANDED = 160 * 1024 * 1024
+MAX_MEMBER = 96 * 1024 * 1024
+CORE = frozenset(['verification.json', 'report.json', 'native-frontend-tests.json', 'native-windows-tests.json',
+                  'stage1.exe', 'stage2.exe', 'stage3.exe', 'stage2.ll', 'stage3.ll',
+                  'stage2.exe.frontend.ll', 'stage3.exe.frontend.ll', 'stage2.exe.metadata.c', 'stage3.exe.metadata.c'])
+IGNORED = frozenset('notepad-console-link/' + name for name in
+                    ['application.ll', 'compile-proof.json', 'ru_notepad-console.exe',
+                     'ru_notepad-console.exe.frontend.ll', 'ru_notepad-console.exe.metadata.c', 'verification.json'])
+GATES = frozenset(['source_ir_and_abi_fixed_point', 'native_binary_fixed_point',
+                  'same_nonempty_suite_for_each_stage', 'every_planned_case_ran',
+                  'every_case_passed_without_skips', 'test_runner_success_without_skips',
+                  'inputs_unchanged', 'artifacts_unchanged_during_tests'])
+
+
+def require(value, message):
+    if not value:
+        raise RuntimeError(message)
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def decode(data):
+    require(len(data) <= MAX_JSON, 'JSON exceeds fixed bound')
+    def pairs(items):
+        out = {}
+        for key, value in items:
+            require(key not in out, 'duplicate JSON key')
+            out[key] = value
+        return out
+    try:
+        return json.loads(data.decode('utf-8'), object_pairs_hook=pairs, parse_constant=lambda _: require(False, 'nonfinite JSON'))
+    except (UnicodeError, ValueError, RecursionError):
+        raise RuntimeError('invalid bounded UTF8 JSON') from None
+
+
+def one(rows, identity, label):
+    require(isinstance(rows, list) and len(rows) <= 100, 'invalid ' + label + ' collection')
+    require(all(isinstance(row, dict) and type(row.get('id')) is int for row in rows), 'invalid API row')
+    ids = [row['id'] for row in rows]
+    require(len(ids) == len(set(ids)), 'duplicate API identity')
+    found = [row for row in rows if row['id'] == identity]
+    require(len(found) == 1, 'pinned ' + label + ' missing')
+    return found[0]
+
+
+def validate_metadata(run, jobs, artifacts):
+    require(run.get('id') == RUN and run.get('head_sha') == COMMIT and
+            run.get('event') == 'push' and run.get('path') == '.github/workflows/bootstrap-native.yml' and
+            run.get('repository', {}).get('full_name') == REPOSITORY and
+            run.get('head_repository', {}).get('full_name') == REPOSITORY, 'old run identity mismatch')
+    # The overall run has a separately diagnosed GUI failure; only this exact
+    # successful Windows core job attests the pinned compiler bundle.
+    job = one(jobs.get('jobs'), JOB, 'job')
+    require(job.get('run_id') == RUN and job.get('head_sha') == COMMIT and
+            job.get('status') == 'completed' and job.get('conclusion') == 'success' and
+            job.get('name') == 'native-bootstrap (windows-latest)', 'old Windows core job not successful')
+    artifact = one(artifacts.get('artifacts'), ARTIFACT, 'artifact')
+    require(artifact.get('workflow_run', {}).get('id') == RUN and
+            artifact.get('workflow_run', {}).get('head_sha') == COMMIT and
+            artifact.get('name') == 'bootstrap-native-windows-latest-' + COMMIT and
+            artifact.get('expired') is False and artifact.get('digest') == 'sha256:' + ZIP_SHA256 and
+            artifact.get('size_in_bytes') == ZIP_SIZE, 'old artifact identity/expiry/digest mismatch')
+    for collection, key in ((jobs, 'jobs'), (artifacts, 'artifacts')):
+        total = collection.get('total_count', len(collection[key]))
+        require(type(total) is int and total == len(collection[key]), 'paginated API collection incomplete')
+    return artifact
+
+
+def extract_core(raw):
+    """Pure bounded ZIP structural validator; production calls only after pin check."""
+    require(len(raw) <= MAX_ZIP, 'archive exceeds fixed bound')
+    try:
+        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+            entries = archive.infolist()
+            names = [entry.filename for entry in entries]
+            require(len(names) == len(set(names)) and set(names) == CORE | IGNORED, 'archive member inventory mismatch')
+            require(sum(entry.file_size for entry in entries) <= MAX_EXPANDED, 'expanded archive exceeds bound')
+            for entry in entries:
+                path = PurePosixPath(entry.filename)
+                mode = entry.external_attr >> 16
+                require(not path.is_absolute() and '..' not in path.parts and '\\' not in entry.filename and
+                        not PureWindowsPath(entry.filename).is_absolute() and not entry.is_dir() and
+                        stat.S_IFMT(mode) in (0, stat.S_IFREG) and not (entry.flag_bits & 1) and
+                        entry.compress_type in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED) and
+                        0 <= entry.file_size <= MAX_MEMBER, 'unsafe ZIP member')
+            result = {name: archive.read(name) for name in sorted(CORE)}
+            require(all(len(result[name]) == archive.getinfo(name).file_size for name in CORE), 'ZIP size mismatch')
+            return result
+    except (zipfile.BadZipFile, NotImplementedError, EOFError, OSError):
+        raise RuntimeError('invalid ZIP data') from None
+
+
+def verify_archive(raw):
+    require(len(raw) == ZIP_SIZE and digest(raw) == ZIP_SHA256, 'pinned ZIP digest/size mismatch')
+    files = extract_core(raw)
+    require(digest(files['verification.json']) == VERIFICATION_SHA256 and
+            digest(files['stage3.exe']) == STAGE3_SHA256, 'pinned core identity mismatch')
+    report = decode(files['verification.json'])
+    require(report.get('m4_complete') is True and report.get('platform') == 'win32' and
+            report.get('tests_run') == 105 and report.get('skipped') == report.get('errors') == report.get('failures') == 0 and
+            set(report.get('gates', {})) == GATES and all(x is True for x in report['gates'].values()), 'M4 suite incomplete')
+    plans = report.get('planned_cases_by_stage', {})
+    require(set(plans) == {'1', '2', '3'} and plans['1'] == plans['2'] == plans['3'] and
+            len(plans['1']) == len(set(plans['1'])) == 35, '35-case generation plan mismatch')
+    classes = ['BootstrapStage1Tests', 'BootstrapStage2Tests', 'BootstrapTests']
+    require(set(report.get('stages', {})) == {'1', '2', '3'}, 'generation results missing')
+    for index, cls in enumerate(classes, 1):
+        rows = report['stages'][str(index)]
+        require(len(rows) == 35 and sorted(row.get('case', '') for row in rows) == sorted(plans['1']) and
+                all(row.get('status') == 'passed' and row.get('stage') == index and
+                    row.get('id') == '_ru_bootstrap_acceptance.' + cls + '.' + row['case'] for row in rows), 'generation result mismatch')
+    inventory = report.get('input_sha256', {})
+    require(len(inventory) == 61 and all(isinstance(name, str) and not PurePosixPath(name).is_absolute() and
+            not PureWindowsPath(name).is_absolute() and '\\' not in name and '..' not in PurePosixPath(name).parts and
+            re.fullmatch('[a-f0-9]{64}', value) for name, value in inventory.items()), 'source inventory shape mismatch')
+    expected = CORE - {'verification.json', 'report.json', 'native-frontend-tests.json', 'native-windows-tests.json'}
+    seen = set()
+    for original, value in report.get('artifact_sha256', {}).items():
+        name = PureWindowsPath(original).name
+        require(name in expected and name not in seen and digest(files[name]) == value, 'M4 artifact mismatch')
+        seen.add(name)
+    require(seen == expected, 'complete nine-artifact identity required')
+    for name in ('stage1.exe', 'stage2.exe', 'stage3.exe'):
+        data = files[name]
+        require(len(data) >= 64 and data[:2] == b'MZ', 'not PE')
+        offset = struct.unpack_from('<I', data, 60)[0]
+        require(offset + 26 <= len(data) and data[offset:offset+4] == b'PE\0\0' and
+                struct.unpack_from('<H', data, offset+4)[0] == 0x8664 and
+                struct.unpack_from('<H', data, offset+24)[0] == 0x20b, 'not x64 PE32+')
+    for suffix in ('frontend.ll', 'metadata.c'):
+        require(files['stage2.exe.' + suffix] == files['stage3.exe.' + suffix], 'IR/ABI fixed point mismatch')
+    require(report.get('native_comparison', {}).get('normalized_equal') is True and
+            report.get('bootstrap', {}).get('fixed_point') is True, 'reported native fixed point missing')
+    for kind, count in (('frontend', 9), ('windows', 17)):
+        row = decode(files['native-' + kind + '-tests.json'])
+        require(row.get('scope') == 'real-stage3-' + kind and row.get('complete') is True and
+                row.get('planned') == row.get('executed') == count and
+                row.get('skipped') == row.get('errors') == row.get('failures') == 0 and
+                row.get('compiler_sha256') == STAGE3_SHA256, 'native core gate mismatch')
+    return files
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, message, headers, newurl):
+        return None
+
+
+def safe_download_url(url):
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        port = parsed.port
+    except ValueError:
+        return False
+    return (parsed.scheme == 'https' and parsed.username is None and parsed.password is None and
+            port in (None, 443) and not parsed.fragment and
+            (parsed.hostname == 'objects.githubusercontent.com' or
+             re.fullmatch(r'productionresultssa[a-z0-9]*\.blob\.core\.windows\.net', parsed.hostname or '') is not None))
+
+
+def bounded_read(response, limit):
+    length = response.headers.get('Content-Length')
+    if length is not None:
+        require(length.isdigit() and int(length) <= limit, 'response exceeds fixed bound')
+    data = response.read(limit + 1)
+    require(len(data) <= limit, 'response exceeds fixed bound')
+    return data
+
+
+def fetch(path, token, *, archive=False, opener=None):
+    require(path in ('runs/' + str(RUN), 'runs/' + str(RUN) + '/jobs?per_page=100',
+                     'runs/' + str(RUN) + '/artifacts?per_page=100', 'artifacts/' + str(ARTIFACT) + '/zip'), 'unpinned API path')
+    require(archive == (path == 'artifacts/' + str(ARTIFACT) + '/zip'), 'request kind mismatch')
+    require(isinstance(token, str) and bool(token.strip()) and '\r' not in token and '\n' not in token, 'GITHUB_TOKEN required')
+    opener = opener or urllib.request.build_opener(NoRedirect())
+    url = API + path
+    headers = {'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json',
+               'X-GitHub-Api-Version': '2022-11-28', 'User-Agent': 'ru-slot-old-artifact-loader'}
+    for index in range(4):
+        try:
+            request = urllib.request.Request(url, headers=headers, method='GET')
+            with opener.open(request, timeout=120) as response:
+                require(response.status == 200, 'artifact request failed')
+                return bounded_read(response, MAX_ZIP if archive else MAX_JSON)
+        except urllib.error.HTTPError as error:
+            location = error.headers.get('Location')
+            code = error.code
+            error.close()
+            require(archive and code in (301, 302, 303, 307, 308) and index < 3 and
+                    isinstance(location, str) and safe_download_url(location), 'pinned API/download request failed')
+            url = location
+            headers = {'User-Agent': 'ru-slot-old-artifact-loader'}  # Never send credentials after redirect.
+        except (urllib.error.URLError, OSError, ValueError):
+            raise RuntimeError('pinned API/download transport unavailable') from None
+    raise RuntimeError('artifact redirect limit exceeded')
+
+
+def make_receipt(all_files):
+    return {'schema': 'ru-slot-old-artifact-v1', 'scope': 'downloaded fixed old core, source checkout/tool validation still required',
+               'repository': REPOSITORY, 'commit': COMMIT, 'tree': TREE, 'run_id': RUN, 'job_id': JOB,
+               'artifact_id': ARTIFACT, 'zip_sha256': ZIP_SHA256, 'stage3_sha256': STAGE3_SHA256,
+               'verification_sha256': VERIFICATION_SHA256, 'files': {name: digest(data) for name, data in all_files.items()},
+               'required_source_binding': 'existing B bootstrap_provenance.validate against clean exact old6e checkout; report bytes unchanged'}
+
+
+def no_links(path):
+    """Reject POSIX symlinks and Windows reparse points, including ancestors."""
+    require(path.is_absolute() and path.resolve() == path, 'canonical absolute artifact path required')
+    for part in (path, *path.parents):
+        info = part.lstat()
+        require(not stat.S_ISLNK(info.st_mode) and
+                not (getattr(info, 'st_file_attributes', 0) & 0x400), 'artifact link/reparse forbidden')
+
+
+def read_fixed(path, limit):
+    no_links(path)
+    before = path.stat()
+    require(stat.S_ISREG(before.st_mode) and before.st_size <= limit, 'artifact file shape/bound mismatch')
+    with path.open('rb') as stream:
+        data = stream.read(limit + 1)
+    after = path.stat()
+    no_links(path)
+    fields = ('st_dev', 'st_ino', 'st_mode', 'st_size', 'st_mtime_ns', 'st_ctime_ns')
+    require(len(data) <= limit and all(getattr(before, field) == getattr(after, field) for field in fields),
+            'artifact changed during read')
+    return data
+
+
+def verify_output(directory):
+    """Offline revalidation, never trusts a self-reported receipt hash baseline."""
+    directory = Path(directory)
+    no_links(directory)
+    names = CORE | {'archive.zip', 'run.json', 'jobs.json', 'artifacts.json', 'receipt.json'}
+    require(directory.is_dir() and {p.name for p in directory.iterdir()} == names, 'artifact directory inventory mismatch')
+    raw = {name: read_fixed(directory/name, MAX_JSON) for name in ('run.json', 'jobs.json', 'artifacts.json')}
+    validate_metadata(*(decode(raw[name]) for name in ('run.json', 'jobs.json', 'artifacts.json')))
+    archive = read_fixed(directory/'archive.zip', MAX_ZIP)
+    core = verify_archive(archive)
+    all_files = {**raw, **core, 'archive.zip': archive}
+    receipt = decode(read_fixed(directory/'receipt.json', MAX_JSON))
+    require(receipt == make_receipt(all_files), 'artifact receipt identity mismatch')
+    for name, expected in all_files.items():
+        require(read_fixed(directory/name, MAX_ZIP if name == 'archive.zip' else MAX_MEMBER) == expected,
+                'extracted artifact differs from pinned archive')
+    require(decode(read_fixed(directory/'receipt.json', MAX_JSON)) == receipt, 'receipt changed')
+    return receipt
+
+
+def obtain(output, token):
+    output = Path(output)
+    require(output.is_absolute() and not output.exists() and not output.is_symlink(), 'fresh absolute output directory required')
+    require(output.parent.is_dir() and output.parent.resolve() == output.parent, 'canonical output parent required')
+    no_links(output.parent)
+    # Validate token before creating output or performing any network operation.
+    require(isinstance(token, str) and bool(token.strip()) and '\r' not in token and '\n' not in token, 'GITHUB_TOKEN required')
+    raw = {name: fetch(path, token) for name, path in (
+        ('run.json', 'runs/' + str(RUN)), ('jobs.json', 'runs/' + str(RUN) + '/jobs?per_page=100'),
+        ('artifacts.json', 'runs/' + str(RUN) + '/artifacts?per_page=100'))}
+    validate_metadata(*(decode(raw[name]) for name in ('run.json', 'jobs.json', 'artifacts.json')))
+    archive = fetch('artifacts/' + str(ARTIFACT) + '/zip', token, archive=True)
+    files = verify_archive(archive)
+    output.mkdir(exist_ok=False)
+    all_files = {**raw, **files, 'archive.zip': archive}
+    for name, data in all_files.items():
+        with (output/name).open('xb') as stream:
+            stream.write(data)
+    receipt = make_receipt(all_files)
+    with (output/'receipt.json').open('x', encoding='utf-8', newline='\n') as stream:
+        json.dump(receipt, stream, ensure_ascii=True, indent=2)
+        stream.write('\n')
+    require(all(digest((output/name).read_bytes()) == value for name, value in receipt['files'].items()), 'saved artifact changed')
+    return receipt
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--output', required=True, type=Path)
+    args = parser.parse_args()
+    try:
+        receipt = obtain(args.output, os.environ.get('GITHUB_TOKEN'))
+    except Exception:
+        # Do not print exception chains: HTTP errors can contain temporary URLs.
+        print('Pinned old-slot artifact prerequisite unavailable; no control pass recorded.', file=sys.stderr)
+        return 1
+    print(json.dumps({key: receipt[key] for key in ('schema', 'commit', 'artifact_id', 'zip_sha256')}))
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
