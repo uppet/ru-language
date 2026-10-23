@@ -69,8 +69,14 @@ def early_root_drop(runtime):
 
 def physical_slots(ir):
     """Check physical addresses, unique definitions and exact frame bounds."""
+    # Compiler source contains the literal text "define void @" in globals.
+    # Match real definition/closing lines, never crossing another definition.
+    bodies = re.findall(r'^define void @[^\n]*\{[ \t]*\r?\n(?:(?!^define\b).)*?^\}[ \t]*\r?$',
+                        ir, re.M | re.S)
+    if len(bodies) != len(re.findall(r'^define void @', ir, re.M)):
+        raise AssertionError('missing or malformed emitted function boundary')
     result = []
-    for body in re.findall(r'define void @[^}]+}', ir):
+    for body in bodies:
         names = re.findall(r'^  (%\w+) =', body, re.M)
         if len(names) != len(set(names)):
             raise AssertionError('duplicate SSA definition')
