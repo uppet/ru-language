@@ -99,8 +99,8 @@ jobs:
       GIT_CONFIG_COUNT: '1'
       GIT_CONFIG_KEY_0: core.autocrlf
       GIT_CONFIG_VALUE_0: 'false'
-      EDITOR_COMMIT: 9bac67e481d13f3e78a32a6f8c99d2de018c7c85
-      EDITOR_TREE: a656add66e84f8c264435bfcd9393a5116f7ca59
+      EDITOR_COMMIT: 9b570e0dd13f6070ee9d3a08d3855c81c8c63bb6
+      EDITOR_TREE: 5660e8d0c25e5bfd95685c44aeeee4dbd4477c98
     steps:
       - name: Exact language second-stage checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -111,7 +111,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: uppet/ru_notepad
-          ref: 9bac67e481d13f3e78a32a6f8c99d2de018c7c85
+          ref: 9b570e0dd13f6070ee9d3a08d3855c81c8c63bb6
           path: editor-bootstrap
           fetch-depth: 0
           persist-credentials: false
@@ -188,6 +188,8 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Pipeline policy and explicit linker host contracts
         run: |
+          python -m unittest discover -s tests -p test_bootstrap_editor_diagnostic.py -v
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m unittest discover -s tests -p test_bootstrap_native_host.py -v
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           python -m unittest discover -s ../editor-bootstrap/tests -p 'test_bootstrap*.py' -v
@@ -198,6 +200,7 @@ jobs:
       - name: Build only pinned source DLLs and fixed-C native helpers
         run: python ../editor-bootstrap/tools/prepare_bootstrap_dependencies.py --config "$env:GUI_EVIDENCE/base-config.json" --output "$env:GUI_EVIDENCE/dependencies"
       - name: Stage3 LLVM build of actual editor and exact GUI probes
+        id: gui_build
         run: |
           @'
           import json,os,subprocess,sys
@@ -225,6 +228,20 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Real owned-process GUI resources Unicode argv DLL ABI callbacks and window lifecycle
         run: python ../editor-bootstrap/tools/verify_bootstrap_editor_windows.py --config "$env:GUI_EVIDENCE/gate-config.json" --output "$env:GUI_EVIDENCE/gui-acceptance.json"
+      - name: Same-runner C control versus bootstrap fixture diagnostic only
+        if: ${{ !cancelled() && steps.gui_build.outcome == 'success' }}
+        run: |
+          @'
+          import json,os
+          from pathlib import Path
+          out=Path(os.environ['GUI_EVIDENCE'])
+          base=json.loads((out/'base-config.json').read_bytes())
+          gate=json.loads((out/'gate-config.json').read_bytes())
+          config={'editor_root':base['app_source']['path'],'gate_config':gate,'owned_root':str(out/'controlled-runtime')}
+          (out/'controlled-config.json').write_text(json.dumps(config,indent=2),encoding='utf-8')
+          '@ | python -
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python tools/diagnose_bootstrap_editor_fixture.py --config "$env:GUI_EVIDENCE/controlled-config.json" --output "$env:GUI_EVIDENCE/controlled-diagnostic.json"
       - name: Preserve JSON and logs only, never runtime binaries or packages
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
