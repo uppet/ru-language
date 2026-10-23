@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import importlib
 import json
+import math
 import os
 import stat
 from pathlib import Path
@@ -12,8 +13,8 @@ import time
 
 OLD = '6e03236c4fecf5a5219eb28a3ba1c46bfeb36d65'
 TREE = 'd7f53f270006729fc8761e3328d1bf8110c99b97'
-APP = '5a900a037cd54f4f89c3658e246195bbf3d389d3'
-APP_TREE = '06eefc5de1fb864cbb7676e5950acc23752d53c5'
+APP = '90c87d2da6bf6b4e8814f7551f8ad6161b25d483'
+APP_TREE = '1cd4b863714a705789ed095dbf83089dcec31310'
 ENTRY = 'tests/bootstrap_pipeline/dll_abi_probe.ru'
 SCHEMA = 'ru-slot-old-stage3-control-v1'
 
@@ -23,11 +24,16 @@ def require(condition, message):
         raise ValueError(message)
 
 
-def identity(path):
+def identity(path, *, max_bytes=None):
     path = Path(path)
     require(path.is_absolute() and path.is_file() and not any(p.is_symlink() for p in (path, *path.parents)), 'unsafe control input')
     require(not any(getattr(p.lstat(), 'st_file_attributes', 0) & stat.FILE_ATTRIBUTE_REPARSE_POINT for p in (path, *path.parents)), 'reparse control input')
-    raw = path.read_bytes()
+    if max_bytes is None:
+        raw = path.read_bytes()
+    else:
+        with path.open('rb') as stream:
+            raw = stream.read(max_bytes+1)
+        require(len(raw) <= max_bytes, 'control input exceeds bound')
     return {'path': str(path.resolve()), 'sha256': hashlib.sha256(raw).hexdigest(), 'size': len(raw)}
 
 
@@ -233,11 +239,98 @@ def run(config, config_record, prepared_path, three_path):
     validate_old(prepared['old_receipt'], config, new, driver, gate)
     check(frozen)
     verify_copies(prepared, config, old, dependencies, gate)
+    observation = classify_observation(row, Path(prepared['exe']).parent, diag)
+    new_routes_passed = all(result.get('passed') is True for result in three['results'].values())
     return {'schema':SCHEMA, 'phase':'executed', 'diagnostic_only':True, 'performance_acceptance':False,
+        'old_observation':observation, 'new_routes_passed':new_routes_passed,
+        'diagnostic_integrity_passed':new_routes_passed and observation['evidence_complete'] is True,
         'release_permission':False, 'runtime_seconds':60, 'fixed_order':[*diag.ORDER, 'old6e-stage3-llvm'],
         'not_statistical_benchmark':True, 'limitations':['fixed order/cache effects remain', 'incomplete 60s metrics are censored, never assigned a completed ratio'],
         'preparation':prepared_record, 'three_route':three_record, 'old':row, 'comparison_sources':sources,
         'old_source_provenance':old['source_pins']['ru_source'], 'new_source_provenance':new['source_pins']['ru_source']}
+
+
+# Exact reviewed old6e/B fixture prefix at the 1MB scan entry. Only the four
+# measured 100KB timing values are masked; work/count/PASS sequence is exact.
+CENSORED_PREFIX_SHA256 = '4c87940caa755bd72e2fe0e65a4ad8d0f1fb23501321632aa36589afa691a2a4'
+
+
+def finite_time(value):
+    return type(value) in (int,float) and math.isfinite(value) and 60 <= value <= 65
+
+
+def classify_observation(row, directory, diagnostic):
+    """Classify evidence, never rewrite the old program's passed/error fields."""
+    def invalid(reason):
+        return {'outcome':'invalid','evidence_complete':False,'reason':reason}
+    try:
+        require(isinstance(row,dict), 'old observation is not an object')
+        require(row.get('executed') is True and type(row.get('pid')) is int and row['pid'] > 0, 'owned process identity missing')
+        observation = row.get('observation')
+        require(isinstance(observation,dict) and set(observation) == {'schema','deadline_events','first_error','nondeadline_errors','cleanup'} and observation['schema'] == 'ru-notepad-child-observation-v1', 'structured observation missing')
+        require(observation['nondeadline_errors'] == [], 'nondeadline runtime errors present or unknown')
+        cleanup = observation['cleanup']
+        require(isinstance(cleanup,dict) and set(cleanup) == {'pid','errors','process_reaped','exit_code','windows_remaining','handshake_closed','watchdog_stopped'}, 'cleanup schema missing')
+        require(cleanup['pid'] == row['pid'] and type(cleanup['pid']) is int and cleanup['errors'] == [] and
+                cleanup['process_reaped'] is True and type(cleanup['exit_code']) is int and
+                cleanup['windows_remaining'] == [] and cleanup['handshake_closed'] is True and
+                cleanup['watchdog_stopped'] is True, 'owned process cleanup incomplete')
+        if 'exit_code' in row:
+            require(row['exit_code'] == cleanup['exit_code'] and type(row['exit_code']) is int, 'exit evidence differs')
+        events = observation['deadline_events']
+        require(isinstance(events,list), 'deadline event list missing')
+        if row.get('passed') is True:
+            require(row.get('cleanup_killed') is False and not row.get('error') and cleanup['exit_code'] == 0 and
+                    observation['first_error'] is None and events == [], 'completed observation contradicts success')
+            return {'outcome':'passed','evidence_complete':True,'program_passed':True}
+        require(row.get('passed') is False and row.get('cleanup_killed') is True and cleanup['exit_code'] != 0, 'not an owned terminated old observation')
+        require(finite_time(row.get('seconds')), 'not the bounded 60s observation')
+        first = observation['first_error']
+        require(isinstance(first,dict) and set(first) == {'code','phase','elapsed_seconds','exception_type','message'} and first['code'] == 'deadline' and first['exception_type'] == 'FunctionalDeadlineError' and first['phase'] in ('runtime','acceptance'), 'first error is not a structured deadline')
+        require(finite_time(first['elapsed_seconds']) and first['elapsed_seconds'] <= row['seconds'] and
+                all(isinstance(first[name],str) and bool(first[name]) for name in ('phase','exception_type','message')), 'invalid first deadline event')
+        require(1 <= len(events) <= 3, 'deadline event count invalid')
+        sources = []
+        for event in events:
+            require(isinstance(event,dict) and set(event) == {'source','budget_seconds','elapsed_seconds'}, 'deadline event schema invalid')
+            require(event['source'] in ('watchdog','poll-loop','elapsed-postcheck') and type(event['budget_seconds']) is int and
+                    event['budget_seconds'] == 60 and finite_time(event['elapsed_seconds']) and event['elapsed_seconds'] <= row['seconds'], 'deadline event identity invalid')
+            sources.append(event['source'])
+        require(len(sources) == len(set(sources)) and any(event['source'] in ('watchdog','poll-loop') and event['elapsed_seconds'] <= first['elapsed_seconds'] for event in events), 'no causal owned deadline event before first error')
+        modules = row.get('diagnostic_module_observations',{})
+        require(modules.get('pid') == row['pid'] and modules.get('complete') is True and type(modules.get('snapshots')) is int and modules['snapshots'] > 0, 'actual old DLL observation incomplete')
+        names = ('Scintilla.dll','Lexilla.dll','RuSyntax.dll')
+        require(set(modules.get('verified',{})) == set(names), 'actual old DLL set differs')
+        directory = Path(directory).resolve()
+        for name in names:
+            require(modules['verified'][name] == identity(directory/name), 'actual old DLL identity differs')
+        partial = row.get('partial_log',{})
+        require(partial.get('available') is True, 'old partial log unavailable')
+        logs = list(directory.glob('ru_notepad-*.log'))
+        require(len(logs) == 1 and partial['identity'] == identity(logs[0], max_bytes=1024*1024), 'old partial log path/identity differs')
+        with logs[0].open('rb') as stream:
+            raw = stream.read(1024*1024+1)
+        require(hashlib.sha256(raw).hexdigest() == partial['identity']['sha256'] and len(raw) == partial['identity']['size'] and len(raw) <= 1024*1024, 'old partial log changed or oversized')
+        text = raw.decode('utf-8').replace('\r\n','\n')
+        require('\r' not in text and text.endswith('\n'), 'old partial log framing invalid')
+        normalized = []; metrics = []
+        for line in text.split('\n'):
+            if line.startswith(('PERF_RU ','RU_GUI_SYNC ')):
+                metric = diagnostic.metric(line); metrics.append(metric)
+                require(metric['kind'] == 'PERF_RU' and metric['fields']['size'] == '100000', 'unexpected completed workload in censored prefix')
+                timing = {'initial_ms','edit_ms','max_tick_ms','max_chunk_ms'}
+                require(all(0 <= float(metric['fields'][name]) <= 60000 for name in timing), 'timing exceeds fixed observation budget')
+                parts = line.split()
+                line = ' '.join(parts[:1]+[item.split('=')[0]+'=<timing>' if item.split('=')[0] in timing else item for item in parts[1:]])
+            normalized.append(line)
+        require(len(metrics) == 1 and metrics == partial.get('metrics'), 'old partial metrics missing/changed')
+        require(hashlib.sha256('\n'.join(normalized).encode('utf-8')).hexdigest() == CENSORED_PREFIX_SHA256, 'not the exact known 1MB scan-entry prefix')
+        require(identity(logs[0], max_bytes=1024*1024) == partial['identity'], 'old partial log changed after validation')
+        return {'outcome':'valid_censored','evidence_complete':True,'program_passed':False,
+                'deadline_seconds':60,'missing_metrics':['1MB completion','whole-fixture completion'],
+                'log_identity':partial['identity'],'normalized_prefix_sha256':CENSORED_PREFIX_SHA256}
+    except (ValueError,KeyError,TypeError,OverflowError,OSError) as exc:
+        return invalid(str(exc))
 
 
 def main():
@@ -256,7 +349,7 @@ def main():
             require(args.prepared is not None and args.three_route is not None, 'run inputs required')
             result = run(config, record, args.prepared, args.three_route)
         save(args.output, result)
-        return 0 if args.phase == 'prepare' or result['old'].get('passed') is True else 1
+        return 0 if args.phase == 'prepare' or result.get('diagnostic_integrity_passed') is True else 1
     except Exception as exc:
         if not args.output.exists():
             failure = {'schema':SCHEMA, 'phase':args.phase, 'passed':False, 'diagnostic_prerequisite_or_execution_failure':str(exc), 'performance_acceptance':False}

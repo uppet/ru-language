@@ -123,7 +123,7 @@ class SlotControlTests(unittest.TestCase):
             for records in (prepared['copies'][:-1],prepared['copies'][:-1]+prepared['copies'][:1]):
                 with self.assertRaises(ValueError):control.verify_copies(dict(prepared,copies=records),config,old,dependencies,gate)
 
-    def run_model(self, mutation=None, passed=True):
+    def run_model(self, mutation=None, passed=True, new_passed=True):
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary).resolve()
             paths={name:root/(name+'.json') for name in ('config','prepared','three','newreceipt','input')}
@@ -136,7 +136,7 @@ class SlotControlTests(unittest.TestCase):
             paths['prepared'].write_bytes(json.dumps(prepared).encode())
             three={'schema':'three','fixed_order':['a','b','new'],'runtime_seconds_per_child':60,'runtime_environment':env,
                 'runtime_environment_sha256':hashlib.sha256(json.dumps(env,sort_keys=True).encode()).hexdigest(),
-                'stage3_receipt':control.identity(paths['newreceipt']),'status':'diagnostic-complete','results':{'a':{},'b':{},'new':{}},
+                'stage3_receipt':control.identity(paths['newreceipt']),'status':'diagnostic-complete','results':{name:{'passed':new_passed} for name in ('a','b','new')},
                 'inputs':[input_record],'copies':[], 'entry':input_record,'dependencies_receipt':input_record}
             if mutation=='environment': three['runtime_environment']={'PATH':'wrong'}
             if mutation=='incomplete': three['results'].pop('new')
@@ -171,6 +171,101 @@ class SlotControlTests(unittest.TestCase):
         self.assertIn("driver.verify_proof(proof",source)
         self.assertIn('loader.verify_output',source)
         self.assertIn('context(config)\n    validate_old',source)
+
+
+
+# Frozen925 log is a test prefix only, never retroactively valid runtime evidence.
+KNOWN_PARTIAL = 'Ru Notepad diagnostic log\n[launcher] Starting Ru program.\nPASS: production bulk decoder matches all six old-decoder fields across a full 64-event batch\nPASS: production bulk decoder checks high bits in the last event of a full batch\nPASS: production bulk decoder preserves exact near-32-MB event coordinates and unsigned metadata\nPASS: production bulk decoder rejects high-bit corruption 0 before combining words\nPASS: production bulk decoder rejects high-bit corruption 1 before combining words\nPASS: production bulk decoder rejects high-bit corruption 2 before combining words\nPASS: production bulk decoder ignores stale event bytes when the native count is zero\nPASS: production bulk decoder rejects a count exceeding its 1024-byte event capacity\nPASS: production bulk decoder rejects a negative count\nPASS: production bulk decoder rejects a fractional count\nPASS: production bulk decoder rejects malformed kind/style/length/position/line 0\nPASS: production bulk decoder rejects malformed kind/style/length/position/line 1\nPASS: production bulk decoder rejects malformed kind/style/length/position/line 2\nPASS: production bulk decoder rejects malformed kind/style/length/position/line 3\nPASS: production bulk decoder rejects malformed kind/style/length/position/line 4\nPASS: production bulk decoder rejects malformed kind/style/length/position/line 5\nPASS: production bulk decoder rejects malformed kind/style/length/position/line 6\nPASS: production bulk decoder rejects malformed kind/style/length/position/line 7\nPASS: production bulk decoder rejects a non-token before the styled range\nPASS: production bulk decoder preserves long identifier events starting before the styled range\nPASS: production bulk decoder preserves the 64-byte delayed keyword boundary\nPASS: production bulk decoder rejects decreasing event positions\nPASS: production bulk decoder preserves equal-position event ordering\nPASS: decoded event rows remain detached after source mutation and closure\nPASS: checked low49 decoding preserves event coordinates near the 32 MB boundary\nPASS: corrupt high event bits fail ordinarily before any lossy native conversion\nPASS: initial checkpoint failure releases the already-created native context exactly once\nPASS: failed initialization returns no released context or checkpoint to the plain fallback\nPASS: initial checkpoint failure keeps its specific visible warning outside rescue scope\nPASS: Ru attaches independently of Lexilla availability\nPASS: Ru uses real SCLEX_CONTAINER instead of borrowed lexer\nPASS: selection never performs eager lexical scanning\nPASS: real SCN_STYLENEEDED reaches the owning container bridge\nPASS: style-needed notification queues without synchronous rescanning\nPASS: container queue drains without fallback\nPASS: every UTF-8 byte of 算 is a keyword\nPASS: Han function name retains identifier style\nPASS: every Han and emoji byte in quoted string is styled\nPASS: number following multibyte source has correct byte offset\nPASS: function header has base fold level and header flag\nPASS: if header nests exactly once\nPASS: function and if body has depth two\nPASS: 法 closes matching function level\nPASS: styling and folding preserve exact UTF-8 text\nPASS: styling and folding never dirty a clean document\nPASS: styling and folding create no undo entry\nPASS: styling preserves selection anchor and caret\nPASS: Ru palette preserves line-number style\nPASS: dedicated fold margin is visible\nPASS: fold action accepts completed owning document\nPASS: collapse actually hides nested native lines\nPASS: collapse changes native expanded flag\nPASS: expand restores native line visibility\nPASS: plain switch reveals every previously hidden line\nPASS: plain switch clears old fold levels\nPASS: plain switch clears all Ru style bytes\nPASS: plain switch cancels scanner state\nPASS: C++ switch reveals every Ru fold even without Lexilla\nPASS: JSON switch reveals every Ru fold even without Lexilla\nPASS: first typing into empty Ru document restarts a nonterminal checkpoint\nPASS: EOF append never restores a finished scanner\nPASS: EOF undo and redo remain incrementally highlighted\nPASS: multiline quote initially styles Han bytes\nPASS: deleting opening quote invalidates multiline lexical state\nPASS: undo restores multiline quote state\nPASS: Ru block comment spans Han and emoji bytes\nPASS: Ru keyword resumes after the real 释. block-comment terminator\nPASS: same-length comment opener replacement invalidates lexical suffix\nPASS: undo restores Ru multiline comment state\nPASS: real native insert/delete notifications reached owning bridge\nPASS: style and fold notifications are observed without recursive text invalidation\nPASS: UTF-8 quote and emoji styles cross checkpoint boundary correctly\nPASS: deleting LF from checkpoint-adjacent CRLF safely resumes lexical state\nPASS: keyword offset adjusts correctly after CRLF partial deletion\nPASS: bounded timer returns before a large initial scan completes\nPASS: edit during incomplete work invalidates suffix without unsafe reuse\nPASS: unclosed BOF comment propagates through previously pending source\nPASS: removing existing collapsed function headers with BOF comment reveals every old hidden line\nPASS: tentative reference-call opener starts without a fold header\nPASS: temporary statement confirms an opener before the restart checkpoint\nPASS: checkpoint restore retracts a previously published earlier header and reveals its lines\nPASS: BOF insertion unequal edit queues its own revision and preserves exact dirty text\nPASS: BOF insertion incremental text/styles/all fold levels equal an independent fresh scan\nPASS: BOF insertion highlighting preserves one-edit undo and the original savepoint\nPASS: BOF deletion unequal edit queues its own revision and preserves exact dirty text\nPASS: BOF deletion incremental text/styles/all fold levels equal an independent fresh scan\nPASS: BOF deletion highlighting preserves one-edit undo and the original savepoint\nPASS: middle insertion unequal edit queues its own revision and preserves exact dirty text\nPASS: middle insertion incremental text/styles/all fold levels equal an independent fresh scan\nPASS: middle insertion highlighting preserves one-edit undo and the original savepoint\nPASS: middle deletion unequal edit queues its own revision and preserves exact dirty text\nPASS: middle deletion incremental text/styles/all fold levels equal an independent fresh scan\nPASS: middle deletion highlighting preserves one-edit undo and the original savepoint\nPASS: EOF insertion unequal edit queues its own revision and preserves exact dirty text\nPASS: EOF insertion incremental text/styles/all fold levels equal an independent fresh scan\nPASS: EOF insertion highlighting preserves one-edit undo and the original savepoint\nPASS: EOF deletion unequal edit queues its own revision and preserves exact dirty text\nPASS: EOF deletion incremental text/styles/all fold levels equal an independent fresh scan\nPASS: EOF deletion highlighting preserves one-edit undo and the original savepoint\nPASS: matrix multiline edit has published a bounded prefix while work remains pending\nPASS: repeated edits during pending work discard old states and match every fresh byte style and fold level\nPASS: edit in later function preserves unaffected collapsed earlier fold\nPASS: editing one HWND preserves another document byte styles\nPASS: editing one HWND never invalidates another document generation\nPASS: SETDOCPOINTER rejects queued stale document state\nPASS: replacement document obtains a fresh generation\nPASS: explicit release removes lifecycle state\nPASS: large Ru selection only queues work\nPASS: large Ru initial scan completes\nPASS: initial scan reads source exactly once in bounded chunks\nPASS: no native range exceeds 1024 UTF-8 bytes\nPASS: same-byte edit proves full-state checkpoint convergence\nPASS: ordinary edit does not rescan the full document\nPASS: performance edit preserves document length\nPASS: same-byte replacement retains Ru identifier byte style\nPASS: background styling preserves edited dirty state\nPASS: single undo after background scan reaches original savepoint\nPERF_RU size=100000 initial_ms=2175.37049999973 edit_ms=702.590199999977 initial_read_bytes=100000 edit_read_bytes=32768 reused_bytes=67232 max_read=1024 max_tick_ms=9.27929999958724 max_chunk_ms=2.73940000031143\nPASS: two distant coalesced replacements converge only after both changed ranges\nPASS: both coalesced replacements receive correct byte styles\nPASS: two edits retain their original undo history through convergence\nPASS: insertion and deletion at different positions can safely converge\nPASS: net-zero shifted replacement has correct combined identifier style\nPASS: net-zero edit revisits styles published beyond an intermediate checkpoint\nPASS: large Ru selection only queues work\n'
+
+
+class CensoredObservationTests(unittest.TestCase):
+    def model(self, mutate=None, text=None):
+        import copy
+        spec=importlib.util.spec_from_file_location('diagnostic_metric',ROOT/'tools/diagnose_bootstrap_editor_fixture.py')
+        diagnostic=importlib.util.module_from_spec(spec);spec.loader.exec_module(diagnostic)
+        with tempfile.TemporaryDirectory() as temporary:
+            directory=Path(temporary).resolve(); verified={}
+            for name in ('Scintilla.dll','Lexilla.dll','RuSyntax.dll'):
+                (directory/name).write_bytes(name.encode()); verified[name]=control.identity(directory/name)
+            log=directory/'ru_notepad-owned.log'; log.write_bytes((KNOWN_PARTIAL if text is None else text).encode())
+            metrics=[diagnostic.metric(line) for line in log.read_text(encoding='utf-8').splitlines() if line.startswith(('PERF_RU ','RU_GUI_SYNC '))]
+            row={'passed':False,'executed':True,'cleanup_killed':True,'pid':71,'seconds':60.1,'error':'original timeout message retained',
+                'observation':{'schema':'ru-notepad-child-observation-v1','nondeadline_errors':[],
+                  'deadline_events':[{'source':'watchdog','budget_seconds':60,'elapsed_seconds':60.0}],
+                  'first_error':{'code':'deadline','phase':'runtime','elapsed_seconds':60.02,'exception_type':'FunctionalDeadlineError','message':'original deadline'},
+                  'cleanup':{'pid':71,'errors':[],'process_reaped':True,'exit_code':1,'windows_remaining':[], 'handshake_closed':True,'watchdog_stopped':True}},
+                'diagnostic_module_observations':{'pid':71,'complete':True,'snapshots':2,'verified':verified},
+                'partial_log':{'available':True,'identity':control.identity(log),'metrics':metrics}}
+            if mutate:mutate(row)
+            before=copy.deepcopy(row);result=control.classify_observation(row,directory,diagnostic)
+            self.assertEqual(row,before,'classification must never alter old result')
+            return result
+
+    def test_exact_deadline_prefix_is_valid_observation_not_program_pass(self):
+        result=self.model(); self.assertEqual(result['outcome'],'valid_censored')
+        self.assertTrue(result['evidence_complete']);self.assertFalse(result['program_passed'])
+        self.assertEqual(result['missing_metrics'],['1MB completion','whole-fixture completion'])
+        text=KNOWN_PARTIAL.replace('2175.37049999973','2100.125').replace('702.590199999977','700.5')
+        self.assertEqual(self.model(text=text)['outcome'],'valid_censored')
+
+    def test_partial_log_reader_is_bounded_before_hashing(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path=Path(temporary).resolve()/'oversized.log';path.write_bytes(b'x'*(1024*1024+1))
+            with patch.object(Path,'read_bytes',side_effect=AssertionError('unbounded read forbidden')):
+                with self.assertRaisesRegex(ValueError,'exceeds bound'):
+                    control.identity(path,max_bytes=1024*1024)
+
+    def test_925_missing_observation_is_not_upgraded(self):
+        self.assertEqual(self.model(lambda row:row.pop('observation'))['outcome'],'invalid')
+
+    def test_unknown_first_error_wins_even_when_later_deadline(self):
+        for field,value in [('code','exception'),('exception_type','ValueError'),('phase','cleanup'),('elapsed_seconds',59.99)]:
+            with self.subTest(field=field):
+                self.assertEqual(self.model(lambda row:row['observation']['first_error'].update({field:value}))['outcome'],'invalid')
+        self.assertEqual(self.model(lambda row:row['observation'].update(first_error=None))['outcome'],'invalid')
+
+    def test_all_non_deadline_errors_reject_even_after_deadline(self):
+        error={'code':'exception','phase':'runtime','elapsed_seconds':60.03,'exception_type':'ValueError','message':'independent later failure'}
+        self.assertEqual(self.model(lambda row:row['observation'].update(nondeadline_errors=[error]))['outcome'],'invalid')
+        self.assertEqual(self.model(lambda row:row['observation'].pop('nondeadline_errors'))['outcome'],'invalid')
+
+    def test_postcheck_only_and_wrong_budget_or_timing_rejected(self):
+        for field,value in [('source','elapsed-postcheck'),('budget_seconds',61),('budget_seconds',True),('elapsed_seconds',59.9),('elapsed_seconds',float('nan')),('elapsed_seconds',float('inf')),('elapsed_seconds',61)]:
+            with self.subTest(field=field,value=value):
+                self.assertEqual(self.model(lambda row:row['observation']['deadline_events'][0].update({field:value}))['outcome'],'invalid')
+        for value in (59.9,65.1,float('nan'),True):
+            self.assertEqual(self.model(lambda row:row.update(seconds=value))['outcome'],'invalid')
+
+    def test_every_cleanup_condition_required(self):
+        for field,value in [('pid',72),('errors',['wait failed']),('process_reaped',False),('exit_code',None),('exit_code',0),('windows_remaining',[1]),('handshake_closed',False),('watchdog_stopped',None)]:
+            with self.subTest(field=field):
+                self.assertEqual(self.model(lambda row:row['observation']['cleanup'].update({field:value}))['outcome'],'invalid')
+        self.assertEqual(self.model(lambda row:row.update(exit_code=2))['outcome'],'invalid')
+
+    def test_owned_mapping_log_and_status_required(self):
+        mutations=[lambda row:row.update(passed=True),lambda row:row.update(executed=False),lambda row:row.update(cleanup_killed=False),
+            lambda row:row['diagnostic_module_observations'].update(complete=False),lambda row:row['diagnostic_module_observations'].update(pid=72),
+            lambda row:row['diagnostic_module_observations']['verified'].pop('RuSyntax.dll'),
+            lambda row:row['partial_log'].update(available=False),lambda row:row['partial_log'].update(metrics=[]),
+            lambda row:row['partial_log']['identity'].update(sha256='0'*64)]
+        for mutation in mutations:self.assertEqual(self.model(mutation)['outcome'],'invalid')
+
+    def test_known_prefix_only_no_assertion_or_work_changes(self):
+        for text in (KNOWN_PARTIAL+'FAIL: hidden\n',KNOWN_PARTIAL.replace('PASS:','FAIL:',1),
+                     KNOWN_PARTIAL.replace('edit_read_bytes=32768','edit_read_bytes=32767'),
+                     KNOWN_PARTIAL.replace('initial_ms=2175.37049999973','initial_ms=60001'),
+                     KNOWN_PARTIAL.replace('large Ru selection only queues work','unknown stop'),
+                     KNOWN_PARTIAL.rsplit('PERF_RU ',1)[0],KNOWN_PARTIAL.rstrip('\n')):
+            with self.subTest(tail=text[-45:]):self.assertEqual(self.model(text=text)['outcome'],'invalid')
+
+    def test_new_route_failure_still_fails_parent_despite_valid_old_censor(self):
+        with patch.object(control,'classify_observation',return_value={'outcome':'valid_censored','evidence_complete':True,'program_passed':False}):
+            result=SlotControlTests().run_model(passed=False,new_passed=True)
+            self.assertTrue(result['diagnostic_integrity_passed']);self.assertFalse(result['old']['passed'])
+            result=SlotControlTests().run_model(passed=False,new_passed=False)
+            self.assertFalse(result['diagnostic_integrity_passed'])
+        with patch.object(control,'classify_observation',return_value={'outcome':'invalid','evidence_complete':False}):
+            self.assertFalse(SlotControlTests().run_model()['diagnostic_integrity_passed'])
 
 
 if __name__=='__main__': unittest.main()
