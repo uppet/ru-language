@@ -80,3 +80,5 @@ python3 -m unittest discover -s tests -p test_bootstrap.py -v
 自编译回归实际生成三代机器码，三代各自运行同套 35 项检查（共 105 项），并验证核心语义、继承和方法闭包、作用域闭包、模块缓存、Unicode 路径／入口、二进制与独立 IR。测试明确禁用后续驱动调用 Python 前端；另只复制原生编译器与独立测试源到空目录，清空 PATH，在该目录发射 IR，并交给真实 assembler 验证。仅运行 unittest 不会持久保存完整验收报告；交付验收使用上面的 `verify`。
 
 完整证据及平台结果见 [M4 逐代验收](bootstrap-m4-validation.md) 与 [M3 首次自编译历史记录](bootstrap-validation.md)。生成机器码和达到自身 IR 固定点不表示已经对齐 Dart AOT 性能；M1 的原始性能数据仍保留，未重新包装为本阶段的性能达标证据。
+
+普通LLVM路径的参数槽、临时值清理、局部绑定缓存及目标属性优化，另经 [2026-10-24 语法着色六轮对照](bootstrap-llvm-syntax-performance.md) 验收。该报告明确固定原生适配层的边界，并提供同源C→LLVM对照、逐轮数据和复现脚本。

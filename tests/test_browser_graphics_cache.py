@@ -196,7 +196,6 @@ browserCheckScene(capacity.graphicsCanvas,scene,m,[1,1]);scene.commands[0].text+
 assert.throws(()=>browserCheckScene(capacity.graphicsCanvas,scene,m,[1,1]),/256 KiB/);
 console.log('cache-ok');
 """
-        result = subprocess.run([test_browser_js.NODE, '-e', prelude + runtime + checks],
-                                capture_output=True, text=True, timeout=10)
+        result = test_browser_js.run_node_script(prelude + runtime + checks, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, 'cache-ok\n')

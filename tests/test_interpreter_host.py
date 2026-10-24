@@ -46,6 +46,15 @@ int main(void) {
     assert(outer->active_count==3);
     assert(!strcmp(outer->values[600].s->data,"returned"));
     assert(!strcmp(returned.s->data,"returned"));
+    rul_clear_count(outer,2);
+    assert(outer->active_count==2);
+    assert(outer->values[1].kind==RU_NULL);
+    assert(outer->values[999].kind==RU_NUM);
+    assert(!strcmp(outer->values[600].s->data,"returned"));
+    rul_clear_count(outer,601);
+    assert(outer->active_count==1);
+    assert(outer->values[600].kind==RU_NULL);
+    assert(outer->values[999].kind==RU_NUM);
     for(i=0;i<100;++i) {
         rul_clear(outer);rul_clear(outer);
         assert(outer->active_count==0);

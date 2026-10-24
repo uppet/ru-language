@@ -19,7 +19,10 @@ from .frontend import bind_arguments
 # Keep these declarations next to the implementation of the private ABI.
 ABI = {
     'frame_new': ('i8*', 'i32'), 'slot': ('i8*', 'i8*, i32'),
+    'bind_cached': ('void', 'i8*, i8*, i8*, i32, i8**'),
+    'get_cached': ('void', 'i8*, i8*, i8*, i32, i8**'),
     'clear': ('void', 'i8*'), 'frame_free': ('void', 'i8*'),
+    'clear_count': ('void', 'i8*, i32'),
     'copy': ('void', 'i8*, i8*'), 'null': ('void', 'i8*'),
     'number': ('void', 'i8*, double'), 'fact': ('void', 'i8*, i32'),
     'string': ('void', 'i8*, i8*'), 'truth': ('i32', 'i8*'),
@@ -117,6 +120,15 @@ class LLVMCompiler(Compiler):
         self.terminated = True
 
     def call_abi(self, name, *values):
+        if name in ('get', 'bind') and self.current_function:
+            env_index, name_index = (1, 2) if name == 'get' else (0, 1)
+            if values[env_index] == self.base_env:
+                key = values[name_index]
+                if key not in self.binding_caches:
+                    cache = self.alloca('i8*')
+                    self.entry_allocations.append(f'  store i8* null, i8** {cache}')
+                    self.binding_caches[key] = cache
+                name, values = name + '_cached', (*values, self.binding_caches[key])
         result, signature = ABI[name]
         types = signature.split(', ') if signature else []
         assert len(types) == len(values), name
@@ -139,9 +151,21 @@ class LLVMCompiler(Compiler):
 
     def slot(self):
         ident = '%' + self.fresh('v')
-        self.entry_allocations.append(f'  {ident} = call i8* @rul_slot(i8* %frame, i32 {self.slot_count})')
+        index = self.slot_count
         self.slot_count += 1
+        self.slot_peak = max(self.slot_peak, self.slot_count)
+        if index < len(self.slot_addresses):
+            return self.slot_addresses[index]
+        self.entry_allocations.append(f'  {ident} = call i8* @rul_slot(i8* %frame, i32 {index})')
+        self.slot_addresses.append(ident)
         return ident
+
+    def clear_temporaries(self):
+        # Only normal control-flow boundaries: no expression temporary remains
+        # live after these clears. SSA identities stay globally fresh even when
+        # their physical frame slot is reused by a later statement.
+        self.call_abi('clear_count', '%frame', str(self.slot_count))
+        self.slot_count = 0
 
     def alloca(self, typ):
         ident = '%' + self.fresh('local')
@@ -187,12 +211,21 @@ class LLVMCompiler(Compiler):
         return out
 
     def pack(self, args):
-        # Evaluate every value first, in source order, then copy into contiguous
-        # frame slots. No host Val layout leaks into LLVM pointer arithmetic.
-        values = [self.expr(value) for _, value in args]
-        packed = [self.slot() for _ in values]
-        for out, value in zip(packed, values):
-            self.call_abi('copy', out, value)
+        # Evaluate all arguments left-to-right before choosing their layout.
+        # Every expression result already owns a frame root. One result, or
+        # results that each consumed one slot, need no second retained copy.
+        # Keep those original roots until the existing normal/unwind clear.
+        values, contiguous = [], True
+        for _, value in args:
+            before = self.slot_count
+            values.append(self.expr(value))
+            contiguous = contiguous and self.slot_count == before + 1
+        if len(values) == 1 or contiguous:
+            packed = values
+        else:
+            packed = [self.slot() for _ in values]
+            for out, value in zip(packed, values):
+                self.call_abi('copy', out, value)
         if not args:
             return '0', 'null', 'null'
         keys = [self.string(key) if key is not None else 'null' for key, _ in args]
@@ -314,7 +347,7 @@ class LLVMCompiler(Compiler):
             elif n.kind == 'type':
                 value = self.result('class', str(self.class_indices[id(n)]))
                 self.call_abi('declare', self.env, self.string(n.data['name']), value)
-        self.call_abi('clear', '%frame')
+        self.clear_temporaries()
 
     def scoped_block(self, body, scope, function, reason=None, line='1'):
         previous = self.env
@@ -399,7 +432,7 @@ class LLVMCompiler(Compiler):
                 self.jump(target)
             elif kind == 'if':
                 flag = self.truth(self.expr(d['condition']))
-                self.call_abi('clear', '%frame')
+                self.clear_temporaries()
                 yes, no, done = self.fresh('yes'), self.fresh('no'), self.fresh('if_end')
                 self.branch(flag, yes, no)
                 self.label(yes)
@@ -415,7 +448,7 @@ class LLVMCompiler(Compiler):
                     count = self.call_abi('count', self.expr(d['count']), ln)
                     counter = self.alloca('i64')
                     self.emit(f'store i64 0, i64* {counter}')
-                self.call_abi('clear', '%frame')
+                self.clear_temporaries()
                 self.jump(condition)
                 self.label(condition)
                 if d['count'] is None:
@@ -440,18 +473,22 @@ class LLVMCompiler(Compiler):
             else:
                 self.error(n, 'LLVM AOT 尚不支持语句：' + kind)
             if not self.terminated:
-                self.call_abi('clear', '%frame')
+                self.clear_temporaries()
 
     def emit_body(self, path, fn, statements, name):
         self.current_path, self.current_function = path, fn
         self.functions, self.known_values = self._functions(path, fn), self._values(path, fn)
         self.body, self.entry_allocations, self.slot_count = [], [], 0
+        self.slot_peak = 0
+        self.slot_addresses = []
+        self.binding_caches = {}
         self.terminated = False
         self.llvm_envs, self.llvm_handlers, self.llvm_loops = [], [], []
         self.finish_label, self.panic_label = self.fresh('finish'), self.fresh('panic')
         previous = self.call_abi('source', self.string(display_text(path)))
         self.env = self.call_abi('env_new', '%global', '1', str(fn.token.line)) if fn else '%global'
         base_env = self.env
+        self.base_env = base_env
         if fn:
             for index, (key, _) in enumerate(fn.data['params']):
                 self.call_abi('bind_arg', self.env, self.string(key), '%args', str(index))
@@ -471,7 +508,8 @@ class LLVMCompiler(Compiler):
         self.call_abi('source_restore', previous)
         self.emit('ret void')
         signature = f'define void @{name}(i8* %global, i8* %self, i32 %call_line, i8* %args, i8* %out) {{'
-        entry = ['entry:', f'  %frame = call i8* @rul_frame_new(i32 {self.slot_count})', *self.entry_allocations]
+        allocation = [f'  %frame = call i8* @rul_frame_new(i32 {self.slot_peak})']
+        entry = ['entry:', *allocation, *self.entry_allocations]
         self.bodies.append('\n'.join([signature, *entry, *self.body, '}']))
 
     def runtime_c(self):

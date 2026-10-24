@@ -112,7 +112,6 @@ c.bytes=2;call(canvas,'描边',null);call(canvas,'弧',0,0,0,0,0,0);
 assert.equal(c.commands.length,1);assert.equal(c.commands[0].sweep,0);assert.equal(c.commands[0].fill,'');assert.ok(c.bytes>2);
 console.log('atomic');
 """
-        result = subprocess.run([test_browser_js.NODE, '-e', prelude + runtime + checks],
-                                capture_output=True, text=True, timeout=10)
+        result = test_browser_js.run_node_script(prelude + runtime + checks, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, 'atomic\n')

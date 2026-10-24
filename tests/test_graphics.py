@@ -98,28 +98,45 @@ class GraphicsTests(unittest.TestCase):
         self.assertEqual(runtime.MAX_COMMANDS, 2048)
         self.assertEqual(runtime.MAX_FRAME_BYTES, 262144)
 
-    def test_callback_above_old_wall_budget_survives(self):
-        self.canvas('图 其 每帧 (作 帧: 图 其 线 帧 0 1 1. 为).')
+    def advance_callback_clock(self, seconds):
+        # Real interpreter callback/trace, deterministic elapsed time. Do not
+        # use scheduler sleep accuracy as a proxy for the production deadline.
+        from contextlib import ExitStack
+        clock = [0.0]
         invoke = self.interpreter.invoke_value
         def delayed(*args):
-            time.sleep(.15)
+            clock[0] = seconds
             return invoke(*args)
-        started = time.monotonic()
-        with patch.object(self.interpreter, 'invoke_value', side_effect=delayed):
+        stack = ExitStack()
+        stack.enter_context(patch('rulang.graphics_runtime.time.monotonic', side_effect=lambda: clock[0]))
+        stack.enter_context(patch.object(self.interpreter, 'invoke_value', side_effect=delayed))
+        return stack, clock
+
+    def test_callback_above_old_wall_budget_survives(self):
+        self.canvas('图 其 每帧 (作 帧: 图 其 线 帧 0 1 1. 为).')
+        controlled, clock = self.advance_callback_clock(.15)
+        with controlled:
             self.host.handle({'type': 'frame'})
-        self.assertGreaterEqual(time.monotonic() - started, .15)
+        self.assertGreaterEqual(clock[0], .15)
         self.assertIsNotNone(self.host.snapshot())
         self.assertEqual(self.events[-1]['commands'][0]['x1'], 1)
 
+    def test_controlled_clock_rejects_the_old_wall_budget(self):
+        self.canvas('图 其 每帧 (作 帧: 图 其 线 帧 0 1 1. 为).')
+        controlled, clock = self.advance_callback_clock(.15)
+        with controlled, patch('rulang.graphics_runtime.MAX_CALLBACK_SECONDS', .1):
+            with self.assertRaisesRegex(RuError, '时间预算.*阈值 0.1 秒'):
+                self.host.handle({'type': 'frame'})
+        self.assertGreaterEqual(clock[0], .15)
+        self.assertIsNone(self.host.snapshot())
+
     def test_new_wall_budget_still_closes_callback(self):
         self.canvas('图 其 每帧 (作 帧: 图 其 线 0 0 1 1. 为).')
-        invoke = self.interpreter.invoke_value
-        def delayed(*args):
-            time.sleep(1.05)
-            return invoke(*args)
-        with patch.object(self.interpreter, 'invoke_value', side_effect=delayed):
+        controlled, clock = self.advance_callback_clock(1.05)
+        with controlled:
             with self.assertRaisesRegex(RuError, '时间预算.*阈值 1 秒'):
                 self.host.handle({'type': 'frame'})
+        self.assertGreaterEqual(clock[0], 1.05)
         self.assertIsNone(self.host.snapshot())
         self.run_ru('显 42.')
         self.assertEqual(self.output.getvalue(), '42\n')

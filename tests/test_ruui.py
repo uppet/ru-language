@@ -465,13 +465,17 @@ class RuUIParityTests(unittest.TestCase):
     # ---------- 3a：图载／件载／件目（宿主资源协议） ----------
 
     def load_program(self, directory, filename='a.png'):
+        # Ru supports quoted strings; JSON escapes backslashes and quotes without
+        # Python repr introducing unsupported \u/\U escapes for Unicode paths.
+        directory_literal = json.dumps(str(directory), ensure_ascii=False)
+        filename_literal = json.dumps(filename, ensure_ascii=False)
         return f"""
 尽取 外言 '如UI'.
 
 果 取 [''].
-机 取 新 应用 宽: 360 高: 640 件目: '{directory}' 构: (算:
+机 取 新 应用 宽: 360 高: 640 件目: {directory_literal} 构: (算:
     得 列 [
-        (图载 '{filename}' 120 (作 宽 为 数 高 为 数 错 为 句:
+        (图载 {filename_literal} 120 (作 宽 为 数 高 为 数 错 为 句:
             果[0] 取 (宽 为 句) + 'x' + (高 为 句) + ':' + 错.
             为)),
         (文 (果 其 位 0))
@@ -479,6 +483,15 @@ class RuUIParityTests(unittest.TestCase):
 法).
 机 其 运行.
 """
+
+    def test_resource_paths_keep_windows_separators_quotes_and_unicode(self):
+        from rulang.frontend import lex
+        directory = "C:\\Users\\甲 O'Brien\\项目"
+        filename = 'a"b.png'
+        values = [token.value for token in lex(self.load_program(directory, filename))]
+        self.assertIn(directory, values)
+        self.assertIn(filename, values)
+        parse(self.load_program(directory, filename))
 
     def test_image_head_size_recognises_png_and_jpeg(self):
         from rulang.graphics_runtime import _image_head_size

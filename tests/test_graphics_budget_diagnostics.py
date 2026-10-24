@@ -254,6 +254,7 @@ class AddressSpaceLimitTests(unittest.TestCase):
     def test_environment_value_supports_binary_suffixes(self):
         from rulang.graphics_runtime import install_address_space_limit
         with patch.dict(os.environ, {'RULANG_ADDRESS_SPACE_LIMIT': '512M'}), \
+             patch('rulang.graphics_runtime._address_space_used', return_value=0), \
              patch.object(self.resource, 'setrlimit') as setter:
             self.assertEqual(install_address_space_limit(), 512 * 1024 * 1024)
         setter.assert_called_once_with(self.resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))

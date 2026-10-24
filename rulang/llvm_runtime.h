@@ -35,6 +35,12 @@ void rul_clear(void *opaque)
     RuLLVMFrame *frame = opaque; size_t i;
     for (i=0; i<frame->count; ++i) { v_drop(frame->values[i]); frame->values[i]=v_null(); }
 }
+__attribute__((always_inline)) void rul_clear_count(void *opaque, int32_t count)
+{
+    RuLLVMFrame *frame = opaque; size_t i;
+    if (count < 0 || (size_t)count > frame->count) ru_fail(0, "LLVM 临时值清理越界");
+    for (i=0; i<(size_t)count; ++i) { v_drop(frame->values[i]); frame->values[i]=v_null(); }
+}
 void rul_frame_free(void *opaque) { rul_clear(opaque); ru_scratch_free(opaque); }
 void rul_copy(void *out, void *value) { rul_put(out, v_copy(*(Val *)value)); }
 void rul_null(void *out) { rul_put(out, v_null()); }
@@ -51,8 +57,26 @@ void rul_bind_arg(void *env, const char *name, void *args, int32_t index)
 { env_set(env,name,((Val *)args)[index]); }
 void rul_get(void *out, void *env, const char *name, int32_t line)
 { rul_put(out,env_get(env,name,line)); }
+/* A cache belongs to one generated function invocation and its root Env.
+ * Bindings never move or disappear while that Env is rooted. Cache the binding,
+ * not its mutable value. Ancestor hits must remain uncached: a later local
+ * declaration can shadow them. Nested block/rescue environments are excluded. */
+void rul_get_cached(void *out, void *opaque, const char *name, int32_t line, void **cache)
+{
+    Env *env=opaque; RuBinding *binding=*cache;
+    if (!binding) { binding=env_find_local(env,name); *cache=binding; }
+    rul_put(out,binding ? v_copy(binding->value) : env_get(env,name,line));
+}
 void rul_bind(void *env, const char *name, void *value, int32_t line)
 { env_bind(env,name,*(Val *)value,line); }
+void rul_bind_cached(void *opaque, const char *name, void *value, int32_t line, void **cache)
+{
+    Env *env=opaque; RuBinding *binding=*cache;
+    if (!binding) binding=env_find_local(env,name);
+    if (binding && !binding->reserved && strcmp(name,"读")) binding->value=*(Val *)value;
+    else { env_bind(env,name,*(Val *)value,line); binding=env_find_local(env,name); }
+    *cache=binding;
+}
 void rul_declare(void *env, const char *name, void *value)
 { env_declare(env,name,*(Val *)value); }
 void rul_function(void *out, int32_t id, void *env, void *self)

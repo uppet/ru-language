@@ -63,6 +63,18 @@ void rul_clear(void *opaque)
     }
     frame->active_count=0;
 }
+void rul_clear_count(void *opaque,int32_t count)
+{
+    RuLLVMFrame *frame=opaque;size_t i,kept=0;
+    if(count<0||(size_t)count>frame->count)ru_fail(0,"LLVM 临时值清理越界");
+    for(i=0;i<frame->active_count;++i) {
+        size_t index=frame->active[i];
+        if(index<(size_t)count) {
+            v_drop(frame->values[index]);frame->values[index]=v_null();frame->written[index]=0;
+        } else frame->active[kept++]=index;
+    }
+    frame->active_count=kept;
+}
 void rul_frame_free(void *opaque)
 {
     RuLLVMFrame *frame=opaque;

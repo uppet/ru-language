@@ -110,6 +110,6 @@ c.commands=[];c.bytes=261121-size;
 assert.throws(()=>call(canvas,'贝塞尔',...Array(8).fill(0)),/256 KiB/);assert.equal(c.commands.length,0);assert.equal(c.bytes,261121-size);
 console.log('atomic');
 """
-        result = subprocess.run([test_browser_js.NODE, '-e', prelude + runtime + checks], capture_output=True, text=True, timeout=10)
+        result = test_browser_js.run_node_script(prelude + runtime + checks, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, 'atomic\n')
