@@ -207,6 +207,13 @@ static int ru_practical_member(Val receiver, const char *name, size_t argc,
     if not uses_io:
         headers[1] = _IO_STUB
     uses_map = uses_graphics or any(n.kind == 'map' for n in walk_nodes(modules))
+    # 宿主 ABI（graphics_abi.h）声明的外部符号是宿主编译单元的链接根：
+    # 生成的程序自身不调用 post_*，但 SDL/record 宿主会链接它们，
+    # 剪枝时必须按存活根保留（否则宿主 undefined reference）。
+    if uses_graphics and isinstance(generated, str):
+        abi_names = ' '.join(sorted(set(re.findall(r'\bru_graphics_\w+',
+            (directory / 'graphics_abi.h').read_text(encoding='utf-8')))))
+        generated += '\n/* RU_GRAPHICS_HOST_ABI_ROOTS */\n' + abi_names
     source = _MAP_REGION.sub(lambda m: m[1] if uses_map else '', '\n'.join(headers))
     source = specialize_members(source, member_names(modules))
     # Binary operators are statically spelled too (含 can also be a member).

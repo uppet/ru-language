@@ -46,7 +46,7 @@ class Compiler:
         stdlib_ruguan = Path(__file__).parent / "stdlib" / "如观.ru"
         self.uses_graphics = any(node.data.get("path") == "如:观" or Path(node.data.get("resolved", "")).resolve() == stdlib_ruguan.resolve() for node in import_nodes(modules or program))
         if not (self.supports_browser_graphics or self.supports_c_graphics) and self.uses_graphics:
-            raise RuError("如观图形仅支持如书 Python 会话；C／JavaScript 编译后端尚不支持", node.token.line, node.token.col, "能力错误")
+            raise RuError("如观图形仅支持如书 Python 会话；C／JavaScript 编译后端尚不支持", category="能力错误")
         self.source_name = str(source_name)
         self.root = str(Path(source_name).resolve()) if modules else self.source_name
         self.source_texts = getattr(modules, 'sources', {})

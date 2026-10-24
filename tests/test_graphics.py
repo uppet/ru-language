@@ -215,8 +215,10 @@ class GraphicsTests(unittest.TestCase):
     def test_cli_and_compilers_explicitly_reject(self):
         source="尽取 外言 '如:观'. 图 取 画布 20 20."
         with self.assertRaisesRegex(RuError,'仅在如书'): Interpreter().execute(parse(source))
-        for cls in (Compiler,JSCompiler):
-            with self.assertRaisesRegex(RuError,'如书 Python'): cls(parse(source)).compile()
+        # C 后端已支持如观图形运行时（见 tests/test_ruui_c_graphics_parity.py），
+        # 只有 JS 后端仍显式拒绝。
+        with self.assertRaisesRegex(RuError,'如书 Python'): JSCompiler(parse(source)).compile()
+        self.assertTrue(Compiler(parse(source)).compile())
     def test_documentation_and_interactive_data_book_repeat(self):
         import re
         from pathlib import Path
@@ -304,9 +306,10 @@ class GraphicsTests(unittest.TestCase):
             (root / 'wrapper.ru').write_text("观 取 外言 '如:观'.", encoding='utf-8')
             main.write_text("外 取 外言 './wrapper.ru'.", encoding='utf-8')
             graph = load_module_graph(main)
-            for compiler in (Compiler, JSCompiler):
-                with self.assertRaisesRegex(RuError, '如书 Python'):
-                    compiler(graph[graph.root], str(main), modules=graph).compile()
+            # wrapper 直接引用保留模块 如:观：JS 拒绝，C 已支持图形运行时。
+            self.assertTrue(Compiler(graph[graph.root], str(main), modules=graph).compile())
+            with self.assertRaisesRegex(RuError, '如书 Python'):
+                JSCompiler(graph[graph.root], str(main), modules=graph).compile()
 
     def test_no_callbacks_no_implicit_frame(self):
         self.canvas("图 其 背景 '#ffffff'.")

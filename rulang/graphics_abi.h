@@ -44,6 +44,10 @@ typedef struct RuGuiHost {
     void (*set_text_input)(void *ud, int active, int x, int y, int w, int h);
     /* 无事件时等待秒（可 sleeping；测试宿主可立即返回）。NULL = 忙等轮询。 */
     void (*idle)(void *ud, double seconds);
+    /* 真 = 图请求／件请求 入装载队列由宿主异步装载（浏览器/SDL 行为）；
+       假 = 只登记句柄与命令，不就绪装载（Python GraphicsHost auto_load=False
+       测试宿主行为；外部注入的 ready 事件按噪音丢弃）。 */
+    int auto_load;
 } RuGuiHost;
 
 void ru_graphics_set_host(const RuGuiHost *host);

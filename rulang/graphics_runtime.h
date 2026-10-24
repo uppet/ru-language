@@ -60,6 +60,9 @@ typedef struct RuGuiHost {
                     const char *path, const char *text, int flag);
     void (*set_text_input)(void *ud, int active, int x, int y, int w, int h);
     void (*idle)(void *ud, double max_seconds);
+    /* 真 = 图请求／件请求 入装载队列由宿主异步装载；假 = 不就绪装载
+       （Python GraphicsHost auto_load=False 测试宿主行为）。 */
+    int auto_load;
 } RuGuiHost;
 
 void ru_graphics_set_host(const RuGuiHost *host);
@@ -193,6 +196,8 @@ struct RuGCanvasRec {
     long load_done[2 * RU_G_MAX_LOAD_HANDLES]; int load_done_len;
     Val callbacks[RU_G_EVENT_COUNT];
     unsigned callback_set;
+    uint8_t handler_order[RU_G_EVENT_COUNT]; /* 注册顺序（handlers 按此输出，对齐 Python dict 插入序） */
+    uint8_t handler_order_len;
     double origin, previous_frame, elapsed, delta;
     size_t recorder_def_overhead;
 };
@@ -334,6 +339,7 @@ static void ru_g_canvas_close(RuGCanvas *c) {
     for (i = 0; i < RU_G_EVENT_COUNT; i++)
         if (c->callback_set & (1u << i)) { v_drop(c->callbacks[i]); c->callbacks[i] = v_null(); }
     c->callback_set = 0;
+    c->handler_order_len = 0;
     ru_g_canvas_clear(c);
     c->stack_len = 0;
     ru_g_canvas_reset_geometry(c);
@@ -364,9 +370,12 @@ static int ru_g_op_kept_on_background(const char *item) {
 }
 static void ru_g_command_attach(RuGCanvas *c, RuGBuf *full, const char *body, int line) {
     int identity, i;
+    size_t body_len = strlen(body);
     identity = !memcmp(c->style.transform, (double[]){1, 0, 0, 1, 0, 0}, sizeof(double) * 6);
     full->data = NULL; full->len = full->cap = 0;
-    ru_gbuf_puts(full, body, line);
+    /* body 是完整 JSON 对象；transform/clips 须插在收尾大括号之前 */
+    if (body_len && body[body_len - 1] == '}') ru_gbuf_putn(full, body, body_len - 1, line);
+    else ru_gbuf_puts(full, body, line);
     if (!identity) {
         ru_gbuf_puts(full, ",\"transform\":[", line);
         for (i = 0; i < 6; i++) { if (i) ru_gbuf_ch(full, ',', line); ru_gbuf_num(full, c->style.transform[i], line); }
@@ -387,6 +396,7 @@ static void ru_g_command_attach(RuGCanvas *c, RuGBuf *full, const char *body, in
         }
         ru_gbuf_ch(full, ']', line);
     }
+    ru_gbuf_ch(full, '}', line);
 }
 
 static void ru_g_scene_empty(RuGCanvas *c, RuGBuf *out, int line) {
@@ -396,12 +406,11 @@ static void ru_g_scene_empty(RuGCanvas *c, RuGBuf *out, int line) {
     ru_gbuf_puts(out, ",\"fps\":", line); ru_gbuf_num(out, c->fps, line);
     ru_gbuf_puts(out, ",\"running\":", line); ru_gbuf_puts(out, c->running ? "true" : "false", line);
     ru_gbuf_puts(out, ",\"handlers\":[", line);
-    for (i = 0; i < RU_G_EVENT_COUNT; i++)
-        if (c->callback_set & (1u << i)) {
-            if (!first) ru_gbuf_ch(out, ',', line);
-            ru_gbuf_ch(out, '"', line); ru_gbuf_puts(out, ru_g_event_names[i], line); ru_gbuf_ch(out, '"', line);
-            first = 0;
-        }
+    for (i = 0; i < c->handler_order_len; i++) {
+        if (!first) ru_gbuf_ch(out, ',', line);
+        ru_gbuf_ch(out, '"', line); ru_gbuf_puts(out, ru_g_event_names[c->handler_order[i]], line); ru_gbuf_ch(out, '"', line);
+        first = 0;
+    }
     ru_gbuf_puts(out, "],\"type\":\"graphics\",\"commands\":[]}", line);
 }
 
@@ -474,12 +483,11 @@ static void ru_g_scene(RuGCanvas *c, RuGBuf *out, int line) {
     ru_gbuf_puts(out, ",\"fps\":", line); ru_gbuf_num(out, c->fps, line);
     ru_gbuf_puts(out, ",\"running\":", line); ru_gbuf_puts(out, c->running ? "true" : "false", line);
     ru_gbuf_puts(out, ",\"handlers\":[", line);
-    for (i = 0; i < (size_t)RU_G_EVENT_COUNT; i++)
-        if (c->callback_set & (1u << i)) {
-            if (!first) ru_gbuf_ch(out, ',', line);
-            ru_gbuf_ch(out, '"', line); ru_gbuf_puts(out, ru_g_event_names[i], line); ru_gbuf_ch(out, '"', line);
-            first = 0;
-        }
+    for (i = 0; i < (size_t)c->handler_order_len; i++) {
+        if (!first) ru_gbuf_ch(out, ',', line);
+        ru_gbuf_ch(out, '"', line); ru_gbuf_puts(out, ru_g_event_names[c->handler_order[i]], line); ru_gbuf_ch(out, '"', line);
+        first = 0;
+    }
     ru_gbuf_puts(out, "],\"type\":\"graphics\",\"commands\":[", line);
     for (i = 0; i < c->command_count; i++) {
         if (i) ru_gbuf_ch(out, ',', line);
@@ -823,9 +831,12 @@ static void ru_g_event_dispatch(RuGEvent *ev, int line) {
     }
     ru_g_check_balanced(c, line);
     if (async) {
+        /* 装载就绪：旧装帧作废不恢复（同 Python ASYNC_EVENTS 分支），
+           回调期间的绘制保留在画布上由下方 flush 正常发帧。 */
         size_t i;
-        for (i = 0; i < c->command_count; i++) free(c->items[i]);
-        free(c->items); /* 旧装帧作废 */
+        for (i = 0; i < saved_count; i++) free(saved_items[i]);
+        free(saved_items);
+        saved_items = NULL;
     } else if (c->command_count == 0 && kind != RU_G_EV_FRAME) {
         if (kind != RU_G_EV_SERVICE_RESPONSE && kind != RU_G_EV_SERVICE_AD) {
             free(c->items);
@@ -838,6 +849,7 @@ static void ru_g_event_dispatch(RuGEvent *ev, int line) {
         size_t i;
         for (i = 0; i < saved_count; i++) free(saved_items[i]);
         free(saved_items);
+        saved_items = NULL;
         c->dirty = 1;
     }
     if (saved_items) {
@@ -1033,7 +1045,7 @@ static void ru_g_json_nullable_color(RuGBuf *b, const char *key, const RuGSnapsh
         ru_gbuf_ch(b, '"', line);
         ru_gbuf_puts(b, which ? s->stroke : s->fill, line);
         ru_gbuf_ch(b, '"', line);
-    } else ru_gbuf_puts(b, "null", line);
+    } else ru_gbuf_puts(b, "\"\"", line); /* Python 侧空色为空串，非 null */
 }
 static void ru_g_json_style(RuGBuf *b, const RuGSnapshot *s, int with_fill, int line) {
     if (with_fill) ru_g_json_nullable_color(b, "fill", s, 0, line);
@@ -1101,7 +1113,7 @@ static Val ru_g_canvas_create(double width, double height, int line) {
         }
     }
     c->width = width; c->height = height; c->fps = 30;
-    c->frame = 0; c->open = 1; c->closed = 0; c->running = 0; c->dirty = 1;
+    c->frame = 0; c->open = 1; c->closed = 0; c->running = 0; c->dirty = 1; /* 同 Python 画布构造即脏：首帧无条件发出 */
     c->is_recorder = 0; c->owner = NULL; c->stack_len = 0; c->clips_len = 0;
     c->recorder_def_overhead = 0;
     c->origin = ru_g_now(line);
@@ -1333,7 +1345,7 @@ static int ru_graphics_member(Val receiver, const char *name, size_t argc,
         ru_gbuf_puts(&cmd, "}", line);
         ru_g_command(canvas, cmd.data, 0, line);
         ru_gbuf_free(&cmd);
-        if (ru_g_host) ru_g_load_push(0, handle, source, 0);
+        if (ru_g_host && ru_g_host->auto_load) ru_g_load_push(0, handle, source, 0);
         *out = v_null();
         return 1;
     }
@@ -1405,7 +1417,7 @@ static int ru_graphics_member(Val receiver, const char *name, size_t argc,
         ru_gbuf_puts(&cmd, "\"}", line);
         ru_g_command(canvas, cmd.data, 0, line);
         ru_gbuf_free(&cmd);
-        if (ru_g_host) ru_g_load_push(1, handle, source, !strcmp(mode, "文"));
+        if (ru_g_host && ru_g_host->auto_load) ru_g_load_push(1, handle, source, !strcmp(mode, "文"));
         *out = v_null();
         return 1;
     }
@@ -1507,6 +1519,7 @@ static int ru_graphics_member(Val receiver, const char *name, size_t argc,
                 || ((RuCallable *)bound[0].heap)->function->count != (size_t)def->arity)
                 ru_fail(line, "%s需要接受 %d 个参数的算／作回调", name, def->arity);
             if (canvas->callback_set & (1u << def->kind)) v_drop(canvas->callbacks[def->kind]);
+            else canvas->handler_order[canvas->handler_order_len++] = (uint8_t)def->kind;
             canvas->callbacks[def->kind] = v_copy(bound[0]);
             canvas->callback_set |= 1u << def->kind;
             if (def->kind == RU_G_EV_FRAME) ru_g_set_running(canvas, 1);
@@ -1880,7 +1893,7 @@ static int ru_graphics_member(Val receiver, const char *name, size_t argc,
         ru_gbuf_json_str(&cmd, text, strlen(text), line);
         ru_gbuf_puts(&cmd, ",\"color\":", line);
         if (canvas->style.fill_set) { ru_gbuf_ch(&cmd, '"', line); ru_gbuf_puts(&cmd, canvas->style.fill, line); ru_gbuf_ch(&cmd, '"', line); }
-        else ru_gbuf_puts(&cmd, "null", line);
+        else ru_gbuf_puts(&cmd, "\"\"", line);
         ru_gbuf_puts(&cmd, ",\"size\":", line);
         ru_gbuf_num(&cmd, canvas->style.text_size, line);
         if (canvas->style.text_align == 1) ru_gbuf_puts(&cmd, ",\"align\":\"center\"", line);
