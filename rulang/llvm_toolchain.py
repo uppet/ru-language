@@ -65,14 +65,53 @@ class LLVMToolchain:
             if not re.search(r'LLVM version 14\.', self.run([found, '--version'])):
                 raise tool_error(f'{name} 与 Clang 不匹配；LLVM AOT M1 要求全部为 LLVM 14。')
             self.tools[name] = found
-        probe = self.run(self.clang + ['-S', '-emit-llvm', '-x', 'c', '-', '-o', '-'], input='')
+        probe = self.run(self.clang + ['-S', '-emit-llvm', '-O2', '-fno-fast-math',
+                         '-ffp-contract=off', '-x', 'c', '-', '-o', '-'],
+                         input='void ru_llvm_target_probe(void) {}\n')
         triple = re.search(r'^target triple = "([^"]+)"', probe, re.M)
         layout = re.search(r'^target datalayout = "([^"]+)"', probe, re.M)
         target = r'x86_64-[\w.-]*windows-msvc[\w.-]*' if sys.platform == 'win32' else r'x86_64-[\w.-]*linux[\w.-]*'
         if not triple or not layout or 'x32' in triple[1] or not re.fullmatch(target, triple[1]):
             raise tool_error('LLVM AOT 当前仅支持 Linux/Windows x86-64 本机目标；Clang 目标与宿主不匹配。')
         self.triple, self.data_layout = triple[1], layout[1]
+        group = re.search(r'^define [^\n]*@ru_llvm_target_probe\([^\n]*#(\d+)[^\n]*\{', probe, re.M)
+        attributes = (re.search(r'^attributes #'+group[1]+r' = \{([^\n]*)\}', probe, re.M)
+                      if group else None)
+        if not attributes:
+            raise tool_error('Clang 未提供 LLVM 函数目标属性。')
+        self.function_target = dict(re.findall(r'"(target-cpu|target-features|tune-cpu)"="([^"\\\n]*)"', attributes[1]))
+        if not {'target-cpu', 'target-features'} <= self.function_target.keys():
+            raise tool_error('Clang LLVM 函数目标属性不完整。')
         self.link_flags = [] if sys.platform == 'win32' else ['-lm']
+
+    def target_program(self, program):
+        """Match the runtime target without transferring C floating-point flags.
+
+        Both Ru frontends emit one-line function headers. This host step only
+        supplies the selected Clang target; it does not inspect source or ASTs.
+        Missing CPU/features otherwise prevents even tiny ABI helpers from
+        inlining into the generated functions under LLVM14.
+        Windows longjmp also needs unwind tables across generated frames,
+        including frames retained after those target attributes enable inlining.
+        """
+        groups = dict(re.findall(r'^attributes #(\d+) = \{([^\n]*)\}', program, re.M))
+        def header(match):
+            line = match[1]
+            inherited = ' '.join(groups.get(n, '') for n in re.findall(r'#(\d+)', line))
+            existing = dict(re.findall(r'"(target-cpu|target-features|tune-cpu)"="([^"\\\n]*)"', line+' '+inherited))
+            if any(value != self.function_target.get(key) for key, value in existing.items()):
+                raise tool_error('生成 IR 与 Clang 运行时的函数目标属性冲突。')
+            added = ''.join(f' "{key}"="{value}"' for key, value in self.function_target.items() if key not in existing)
+            if re.fullmatch(r'x86_64-[\w.-]*windows-msvc[\w.-]*', self.triple):
+                # Only bare LLVM attributes count, not quoted names/values.
+                attributes = re.sub(r'"(?:[^"\\]|\\.)*"', '', line+' '+inherited)
+                if not re.search(r'(?:^|\s)uwtable(?:\s|$)', attributes):
+                    added += ' uwtable'
+            return line+added+' {'
+        generated, count = re.subn(r'^(define [^\n]+) \{$', header, program, flags=re.M)
+        if count != len(re.findall(r'^define\b', program, re.M)):
+            raise tool_error('LLVM 生成函数需要单行定义头。')
+        return generated
 
     @staticmethod
     def run(command, input=None):
@@ -90,7 +129,7 @@ class LLVMToolchain:
     def compile(self, program, runtime, directory, full_runtime=False):
         directory = Path(directory)
         ll, c = directory/'program.ll', directory/'runtime.c'
-        ll.write_text(program, encoding='utf-8', newline='\n')
+        ll.write_text(self.target_program(program), encoding='utf-8', newline='\n')
         c.write_text(runtime, encoding='utf-8', newline='\n')
         user_bc, runtime_bc = directory/'program.bc', directory/'runtime.bc'
         linked, optimized = directory/'linked.bc', directory/'optimized.bc'
