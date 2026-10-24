@@ -554,7 +554,7 @@ class RuUIParityTests(unittest.TestCase):
         (文 (果 其 位 0))
     ].
 法).
-机 取 新 应用 宽: 360 高: 640 件目: '{d}' 构: (算:
+机 取 新 应用 宽: 360 高: 640 件目: {d} 构: (算:
     得 列 [
         (图载 'a.png' 120 (作 宽 为 数 高 为 数 错 为 句: 果[0] 取 (宽 为 句). 为)),
         (钮 '换' (作: 机 其 页 二页. 为))
@@ -569,7 +569,7 @@ class RuUIParityTests(unittest.TestCase):
             host_events = []
             host = GraphicsHost(Interpreter(), host_events.append)
             try:
-                host.interpreter.execute(parse(source.format(d=directory)))
+                host.interpreter.execute(parse(source.format(d=json.dumps(directory, ensure_ascii=False))))
                 host.flush()
                 button = self.find_rect(host_events[0]['commands'], '#4677ff')
                 x, y = self.center(button)
@@ -593,7 +593,7 @@ class RuUIParityTests(unittest.TestCase):
 尽取 外言 '如UI'.
 
 果 取 [''].
-机 取 新 应用 宽: 360 高: 640 件目: '{d}' 构: (算:
+机 取 新 应用 宽: 360 高: 640 件目: {d} 构: (算:
     得 列 [(文 果[0])].
 法).
 机 其 运行.
@@ -605,7 +605,7 @@ class RuUIParityTests(unittest.TestCase):
             (path / 'note.txt').write_text('你好', encoding='utf-8')
             (path / 'data.bin').write_bytes(bytes([0, 255]))
             events = self.compare(
-                source.format(d=directory),
+                source.format(d=json.dumps(directory, ensure_ascii=False)),
                 [{'type': 'file_ready', 'id': 1, 'text': '你好'},
                  {'type': 'file_ready', 'id': 2, 'text': 'AP8='}])
         self.assertIn('你好/|AP8=', texts(events[-1]['commands']))
