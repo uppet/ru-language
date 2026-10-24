@@ -1,0 +1,77 @@
+{
+  "m4": {
+    "linux": {
+      "cases": 105,
+      "passed": 105,
+      "skipped": 0,
+      "gates": {
+        "source_ir_and_abi_fixed_point": true,
+        "native_binary_fixed_point": true,
+        "same_nonempty_suite_for_each_stage": true,
+        "every_planned_case_ran": true,
+        "every_case_passed_without_skips": true,
+        "test_runner_success_without_skips": true,
+        "inputs_unchanged": true,
+        "artifacts_unchanged_during_tests": true
+      }
+    },
+    "windows": {
+      "cases": 105,
+      "passed": 105,
+      "skipped": 0,
+      "gates": {
+        "source_ir_and_abi_fixed_point": true,
+        "native_binary_fixed_point": true,
+        "same_nonempty_suite_for_each_stage": true,
+        "every_planned_case_ran": true,
+        "every_case_passed_without_skips": true,
+        "test_runner_success_without_skips": true,
+        "inputs_unchanged": true,
+        "artifacts_unchanged_during_tests": true
+      }
+    }
+  },
+  "additional_unique_cases": {
+    "linux": {
+      "passed": 119,
+      "skipped": 3
+    },
+    "windows": {
+      "passed": 93,
+      "skipped": 1
+    }
+  },
+  "benchmark": {
+    "pairs": 6,
+    "executions": 12,
+    "assertions_per_execution": 149,
+    "assertions_passed": 1788,
+    "all_metrics_faster_in_every_pair": true,
+    "inputs_unchanged_after_measurement": true,
+    "production_emitter_and_runtime_match_benchmark_adapter": true
+  },
+  "local_logs": {
+    "perf-final-verify-linux.log": "57e5a6234c0d3693d801294b22e77ee370e8f0c3efa50f521cc183fad9c6c30d",
+    "perf-final-core-linux.log": "eca351510e65b97e0061281e67642c2d8be6694172a8be36505013ee77fcc29b",
+    "perf-final-integration-linux.log": "73fb5e0e0335f3fb9ef5ba69c5b5ec40b514620ca1087e4331e4a093d3441e2f",
+    "perf-final-llvm-extra-linux.log": "4c1302fa30eff80048eefd0873b3228c9240753bc405d9595e62bf0bcd8d0ef7",
+    "codegen-perf/final-build.log": "4e57e86ef5f4f70c8ca0f170520fa51fcae66e0a1f30e48c84f103a3da7086ab",
+    "codegen-perf/final-complete-tests.log": "9f7388acfb05c68c51db4ce40e473eb3ce9ba25ffb97655bf04a0ef1600ed2f9",
+    "codegen-perf/final-llvm-windows.log": "dae8ebe9f55a43cbb984b96b6dbde4cfc5d5709c75420ba022804ebc25722a21",
+    "codegen-perf/final-llvm-c-fixture.log": "97a9593ecf0583c59f3702536915b1ee166ae80292d53adbb06fa0e261c38132",
+    "codegen-perf/final-measure.log": "dd599c2c7d9917977cdf6cbaa503587eeb299ef25b29b5ad097e8172ea9dc390"
+  },
+  "production_inputs": {
+    "bootstrap/compiler.ru": "4a27d65603a5fcfdfd7b305c1dd26a26b261de68ffd4e0b89d984c2abf9ecc4c",
+    "rulang/llvm_compiler.py": "fce6bc9612463d44b1314b5ae1732c43bfcbb206db88be6d8dc2554301bb6029",
+    "rulang/llvm_runtime.h": "a10eb14fcff475ffab1fd4495c8ebc65e29cbd01514bbb965574fd05523b387e",
+    "rulang/llvm_toolchain.py": "23289021c0d3eeb50c95ceaa404ea8aa267dfdbef1a200a25af9a5b215c8fc40",
+    "rulang/interpreter_frames.h": "3ad0bf3bf3686353c351c90daa55d34ba944fe19949d7a2b0a0ad2081312b45a",
+    "tools/benchmark_bootstrap_syntax.py": "98e27a25228277754c81fefa9f7508a4dab2f062da280da5a7a250c42519c29b"
+  },
+  "notes": [
+    "Windows 94-case supplemental run skipped 22 LLVM cases because find_clang did not read RU_LLVM_CLANG; separate 33-case LLVM run covered them, with ASan runtime unavailable.",
+    "The separate Windows LLVM run had one C-control fixture failure from POSIX INCLUDE; the same test passed after child environment cleanup. Original logs retained.",
+    "No full-repository or remote CI claim."
+  ]
+}

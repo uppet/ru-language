@@ -1,0 +1,506 @@
+[
+  {
+    "c-llvm": {
+      "binary_sha256": "d48a730412dde05c28153b0d5f51255185d6fe14974bbe9703244acacfa6b680",
+      "wall_ms": 25163.906899999347,
+      "metrics": [
+        {
+          "kind": "PERF_RU",
+          "size": 100000.0,
+          "initial_ms": 597.049900000915,
+          "edit_ms": 195.46809999831,
+          "initial_read_bytes": 100000.0,
+          "edit_read_bytes": 32768.0,
+          "reused_bytes": 67232.0,
+          "max_read": 1024.0,
+          "max_tick_ms": 8.13360000029206,
+          "max_chunk_ms": 0.852800000458956
+        },
+        {
+          "kind": "PERF_RU",
+          "size": 1000000.0,
+          "initial_ms": 7897.52309999987,
+          "edit_ms": 277.343900000677,
+          "initial_read_bytes": 1000000.0,
+          "edit_read_bytes": 32768.0,
+          "reused_bytes": 967232.0,
+          "max_read": 1024.0,
+          "max_tick_ms": 8.40799999982119,
+          "max_chunk_ms": 1.03380000032485
+        },
+        {
+          "kind": "RU_GUI_SYNC",
+          "size": 1000000.0,
+          "source_chars": 636370.0,
+          "wall_ms": 6041.11730000004,
+          "read_bytes": 1000000.0,
+          "max_read": 1023.0,
+          "max_tick_ms": 8.5038000009954,
+          "max_chunk_ms": 1.27840000018477,
+          "chunks": 8798.0
+        }
+      ]
+    },
+    "bootstrap": {
+      "binary_sha256": "caf3ef5c9086b8eb15c93b945ba14cfc9f3338d4823333ef83b68ccc7e977245",
+      "wall_ms": 22165.57190000094,
+      "metrics": [
+        {
+          "kind": "PERF_RU",
+          "size": 100000.0,
+          "initial_ms": 474.102500000969,
+          "edit_ms": 149.304899999872,
+          "initial_read_bytes": 100000.0,
+          "edit_read_bytes": 32768.0,
+          "reused_bytes": 67232.0,
+          "max_read": 1024.0,
+          "max_tick_ms": 8.21279999986291,
+          "max_chunk_ms": 0.6266999989748
+        },
+        {
+          "kind": "PERF_RU",
+          "size": 1000000.0,
+          "initial_ms": 6326.61730000004,
+          "edit_ms": 228.55719999969,
+          "initial_read_bytes": 1000000.0,
+          "edit_read_bytes": 32768.0,
+          "reused_bytes": 967232.0,
+          "max_read": 1024.0,
+          "max_tick_ms": 8.37569999881089,
+          "max_chunk_ms": 0.828200001269579
+        },
+        {
+          "kind": "RU_GUI_SYNC",
+          "size": 1000000.0,
+          "source_chars": 636370.0,
+          "wall_ms": 5328.28299999982,
+          "read_bytes": 1000000.0,
+          "max_read": 1023.0,
+          "max_tick_ms": 8.39879999868572,
+          "max_chunk_ms": 1.15609999932349,
+          "chunks": 8798.0
+        }
+      ]
+    }
+  },
+  {
+    "bootstrap": {
+      "binary_sha256": "caf3ef5c9086b8eb15c93b945ba14cfc9f3338d4823333ef83b68ccc7e977245",
+      "wall_ms": 22079.070399999182,
+      "metrics": [
+        {
+          "kind": "PERF_RU",
+          "size": 100000.0,
+          "initial_ms": 474.902299998328,
+          "edit_ms": 149.82300000079,
+          "initial_read_bytes": 100000.0,
+          "edit_read_bytes": 32768.0,
+          "reused_bytes": 67232.0,
+          "max_read": 1024.0,
+          "max_tick_ms": 8.1269000004977,
+          "max_chunk_ms": 0.887099999934435
+        },
+        {
+          "kind": "PERF_RU",
+          "size": 1000000.0,
+          "initial_ms": 6373.40159999952,
+          "edit_ms": 229.636399999261,
+          "initial_read_bytes": 1000000.0,
+          "edit_read_bytes": 32768.0,
+          "reused_bytes": 967232.0,
+          "max_read": 1024.0,
+          "max_tick_ms": 8.34740000031888,
+          "max_chunk_ms": 0.895299999043345
+        },
+        {
+          "kind": "RU_GUI_SYNC",
+          "size": 1000000.0,
+          "source_chars": 636370.0,
+          "wall_ms": 5353.13750000112,
+          "read_bytes": 1000000.0,
+          "max_read": 1023.0,
+          "max_tick_ms": 8.46829999983311,
+          "max_chunk_ms": 1.18700000084937,
+          "chunks": 8798.0
+        }
+      ]
+    },
+    "c-llvm": {
+      "binary_sha256": "d48a730412dde05c28153b0d5f51255185d6fe14974bbe9703244acacfa6b680",
+      "wall_ms": 24958.07160000004,
+      "metrics": [
+        {
+          "kind": "PERF_RU",
+          "size": 100000.0,
+          "initial_ms": 601.196900000796,
+          "edit_ms": 189.938699999824,
+          "initial_read_bytes": 100000.0,
+          "edit_read_bytes": 32768.0,
+          "reused_bytes": 67232.0,
+          "max_read": 1024.0,
+          "max_tick_ms": 8.19160000048578,
+          "max_chunk_ms": 0.860600000247359
+        },
+        {
+          "kind": "PERF_RU",
+          "size": 1000000.0,
+          "initial_ms": 7926.59410000034,
+          "edit_ms": 277.873499998823,
+          "initial_read_bytes": 1000000.0,
+          "edit_read_bytes": 32768.0,
+          "reused_bytes": 967232.0,
+          "max_read": 1024.0,
+          "max_tick_ms": 8.26599999889731,
+          "max_chunk_ms": 1.08409999869764
+        },
+        {
+          "kind": "RU_GUI_SYNC",
+          "size": 1000000.0,
+          "source_chars": 636370.0,
+          "wall_ms": 6025.45479999855,
+          "read_bytes": 1000000.0,
+          "max_read": 1023.0,
+          "max_tick_ms": 8.54019999876618,
+          "max_chunk_ms": 1.25620000064373,
+          "chunks": 8798.0
+        }
+      ]
+    }
+  },
+  {
+    "c-llvm": {
+      "binary_sha256": "d48a730412dde05c28153b0d5f51255185d6fe14974bbe9703244acacfa6b680",
+      "wall_ms": 24994.820199999594,
+      "metrics": [
+        {
+          "kind": "PERF_RU",
+          "size": 100000.0,
+          "initial_ms": 603.998500000685,
+          "edit_ms": 190.88590000011,
+          "initial_read_bytes": 100000.0,
+          "edit_read_bytes": 32768.0,
+          "reused_bytes": 67232.0,
+          "max_read": 1024.0,
+          "max_tick_ms": 8.32489999942482,
+          "max_chunk_ms": 0.855799999088049
+        },
+        {
+          "kind": "PERF_RU",
+          "size": 1000000.0,
+          "initial_ms": 7935.61629999988,
+          "edit_ms": 277.472199998796,
+          "initial_read_bytes": 1000000.0,
+          "edit_read_bytes": 32768.0,
+          "reused_bytes": 967232.0,
+          "max_read": 1024.0,
+          "max_tick_ms": 8.32660000026226,
+          "max_chunk_ms": 1.01349999941885
+        },
+        {
+          "kind": "RU_GUI_SYNC",
+          "size": 1000000.0,
+          "source_chars": 636370.0,
+          "wall_ms": 6030.43429999985,
+          "read_bytes": 1000000.0,
+          "max_read": 1023.0,
+          "max_tick_ms": 8.41630000062287,
+          "max_chunk_ms": 1.33410000056028,
+          "chunks": 8798.0
+        }
+      ]
+    },
+    "bootstrap": {
+      "binary_sha256": "caf3ef5c9086b8eb15c93b945ba14cfc9f3338d4823333ef83b68ccc7e977245",
+      "wall_ms": 21967.175900001166,
+      "metrics": [
+        {
+          "kind": "PERF_RU",
+          "size": 100000.0,
+          "initial_ms": 473.74469999969,
+          "edit_ms": 147.471300000325,
+          "initial_read_bytes": 100000.0,
+          "edit_read_bytes": 32768.0,
+          "reused_bytes": 67232.0,
+          "max_read": 1024.0,
+          "max_tick_ms": 8.11380000039935,
+          "max_chunk_ms": 0.786299999803305
+        },
+        {
+          "kind": "PERF_RU",
+          "size": 1000000.0,
+          "initial_ms": 6311.07550000027,
+          "edit_ms": 226.309699999169,
+          "initial_read_bytes": 1000000.0,
+          "edit_read_bytes": 32768.0,
+          "reused_bytes": 967232.0,
+          "max_read": 1024.0,
+          "max_tick_ms": 8.25750000029802,
+          "max_chunk_ms": 0.809799998998642
+        },
+        {
+          "kind": "RU_GUI_SYNC",
+          "size": 1000000.0,
+          "source_chars": 636370.0,
+          "wall_ms": 5358.74110000022,
+          "read_bytes": 1000000.0,
+          "max_read": 1023.0,
+          "max_tick_ms": 8.51250000111759,
+          "max_chunk_ms": 1.21229999884963,
+          "chunks": 8798.0
+        }
+      ]
+    }
+  },
+  {
+    "bootstrap": {
+      "binary_sha256": "caf3ef5c9086b8eb15c93b945ba14cfc9f3338d4823333ef83b68ccc7e977245",
+      "wall_ms": 22757.215800000267,
+      "metrics": [
+        {
+          "kind": "PERF_RU",
+          "size": 100000.0,
+          "initial_ms": 492.596499999985,
+          "edit_ms": 156.131099998951,
+          "initial_read_bytes": 100000.0,
+          "edit_read_bytes": 32768.0,
+          "reused_bytes": 67232.0,
+          "max_read": 1024.0,
+          "max_tick_ms": 8.208599999547,
+          "max_chunk_ms": 0.747899999842048
+        },
+        {
+          "kind": "PERF_RU",
+          "size": 1000000.0,
+          "initial_ms": 6614.64910000004,
+          "edit_ms": 232.82870000042,
+          "initial_read_bytes": 1000000.0,
+          "edit_read_bytes": 32768.0,
+          "reused_bytes": 967232.0,
+          "max_read": 1024.0,
+          "max_tick_ms": 8.39099999889731,
+          "max_chunk_ms": 0.893799999728799
+        },
+        {
+          "kind": "RU_GUI_SYNC",
+          "size": 1000000.0,
+          "source_chars": 636370.0,
+          "wall_ms": 5466.10669999942,
+          "read_bytes": 1000000.0,
+          "max_read": 1023.0,
+          "max_tick_ms": 8.42170000076294,
+          "max_chunk_ms": 1.23650000058115,
+          "chunks": 8798.0
+        }
+      ]
+    },
+    "c-llvm": {
+      "binary_sha256": "d48a730412dde05c28153b0d5f51255185d6fe14974bbe9703244acacfa6b680",
+      "wall_ms": 24767.224900000656,
+      "metrics": [
+        {
+          "kind": "PERF_RU",
+          "size": 100000.0,
+          "initial_ms": 595.786899998784,
+          "edit_ms": 188.05150000006,
+          "initial_read_bytes": 100000.0,
+          "edit_read_bytes": 32768.0,
+          "reused_bytes": 67232.0,
+          "max_read": 1024.0,
+          "max_tick_ms": 8.1949000004679,
+          "max_chunk_ms": 0.949799999594688
+        },
+        {
+          "kind": "PERF_RU",
+          "size": 1000000.0,
+          "initial_ms": 7851.75370000117,
+          "edit_ms": 274.916000001132,
+          "initial_read_bytes": 1000000.0,
+          "edit_read_bytes": 32768.0,
+          "reused_bytes": 967232.0,
+          "max_read": 1024.0,
+          "max_tick_ms": 8.47399999946356,
+          "max_chunk_ms": 0.982200000435114
+        },
+        {
+          "kind": "RU_GUI_SYNC",
+          "size": 1000000.0,
+          "source_chars": 636370.0,
+          "wall_ms": 5941.23249999993,
+          "read_bytes": 1000000.0,
+          "max_read": 1023.0,
+          "max_tick_ms": 8.37909999862313,
+          "max_chunk_ms": 1.27910000085831,
+          "chunks": 8798.0
+        }
+      ]
+    }
+  },
+  {
+    "c-llvm": {
+      "binary_sha256": "d48a730412dde05c28153b0d5f51255185d6fe14974bbe9703244acacfa6b680",
+      "wall_ms": 24888.23500000035,
+      "metrics": [
+        {
+          "kind": "PERF_RU",
+          "size": 100000.0,
+          "initial_ms": 620.518100000918,
+          "edit_ms": 188.336899999529,
+          "initial_read_bytes": 100000.0,
+          "edit_read_bytes": 32768.0,
+          "reused_bytes": 67232.0,
+          "max_read": 1024.0,
+          "max_tick_ms": 8.28509999997914,
+          "max_chunk_ms": 0.843299999833107
+        },
+        {
+          "kind": "PERF_RU",
+          "size": 1000000.0,
+          "initial_ms": 7882.49929999933,
+          "edit_ms": 277.568699998781,
+          "initial_read_bytes": 1000000.0,
+          "edit_read_bytes": 32768.0,
+          "reused_bytes": 967232.0,
+          "max_read": 1024.0,
+          "max_tick_ms": 8.2668999992311,
+          "max_chunk_ms": 1.09609999880195
+        },
+        {
+          "kind": "RU_GUI_SYNC",
+          "size": 1000000.0,
+          "source_chars": 636370.0,
+          "wall_ms": 5997.29619999975,
+          "read_bytes": 1000000.0,
+          "max_read": 1023.0,
+          "max_tick_ms": 8.41440000012517,
+          "max_chunk_ms": 1.30120000056922,
+          "chunks": 8798.0
+        }
+      ]
+    },
+    "bootstrap": {
+      "binary_sha256": "caf3ef5c9086b8eb15c93b945ba14cfc9f3338d4823333ef83b68ccc7e977245",
+      "wall_ms": 22004.289100001188,
+      "metrics": [
+        {
+          "kind": "PERF_RU",
+          "size": 100000.0,
+          "initial_ms": 476.566200001165,
+          "edit_ms": 149.208499999717,
+          "initial_read_bytes": 100000.0,
+          "edit_read_bytes": 32768.0,
+          "reused_bytes": 67232.0,
+          "max_read": 1024.0,
+          "max_tick_ms": 8.34979999996722,
+          "max_chunk_ms": 0.721200000494719
+        },
+        {
+          "kind": "PERF_RU",
+          "size": 1000000.0,
+          "initial_ms": 6309.88489999995,
+          "edit_ms": 235.661199999973,
+          "initial_read_bytes": 1000000.0,
+          "edit_read_bytes": 32768.0,
+          "reused_bytes": 967232.0,
+          "max_read": 1024.0,
+          "max_tick_ms": 8.29050000011921,
+          "max_chunk_ms": 0.810000000521541
+        },
+        {
+          "kind": "RU_GUI_SYNC",
+          "size": 1000000.0,
+          "source_chars": 636370.0,
+          "wall_ms": 5402.75100000016,
+          "read_bytes": 1000000.0,
+          "max_read": 1023.0,
+          "max_tick_ms": 8.56530000083148,
+          "max_chunk_ms": 1.25209999829531,
+          "chunks": 8798.0
+        }
+      ]
+    }
+  },
+  {
+    "bootstrap": {
+      "binary_sha256": "caf3ef5c9086b8eb15c93b945ba14cfc9f3338d4823333ef83b68ccc7e977245",
+      "wall_ms": 21935.744799999156,
+      "metrics": [
+        {
+          "kind": "PERF_RU",
+          "size": 100000.0,
+          "initial_ms": 475.870799999684,
+          "edit_ms": 147.642799999565,
+          "initial_read_bytes": 100000.0,
+          "edit_read_bytes": 32768.0,
+          "reused_bytes": 67232.0,
+          "max_read": 1024.0,
+          "max_tick_ms": 8.13590000011027,
+          "max_chunk_ms": 0.665300000458956
+        },
+        {
+          "kind": "PERF_RU",
+          "size": 1000000.0,
+          "initial_ms": 6328.49730000086,
+          "edit_ms": 230.633400000632,
+          "initial_read_bytes": 1000000.0,
+          "edit_read_bytes": 32768.0,
+          "reused_bytes": 967232.0,
+          "max_read": 1024.0,
+          "max_tick_ms": 8.39599999971688,
+          "max_chunk_ms": 0.952299999073148
+        },
+        {
+          "kind": "RU_GUI_SYNC",
+          "size": 1000000.0,
+          "source_chars": 636370.0,
+          "wall_ms": 5338.50840000063,
+          "read_bytes": 1000000.0,
+          "max_read": 1023.0,
+          "max_tick_ms": 8.4410999994725,
+          "max_chunk_ms": 1.17839999869466,
+          "chunks": 8798.0
+        }
+      ]
+    },
+    "c-llvm": {
+      "binary_sha256": "d48a730412dde05c28153b0d5f51255185d6fe14974bbe9703244acacfa6b680",
+      "wall_ms": 24761.859399999594,
+      "metrics": [
+        {
+          "kind": "PERF_RU",
+          "size": 100000.0,
+          "initial_ms": 606.439500000328,
+          "edit_ms": 189.351700000465,
+          "initial_read_bytes": 100000.0,
+          "edit_read_bytes": 32768.0,
+          "reused_bytes": 67232.0,
+          "max_read": 1024.0,
+          "max_tick_ms": 8.24689999967813,
+          "max_chunk_ms": 0.92090000025928
+        },
+        {
+          "kind": "PERF_RU",
+          "size": 1000000.0,
+          "initial_ms": 7840.37469999865,
+          "edit_ms": 277.242800001055,
+          "initial_read_bytes": 1000000.0,
+          "edit_read_bytes": 32768.0,
+          "reused_bytes": 967232.0,
+          "max_read": 1024.0,
+          "max_tick_ms": 8.38580000028014,
+          "max_chunk_ms": 1.01429999992251
+        },
+        {
+          "kind": "RU_GUI_SYNC",
+          "size": 1000000.0,
+          "source_chars": 636370.0,
+          "wall_ms": 5967.58740000054,
+          "read_bytes": 1000000.0,
+          "max_read": 1023.0,
+          "max_tick_ms": 8.41889999993145,
+          "max_chunk_ms": 1.39680000022054,
+          "chunks": 8798.0
+        }
+      ]
+    }
+  }
+]
