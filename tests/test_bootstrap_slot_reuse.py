@@ -84,7 +84,7 @@ def canonical_addresses(ir):
 class LegacyMonotonicSlots(UncachedReuseSlots):
     """Test-only old physical allocation rule, not an alternate compiler path."""
     def clear_temporaries(self):
-        self.call_abi('clear', '%frame')
+        self.call_abi('clear_count', '%frame', str(self.slot_count))
 
 
 class UnsafeUnwindSlots(LLVMCompiler):
@@ -100,6 +100,7 @@ def lower(compiler_type, source, triple=None, layout=None):
 
 
 def normalize(ir):
+    ir = re.sub(r'(@rul_clear_count\(i8\* %frame, i32 )\d+', r'\g<1>LIVE', ir)
     ir = re.sub(r'(@rul_frame_new\(i32 )\d+', r'\g<1>FRAME', ir)
     return re.sub(r'(@rul_slot\(i8\* %frame, i32 )\d+', r'\g<1>SLOT', ir)
 
