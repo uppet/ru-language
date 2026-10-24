@@ -1,0 +1,63 @@
+name: Structure depth isolated diagnostic
+on:
+  push:
+    branches: [feature/wip-depth-diagnostic-20261024]
+permissions:
+  contents: read
+jobs:
+  isolated:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.12', '3.14']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Record isolated outcomes without changing production limits
+        shell: python
+        run: |
+          import hashlib, json, os, pathlib, subprocess, sys, time
+          root = pathlib.Path.cwd()
+          out = root / 'depth-diagnostic'
+          out.mkdir()
+          report = {'diagnostic_only': True, 'python': sys.version, 'executable': sys.executable,
+                    'head': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(),
+                    'inputs': {name: hashlib.sha256((root / name).read_bytes()).hexdigest()
+                               for name in ['rulang/interpreter.py', 'tests/test_structure_depth.py']},
+                    'attempts': []}
+          env = dict(os.environ, PYTHONPATH=str(root) + os.pathsep + str(root / 'tests'))
+          for case in ['test_guard_fires_with_runtime_category_and_position',
+                       'test_legit_deep_unary_chain_still_runs']:
+              attempt = {'case': case, 'timeout_seconds': 120}
+              report['attempts'].append(attempt)
+              start = time.monotonic()
+              try:
+                  p = subprocess.run([sys.executable, '-X', 'faulthandler', '-m', 'unittest',
+                                      'test_structure_depth.StructureDepthTests.' + case, '-v'],
+                                     env=env, capture_output=True, timeout=120)
+                  attempt.update(returncode=p.returncode, returncode_hex=hex(p.returncode & 0xffffffff),
+                                 timeout=False)
+                  stdout, stderr = p.stdout, p.stderr
+              except subprocess.TimeoutExpired as exc:
+                  attempt.update(returncode=None, timeout=True)
+                  stdout, stderr = exc.stdout or b'', exc.stderr or b''
+              except Exception as exc:
+                  attempt.update(returncode=None, error=repr(exc))
+                  stdout, stderr = b'', repr(exc).encode()
+              attempt['elapsed_seconds'] = time.monotonic() - start
+              (out / (case + '.stdout')).write_bytes(stdout)
+              (out / (case + '.stderr')).write_bytes(stderr)
+              (out / 'report.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
+          print(json.dumps(report, indent=2))
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: structure-depth-${{ matrix.python-version }}-${{ github.sha }}
+          path: depth-diagnostic
+          if-no-files-found: error
