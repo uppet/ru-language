@@ -493,6 +493,15 @@ class RuUIParityTests(unittest.TestCase):
         self.assertIn(filename, values)
         parse(self.load_program(directory, filename))
 
+    def test_resource_protocol_joins_windows_base_with_forward_slash(self):
+        # The UI protocol joins base/source, independent of the host OS.
+        directory = "C:\\Users\\甲 O'Brien\\项目"
+        events = run_python(self.load_program(directory))
+        requested = [c for event in events
+                     for c in ops(event['commands'], 'image_request')]
+        self.assertEqual([(c['id'], c['source']) for c in requested],
+                         [(1, directory + '/a.png')])
+
     def test_image_head_size_recognises_png_and_jpeg(self):
         from rulang.graphics_runtime import _image_head_size
         self.assertEqual(_image_head_size(png_bytes(4, 3)), (4, 3))
@@ -582,7 +591,7 @@ class RuUIParityTests(unittest.TestCase):
             self.assertEqual([c['id'] for c in released], [1])
             requested = [c for e in events for c in ops(e['commands'], 'image_request')]
             self.assertEqual([(c['id'], c['source']) for c in requested],
-                             [(1, str(path / 'a.png')), (2, str(path / 'c.png'))])
+                             [(1, directory + '/a.png'), (2, directory + '/c.png')])
             self.assertIn('5x2', texts(events[-1]['commands']))
             switched = [e for e in events if ops(e['commands'], 'image_release')]
             self.assertTrue(switched)
