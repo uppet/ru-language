@@ -1,0 +1,68 @@
+name: BS Windows callback diagnostic
+on:
+  push:
+    branches: [feature/bs-callback-diagnostic-20261024]
+permissions:
+  contents: read
+concurrency:
+  group: bs-callback-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  diagnostic:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    env:
+      PYTHONUTF8: '1'
+      GIT_CONFIG_COUNT: '1'
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: 'false'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: driver
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 0b7adcb14f5039ea7ffa9892982877d0e83bc4bc
+          path: baseline
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 3eb27e0ebfa97bdf8207f7ba2e2e754ea1b8b273
+          path: bs
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.10'
+      - name: Same pinned LLVM14 tools for all four diagnostic arms
+        working-directory: bs
+        run: python tools/prepare_workspace.py --with-llvm
+      - name: Freeze selected tool location
+        working-directory: bs
+        run: |
+          $clang = python -c "from rulang.llvm_toolchain import LLVMToolchain; print(LLVMToolchain().clang[0])"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          "RU_LLVM_CLANG=$clang" >> $env:GITHUB_ENV
+      - name: Original main callback single case
+        run: python driver/tools/diagnose_bs_callback.py --arm baseline --repository baseline --output '${{ runner.temp }}/callback-diagnostic/baseline'
+      - name: Exact bs callback single case
+        run: python driver/tools/diagnose_bs_callback.py --arm bs --repository bs --output '${{ runner.temp }}/callback-diagnostic/bs'
+      - name: Same bs with only target_program disabled in memory
+        run: python driver/tools/diagnose_bs_callback.py --arm bs-no-target --repository bs --output '${{ runner.temp }}/callback-diagnostic/bs-no-target'
+      - name: Same bs with only uwtable appended to direct definitions
+        run: python driver/tools/diagnose_bs_callback.py --arm bs-uwtable --repository bs --output '${{ runner.temp }}/callback-diagnostic/bs-uwtable'
+      - name: Preserve every exit code source runtime IR and failure record
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: callback-diagnostic-${{ github.sha }}
+          compression-level: 9
+          path: |
+            ${{ runner.temp }}/callback-diagnostic/**/*.json
+            ${{ runner.temp }}/callback-diagnostic/**/*.log
+            ${{ runner.temp }}/callback-diagnostic/**/*.stdout
+            ${{ runner.temp }}/callback-diagnostic/**/*.stderr
+            ${{ runner.temp }}/callback-diagnostic/**/*.ll
+            ${{ runner.temp }}/callback-diagnostic/**/*.c
+            ${{ runner.temp }}/callback-diagnostic/**/*.ru
+          if-no-files-found: error
