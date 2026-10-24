@@ -56,6 +56,7 @@ ABI = {
 
 class LLVMCompiler(Compiler):
     supports_mi_llvm = True
+    supports_c_graphics = False
 
     def compile(self, triple=None, data_layout=None):
         self.strings, self.constants, self.bodies = {}, [], []

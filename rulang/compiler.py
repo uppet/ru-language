@@ -20,6 +20,7 @@ def cstr(value):
 
 class Compiler:
     supports_browser_graphics = False
+    supports_c_graphics = True
     supports_mi_llvm = False
 
     def __init__(self, program, source_name='<源码>', modules=None, full_runtime=False, allow_native=False, source_prefix_maps=(), mi_manifest=None, mi_backend='c'):
@@ -42,9 +43,10 @@ class Compiler:
         if self.native_enabled and (not self.allow_native or
                 (type(self) is not Compiler and not (self.supports_mi_llvm and mi_manifest))):
             reject_native_backend((program, modules))
-        for node in import_nodes(modules or program):
-            if not self.supports_browser_graphics and (node.data.get("path") == "如:观" or Path(node.data.get("resolved", "")).resolve() == (Path(__file__).parent / "stdlib" / "如观.ru").resolve()):
-                raise RuError("如观图形仅支持如书 Python 会话；C／JavaScript 编译后端尚不支持", node.token.line, node.token.col, "能力错误")
+        stdlib_ruguan = Path(__file__).parent / "stdlib" / "如观.ru"
+        self.uses_graphics = any(node.data.get("path") == "如:观" or Path(node.data.get("resolved", "")).resolve() == stdlib_ruguan.resolve() for node in import_nodes(modules or program))
+        if not (self.supports_browser_graphics or self.supports_c_graphics) and self.uses_graphics:
+            raise RuError("如观图形仅支持如书 Python 会话；C／JavaScript 编译后端尚不支持", node.token.line, node.token.col, "能力错误")
         self.source_name = str(source_name)
         self.root = str(Path(source_name).resolve()) if modules else self.source_name
         self.source_texts = getattr(modules, 'sources', {})
@@ -789,7 +791,7 @@ class Compiler:
                 self.line('if (ru_native_callback_depth) ru_fail(1, "原生 C 回调中不能首次初始化外言；请在首次原生调用之前导入依赖");')
             self.line(f'{ident}_state = 1;')
             self.line(f'const char *previous_source = ru_source; ru_source = {cstr(display_text(self.source_path_mapper(path)))};')
-            builtins = 'ru_practical_builtins' if '__实用' in set(ast_strings(self.modules)) else 'ru_contest_builtins'
+            builtins = 'ru_graphics_builtins' if self.uses_graphics else ('ru_practical_builtins' if '__实用' in set(ast_strings(self.modules)) else 'ru_contest_builtins')
             builtins_call = f'ru_native_builtins({builtins}())' if self.native_enabled else f'{builtins}()'
             self.line(f'Env *global = &{ident}_env; Env *env = global; env_init(env, {builtins_call});')
             self.panic_context(f'&{ident}_env')
@@ -812,6 +814,8 @@ class Compiler:
         self.line(f'Val root = {self.module_ids[self.root]}_init(); (void) root; (void) argc; (void) argv;')
         if self.can_panic:
             self.line('if (ru_panicking) return ru_panic_uncaught();')
+        if self.uses_graphics and self.supports_c_graphics:
+            self.line('ru_graphics_app_run();')
         self.line('int status = 0;')
         if self.entry:
             self.line('Val arguments = ru_arguments(argc, argv);')

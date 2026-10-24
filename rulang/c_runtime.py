@@ -164,7 +164,8 @@ static int ru_io_member(Val receiver, const char *name, size_t argc, const char 
 def runtime_source(modules, generated, full=False, native_plan=None):
     directory = Path(__file__).parent
     headers = [(directory / name).read_text(encoding='utf-8')
-               for name in ('runtime.h', 'io_runtime.h', 'contest_runtime.h', 'practical_runtime.h')]
+               for name in ('runtime.h', 'io_runtime.h', 'contest_runtime.h', 'practical_runtime.h',
+                            'graphics_runtime.h')]
     if native_plan is not None:
         from .native_c_runtime import integrate_runtime, integrate_io
         headers[0] = integrate_runtime(headers[0])
@@ -175,6 +176,19 @@ def runtime_source(modules, generated, full=False, native_plan=None):
         source = _FEATURE.sub(lambda m: m[2], _MAP_REGION.sub(lambda m: m[1], '\n'.join(headers)))
         return re.sub(r'/\* RU_(?:MEMBERS: [^*]*|OPERATORS: [^*]*|END_MEMBERS) \*/\n', '', source)
     strings = set(ast_strings(modules))
+    from .modules import import_nodes
+    stdlib_ruguan = directory / 'stdlib' / '如观.ru'
+    uses_graphics = any(node.data.get("path") == "如:观" or Path(node.data.get("resolved", "")).resolve() == stdlib_ruguan.resolve() for node in import_nodes(modules))
+    if not uses_graphics:
+        headers[4] = """
+static Env *ru_graphics_builtins(void) { return ru_practical_builtins(); }
+static int ru_graphics_member(Val receiver, const char *name, size_t argc,
+                              const char **keys, Val *args, int line, Val *out)
+{
+    (void)receiver; (void)name; (void)argc; (void)keys; (void)args; (void)line; (void)out;
+    return 0;
+}
+"""
     if '__实用' not in strings:
         headers[3] = """
 static Env *ru_practical_builtins(void) { return ru_contest_builtins(); }
@@ -192,7 +206,7 @@ static int ru_practical_member(Val receiver, const char *name, size_t argc,
     uses_io = any(word in io_names for text in strings for word in text.split())
     if not uses_io:
         headers[1] = _IO_STUB
-    uses_map = any(n.kind == 'map' for n in walk_nodes(modules))
+    uses_map = uses_graphics or any(n.kind == 'map' for n in walk_nodes(modules))
     source = _MAP_REGION.sub(lambda m: m[1] if uses_map else '', '\n'.join(headers))
     source = specialize_members(source, member_names(modules))
     # Binary operators are statically spelled too (含 can also be a member).

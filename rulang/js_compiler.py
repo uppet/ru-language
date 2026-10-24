@@ -18,6 +18,8 @@ def js(value):
 
 
 class JSCompiler(Compiler):
+    supports_c_graphics = False
+
     def loc(self, node):
         return js([node.token.line, node.token.col])
 
