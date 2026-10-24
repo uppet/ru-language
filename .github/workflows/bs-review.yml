@@ -1,0 +1,146 @@
+name: BS optimization review acceptance
+on:
+  push:
+    branches: [feature/bs-review-20261024]
+permissions:
+  contents: read
+concurrency:
+  group: bs-review-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  backend:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    env:
+      PYTHONUTF8: "1"
+      PYTHONUNBUFFERED: "1"
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.10"
+      - name: Install matching LLVM14 tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y clang-14 llvm-14
+      - name: Prepare matching Windows LLVM14
+        if: runner.os == 'Windows'
+        run: python tools/prepare_workspace.py --with-llvm
+      - name: Create persistent diagnostic directory
+        run: python -c "from pathlib import Path; Path('bin/bootstrap/backend').mkdir(parents=True,exist_ok=True)"
+      - name: Required runner contract regressions
+        run: python -m unittest discover -s tests -p test_bootstrap_backend_ci.py -v
+      - name: Freeze actual source and LLVM14 executable identities before bootstrap
+        run: python tools/verify_bootstrap_backend_ci.py preflight --directory bin/bootstrap/backend
+      - name: Fresh105 and full native fixed point
+        run: python tools/bootstrap.py verify --directory bin/bootstrap/backend
+      - name: Six new suites with zero skips and current verified stage3
+        run: python tools/verify_bs_review.py core --out bin/bootstrap/backend
+      - name: Required31 dual frontend lifecycle GC and wrong unwind controls
+        run: python tools/verify_bootstrap_backend_ci.py runtime --directory bin/bootstrap/backend
+      - name: Required Windows PythonLLVM ordinary callback with existing scalar opt-in
+        if: runner.os == 'Windows'
+        run: python tools/verify_bootstrap_backend_ci.py windows --directory bin/bootstrap/backend
+      - name: Require complete exact source tool artifact and case evidence
+        run: python tools/verify_bootstrap_backend_ci.py combined --directory bin/bootstrap/backend
+      - name: Preserve bootstrap and lifecycle evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: backend-${{ matrix.os }}-${{ github.sha }}
+          path: bin/bootstrap/backend
+          if-no-files-found: error
+  performance:
+    needs: backend
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      PYTHONUTF8: '1'
+      PYTHONUNBUFFERED: '1'
+      GIT_CONFIG_COUNT: '1'
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: 'false'
+    defaults:
+      run:
+        working-directory: language
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: language
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: uppet/ru_notepad
+          ref: 2cb3b8c81ba300745b244c51b50d5625430fbe4f
+          path: editor-bootstrap
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: '3.10'
+      - name: Prepare DLL-only native tools
+        id: msys
+        uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e
+        with:
+          msystem: MINGW64
+          update: false
+          install: mingw-w64-x86_64-gcc mingw-w64-x86_64-make
+      - name: Set x64 SDK environment
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (!$vs -or $LASTEXITCODE) { throw 'x64 tools unavailable' }
+          $vars = & cmd.exe /d /s /c "call `"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul && set"
+          if ($LASTEXITCODE) { throw 'vcvars64 failed' }
+          $allow = @('PATH','INCLUDE','LIB','LIBPATH','WindowsSdkDir','WindowsSDKVersion','VCToolsInstallDir','VCToolsVersion')
+          foreach ($line in $vars) {
+            if ($line -match '^([^=]+)=(.*)$' -and $allow -contains $matches[1]) {
+              "$($matches[1])=$($matches[2])" >> $env:GITHUB_ENV
+            }
+          }
+          "BS_EVIDENCE=$env:RUNNER_TEMP/bs-review-evidence" >> $env:GITHUB_ENV
+      - name: Prepare LLVM14
+        run: python tools/prepare_workspace.py --with-llvm
+      - name: Lock source tools and DLL build configuration
+        run: python tools/verify_bs_review.py configure --out "$env:BS_EVIDENCE" --editor ../editor-bootstrap --mingw '${{ steps.msys.outputs.msys2-location }}/mingw64/bin'
+      - name: Build pinned DLLs only and validate source receipts
+        run: python ../editor-bootstrap/tools/prepare_bootstrap_dependencies.py --config "$env:BS_EVIDENCE/dependencies-config.json" --output "$env:BS_EVIDENCE/dependencies"
+      - name: Fresh three-stage adapter build and same-source C-LLVM control
+        run: python tools/benchmark_bootstrap_syntax.py prepare --output "$env:BS_EVIDENCE/comparison" --compiler-repository . --notepad-repository ../editor-bootstrap --dll-directory "$env:BS_EVIDENCE/dependencies"
+      - name: One complete six-pair experiment without retries
+        run: python tools/verify_bs_review.py measure --out "$env:BS_EVIDENCE" --editor ../editor-bootstrap
+      # 180s is the author helper timeout, not a release 30/60/120s acceptance waiver.
+      # No EXE/DLL/object/bitcode/tool archives or process environment dumps are uploaded.
+      - name: Retain proof stdout stderr samples and failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: bs-review-performance-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/bs-review-evidence/*.json
+            ${{ runner.temp }}/bs-review-evidence/measurement
+            ${{ runner.temp }}/bs-review-evidence/dependencies/*receipt.json
+            ${{ runner.temp }}/bs-review-evidence/comparison/inputs.json
+            ${{ runner.temp }}/bs-review-evidence/comparison/bootstrap/*.json
+      - name: Retain direct frontend and both optimized IRs separately
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: bs-review-ir-${{ github.sha }}
+          compression-level: 9
+          path: |
+            ${{ runner.temp }}/bs-review-evidence/comparison/bootstrap/*.ll
+            ${{ runner.temp }}/bs-review-evidence/comparison/bootstrap/*.metadata.c
+            ${{ runner.temp }}/bs-review-evidence/comparison/c-llvm/*.ll
+          if-no-files-found: error
