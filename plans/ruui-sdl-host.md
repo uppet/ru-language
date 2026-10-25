@@ -141,11 +141,28 @@ printf 紧凑 JSON 恰好可解析——同一二进制"时好时坏"的假 heis
    （stdin JSON-lines / stdout FRAME 流）+ **16 例 parity 测试全绿**
    （Python GraphicsHost vs C+record host 帧 JSON 双端比对，
    `python3 -m unittest tests.test_ruui_c_graphics_parity`，-O0/-O1 双确认）。
-2. **M2 SDL 壳**：窗口/矩形/椭圆/线/多边形/文字/图/裁剪/背景，
-   counter 端到端跑通（dummy driver 出 PNG）。
-3. **M3 输入全协议**：鼠标/touch/按键/IME/剪贴板/resize。
-4. **M4 装载与服务**：图/件/档/网 + 就绪事件 + 服务告。
-5. **M5 变换与缓存**：rotate/scale 纹理路径；缓存/贴图；预算压测。
+2. **M2 SDL 壳** ✅：`--target sdl` 单二进制（compiler main 双路 +
+   `ru_sdl_host_register`/`ru_sdl_app_run` + pkg-config 链 SDL2/TTF/IMG）。
+   渲染全 11 种绘制 op；counter 与 mix（矩形/椭圆/扇形/折线/多边形/中文文字）
+   dummy driver HEADLESS_SMOKE PNG 像素级验证通过。
+   排查记录：dummy 下 ACCELERATED renderer 创建成功但绘制静默失败
+   （SMOKE 强制 SOFTWARE）；键扫描 pattern 须带冒号（`"key":`），否则
+   `"op":"text"` 会被 `text` 键匹配命中。
+3. **M3 输入全协议** ✅：鼠标/touch/按键（可打印键 down/up，编辑键 text_key）/
+   IME（comp_start/update/end + text_char）/剪贴板取/`resize`。
+   **handlers 位图过滤**：壳按最新帧 `handlers` 数组过滤未监听事件
+   （runtime 对未监听事件是硬错误，GUI 噪声必须壳侧拦）。
+4. **M4 装载与服务** ◐：图装载（IMG_Load → image_ready/failed）、件/档读
+   （文/base64，8MiB 上限）就绪事件已通；**档/网 service 诚实 stub**
+   （固定失败响应，HTTP 客户端未接线）。
+5. **M5 变换与缓存** ◐：translate 直加偏移；rotate/scale 整窗纹理 CopyEx
+   （中心 = 窗中心）；shear 近似平移（诚实清单已记）；宽线叠画近似；
+   bezier 32 段采样。字体按像素尺寸缓存 8 槽。**未做**：缓存/贴图录制、
+   预算压测。
+
+HEADLESS_SMOKE 用法：`RU_HEADLESS_SMOKE=1 python3 -m rulang build app.ru
+--target sdl -o app && SDL_VIDEODRIVER=dummy RU_SMOKE_FRAMES=3 ./app`
+（帧数默认 3，落盘 smoke.png）。RU_FONT 环境变量可覆盖字体。
 
 ## 已知偏差（诚实清单）
 
