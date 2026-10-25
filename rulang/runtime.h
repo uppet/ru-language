@@ -107,6 +107,8 @@ static int ru_practical_member(Val receiver, const char *name, size_t argc, cons
                               Val *args, int line, Val *out);
 static int ru_graphics_member(Val receiver, const char *name, size_t argc, const char **keys,
                               Val *args, int line, Val *out);
+static int ru_audio_member(Val receiver, const char *name, size_t argc, const char **keys,
+                           Val *args, int line, Val *out);
 static void ru_fail(int line, const char *format, ...)
 {
     va_list args;
@@ -1440,6 +1442,9 @@ static Val v_member(Val receiver,const char *name,size_t argc,const char **keys,
 /* RU_END_MEMBERS */
 /* RU_MEMBERS: 颜色,画布,宽,高,帧,经过秒,间隔秒,字度,测文,尺寸,帧率,停,继续,关闭,背景,填色,描边,线宽,字号,文字对齐,矩形,椭圆,弧,扇形,贝塞尔,线,文字,三角形,多边形,折线,平移,旋转,缩放,保存,恢复,重置变换,变换,裁剪,取消裁剪,缓存,贴图,图请求,绘图,图释放,件请求,服务请,入焦点,入失焦,入更新,每帧,鼠标按下,鼠标松开,鼠标移动,触下,触移,触松,改尺寸,按键,松键,图就绪,图失败,件就绪,件失败,键按下,字符,剪贴,组开始,组更新,组结束,服务回,服务告 */
     if (ru_graphics_member(receiver, name, argc, keys, args, line, &io_result)) return io_result;
+/* RU_END_MEMBERS */
+/* RU_MEMBERS: 播,停,暂停,续,音量,进度,在播 */
+    if (ru_audio_member(receiver, name, argc, keys, args, line, &io_result)) return io_result;
 /* RU_END_MEMBERS */
     if(receiver.kind==RU_MODULE){
         RuBinding *binding;Val value,result;

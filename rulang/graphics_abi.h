@@ -57,6 +57,24 @@ enum {
 
 void ru_graphics_set_host(const RuGuiHost *host);
 
+/* ---- 如声音频宿主（SDL 壳实现 SDL_mixer 后端） ----
+ * 声道号：宿主任意非负整数；<0 表示调用失败。
+ * 音量：0..100 整数百分比；进度：已播秒数（<0 不可用）。 */
+typedef struct RuAudioHost {
+    const char *name;
+    int (*open)(void);                       /* 打开音频设备（幂等），1 成 0 败 */
+    void (*close)(void);
+    long (*play)(const char *path, int loop);/* 返回声道号；<0 失败 */
+    int (*stop)(long channel);               /* 1 成 0 败 */
+    int (*pause)(long channel);
+    int (*resume)(long channel);
+    int (*volume)(long channel, int pct);    /* 设音量，返回实际生效值（0..100） */
+    double (*position)(long channel);        /* 已播秒数；<0 不可用 */
+    int (*playing)(long channel);            /* 1 在播 0 空闲 */
+} RuAudioHost;
+
+void ru_audio_set_host(const RuAudioHost *host);
+
 void ru_graphics_post_close(void);
 void ru_graphics_post_resize(int width, int height);
 void ru_graphics_post_mouse_down(double x, double y, int button);

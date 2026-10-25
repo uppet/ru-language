@@ -65,6 +65,20 @@ typedef struct RuGuiHost {
     int auto_load;
 } RuGuiHost;
 
+/* 如声音频宿主（声明镜像 graphics_abi.h；宿主与程序不共编一头）。 */
+typedef struct RuAudioHost {
+    const char *name;
+    int (*open)(void);
+    void (*close)(void);
+    long (*play)(const char *path, int loop);
+    int (*stop)(long channel);
+    int (*pause)(long channel);
+    int (*resume)(long channel);
+    int (*volume)(long channel, int pct);
+    double (*position)(long channel);
+    int (*playing)(long channel);
+} RuAudioHost;
+
 void ru_graphics_set_host(const RuGuiHost *host);
 void ru_graphics_post_close(void);
 void ru_graphics_post_mouse_down(double x, double y, int button);
@@ -251,7 +265,13 @@ static void ru_g_event_push(RuGEvent *ev);
 static void ru_g_event_dispatch(RuGEvent *ev, int line);
 static void ru_g_drain_events(int line);
 
+/* 如声音频宿主全局（RuAudioHost 声明见 graphics_abi.h，audio_runtime.h 消费）。
+ * ru_audio_builtins 定义在 audio_runtime.h（拼接序在后），此处前置声明；
+ * 未用如声的程序由 c_runtime 换入 audio stub，符号仍然齐。 */
+static Env *ru_audio_builtins(void);
+static const RuAudioHost *ru_audio_host;
 void ru_graphics_set_host(const RuGuiHost *host) { ru_g_host = host; }
+void ru_audio_set_host(const RuAudioHost *host) { ru_audio_host = host; }
 
 static double ru_g_now(int line) {
     double sample;

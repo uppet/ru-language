@@ -165,7 +165,7 @@ def runtime_source(modules, generated, full=False, native_plan=None):
     directory = Path(__file__).parent
     headers = [(directory / name).read_text(encoding='utf-8')
                for name in ('runtime.h', 'io_runtime.h', 'contest_runtime.h', 'practical_runtime.h',
-                            'graphics_runtime.h')]
+                            'graphics_runtime.h', 'audio_runtime.h')]
     if native_plan is not None:
         from .native_c_runtime import integrate_runtime, integrate_io
         headers[0] = integrate_runtime(headers[0])
@@ -179,6 +179,24 @@ def runtime_source(modules, generated, full=False, native_plan=None):
     from .modules import import_nodes
     stdlib_ruguan = directory / 'stdlib' / '如观.ru'
     uses_graphics = any(node.data.get("path") == "如:观" or Path(node.data.get("resolved", "")).resolve() == stdlib_ruguan.resolve() for node in import_nodes(modules))
+    stdlib_rusheng = directory / 'stdlib' / '如声.ru'
+    uses_audio = any(node.data.get("path") == "如:声" or Path(node.data.get("resolved", "")).resolve() == stdlib_rusheng.resolve() for node in import_nodes(modules))
+    if uses_graphics and uses_audio:
+        # 图形+音频并存：如观 builtins 的父链改挂如声 builtins，
+        # 使 __如声 在图形环境也可用（反之 audio 头独立时自带 practical 父链）。
+        headers[4] = headers[4].replace(
+            'env_init(&env, ru_practical_builtins());',
+            'env_init(&env, ru_audio_builtins());', 1)
+    if not uses_audio:
+        headers[5] = """
+static Env *ru_audio_builtins(void) { return ru_practical_builtins(); }
+static int ru_audio_member(Val receiver, const char *name, size_t argc,
+                           const char **keys, Val *args, int line, Val *out)
+{
+    (void)receiver; (void)name; (void)argc; (void)keys; (void)args; (void)line; (void)out;
+    return 0;
+}
+"""
     if not uses_graphics:
         headers[4] = """
 static Env *ru_graphics_builtins(void) { return ru_practical_builtins(); }
@@ -214,6 +232,8 @@ static int ru_practical_member(Val receiver, const char *name, size_t argc,
         abi_names = ' '.join(sorted(set(re.findall(r'\bru_graphics_\w+',
             (directory / 'graphics_abi.h').read_text(encoding='utf-8')))))
         generated += '\n/* RU_GRAPHICS_HOST_ABI_ROOTS */\n' + abi_names
+    if uses_audio and isinstance(generated, str):
+        generated += '\n/* RU_AUDIO_HOST_ABI_ROOTS */\nru_audio_set_host' 
     source = _MAP_REGION.sub(lambda m: m[1] if uses_map else '', '\n'.join(headers))
     source = specialize_members(source, member_names(modules))
     # Binary operators are statically spelled too (含 can also be a member).

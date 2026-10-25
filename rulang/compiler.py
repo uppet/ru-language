@@ -45,6 +45,8 @@ class Compiler:
             reject_native_backend((program, modules))
         stdlib_ruguan = Path(__file__).parent / "stdlib" / "如观.ru"
         self.uses_graphics = any(node.data.get("path") == "如:观" or Path(node.data.get("resolved", "")).resolve() == stdlib_ruguan.resolve() for node in import_nodes(modules or program))
+        stdlib_rusheng = Path(__file__).parent / "stdlib" / "如声.ru"
+        self.uses_audio = any(node.data.get("path") == "如:声" or Path(node.data.get("resolved", "")).resolve() == stdlib_rusheng.resolve() for node in import_nodes(modules or program))
         if not (self.supports_browser_graphics or self.supports_c_graphics) and self.uses_graphics:
             raise RuError("如观图形仅支持如书 Python 会话；C／JavaScript 编译后端尚不支持", category="能力错误")
         self.source_name = str(source_name)
@@ -791,7 +793,10 @@ class Compiler:
                 self.line('if (ru_native_callback_depth) ru_fail(1, "原生 C 回调中不能首次初始化外言；请在首次原生调用之前导入依赖");')
             self.line(f'{ident}_state = 1;')
             self.line(f'const char *previous_source = ru_source; ru_source = {cstr(display_text(self.source_path_mapper(path)))};')
-            builtins = 'ru_graphics_builtins' if self.uses_graphics else ('ru_practical_builtins' if '__实用' in set(ast_strings(self.modules)) else 'ru_contest_builtins')
+            builtins = ('ru_graphics_builtins' if self.uses_graphics
+                        else 'ru_audio_builtins' if self.uses_audio
+                        else 'ru_practical_builtins' if '__实用' in set(ast_strings(self.modules))
+                        else 'ru_contest_builtins')
             builtins_call = f'ru_native_builtins({builtins}())' if self.native_enabled else f'{builtins}()'
             self.line(f'Env *global = &{ident}_env; Env *env = global; env_init(env, {builtins_call});')
             self.panic_context(f'&{ident}_env')

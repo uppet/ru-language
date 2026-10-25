@@ -252,6 +252,11 @@ def build(program, source_path, output, cc=None, emit_c=None, modules=None, targ
                                      capture_output=True, text=True)
             if pc_curl.returncode == 0:
                 extra_sources += pc_curl.stdout.split() + ["-DRU_SDL_HAS_CURL"]
+            # SDL_mixer 提供 如:声 音频（可选：缺失时 播 返回 -1）
+            pc_mix = subprocess.run(["pkg-config", "--cflags", "--libs", "SDL2_mixer"],
+                                    capture_output=True, text=True)
+            if pc_mix.returncode == 0:
+                extra_sources += pc_mix.stdout.split() + ["-DRU_SDL_HAS_MIXER"]
             if os.environ.get("RU_HEADLESS_SMOKE"):
                 # 冒烟模式：dummy video driver 下渲染 N 帧存 smoke.png 后退出
                 # （帧数由 RU_SMOKE_FRAMES 环境变量控制，默认 3）。

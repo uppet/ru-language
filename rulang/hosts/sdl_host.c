@@ -40,6 +40,9 @@
 #include <SDL.h>
 #include <SDL_ttf.h>
 #include <SDL_image.h>
+#ifdef RU_SDL_HAS_MIXER
+#include <SDL_mixer.h>
+#endif
 #if defined(RU_SDL_HAS_CURL)
 #include <curl/curl.h>
 #endif
@@ -785,7 +788,110 @@ static void sdl_open(void *ud, int w, int h) {
     sdl_closed = 0;
 }
 
+#ifdef RU_SDL_HAS_MIXER
+/* ---- 如声音频（SDL_mixer 后端） ---- */
+static int sdl_audio_opened;
+/* 声道槽：chunk 在播放结束后由 finished 回调登记待释放。 */
+#define SDL_MAX_CHANNELS 64
+static Mix_Chunk *sdl_audio_chunks[SDL_MAX_CHANNELS];
+static int sdl_audio_dirty[SDL_MAX_CHANNELS];
+
+static void sdl_audio_finished(int channel) {
+    if (channel >= 0 && channel < SDL_MAX_CHANNELS)
+        sdl_audio_dirty[channel] = 1;
+}
+
+static void sdl_audio_sweep(void) {
+    int i;
+    for (i = 0; i < SDL_MAX_CHANNELS; i++)
+        if (sdl_audio_dirty[i]) {
+            sdl_audio_dirty[i] = 0;
+            if (sdl_audio_chunks[i]) { Mix_FreeChunk(sdl_audio_chunks[i]); sdl_audio_chunks[i] = NULL; }
+        }
+}
+
+static int sdl_audio_open(void) {
+    if (sdl_audio_opened) return 1;
+    if (SDL_InitSubSystem(SDL_INIT_AUDIO) < 0) return 0;
+    if (Mix_OpenAudio(44100, MIX_DEFAULT_FORMAT, 2, 2048) < 0) return 0;
+    Mix_ChannelFinished(sdl_audio_finished);
+    sdl_audio_opened = 1;
+    return 1;
+}
+
+static long sdl_audio_play(const char *path, int loop) {
+    Mix_Chunk *chunk;
+    int ch;
+    if (!sdl_audio_open()) return -1;
+    chunk = Mix_LoadWAV(path);
+    if (!chunk) return -1;
+    ch = Mix_PlayChannel(-1, chunk, loop ? -1 : 0);
+    if (ch < 0) { Mix_FreeChunk(chunk); return -1; }
+    if (ch < SDL_MAX_CHANNELS) sdl_audio_chunks[ch] = chunk;
+    return ch;
+}
+
+static int sdl_audio_stop(long channel) {
+    if (channel < 0 || channel >= SDL_MAX_CHANNELS || !sdl_audio_chunks[channel]) return 0;
+    Mix_HaltChannel((int)channel);
+    return 1;
+}
+
+static int sdl_audio_pause(long channel) {
+    if (channel < 0 || channel >= SDL_MAX_CHANNELS || !Mix_Playing((int)channel)) return 0;
+    Mix_Pause((int)channel);
+    return 1;
+}
+
+static int sdl_audio_resume(long channel) {
+    if (channel < 0 || channel >= SDL_MAX_CHANNELS || !Mix_Paused((int)channel)) return 0;
+    Mix_Resume((int)channel);
+    return 1;
+}
+
+static int sdl_audio_volume(long channel, int pct) {
+    return Mix_Volume((int)channel, pct * MIX_MAX_VOLUME / 100) * 100 / MIX_MAX_VOLUME;
+}
+
+static double sdl_audio_position(long channel) {
+    /* SDL_mixer 不暴露 chunk 播放位置；返回 -1 表示不可用。 */
+    (void)channel;
+    return -1.0;
+}
+
+static int sdl_audio_playing(long channel) {
+    return channel >= 0 && channel < SDL_MAX_CHANNELS && Mix_Playing((int)channel) != 0;
+}
+
+static const RuAudioHost sdl_audio_host = {
+    "SDL_mixer",
+    sdl_audio_open, NULL,
+    sdl_audio_play, sdl_audio_stop, sdl_audio_pause, sdl_audio_resume,
+    sdl_audio_volume, sdl_audio_position, sdl_audio_playing
+};
+
+#else
+/* ---- 如声音频（无 SDL_mixer 时：播 返回 -1，诚实失败） ---- */
+static int sdl_audio_open(void) { return 0; }
+static long sdl_audio_play(const char *path, int loop) { (void)path; (void)loop; return -1; }
+static int sdl_audio_stop(long channel) { (void)channel; return 0; }
+static int sdl_audio_pause(long channel) { (void)channel; return 0; }
+static int sdl_audio_resume(long channel) { (void)channel; return 0; }
+static int sdl_audio_volume(long channel, int pct) { (void)channel; (void)pct; return 0; }
+static double sdl_audio_position(long channel) { (void)channel; return -1.0; }
+static int sdl_audio_playing(long channel) { (void)channel; return 0; }
+static const RuAudioHost sdl_audio_host = {
+    "SDL_mixer(缺)", sdl_audio_open, NULL,
+    sdl_audio_play, sdl_audio_stop, sdl_audio_pause, sdl_audio_resume,
+    sdl_audio_volume, sdl_audio_position, sdl_audio_playing
+};
+
+#endif
+
 static void sdl_close(void *ud) {
+#ifdef RU_SDL_HAS_MIXER
+    if (sdl_audio_opened) { Mix_CloseAudio(); sdl_audio_opened = 0; }
+#endif
     int i;
     (void)ud;
     sdl_closed = 1;
@@ -802,6 +908,9 @@ static void sdl_close(void *ud) {
 }
 
 static void sdl_frame(void *ud, const char *json, size_t bytes) {
+#ifdef RU_SDL_HAS_MIXER
+    sdl_audio_sweep();
+#endif
     char *copy;
     (void)ud;
     copy = (char *)malloc(bytes + 1);
@@ -1272,6 +1381,7 @@ static const RuGuiHost sdl_host = {
 void ru_sdl_host_register(void) {
     const char *dir = getenv("RU_PROGRAM_DIR");
     ru_graphics_set_host(&sdl_host);
+    ru_audio_set_host(&sdl_audio_host);
     if (dir && *dir) {
         snprintf(sdl_program_dir, sizeof sdl_program_dir, "%s", dir);
     } else {
