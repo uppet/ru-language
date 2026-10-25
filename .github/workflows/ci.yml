@@ -64,6 +64,37 @@ jobs:
         run: make examples
       - name: Build and syntax-check JavaScript examples
         run: make examples-js
+  player-smoke:
+    # 音频播放器冒烟（仅 player-ruaudio 分支携带本 job 与示例；
+    # main 无播放器代码，本 job 在 main 上为 no-op 通过）。
+    if: always() && contains(github.ref, 'player-ruaudio')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install SDL2 + mixer dev packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev libsdl2-mixer-dev \
+            pkg-config
+      - name: Generate test WAV
+        run: |
+          python3 - <<'PY'
+          import wave, struct, math
+          with wave.open('examples/player/music/ci_beep.wav', 'wb') as w:
+              w.setnchannels(1); w.setsampwidth(2); w.setframerate(22050)
+              w.writeframes(b''.join(
+                  struct.pack('<h', int(12000*math.sin(2*math.pi*440*t/22050)))
+                  for t in range(22050//4)))
+          PY
+      - name: Build player (SDL target)
+        run: RU_HEADLESS_SMOKE=1 python3 -m rulang build examples/ruui-player.ru -t sdl -o /tmp/player
+      - name: Headless smoke run
+        run: SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy RU_SMOKE_FRAMES=6 /tmp/player
   emacs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
