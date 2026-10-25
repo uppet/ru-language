@@ -13,6 +13,7 @@ from rulang import __version__
 from rulang.cli import main, report
 from rulang.diagnostics import SourceOrigin, diagnostic
 from rulang.frontend import RuError, parse
+from rulang.execution_budget import current_budget, DEFAULT_BUDGET_POLICY
 from rulang.graphics_runtime import GraphicsHost
 from rulang.generation import generation_system_prompt
 from rulang.interpreter import Interpreter
@@ -34,28 +35,28 @@ class GraphicsBudgetDiagnosticsTests(unittest.TestCase):
 
     def handle_samples(self, *, count=0, started=0., sampled=0., allocated=0,
                        clock=None, invoke_error=None):
-        """Feed exact line events and measured values through the real guard.
+        """Feed exact semantic charges and measured values through the real guard.
 
-        Only the deterministic tests fake sampling/tracing. Real-example and full
+        Only the deterministic tests fake clock/allocation samples. Real-example and full
         regression runs use the native unittest entry without any observer.
         """
-        self.traces, self.seen = [], 0
+        self.seen = 0
+        self.invoked = False
         old_trace = sys.gettrace()
-        # The guard samples the allocation baseline once at callback start;
-        # feed that first sample the untouched baseline, later ones the growth.
-        memory_calls = []
+        # Baseline and entry safe point precede invocation. Only samples after
+        # invocation observe the injected growth; an exception must not sample it.
         def memory():
             base = self.host.memory_start
-            memory_calls.append(1)
-            return (base, 0) if len(memory_calls) == 1 else (base + allocated, 0)
+            return (base + allocated, 0) if self.invoked else (base, 0)
         def invoke(*args):
+            self.invoked = True
             for self.seen in range(1, count + 1):
-                self.traces[0](None, 'line', None)
+                current_budget().charge('expr')
             if invoke_error is not None:
                 raise invoke_error
         if clock is None:
-            clock = lambda: started if not self.traces else sampled
-        with patch('rulang.graphics_runtime.sys.settrace', side_effect=self.traces.append), \
+            clock = lambda: sampled if self.invoked else started
+        with patch('sys.settrace') as settrace, \
              patch('rulang.graphics_runtime.time.monotonic', side_effect=clock) as timer, \
              patch('rulang.graphics_runtime.tracemalloc.get_traced_memory',
                    side_effect=memory) as memory_patch, \
@@ -64,8 +65,10 @@ class GraphicsBudgetDiagnosticsTests(unittest.TestCase):
                 self.host.handle({'type': 'frame'})
             finally:
                 self.timer_calls, self.memory_calls = timer.call_count, memory_patch.call_count
-                self.assertEqual(len(self.traces), 2)
-                self.assertIs(self.traces[-1], old_trace)
+                settrace.assert_not_called()
+                self.assertIs(sys.gettrace(), old_trace)
+                self.assertIsNone(current_budget())
+                self.assertTrue(self.host.budget_snapshot.closed)
 
     def assert_closed_with(self, text):
         self.assertIsNone(self.host.canvas)
@@ -77,7 +80,7 @@ class GraphicsBudgetDiagnosticsTests(unittest.TestCase):
     def test_exact_wall_limit_is_allowed(self):
         self.handle_samples(sampled=1.)
         self.assertIsNotNone(self.host.canvas)
-        self.assertEqual((self.timer_calls, self.memory_calls), (2, 2))
+        self.assertEqual((self.timer_calls, self.memory_calls), (4, 4))
 
     def test_just_below_wall_limit_is_allowed(self):
         self.handle_samples(sampled=math.nextafter(1., 0.))
@@ -85,19 +88,19 @@ class GraphicsBudgetDiagnosticsTests(unittest.TestCase):
 
     def test_just_above_wall_limit_reports_unrounded_sample_once(self):
         sampled = math.nextafter(1., math.inf)
-        clock_values = iter((0., sampled))  # A second diagnostic sample is an error.
+        clock_values = iter((0., 0., sampled))  # A second diagnostic sample is an error.
         with self.assertRaises(RuError) as caught:
             self.handle_samples(clock=lambda: next(clock_values))
         self.assertEqual(caught.exception.message,
                          f'如观回调超过时间预算（实际约 {sampled!r} 秒墙钟耗时，阈值 1 秒）；已关闭交互，请简化回调后重跑')
-        self.assertEqual((self.timer_calls, self.memory_calls), (2, 1))
+        self.assertEqual((self.timer_calls, self.memory_calls), (3, 2))
         self.assert_closed_with(caught.exception.message)
 
     def test_wall_diagnostic_uses_nonzero_start_and_original_deadline_comparison(self):
         with self.assertRaises(RuError) as caught:
             self.handle_samples(started=1000.25, sampled=1001.5)
         self.assertIn('实际约 1.25 秒墙钟耗时，阈值 1 秒', caught.exception.message)
-        self.assertEqual(self.timer_calls, 2)
+        self.assertEqual(self.timer_calls, 3)
 
     def test_rounded_elapsed_difference_explains_strict_deadline_overrun(self):
         started = math.nextafter(.5, math.inf)
@@ -108,66 +111,74 @@ class GraphicsBudgetDiagnosticsTests(unittest.TestCase):
             self.handle_samples(started=started, sampled=sampled)
         self.assertEqual(caught.exception.message,
                          '如观回调超过时间预算（实际约 1.0 秒墙钟耗时，阈值 1 秒；微小超限差额经浮点运算舍入）；已关闭交互，请简化回调后重跑')
-        self.assertEqual(self.timer_calls, 2)
+        self.assertEqual(self.timer_calls, 3)
 
-    def test_exact_line_limit_is_allowed(self):
-        self.handle_samples(count=500000)
-        self.assertEqual(self.seen, 500000)
-        self.assertEqual(self.timer_calls, 1 + 500000 // 128 + 1)
-        self.assertEqual(self.memory_calls, 500000 // 128 + 2)
+    def test_exact_work_limit_is_allowed(self):
+        limit = DEFAULT_BUDGET_POLICY.work_limit
+        self.handle_samples(count=limit)
+        self.assertEqual(self.seen, limit)
+        self.assertEqual(self.timer_calls, 4 + limit // 256)
+        self.assertEqual(self.memory_calls, 4 + limit // 256)
+        self.assertEqual(self.host.budget_snapshot.charged_units, limit)
         self.assertIsNotNone(self.host.canvas)
 
-    def test_final_check_reports_one_line_over(self):
+    def test_one_work_unit_over_is_rejected_before_execution(self):
+        limit = DEFAULT_BUDGET_POLICY.work_limit
         with self.assertRaises(RuError) as caught:
-            self.handle_samples(count=500001)
+            self.handle_samples(count=limit + 1)
         self.assertEqual(caught.exception.message,
-                         '如观回调超过执行行预算（实际 500001 Python 跟踪行，阈值 500000 行）；已关闭交互，请简化回调后重跑')
-        self.assertEqual(self.seen, 500001)
-        # The failing line guard still short-circuits the clock and memory reads.
-        self.assertEqual(self.timer_calls, 1 + 500001 // 128)
-        self.assertEqual(self.memory_calls, 500001 // 128 + 1)
+                         f'如观回调超过逻辑工作预算（已收费 {limit} 工作单位，本次拟收费后 {limit + 1} 工作单位，阈值 {limit} 工作单位；模型 logical-work-v2）；已关闭交互，请简化回调后重跑')
+        self.assertEqual(self.seen, limit + 1)
+        self.assertEqual(self.host.budget_snapshot.charged_units, limit)
+        self.assertEqual(self.timer_calls, 2 + limit // 256)
+        self.assertEqual(self.memory_calls, 2 + limit // 256)
         self.assert_closed_with(caught.exception.message)
 
-    def test_in_callback_line_check_still_occurs_at_500096(self):
+    def test_in_callback_work_check_does_not_wait_for_sample_cadence(self):
+        limit = DEFAULT_BUDGET_POLICY.work_limit
         with self.assertRaises(RuError) as caught:
-            self.handle_samples(count=500200)
-        self.assertEqual(self.seen, 500096)
-        self.assertIn('实际 500096 Python 跟踪行，阈值 500000 行', caught.exception.message)
+            self.handle_samples(count=limit + 200)
+        self.assertEqual(self.seen, limit + 1)
+        self.assertIn(f'本次拟收费后 {limit + 1} 工作单位', caught.exception.message)
 
-    def test_line_priority_when_time_and_memory_also_exceed_at_final_check(self):
-        def clock():
-            return 2. if self.seen > 500000 else 0.
-        # Earlier checks are within all budgets; all three would be over at the
-        # final check, but the original line-first short circuit must still win.
-        def memory():
-            return self.host.memory_start + (67108865 if self.seen > 500000 else 0), 0
-        traces = []
-        def invoke(*args):
-            for self.seen in range(1, 500002):
-                traces[0](None, 'line', None)
+    def test_work_priority_when_time_and_memory_also_exceed(self):
+        limit = DEFAULT_BUDGET_POLICY.work_limit
         self.seen = 0
-        with patch('rulang.graphics_runtime.sys.settrace', side_effect=traces.append), \
+        def clock():
+            return 2. if self.seen > limit else 0.
+        # Work precharge short-circuits sampling even if both other budgets
+        # would be over; no operation executes for the rejected charge.
+        def memory():
+            return self.host.memory_start + (67108865 if self.seen > limit else 0), 0
+        def invoke(*args):
+            for self.seen in range(1, limit + 2):
+                current_budget().charge('expr')
+        old_trace = sys.gettrace()
+        with patch('sys.settrace') as trace, \
              patch('rulang.graphics_runtime.time.monotonic', side_effect=clock) as timer, \
              patch('rulang.graphics_runtime.tracemalloc.get_traced_memory', side_effect=memory) as allocation, \
              patch.object(self.interpreter, 'invoke_value', side_effect=invoke):
             with self.assertRaises(RuError) as caught:
                 self.host.handle({'type': 'frame'})
-        self.assertIn('执行行预算', caught.exception.message)
+        self.assertIn('逻辑工作预算', caught.exception.message)
         self.assertNotIn('时间预算', caught.exception.message)
-        self.assertEqual(timer.call_count, 1 + 500000 // 128)
-        self.assertEqual(allocation.call_count, 500000 // 128 + 1)
-        self.assertEqual(len(traces), 2)
+        self.assertEqual(timer.call_count, 2 + limit // 256)
+        self.assertEqual(allocation.call_count, 2 + limit // 256)
+        trace.assert_not_called()
+        self.assertIs(sys.gettrace(), old_trace)
+        self.assertIsNone(current_budget())
+        self.assert_closed_with(caught.exception.message)
 
     def test_time_priority_when_memory_also_exceeds(self):
         with self.assertRaises(RuError) as caught:
             self.handle_samples(sampled=1.25, allocated=67108865)
         self.assertIn('时间预算', caught.exception.message)
-        self.assertEqual(self.memory_calls, 1)
+        self.assertEqual(self.memory_calls, 2)
 
     def test_exact_allocation_limit_is_allowed(self):
         self.handle_samples(allocated=67108864)
         self.assertIsNotNone(self.host.canvas)
-        self.assertEqual(self.memory_calls, 2)
+        self.assertEqual(self.memory_calls, 4)
 
     def test_just_below_allocation_limit_is_allowed(self):
         self.handle_samples(allocated=67108863)
@@ -178,7 +189,7 @@ class GraphicsBudgetDiagnosticsTests(unittest.TestCase):
             self.handle_samples(allocated=67108865)
         self.assertEqual(caught.exception.message,
                          '如观新增内存超过分配预算（实际 67108865 字节，阈值 67108864 字节／64 MiB）；已关闭交互，请减少数据后重跑')
-        self.assertEqual(self.memory_calls, 2)
+        self.assertEqual(self.memory_calls, 3)
         self.assert_closed_with(caught.exception.message)
 
     def test_callback_error_is_not_replaced_by_final_budget_check(self):
@@ -186,7 +197,11 @@ class GraphicsBudgetDiagnosticsTests(unittest.TestCase):
         with self.assertRaises(RuError) as caught:
             self.handle_samples(sampled=2., allocated=67108865, invoke_error=original)
         self.assertIs(caught.exception, original)
-        self.assertEqual((self.timer_calls, self.memory_calls), (1, 1))
+        self.assertTrue(self.invoked)
+        # Two pre-invocation samples only: baseline + entry safe point.
+        # Any post-error sample would see 2 seconds / 64 MiB + 1 and fail
+        # this identity or count assertion, rather than hiding the user error.
+        self.assertEqual((self.timer_calls, self.memory_calls), (2, 2))
         self.assertIsNone(self.host.canvas)
 
     def test_budget_failure_preserves_provenance_and_cli_header(self):
@@ -197,8 +212,8 @@ class GraphicsBudgetDiagnosticsTests(unittest.TestCase):
         self.assertEqual(detail['source'], self.origin.metadata())
         self.assertEqual(detail['source_name'], self.origin.source_name)
         self.assertEqual((detail['line'], detail['col']), (self.node.token.line, self.node.token.col))
-        self.assertEqual(detail['category'], '运行错误')
-        prefix = f'{self.origin.source_name}:{self.node.token.line}:{self.node.token.col}: error: 运行错误：'
+        self.assertEqual(detail['category'], '预算错误')
+        prefix = f'{self.origin.source_name}:{self.node.token.line}:{self.node.token.col}: error: 预算错误：'
         self.assertEqual(detail['formatted'], prefix + error.message)
         self.assertNotIn(self.code, error.message)
         stdout, stderr = io.StringIO(), io.StringIO()
@@ -209,7 +224,7 @@ class GraphicsBudgetDiagnosticsTests(unittest.TestCase):
 
     def test_callback_never_tightens_process_address_space_limit(self):
         # Process-wide quotas belong at the session boundary; the callback
-        # guard is the portable trace budget only, so handle() must not
+        # guard is the portable logical/time/allocation budget only, so handle() must not
         # touch RLIMIT_AS at all (no tightening, no restore, no restore-failure
         # mode), whatever the ambient process usage is.
         try:
@@ -343,9 +358,9 @@ class GraphicsBudgetPromptTests(unittest.TestCase):
                 self.assertEqual(stderr.getvalue(), '')
                 self.assertEqual(prompt.count(spec), 1)
                 self.assertIn(hashlib.sha256(raw).hexdigest(), prompt)
-                for text in ('预算诊断（0.19.7／如书 0.8.7）',
-                             '每 128 个宿主 Python 跟踪行', '执行行不是如源码行',
-                             '执行行超限先短路', '不在构造消息时再次读钟',
+                for text in ('预算诊断（逻辑工作候选；历史诊断始于 0.19.7／如书 0.8.7）',
+                             'logical-work-v2', '每个原子批量操作',
+                             '逻辑工作超限先短路', '不在构造消息时再次读钟',
                              '实际约 1.0000000000000002 秒墙钟耗时，阈值 1 秒',
                              '阈值 67108864 字节／64 MiB', '达到配置的等待上限',
                              '不能伪称观测到了 Worker 实际执行耗时', '根因尚未定位'):

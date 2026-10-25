@@ -4,6 +4,7 @@ Only ``sync_dependencies`` performs network I/O. The lock records a complete
 single-version graph; immutable cache trees are content-checked before imports.
 """
 from __future__ import annotations
+from .execution_budget import charge, bulk, check_budget, guard_budget, checked_operation, items as budget_items
 
 import bz2
 import gzip
@@ -53,7 +54,7 @@ def _error(message, manifest=None):
 def _version(value):
     if not isinstance(value, str) or len(value) > 80 or not re.fullmatch(VERSION, value):
         raise _error('版本须为无前导零的三段整数，例如 1.2.3')
-    return tuple(int(part) for part in value.split('.'))
+    return tuple(int(part) for part in budget_items(value.split('.')))
 
 
 def validate_constraint(constraint):
@@ -63,6 +64,7 @@ def validate_constraint(constraint):
         _version(constraint)
         return
     for part in constraint.split():
+        charge("helper_item")
         if len(part) > 82 or not re.fullmatch(r'(?:>=|<=|>|<|=)' + VERSION, part):
             raise _error('版本约束仅支持三段 exact 或空格分隔比较区间，例如 >=1.0.0 <2.0.0')
 
@@ -73,6 +75,7 @@ def version_satisfies(version, constraint):
     if re.fullmatch(VERSION, constraint):
         return value == _version(constraint)
     for part in constraint.split():
+        charge("helper_item")
         match = re.fullmatch(r'(>=|<=|>|<|=)(' + VERSION + ')', part)
         other = _version(match[2])
         if not {'>=': value >= other, '<=': value <= other, '>': value > other,
@@ -82,7 +85,7 @@ def version_satisfies(version, constraint):
 
 
 def validate_https_url(url):
-    if not isinstance(url, str) or any(ord(char) < 33 for char in url) or '\\' in url or '?' in url or '#' in url:
+    if not isinstance(url, str) or any(ord(char) < 33 for char in budget_items(url)) or '\\' in url or '?' in url or '#' in url:
         raise _error('远程来源须为有效 HTTPS URL，不能含凭据、查询参数或片段')
     try:
         parts = urlsplit(url)
@@ -96,11 +99,11 @@ def validate_https_url(url):
         # remain supported for registry package names, then canonicalized.
         if '%' in host or re.search(r'%(?![0-9A-Fa-f]{2})', parts.path):
             raise ValueError()
-        if any(int(code, 16) < 128 for code in re.findall(r'%([0-9A-Fa-f]{2})', parts.path)):
+        if any(int(code, 16) < 128 for code in budget_items(re.findall(r'%([0-9A-Fa-f]{2})', parts.path))):
             raise ValueError()
         decoded = unquote(parts.path, encoding='utf-8', errors='strict')
-        if (any(part in ('.', '..') for part in decoded.split('/')) or '//' in decoded
-                or any(ord(char) < 33 for char in decoded) or any(char in decoded for char in '\\%?#')):
+        if (any(part in ('.', '..') for part in budget_items(decoded.split('/'))) or '//' in decoded
+                or any(ord(char) < 33 for char in budget_items(decoded)) or any(char in decoded for char in budget_items('\\%?#'))):
             raise ValueError()
         path = quote(decoded, safe="/-._~!$&'()*+,;=:@").rstrip('/')
         if ':' in host:
@@ -115,7 +118,7 @@ def validate_https_url(url):
 def _git_url(url):
     if isinstance(url, str) and url.startswith('https://'):
         return validate_https_url(url)
-    if not isinstance(url, str) or any(ord(c) < 33 for c in url) or '\\' in url:
+    if not isinstance(url, str) or any(ord(c) < 33 for c in budget_items(url)) or '\\' in url:
         raise _error('Git 来源仅支持不含密码的 HTTPS 或 SSH')
     # Conventional scp-style SSH URLs are accepted; their user is an SSH login,
     # never a password or token. Arguments are never passed through a shell.
@@ -129,7 +132,7 @@ def _git_url(url):
         _ = parts.port
         if (parts.scheme != 'ssh' or not parts.hostname or parts.hostname.startswith('-') or parts.password is not None
                 or parts.query or parts.fragment or not parts.path or parts.path.startswith('/-')
-                or '%' in url or '//' in parts.path or any(part in ('.', '..') for part in parts.path.split('/'))
+                or '%' in url or '//' in parts.path or any(part in ('.', '..') for part in budget_items(parts.path.split('/')))
                 or (parts.username is not None and (parts.username.startswith('-') or not re.fullmatch(r'[A-Za-z0-9._-]+', parts.username)))):
             raise ValueError()
         return url.rstrip('/')
@@ -167,8 +170,8 @@ def _subdir(value):
     if value in ('', '.'):
         return ''
     if (not isinstance(value, str) or '\\' in value or ':' in value or value.startswith('/')
-            or any(part in ('', '.', '..') for part in value.split('/'))
-            or any(ord(c) < 32 for c in value)):
+            or any(part in ('', '.', '..') for part in budget_items(value.split('/')))
+            or any(ord(c) < 32 for c in budget_items(value))):
         raise _error('Git 子目录必须为仓库内的相对路径')
     return value
 
@@ -193,7 +196,7 @@ def validate_dependency(descriptor):
         raise _error('每项依赖必须且只能选择 路径、Git、目录 之一')
     source = next(iter(sources))
     allowed = {'路径': {'路径'}, 'Git': {'Git', '引用', '子目录'}, '目录': {'目录', '包', '版'}}[source]
-    if set(descriptor) - allowed or not all(isinstance(value, str) and value for value in descriptor.values()):
+    if set(descriptor) - allowed or not all(isinstance(value, str) and value for value in budget_items(descriptor.values())):
         raise _error('依赖来源字段未知或不是非空字符串')
     if source == '路径':
         _native_path(descriptor[source])
@@ -201,8 +204,8 @@ def validate_dependency(descriptor):
         _git_url(descriptor[source])
         _subdir(descriptor.get('子目录', '.'))
         ref = descriptor.get('引用', 'HEAD')
-        if (ref.startswith('-') or any(c.isspace() or ord(c) < 32 for c in ref)
-                or any(c in ref for c in ('..', '~', '^', ':', '?', '*', '[', '\\', '@{'))):
+        if (ref.startswith('-') or any(c.isspace() or ord(c) < 32 for c in budget_items(ref))
+                or any(c in ref for c in budget_items(('..', '~', '^', ':', '?', '*', '[', '\\', '@{')))):
             raise _error('Git 引用须为分支、标签或完整 commit，不能含修订表达式')
     else:
         if set(descriptor) != allowed:
@@ -386,6 +389,7 @@ def _json_bytes(value):
     return (json.dumps(value, ensure_ascii=False, sort_keys=True, indent=2) + '\n').encode('utf-8')
 
 
+@checked_operation
 def _read_json(path):
     try:
         with Path(path).open('rb') as stream:
@@ -395,10 +399,12 @@ def _read_json(path):
         def pairs(entries):
             result = {}
             for key, value in entries:
+                charge("helper_item")
                 if key in result:
                     raise ValueError()
                 result[key] = value
             return result
+        bulk(len(data))
         result = json.loads(data, object_pairs_hook=pairs)
         if not isinstance(result, dict):
             raise ValueError()
@@ -426,18 +432,22 @@ def _atomic_json(path, value):
         temp.unlink(missing_ok=True)
 
 
+@checked_operation
 def _tree_digests(root, algorithm):
     root = Path(root)
     files, payloads, total, entries = [], [], 0, 0
     for parent, directories, names in os.walk(root, followlinks=False):
+        charge("helper_item")
         entries += len(directories) + len(names)
         if entries > MAX_ENTRIES:
             raise _error('包缓存超过安全条目限制')
         for name in directories + names:
+            charge("helper_item")
             path = Path(parent) / name
             if path.is_symlink():
                 raise _error('包缓存含符号链接；请运行 ru deps sync')
         for name in names:
+            charge("helper_item")
             path = Path(parent) / name
             if not path.is_file():
                 raise _error('包缓存含特殊文件；请运行 ru deps sync')
@@ -445,19 +455,24 @@ def _tree_digests(root, algorithm):
             if len(files) > MAX_ENTRIES:
                 raise _error('包缓存超过安全条目限制')
     for path in files:
+        charge("helper_item")
         with path.open('rb') as stream:
             data = stream.read(MAX_FILE_BYTES + 1)
         total += len(data)
         if len(data) > MAX_FILE_BYTES or total > MAX_UNPACKED_BYTES:
             raise _error('包缓存超过安全大小限制')
+        bulk(len(data))
         payloads.append((path.relative_to(root).as_posix(), hashlib.sha256(data).digest()))
+        check_budget()
     # Untagged public 0.22 locks used native pathlib component ordering.
     # Read/validate bytes once, then compose exactly the two historical orders.
     keys = (PurePosixPath, PureWindowsPath) if algorithm is None else (str,)
     results = []
     for key in keys:
+        charge("helper_item")
         digest = hashlib.sha256()
         for name, file_digest in sorted(payloads, key=lambda item: key(item[0])):
+            charge("helper_item")
             digest.update(name.encode('utf-8') + b'\0' + file_digest + b'\0')
         results.append(digest.hexdigest())
     return results
@@ -596,9 +611,11 @@ def _record_cache_key(record):
             raise ValueError()
         return key
     except (RuError, TypeError, ValueError, AttributeError):
+        guard_budget()
         raise _error('远程依赖锁的来源、版本或缓存身份无效；请运行 ru deps sync') from None
 
 
+@checked_operation
 def _validate_cached(record, cache):
     from .packages import load_manifest
     key = _record_cache_key(record)
@@ -608,6 +625,7 @@ def _validate_cached(record, cache):
     try:
         manifest = load_manifest(root)
     except RuError:
+        guard_budget()
         raise _error('缓存集录无效；请运行 ru deps sync') from None
     if manifest.name != record['name'] or manifest.version != record['version']:
         raise _error('缓存集录包名或版本与依赖锁不符；请运行 ru deps sync')
@@ -619,12 +637,14 @@ def _lock_error(message, manifest=None):
     return _error(message + '；锁定恢复未重新选版，需要重选时请运行 ru deps sync --update', manifest)
 
 
+@checked_operation
 def _manifest_digest(manifest):
     from .packages import MAX_MANIFEST_BYTES
     with manifest.path.open('rb') as stream:
         data = stream.read(MAX_MANIFEST_BYTES + 1)
     if len(data) > MAX_MANIFEST_BYTES:
         raise _lock_error('集录超过大小限制', manifest)
+    bulk(len(data))
     return _sha(data)
 
 
@@ -759,21 +779,24 @@ def _ensure_locked_cache(record, cache):
 
 def _path_portability(owners, packages, edges):
     """Conservative whole-graph portability, independent of alias traversal."""
-    records = {record['identity']: record for record in packages}
-    children = {owner: [] for owner in owners}
+    records = {record['identity']: record for record in budget_items(packages)}
+    children = {owner: [] for owner in budget_items(owners)}
     blocked = set()
     for edge in edges:
+        charge("helper_item")
         target = records[edge['identity']]['owner']
         children[edge['owner']].append(target)
         if '路径' in edge['descriptor'] and _native_path(edge['descriptor']['路径']).is_absolute():
             blocked.add(target)
     pending = list(blocked)
     while pending:
+        charge("helper_item")
         for target in children[pending.pop()]:
+            charge("helper_item")
             if target not in blocked:
                 blocked.add(target)
                 pending.append(target)
-    return {owner: owner not in blocked for owner in owners}
+    return {owner: owner not in blocked for owner in budget_items(owners)}
 
 
 class _LockedGraph:
@@ -786,6 +809,7 @@ class _LockedGraph:
             self._structure()
             self.check_manifest('root', root)
         except RuError as error:
+            guard_budget()
             if '--update' in str(error):
                 raise
             raise _lock_error('依赖锁记录、约束或定位无效', root) from None
@@ -803,6 +827,7 @@ class _LockedGraph:
                 or not isinstance(edges, list) or len(edges) > MAX_PACKAGES * MAX_PACKAGES):
             raise _lock_error('依赖锁图结构或数量无效')
         for owner_id, value in owners.items():
+            charge("helper_item")
             if (not isinstance(owner_id, str) or not isinstance(value, dict)
                     or set(value) != {'locator', 'manifest_sha256'} or not isinstance(value['locator'], dict)
                     or _owner_id(value['locator']) != owner_id or not isinstance(value['manifest_sha256'], str)
@@ -812,6 +837,7 @@ class _LockedGraph:
             raise _lock_error('依赖锁缺少工程根')
         self.owners = owners
         for record in packages:
+            charge("helper_item")
             if not isinstance(record, dict) or record.get('owner') not in owners or record['owner'] == 'root':
                 raise _lock_error('依赖锁包 owner 无效')
             owner_id, kind, identity = record['owner'], record.get('kind'), record.get('identity')
@@ -840,6 +866,7 @@ class _LockedGraph:
         if set(self.by_owner) != set(owners) - {'root'}:
             raise _lock_error('依赖锁存在未绑定的 owner')
         for edge in edges:
+            charge("helper_item")
             if (not isinstance(edge, dict) or set(edge) != {'owner', 'alias', 'descriptor', 'identity'}
                     or edge.get('owner') not in owners or not isinstance(edge.get('alias'), str)
                     or edge.get('identity') not in self.records):
@@ -855,6 +882,7 @@ class _LockedGraph:
                 raise _lock_error('远程包不能锁定绝对路径依赖')
             self.edges[key] = edge
         for owner_id, entry in owners.items():
+            charge("helper_item")
             locator = entry['locator']
             if locator['kind'] == 'via':
                 edge = self.edges.get((locator['owner'], locator['alias']))
@@ -872,6 +900,7 @@ class _LockedGraph:
                 return
             active.add(owner_id)
             for (source, _), edge in self.edges.items():
+                charge("helper_item")
                 if source == owner_id:
                     walk(self.records[edge['identity']]['owner'])
             active.remove(owner_id)
@@ -881,13 +910,14 @@ class _LockedGraph:
             raise _lock_error('依赖锁存在不可达节点')
         portable = _path_portability(owners, packages, edges)
         for record in packages:
+            charge("helper_item")
             if record['kind'] == 'path' and record['portable'] != portable[record['owner']]:
                 raise _lock_error('路径可搬迁标记与完整声明图不符')
 
     def check_manifest(self, owner_id, manifest):
         if _manifest_digest(manifest) != self.owners[owner_id]['manifest_sha256']:
             raise _lock_error('集录指纹已改变', manifest)
-        expected = {alias: edge['descriptor'] for (owner, alias), edge in self.edges.items() if owner == owner_id}
+        expected = {alias: edge['descriptor'] for (owner, alias), edge in budget_items(self.edges.items()) if owner == owner_id}
         if manifest.dependencies != expected:
             raise _lock_error('集录依赖与锁声明边不符', manifest)
         record = self.by_owner.get(owner_id)
@@ -910,6 +940,7 @@ class _LockedGraph:
         return None
 
     def locate(self, owner_id):
+        charge("helper_item")
         from .packages import load_manifest
         if owner_id in self.resolved:
             return self.resolved[owner_id]
@@ -941,6 +972,7 @@ class _LockedGraph:
             return 'root'
         matches = []
         for owner_id, entry in self.owners.items():
+            charge("helper_item")
             if owner_id == 'root':
                 continue
             locator = entry['locator']
@@ -951,6 +983,7 @@ class _LockedGraph:
             try:
                 candidate = self.locate(owner_id)
             except RuError:
+                guard_budget()
                 if locator['kind'] == 'cache':
                     raise
                 continue
@@ -1167,6 +1200,7 @@ def sync_dependencies(directory='.', *, cache_dir=None, locked=False, update=Fal
         raise _error('依赖同步失败；原有锁文件及有效缓存保持不变', root) from None
 
 
+@checked_operation
 def resolve_cached_dependency(owner_manifest, alias, descriptor, *, project_root=None, cache_dir=None):
     """Resolve using the current machine's cache, without any network calls."""
     from .packages import load_manifest
@@ -1181,6 +1215,7 @@ def resolve_cached_dependency(owner_manifest, alias, descriptor, *, project_root
         try:
             lock = _read_json(path)
         except RuError:
+            guard_budget()
             raise _lock_error('依赖锁缺失或损坏；请运行 ru deps sync', owner_manifest) from None
         graph = _LockedGraph(root, lock, _cache_dir(cache_dir))
         owner_id = graph.owner_for(owner_manifest)
@@ -1195,6 +1230,7 @@ def resolve_cached_dependency(owner_manifest, alias, descriptor, *, project_root
             raise _lock_error('依赖缓存与 owner 定位不符', owner_manifest)
         return path
     except RuError:
+        guard_budget()
         raise
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
         raise _lock_error('依赖锁或缓存缺失／过期', owner_manifest) from None

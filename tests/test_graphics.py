@@ -87,11 +87,15 @@ class GraphicsTests(unittest.TestCase):
         with self.assertRaisesRegex(RuError,'预算'): self.host.handle({'type':'frame'})
         self.assertIsNone(self.host.snapshot())
         self.assertEqual(self.interpreter.global_scope.values['保留'],7.)
-    def test_callback_limits_are_tenfold_with_other_quotas_unchanged(self):
+    def test_logical_budget_keeps_wall_memory_watchdog_and_other_quotas(self):
         from rulang import graphics_runtime as runtime
         from rushu.kernel import GRAPHICS_TIMEOUT
         self.assertEqual(runtime.MAX_CALLBACK_SECONDS, 1.0)
-        self.assertEqual(runtime.MAX_CALLBACK_LINES, 500000)
+        from rulang.execution_budget import DEFAULT_BUDGET_POLICY
+        self.assertEqual(DEFAULT_BUDGET_POLICY.work_limit, 262144)
+        self.assertEqual(DEFAULT_BUDGET_POLICY.sample_every, 256)
+        self.assertEqual(DEFAULT_BUDGET_POLICY.model_version, 'logical-work-v2')
+        self.assertFalse(DEFAULT_BUDGET_POLICY.calibration_only)
         self.assertEqual(GRAPHICS_TIMEOUT, 10.0)
         self.assertEqual(GRAPHICS_TIMEOUT / runtime.MAX_CALLBACK_SECONDS, 10)
         self.assertEqual(runtime.MAX_GRAPHICS_MEMORY, 64 * 1024 * 1024)
@@ -99,7 +103,7 @@ class GraphicsTests(unittest.TestCase):
         self.assertEqual(runtime.MAX_FRAME_BYTES, 262144)
 
     def advance_callback_clock(self, seconds):
-        # Real interpreter callback/trace, deterministic elapsed time. Do not
+        # Real interpreter callback/safe points, deterministic elapsed time. Do not
         # use scheduler sleep accuracy as a proxy for the production deadline.
         from contextlib import ExitStack
         clock = [0.0]
@@ -141,63 +145,55 @@ class GraphicsTests(unittest.TestCase):
         self.run_ru('显 42.')
         self.assertEqual(self.output.getvalue(), '42\n')
 
-    def test_line_budget_survives_old_limit_and_stops_at_new_limit(self):
+    def test_work_budget_allows_finite_work_and_stops_empty_loop(self):
+        from rulang.execution_budget import current_budget
         self.canvas('图 其 每帧 (作 帧: 图 其 线 0 0 1 1. 为).')
         invoke = self.interpreter.invoke_value
-        def traced_work(*args):
-            # Two traced Python lines per iteration; elapsed time is isolated.
+        def semantic_work(*args):
             for _ in range(30000):
-                pass
+                current_budget().charge('helper_item')
             return invoke(*args)
         with patch('rulang.graphics_runtime.time.monotonic', return_value=0):
-            with patch.object(self.interpreter, 'invoke_value', side_effect=traced_work):
+            with patch.object(self.interpreter, 'invoke_value', side_effect=semantic_work):
                 self.host.handle({'type': 'frame'})
             self.assertIsNotNone(self.host.snapshot())
             self.run_ru('图 其 每帧 (作 帧: 循 环. 为).')
-            with self.assertRaisesRegex(RuError, '执行行预算.*阈值 500000 行'):
+            with self.assertRaisesRegex(RuError, '逻辑工作预算.*阈值 262144 工作单位'):
                 self.host.handle({'type': 'frame'})
         self.assertIsNone(self.host.snapshot())
+        self.assertIsNone(current_budget())
 
-    def test_exact_trace_counter_boundaries_and_check_cadence(self):
-        # Supply exact line events without tracing unittest/mock infrastructure.
-        # Production sys.settrace still covers all Python frames unchanged.
-        for count in (0, 127, 128, 129, 499999, 500000, 500001, 500096):
+    def test_exact_logical_counter_boundaries_and_check_cadence(self):
+        from rulang.execution_budget import current_budget, DEFAULT_BUDGET_POLICY
+        limit, cadence = DEFAULT_BUDGET_POLICY.work_limit, DEFAULT_BUDGET_POLICY.sample_every
+        for count in (0, cadence - 1, cadence, cadence + 1,
+                      limit - 1, limit, limit + 1, limit + cadence):
             with self.subTest(count=count):
                 self.canvas('图 其 每帧 (作 帧: 为).')
-                traces = []
                 seen = 0
+                old_trace = sys.gettrace()
                 def invoke(*args):
                     nonlocal seen
-                    trace = traces[0]
                     for seen in range(1, count + 1):
-                        trace(None, 'line', None)
-                with patch('rulang.graphics_runtime.sys.settrace', side_effect=traces.append), \
-                     patch('rulang.graphics_runtime.time.monotonic', return_value=0), \
+                        current_budget().charge('expr')
+                with patch('sys.settrace') as trace, \
+                     patch('rulang.graphics_runtime.time.monotonic', return_value=0) as clock, \
                      patch.object(self.interpreter, 'invoke_value', side_effect=invoke):
-                    if count <= 500000:
+                    if count <= limit:
                         self.host.handle({'type': 'frame'})
                         self.assertIsNotNone(self.host.canvas)
+                        self.assertEqual(clock.call_count, 4 + count // cadence)
                     else:
-                        with self.assertRaisesRegex(RuError, '500000 行'):
+                        with self.assertRaisesRegex(RuError, '262144 工作单位'):
                             self.host.handle({'type': 'frame'})
                         self.assertIsNone(self.host.canvas)
-                self.assertEqual(seen, count)
-                self.assertEqual(len(traces), 2)  # install and restore on both paths
-        # The previous implementation checks at multiples of 128, so the first
-        # in-callback failure is 500096; final check catches shorter overruns.
-        self.canvas('图 其 每帧 (作 帧: 为).')
-        traces = []
-        seen = 0
-        def invoke(*args):
-            nonlocal seen
-            for seen in range(1, 500200):
-                traces[0](None, 'line', None)
-        with patch('rulang.graphics_runtime.sys.settrace', side_effect=traces.append), \
-             patch('rulang.graphics_runtime.time.monotonic', return_value=0), \
-             patch.object(self.interpreter, 'invoke_value', side_effect=invoke):
-            with self.assertRaisesRegex(RuError, '500000 行'):
-                self.host.handle({'type': 'frame'})
-        self.assertEqual(seen, 500096)
+                        self.assertEqual(clock.call_count, 2 + limit // cadence)
+                self.assertEqual(seen, min(count, limit + 1))
+                self.assertEqual(self.host.budget_snapshot.charged_units, min(count, limit))
+                trace.assert_not_called()
+                self.assertIs(sys.gettrace(), old_trace)
+                self.assertIsNone(current_budget())
+                self.assertTrue(self.host.budget_snapshot.closed)
 
     def test_canvas_parameter_schema_is_immutable(self):
         from rulang.graphics_runtime import CANVAS_PARAMS

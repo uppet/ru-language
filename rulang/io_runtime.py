@@ -6,6 +6,8 @@ unlinks a symlink itself and never removes a directory. Listing includes only
 regular files, including symlinks to regular files, sorted by Unicode name.
 Every ordinary I/O failure is a 件作成果, never a language panic.
 """
+from .execution_budget import checked_member, checked_operation
+from .execution_budget import charge, bulk, check_budget, guard_budget, items as budget_items
 import errno
 import _io
 import math
@@ -92,9 +94,11 @@ def _invalid(message, number=errno.EINVAL):
     return OSError(number, message)
 
 
+@checked_operation
 def _text(value, label):
     if not isinstance(value, str):
         raise _invalid(label + "须为句")
+    bulk(len(value))
     if "\x00" in value:
         raise _invalid(label + "不能含 NUL")
     value.encode("utf-8", "strict")
@@ -108,7 +112,10 @@ def _path(receiver):
     return value
 
 
+@checked_operation
 def _decode(value):
+    if isinstance(value, (bytes, str)):
+        bulk(len(value))
     if isinstance(value, bytes):
         value = value.decode("utf-8", "strict")
     return _text(value, "文本")
@@ -164,6 +171,7 @@ def _with_file(path, operation, content=None, append=False):
     return _result(value, error, operation)
 
 
+@checked_operation
 def read_stream_line(stream):
     """Read/decode exactly one byte line, shared by 读, 读取 and the REPL.
 
@@ -179,7 +187,10 @@ def read_stream_line(stream):
         raise
 
 
+@checked_operation
 def _write_stream(stream, content):
+    if isinstance(content, str):
+        bulk(len(content))
     # TextIOWrapper can keep bytes after a failed flush, then fail again at
     # Python shutdown (exit 120). Actual process output uses checked raw writes
     # after flushing preceding output; injected/in-memory streams keep their
@@ -210,26 +221,29 @@ def _bind(owner, n, name, args, params, optional=0):
     """Allow a trailing optional argument without reserving common identifiers."""
     fail = lambda message: owner.fail(n, message)
     minimum = len(params) - optional
-    positional = any(key is None for key, _ in args)
+    positional = any(key is None for key, _ in budget_items(args))
     if positional:
-        if any(key is not None for key, _ in args):
+        if any(key is not None for key, _ in budget_items(args)):
             fail("同一次调用不能混用位置实参与命名实参")
         if not minimum <= len(args) <= len(params):
             fail(f"方法「{name}」需要 {minimum} 至 {len(params)} 个实参")
-        return {key: value for key, (_, value) in zip(params, args)}
+        return {key: value for key, (_, value) in budget_items(zip(params, args))}
     bound = {}
     for key, value in args:
+        charge("helper_item")
         if key not in params:
             fail(f"方法「{name}」未知实参：{key}")
         if key in bound:
             fail(f"重复的实参：{key}")
         bound[key] = value
     for key in params[:minimum]:
+        charge("helper_item")
         if key not in bound:
             fail(f"方法「{name}」缺少实参：{key}")
     return bound
 
 
+@checked_member('io_kind')
 def io_member(owner, n, receiver, name, args):
     """Return (handled, value); malformed call shapes remain language errors."""
     from .interpreter import Instance
@@ -240,6 +254,7 @@ def io_member(owner, n, receiver, name, args):
                "输入流": ("读",), "输出流": ("写",)}
     if name not in methods.get(kind, ()):
         return False, None
+    charge("call")
     params = ["内容", "追加"] if kind == "件" and name == "写" else ["内容"] if name == "写" else []
     bound = _bind(owner, n, name, args, params, optional=int(kind == "件" and name == "写"))
     try:
@@ -272,6 +287,7 @@ def io_member(owner, n, receiver, name, args):
             entries = []
             with os.scandir(path) as directory:
                 for entry in directory:
+                    charge("helper_item")
                     _text(entry.name, "文件名")
                     try:
                         mode = entry.stat(follow_symlinks=True).st_mode
@@ -283,7 +299,7 @@ def io_member(owner, n, receiver, name, args):
                     if stat.S_ISREG(mode):
                         entries.append(entry.name)
             values = [Instance(_BUILTIN_TYPES["件"], {"路径": os.path.join(path, entry)})
-                      for entry in sorted(entries)]
+                      for entry in budget_items(sorted(entries))]
             return True, _result(values)
         stream = receiver.io_stream
         if name == "读":

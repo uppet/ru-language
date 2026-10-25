@@ -1,4 +1,6 @@
 """Unicode lexer, recursive-descent/Pratt parser and structural validation."""
+from .execution_budget import checked_operation
+from .execution_budget import charge, bulk, check_budget, guard_budget, items as budget_items
 from dataclasses import dataclass
 import math
 import re
@@ -9,6 +11,11 @@ class RuError(Exception):
     def __init__(self, message, line=1, col=1, category="语法错误"):
         self.message, self.line, self.col, self.category = message, line, col, category
         super().__init__(message)
+
+
+class BudgetExceeded(RuError):
+    """Sticky host work/time/allocation failure, never a Ru Panic."""
+    pass
 
 
 class Incomplete(RuError):
@@ -72,9 +79,11 @@ def block_comment_end(source, index):
     return None if match is None else match.end()
 
 
+@checked_operation
 def lex(source):
     tokens, i, line, col = [], 0, 1, 1
     punct = {"。": ".", "：": ":", "（": "(", "）": ")", "，": ",", "［": "[", "］": "]", "｛": "{", "｝": "}"}
+    bulk(len(source))
     quotes = {"'": "'", '"': '"', "‘": "’", "“": "”"}
 
     def advance(text):
@@ -87,6 +96,7 @@ def lex(source):
             col += len(text)
 
     while i < len(source):
+        charge("helper_item")
         ch, startline, startcol = source[i], line, col
         if ch.isspace() or (i == 0 and ch == "\ufeff"):
             advance(ch)
@@ -106,6 +116,7 @@ def lex(source):
             advance(ch)
             value = []
             while i < len(source) and source[i] != endquote:
+                charge("helper_item")
                 c = source[i]
                 if c == "\\":
                     advance(c)
@@ -152,6 +163,7 @@ def lex(source):
         if ch == "_" or ch.isalpha():
             end = i+1
             while end < len(source) and (source[end] == "_" or source[end].isalnum()):
+                charge("helper_item")
                 end += 1
             raw = source[i:end]
             tokens.append(Token("NAME", raw, line, col))
@@ -195,6 +207,7 @@ class Parser:
         return self.current.kind != "STRING" and self.current.value == value
 
     def pop(self):
+        charge("helper_item")
         token = self.current
         if token.kind != "EOF":
             self.i += 1
@@ -228,6 +241,7 @@ class Parser:
             value += " 阵"
         return value
 
+    @checked_operation
     def parse(self, stops=()):
         self.depth += 1
         try:
@@ -264,6 +278,7 @@ class Parser:
         try:
             result = parse_body()
         except RuError as error:
+            guard_budget()
             self.callable_cache[key] = (error, self.i, self.depth)
             raise
         self.callable_cache[key] = (result, self.i, self.depth)
@@ -336,6 +351,7 @@ class Parser:
             return False
         offset = 2
         while True:
+            charge("helper_item")
             token = self.peek(offset)
             if token.kind != "NAME" or token.value in KEYWORDS:
                 return False
@@ -415,6 +431,7 @@ class Parser:
                 else:
                     self.i = save
             except RuError:
+                guard_budget()
                 self.i = save
             body = self.parse(("环",))
             closing = self.expect("环")
@@ -427,12 +444,14 @@ class Parser:
                 # An untyped header overlaps a reference's named call:
                 # `算 回 值:1.`. Prefer a complete declaration, but preserve
                 # an existing complete reference expression when no body closes.
+                guard_budget()
                 self.i = start
                 try:
                     expr = self.expression()
                     self.expect(".")
                     return node("expr", t, expr=expr)
                 except RuError:
+                    guard_budget()
                     raise declaration_error
         if self.isv("形"):
             return self.type_definition()
@@ -530,6 +549,7 @@ class Parser:
         Empty annotations are an internal sentinel, never a source type name.
         """
         while True:
+            charge("helper_item")
             token = self.peek(offset)
             if token.kind == "EOF":
                 return not require_colon
@@ -549,6 +569,7 @@ class Parser:
                     return False
                 offset += 1
                 while self.peek(offset).kind == "NAME" and self.peek(offset).value == "阵":
+                    charge("helper_item")
                     offset += 1
             token = self.peek(offset)
             if token.kind == "OP" and token.value == ",":
@@ -655,6 +676,7 @@ class Parser:
                 try:
                     left = self.literal(t)
                 except RuError as literal_error:
+                    guard_budget()
                     if not complete_header:
                         raise
                     # `算 回 值:1.` is also a viable untyped header prefix.
@@ -667,6 +689,7 @@ class Parser:
                             raise literal_error
                         return result
                     except RuError:
+                        guard_budget()
                         raise literal_error
             else:
                 left = self.reference(t)
@@ -750,6 +773,7 @@ class Parser:
         return left
 
 
+@checked_operation
 def parse(source, source_origin=None):
     try:
         parser = Parser(source)
@@ -761,6 +785,7 @@ def parse(source, source_origin=None):
             parser.fail("出现多余内容")
         return result
     except RuError as error:
+        guard_budget()
         locate(error, source_origin)
         raise
 
@@ -806,24 +831,25 @@ def bind_arguments(name, args, params, fail, optional=False):
     Values can be AST expressions (compiler) or evaluated values (interpreter).
     `optional` permits an omitted built-in argument (读／排序).
     """
-    positional = any(key is None for key, _ in args)
+    positional = any(key is None for key, _ in budget_items(args))
     if positional:
-        if any(key is not None for key, _ in args):
+        if any(key is not None for key, _ in budget_items(args)):
             fail("不能混用位置实参与命名实参")
         if len(args) != len(params):
             fail(f"函数「{name}」需要 {len(params)} 个位置实参（" +
                  "、".join(params) + f"），收到 {len(args)} 个" +
                  (EXCESS_ARGUMENT_HINT if len(args) > len(params) else ""))
-        return {key: value for key, (_, value) in zip(params, args)}
+        return {key: value for key, (_, value) in budget_items(zip(params, args))}
     values = {}
     for key, value in args:
+        charge("helper_item")
         if key in values:
             fail(f"重复的实参：{key}")
         values[key] = value
     if optional and not values:
         return values
-    missing = [key for key in params if key not in values]
-    unknown = [key for key in values if key not in params]
+    missing = [key for key in budget_items(params) if key not in values]
+    unknown = [key for key in budget_items(values) if key not in params]
     if missing or unknown:
         detail = []
         if missing:
@@ -835,6 +861,7 @@ def bind_arguments(name, args, params, fail, optional=False):
     return values
 
 
+@checked_operation
 def validate(program, existing_functions=(), existing_types=()):
     """Check declaration/control-flow structure without executing user code."""
     functions = set(existing_functions)
@@ -854,13 +881,13 @@ def validate(program, existing_functions=(), existing_types=()):
     def error(n, message):
         raise at_token(RuError(message, n.token.line, n.token.col), n.token)
 
-    declarations = [n for n in program if n.kind == "module_decl"]
+    declarations = [n for n in budget_items(program) if n.kind == "module_decl"]
     if len(declarations) > 1:
         error(declarations[1], "模块声明「吾 言」只能出现一次")
 
-    has_imports = any(n.kind == "import_all" for n in program)
+    has_imports = any(n.kind == "import_all" for n in budget_items(program))
     known_types = set(type_nodes) | set(existing_types) | BUILTIN_TYPES | {"数", "句", "阵", "对", "空", "算", "作", "典", "事实"}
-    known_bindings = {n.data["name"] for n in program if n.kind == "bind"}
+    known_bindings = {n.data["name"] for n in budget_items(program) if n.kind == "bind"}
 
     def check_type(n, typ):
         base = typ.split()[0]
@@ -870,6 +897,7 @@ def validate(program, existing_functions=(), existing_types=()):
     def local_bindings(stmts):
         result = set()
         for n in stmts:
+            charge("helper_item")
             if n.kind == "bind":
                 result.add(n.data["name"])
             elif n.kind == "if":
@@ -882,6 +910,7 @@ def validate(program, existing_functions=(), existing_types=()):
     def declarations(stmts, inherited_names, params=()):
         own = set()
         for n in stmts:
+            charge("helper_item")
             if n.kind != "function":
                 continue
             name = n.data["name"]
@@ -913,12 +942,15 @@ def validate(program, existing_functions=(), existing_types=()):
                 if value.data["name"] not in MEMBER_PARAMS:
                     error(value, f"未知成员：{value.data['name']}")
             for child in value.data.values():
+                charge("helper_item")
                 expressions(child, method, visible_functions, bindings)
         elif isinstance(value, dict):
             for child in value.values():
+                charge("helper_item")
                 expressions(child, method, visible_functions, bindings)
         elif isinstance(value, (list, tuple)):
             for child in value:
+                charge("helper_item")
                 expressions(child, method, visible_functions, bindings)
 
     def check_function(n, method, visible_functions, bindings, method_definitions=False):
@@ -926,16 +958,17 @@ def validate(program, existing_functions=(), existing_types=()):
         visible_functions = functions if visible_functions is None else visible_functions
         bindings = known_bindings if bindings is None else bindings
         for _, typ in d["params"]:
+            charge("helper_item")
             if not typ:  # Omitted parameter annotation accepts any ordinary value.
                 continue
             base = typ.split()[0]
             if base not in known_types and not has_imports:
                 error(n, f"未定义类型：{base}")
-        names = [p[0] for p in d["params"]]
+        names = [p[0] for p in budget_items(d["params"])]
         if len(names) != len(set(names)):
             error(n, "参数名重复")
         protected = declarations(d["body"], visible_functions, names)
-        if any(p in protected or p in BUILTIN_NAMES or p in type_nodes for p in names):
+        if any(p in protected or p in BUILTIN_NAMES or p in type_nodes for p in budget_items(names)):
             error(n, "参数名不能与函数名、形名或内置名称重名")
         walk(d["body"], 0, n, False, method, True, protected,
              bindings | set(names), False)
@@ -949,6 +982,7 @@ def validate(program, existing_functions=(), existing_types=()):
             visible_functions = declarations(stmts, visible_functions)
             bindings = bindings | local_bindings(stmts)
         for n in stmts:
+            charge("helper_item")
             d = n.data
             if n.kind == "module_decl":
                 if not top:
@@ -963,8 +997,9 @@ def validate(program, existing_functions=(), existing_types=()):
                 if d["name"] in ("数", "句", "阵", "事实", "典"):
                     error(n, "形名不能与内置类型重名")
                 for field, typ in d["fields"]:
+                    charge("helper_item")
                     check_type(n, typ)
-                members = [f[0] for f in d["fields"]] + [m.data["name"] for m in d["methods"]]
+                members = [f[0] for f in budget_items(d["fields"])] + [m.data["name"] for m in budget_items(d["methods"])]
                 if len(members) != len(set(members)):
                     error(n, "字段／方法名称重复")
                 walk(d["methods"], method=True, visible_functions=visible_functions,
@@ -1017,10 +1052,12 @@ def validate(program, existing_functions=(), existing_types=()):
         elif parent and parent not in existing_types and not has_imports:
             error(definition, f"未定义父形：{parent}")
         for field, typ in definition.data["fields"]:
+            charge("helper_item")
             if field in fields or field in methods:
                 error(definition, f"继承字段／方法重名：{field}")
             fields[field] = typ
         for method in definition.data["methods"]:
+            charge("helper_item")
             key, data = method.data["name"], method.data
             if key in fields:
                 error(method, f"方法与字段重名：{key}")

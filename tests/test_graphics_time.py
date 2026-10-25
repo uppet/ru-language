@@ -200,7 +200,7 @@ class GraphicsTimeTests(unittest.TestCase):
         self.assertEqual(self.frame(1e308), [1e308, 1e308, 1e308, 1e308, 2])
         self.assertEqual(self.frame(1e308), [1e308, 0, 1e308, 0, 3])
 
-    def test_frozen_time_cannot_bypass_live_wall_or_line_budget(self):
+    def test_frozen_time_cannot_bypass_live_wall_or_work_budget(self):
         self.canvas(f'图 其 每帧 (作 帧: 循 若 (图 其 经过秒) > 0 则 破. 然 环 为).')
         # The public elapsed sample stays zero; budget clock still advances.
         budget = iter([0., 2.])
@@ -209,9 +209,10 @@ class GraphicsTimeTests(unittest.TestCase):
                 self.host.handle({'type': 'frame'})
         self.assertIsNone(self.host.canvas)
         self.canvas(f'图 其 每帧 (作 帧: 循 若 (图 其 经过秒) > 0 则 破. 然 环 为).')
+        from rulang.execution_budget import BudgetPolicy
         with patch('rulang.graphics_runtime.time.monotonic', return_value=0), \
-             patch('rulang.graphics_runtime.MAX_CALLBACK_LINES', 128):
-            with self.assertRaisesRegex(RuError, '执行行预算.*阈值 128 行'):
+             patch.object(self.host, 'budget_policy', BudgetPolicy(128, 256, calibration_only=False)):
+            with self.assertRaisesRegex(RuError, '逻辑工作预算.*阈值 128 工作单位'):
                 self.host.handle({'type': 'frame'})
         self.assertIsNone(self.host.canvas)
         self.assertEqual(self.clock.calls, 4)

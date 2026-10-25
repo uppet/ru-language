@@ -3,6 +3,7 @@
 Python's tracing collector owns object graphs, including arrays and objects
 which refer to themselves. Rebinding a name never copies a mutable value.
 """
+from .execution_budget import checked_operation
 from dataclasses import dataclass
 import math
 from itertools import repeat
@@ -10,6 +11,7 @@ from types import GeneratorType
 from pathlib import Path
 import re
 import sys
+from .execution_budget import charge, bulk, check_budget, guard_budget, current_budget, items as budget_items
 from .diagnostics import at_token
 from .frontend import BUILTIN_NAMES, RuError, bind_arguments, validate
 from .io_runtime import install_io, io_member, io_new_defaults, read_stream_line, _write_stream
@@ -35,7 +37,10 @@ class RuMap:
         self.version = 0
 
     def snapshot(self):
-        return [entry for bucket in self.buckets.values() for entry in bucket]
+        bulk(self.size)
+        result = [entry for bucket in self.buckets.values() for entry in bucket]
+        check_budget()
+        return result
 
 
 @dataclass(eq=False)
@@ -73,6 +78,7 @@ class Module:
 
     def exports(self):
         owner = self.interpreter
+        bulk(len(owner.global_scope.values) + len(owner.types) + len(owner.function_values))
         values = dict(owner.global_scope.values)
         values.update(owner.types)
         values.update(owner.function_values)
@@ -119,6 +125,7 @@ def display(value, active=None):
         if operation == "leave":
             active.remove(current)
             continue
+        charge("helper_item")
         if current is None:
             output.append("空")
         elif isinstance(current, bool):
@@ -126,14 +133,18 @@ def display(value, active=None):
         elif isinstance(current, float):
             output.append(format(current, ".15g"))
         elif isinstance(current, str):
+            bulk(len(current))
             output.append(current)
         elif isinstance(current, Instance):
+            bulk(len(current.type.name))
             output.append(f"<形 {current.type.name}>")
         elif isinstance(current, RuType):
+            bulk(len(current.name))
             output.append(f"<形 {current.name}>")
         elif isinstance(current, Module):
             output.append("<外言>")
         elif isinstance(current, Function):
+            bulk(len(current.node.data["name"]))
             kind = "作" if current.node.data["procedure"] else "算"
             output.append(f"<{kind} {current.node.data['name']}>")
         elif isinstance(current, (Pair, list, RuMap)):
@@ -152,6 +163,7 @@ def display(value, active=None):
                 output.append("{")
                 stack.append(("text", "}"))
                 for i in range(len(entries)-1, -1, -1):
+                    charge("helper_item")
                     key, value = entries[i]
                     stack.extend([("value", value), ("text", ": "), ("value", key)])
                     if i:
@@ -160,12 +172,16 @@ def display(value, active=None):
                 output.append("[")
                 stack.append(("text", "]"))
                 for i in range(len(current)-1, -1, -1):
+                    charge("helper_item")
                     stack.append(("value", current[i]))
                     if i:
                         stack.append(("text", ", "))
         else:
             raise TypeError(f"unknown 如 value: {type(current).__name__}")
-    return "".join(output)
+    bulk(sum(map(len, output)))
+    result = "".join(output)
+    check_budget()
+    return result
 
 
 def truth(value):
@@ -175,9 +191,13 @@ def truth(value):
 def equal(left, right, instance_equal=None):
     pending, compared = [(left, right)], set()
     while pending:
+        charge("helper_item")
         left, right = pending.pop()
         if type(left) is not type(right):
             return False
+        if isinstance(left, str):
+            # Logical input cost must not depend on CPython string interning.
+            bulk(len(left) + len(right))
         if isinstance(left, Instance) and instance_equal is not None:
             if not instance_equal(left, right):
                 return False
@@ -192,8 +212,11 @@ def equal(left, right, instance_equal=None):
             pending.extend(((left.right, right.right), (left.left, right.left)))
         elif isinstance(left, (list, RuMap, Instance, Module, RuType, Function)):
             return False
-        elif left != right:
-            return False
+        else:
+            different = left != right
+            check_budget()
+            if different:
+                return False
     return True
 
 
@@ -205,6 +228,7 @@ class Scope:
     def find(self, name):
         current = self
         while current is not None:
+            charge("helper_item")
             if name in current.values:
                 return current.values[name], False
             if name in current.declarations:
@@ -235,6 +259,7 @@ class Scope:
     def protected(self, name):
         current = self
         while current is not None:
+            charge("helper_item")
             if name in current.declarations:
                 return True
             current = current.parent
@@ -301,6 +326,7 @@ def _drive(frame):
     Errors are thrown into each parent to preserve its rescue/finally boundary.
     Host/native re-entry owns another local stack without resetting Ru state.
     """
+    guard_budget()
     if isinstance(frame, _Value):
         return frame.value
     stack = [frame]
@@ -365,6 +391,7 @@ def _same_type_identity(left, right):
     """Compare nested array identities without recursive tuple comparison."""
     pending = [(left, right)]
     while pending:
+        charge("helper_item")
         left, right = pending.pop()
         if left is right:
             continue
@@ -412,7 +439,7 @@ class Interpreter:
         validate(program, self.functions, self.types)
         if modules is None:
             from .modules import import_nodes, load_module_graph
-            if any(import_nodes(program)) or (source_path is not None and any(n.kind == "module_decl" for n in program)):
+            if any(import_nodes(program)) or (source_path is not None and any(n.kind == "module_decl" for n in budget_items(program))):
                 modules = load_module_graph(source_path or self.source_path or str(Path.cwd() / "<REPL>"), program)
         check_native_imports(self, program, modules)
         if source_path is not None:
@@ -422,6 +449,7 @@ class Interpreter:
         if module_cache is not None:
             self.module_cache = module_cache
         for n in program:
+            charge("helper_item")
             if n.kind == "function":
                 if n.data["name"] in self.types or n.data["name"] in self.global_scope.values:
                     self.fail(n, f"名称冲突：{n.data['name']}")
@@ -437,6 +465,7 @@ class Interpreter:
         try:
             (yield self._block_step(program, self.global_scope, echo))
         except RuError as error:
+            guard_budget()
             self.locate_error(error)
             raise
 
@@ -478,22 +507,24 @@ class Interpreter:
             else:
                 typ.fields, typ.methods = {}, {}
             for name, field_type in typ.node.data["fields"]:
+                charge("helper_item")
                 if name in typ.fields or name in typ.methods:
                     typ.owner.fail(typ.node, f"继承字段／方法重名：{name}")
                 typ.owner.type_identity(field_type, typ.node)
                 typ.fields[name] = (field_type, typ.owner)
             for fn in typ.node.data["methods"]:
+                charge("helper_item")
                 name = fn.data["name"]
                 if name in typ.fields:
                     typ.owner.fail(fn, f"方法与字段重名：{name}")
-                signature = [(key, typ.owner.type_identity(annotation, fn)) for key, annotation in fn.data["params"]]
+                signature = [(key, typ.owner.type_identity(annotation, fn)) for key, annotation in budget_items(fn.data["params"])]
                 if name in typ.methods:
                     previous = typ.methods[name]
                     old = previous.node.data
-                    old_signature = list(previous.parameter_types.items()) if previous.parameter_types is not None else [(key, previous.owner.type_identity(annotation, fn)) for key, annotation in old["params"]]
+                    old_signature = list(previous.parameter_types.items()) if previous.parameter_types is not None else [(key, previous.owner.type_identity(annotation, fn)) for key, annotation in budget_items(old["params"])]
                     if (len(old_signature) != len(signature)
                             or any(old_key != key or not _same_type_identity(old_type, typ)
-                                   for (old_key, old_type), (key, typ) in zip(old_signature, signature))
+                                   for (old_key, old_type), (key, typ) in budget_items(zip(old_signature, signature)))
                             or old["procedure"] != fn.data["procedure"]):
                         typ.owner.fail(fn, f"覆写方法「{name}」须保持参数名称、类型及算／作种类")
                 typ.methods[name] = Function(typ.owner, fn, typ.owner.global_scope, parameter_types=dict(signature))
@@ -507,6 +538,7 @@ class Interpreter:
         """Resolve in the declaration's module; empty annotations mean any value."""
         depth = 0
         while annotation.endswith(" 阵"):
+            charge("helper_item")
             annotation = annotation[:-2]
             depth += 1
         if annotation in ("", "数", "句", "空", "阵", "对", "算", "作", "事实", "典"):
@@ -516,6 +548,7 @@ class Interpreter:
             if not isinstance(result, RuType):
                 self.fail(n, f"未定义类型：{annotation}；类型注解须使用已声明或已尽取导入的形名")
         for _ in range(depth):
+            charge("helper_item")
             result = ("array", result)
         return result
 
@@ -524,9 +557,10 @@ class Interpreter:
         typ = annotation if identity is None else identity
         path = ""
         while annotation.endswith(" 阵") and isinstance(value, list):
+            charge("helper_item")
             item_annotation = annotation[:-2]
             item_type = typ[1] if isinstance(typ, tuple) else item_annotation
-            bad = next(((i, item) for i, item in enumerate(value)
+            bad = next(((i, item) for i, item in budget_items(enumerate(value))
                         if not self.type_matches(item, item_type)), None)
             if bad is None:
                 break
@@ -553,6 +587,7 @@ class Interpreter:
             except StopIteration:
                 pending.pop()
                 continue
+            charge("helper_item")
             if isinstance(typ, tuple) or (isinstance(typ, str) and typ.endswith(" 阵")):
                 if not isinstance(value, list):
                     return False
@@ -566,6 +601,7 @@ class Interpreter:
         if isinstance(typ, RuType):
             current = value.type if isinstance(value, Instance) else None
             while current is not None:
+                charge("helper_item")
                 if current is typ:
                     return True
                 current = current.parent
@@ -593,6 +629,7 @@ class Interpreter:
             return False
         current = value.type
         while current is not None:
+            charge("helper_item")
             if current is expected:
                 return True
             current = current.parent
@@ -607,6 +644,7 @@ class Interpreter:
         self.structure_depth += 1
         try:
             for n in statements:
+                charge("stmt")
                 d = n.data
                 if n.kind in ("function", "module_decl"):
                     continue
@@ -687,7 +725,10 @@ class Interpreter:
                             self.fail(n, "循环次数须为 0 至 9007199254740991 之间的整数")
                         count = int(value)
                     i = 0
-                    while count is None or i < count:
+                    while True:
+                        charge("loop")
+                        if count is not None and i >= count:
+                            break
                         try:
                             (yield self._block_step(d["body"], scope))
                         except Break:
@@ -707,6 +748,7 @@ class Interpreter:
 
     def hoist(self, statements, scope):
         for statement in statements:
+            charge("helper_item")
             if statement.kind == "function":
                 name = statement.data["name"]
                 if name in scope.values or name in scope.declarations or name in self.types or name in BUILTIN_NAMES:
@@ -727,10 +769,12 @@ class Interpreter:
     def _callable_target_step(self, n, scope):
         """Evaluate a call/ref target once without auto-invoking its last selector."""
         if n.kind == "name":
+            charge("expr")
             if n.data["name"] == "读":
                 self.fail(n, "当前仅支持用户定义算／作的引用；内置「读」不能取引用")
             return self.resolve_name(n, scope)[0]
         if n.kind == "member" and not n.data["args"]:
+            charge("expr")
             receiver = (yield self._expr_step(n.data["receiver"], scope))
             return self.member_reference(n, receiver, n.data["name"])
         return (yield self._expr_step(n, scope))
@@ -739,6 +783,7 @@ class Interpreter:
         return _drive(self._invoke_value_step(n, value, args))
 
     def _invoke_value_step(self, n, value, args):
+        guard_budget()
         if not isinstance(value, Function):
             self.fail(n, "值不是算／作" + ("；若要索引，请让方括号紧邻接收者，如 列[0]；列 [0] 会被解析为调用" if isinstance(value, (list, str, RuMap)) and len(args) == 1 and isinstance(args[0][1], list) else ""))
         return value.owner._invoke_step(n, value.node, args, value.receiver,
@@ -780,6 +825,7 @@ class Interpreter:
             self.fail(n, "「位」／索引只适用于阵或句")
         return _Value(receiver[self.bounded_index(n, index, len(receiver))])
 
+    @checked_operation
     def get_slice(self, n, receiver, start, end):
         if not isinstance(receiver, (list, str)):
             self.fail(n, "「段」／切片只适用于阵或句")
@@ -787,6 +833,7 @@ class Interpreter:
         last = len(receiver) if end is None else self.bounded_index(n, end, len(receiver), True)
         if first > last:
             self.fail(n, "切片起点不能大于终点")
+        bulk(last - first)
         return receiver[first:last]
 
     def assign(self, n, scope):
@@ -825,6 +872,7 @@ class Interpreter:
             try:
                 path = resolve_import(n.data["path"], self.source_path or str(Path.cwd() / "<REPL>"))
             except RuError as error:
+                guard_budget()
                 error.line, error.col = n.token.line, n.token.col
                 raise
         from .native_runtime import native_import
@@ -897,10 +945,13 @@ class Interpreter:
             result.append(task.value if isinstance(task, _Value) else (yield task))
         return result
 
+    @checked_operation
     def _binary_value(self, n, op, left, right):
         if op in ("<", "<=", ">", ">="):
             if type(left) is not type(right) or not isinstance(left, (str, float)):
                 self.fail(n, "大小比较需要两个数或两个句" + ("；比较结果为事实，若要连续比较，请拆成两个比较并用「且」连接" if isinstance(left, bool) or isinstance(right, bool) else ""))
+            if isinstance(left, str):
+                bulk(len(left) + len(right))
             if op == "<":
                 return left < right
             if op == "<=":
@@ -909,6 +960,7 @@ class Interpreter:
                 return left > right
             return left >= right
         if op == "+" and isinstance(left, str) and isinstance(right, str):
+            bulk(len(left) + len(right))
             return left + right
         if not isinstance(left, float) or not isinstance(right, float):
             self.fail(n, "算术运算需要两个数；「+」也可连接两个句")
@@ -931,7 +983,10 @@ class Interpreter:
         return result
 
     def _expr_step(self, n, scope):
+        guard_budget()
         kind = n.kind
+        if kind == "name" and current_budget() is not None:
+            return self._expr_frame(n, scope)
         if kind not in ("number", "string", "fact", "null", "self", "name"):
             return self._expr_frame(n, scope)
         if self.structure_depth >= STRUCTURE_DEPTH_LIMIT:
@@ -944,6 +999,7 @@ class Interpreter:
             found, declared = scope.find(n.data["name"])
             if declared:
                 return self._expr_frame(n, scope)
+        charge("expr")
         self.structure_depth += 1
         try:
             if kind in ("number", "string", "fact"):
@@ -979,6 +1035,7 @@ class Interpreter:
                     node = action[1]
                     if self.structure_depth >= STRUCTURE_DEPTH_LIMIT:
                         self.fail(node, f"表达式或语句结构超过 {STRUCTURE_DEPTH_LIMIT} 层，请拆分为较小的步骤")
+                    charge("expr")
                     self.structure_depth += 1
                     entered += 1
                     d, kind = node.data, node.kind
@@ -1051,6 +1108,7 @@ class Interpreter:
                             yield task
                         fields = io_new_defaults(typ)
                         if fields is None:
+                            bulk(len(typ.fields))
                             fields = {name: None for name in typ.fields}
                         actions.append(("new_next", node, typ, fields, set(), iter(d["args"])))
                         continue
@@ -1085,7 +1143,9 @@ class Interpreter:
                             self.last_member_procedure = False
                             if not isinstance(left, str) or not isinstance(right, str):
                                 self.fail(node, "「含」需要两个句")
+                            bulk(len(left) + len(right))
                             result = right in left
+                            check_budget()
                     else:
                         result = self._binary_value(node, op, left, right)
                 elif operation == "unary":
@@ -1176,10 +1236,12 @@ class Interpreter:
                 elif operation == "target":
                     node = action[1]
                     if node.kind == "name":
+                        charge("expr")
                         if node.data["name"] == "读":
                             self.fail(node, "当前仅支持用户定义算／作的引用；内置「读」不能取引用")
                         values.append(self.resolve_name(node, scope)[0])
                     elif node.kind == "member" and not node.data["args"]:
+                        charge("expr")
                         actions.append(("target_member", node))
                         actions.append(("eval", node.data["receiver"]))
                     else:
@@ -1287,9 +1349,12 @@ class Interpreter:
         # calls rather than entering a synchronous Python callback from equal.
         pending, compared = [(left, right)], set()
         while pending:
+            charge("helper_item")
             left, right = pending.pop()
             if type(left) is not type(right):
                 return False
+            if isinstance(left, str):
+                bulk(len(left) + len(right))
             if isinstance(left, Instance):
                 if left.type is not right.type:
                     return False
@@ -1314,8 +1379,11 @@ class Interpreter:
                 pending.extend(((left.right, right.right), (left.left, right.left)))
             elif isinstance(left, (list, RuMap, Module, RuType, Function)):
                 return False
-            elif left != right:
-                return False
+            else:
+                different = left != right
+                check_budget()
+                if different:
+                    return False
         return True
 
     def map_hash(self, n, key):
@@ -1331,6 +1399,7 @@ class Interpreter:
                 self.fail(n, "典的数键须为有限数")
             return _Value(("数", key))
         if isinstance(key, str):
+            bulk(len(key))
             return _Value(("句", key))
         self.fail(n, "典的键须为数、句、事实或提供同与印的形实例；实际收到" + value_type_name(key))
 
@@ -1362,6 +1431,7 @@ class Interpreter:
             self.fail(n, "典在键的印／同比较期间被修改")
         bucket = receiver.buckets.get(hashed, [])
         for index, (stored, _) in enumerate(bucket):
+            charge("helper_item")
             same = (yield self._equals_step(n, stored, key))
             if receiver.version != version:
                 self.fail(n, "典在键的印／同比较期间被修改")
@@ -1386,6 +1456,7 @@ class Interpreter:
         return _drive(self._map_member_step(n, receiver, name, args))
 
     def _map_member_step(self, n, receiver, name, args):
+        charge("call")
         params = {"查": ["目"], "增": ["目", "相"], "除": ["目"], "逐目": ["回调"], "量": []}
         if name == "列":
             self.fail(n, "典的「列」已改名为「逐目」；请改用「其 逐目」")
@@ -1401,6 +1472,7 @@ class Interpreter:
             if not isinstance(callback, Function) or len(callback.node.data["params"]) != 2:
                 self.fail(n, "典的逐目回调须为接受两个参数的算或作")
             for key, value in receiver.snapshot():
+                charge("helper_item")
                 (yield self._invoke_value_step(n, callback, [(None, key), (None, value)]))
             self.last_member_procedure = False
             return None
@@ -1409,6 +1481,7 @@ class Interpreter:
             return None if index < 0 else bucket[index][1]
         if index < 0:
             return False
+        bulk(len(bucket) - index - 1)
         del bucket[index]
         if not bucket:
             del receiver.buckets[hashed]
@@ -1416,6 +1489,7 @@ class Interpreter:
         receiver.version += 1
         return True
 
+    @checked_operation
     def number_value(self, n, value):
         """One strict numeric conversion shared by 为 数 and contest input."""
         if isinstance(value, float):
@@ -1444,11 +1518,13 @@ class Interpreter:
         parameter = "算法" if name == "另成" else "先于"
         bound = bind_arguments(name, args, [parameter], fail, optional=name == "排序")
         # Snapshot the outer array only; contained mutable values retain identity.
+        bulk(len(receiver))
         snapshot = list(receiver)
         if name == "另成":
             algorithm = self.array_algorithm(n, bound[parameter], parameter, 1)
             result = []
             for value in snapshot:
+                charge("helper_item")
                 result.append((yield self._invoke_value_step(n, algorithm, [(None, value)])))
             self.last_member_procedure = False
             return result
@@ -1459,11 +1535,11 @@ class Interpreter:
         elif snapshot:
             first = snapshot[0]
             if isinstance(first, float):
-                valid = all(isinstance(value, float) and math.isfinite(value) for value in snapshot)
+                valid = all(isinstance(value, float) and math.isfinite(value) for value in budget_items(snapshot))
             elif isinstance(first, str):
-                valid = all(isinstance(value, str) for value in snapshot)
+                valid = all(isinstance(value, str) for value in budget_items(snapshot))
             elif isinstance(first, Instance):
-                valid = all(isinstance(value, Instance) and value.type is first.type for value in snapshot)
+                valid = all(isinstance(value, Instance) and value.type is first.type for value in budget_items(snapshot))
                 if valid:
                     self.special_method(n, first, "先于", 1)
             else:
@@ -1477,7 +1553,11 @@ class Interpreter:
             elif isinstance(left, Instance):
                 value = (yield self._invoke_value_step(n, self.special_method(n, left, "先于", 1), [(None, right)]))
             else:
-                return left < right
+                if isinstance(left, str):
+                    bulk(len(left) + len(right))
+                result = left < right
+                check_budget()
+                return result
             if not isinstance(value, bool):
                 self.fail(n, "「先于」须返回事实")
             return value
@@ -1491,13 +1571,16 @@ class Interpreter:
                 end = min(start + width * 2, len(snapshot))
                 left, right = start, middle
                 while left < middle and right < end:
+                    charge("helper_item")
                     if (yield before(snapshot[right], snapshot[left])):
                         merged.append(snapshot[right])
                         right += 1
                     else:
                         merged.append(snapshot[left])
                         left += 1
+                bulk(middle - left)
                 merged.extend(snapshot[left:middle])
+                bulk(end - right)
                 merged.extend(snapshot[right:end])
             snapshot = merged
             width *= 2
@@ -1532,6 +1615,7 @@ class Interpreter:
             return result
         if isinstance(receiver, Instance):
             if name in receiver.type.fields:
+                charge("call")
                 bind_arguments(name, args, [], fail)
                 return receiver.fields[name]
             method = receiver.type.methods.get(name)
@@ -1546,12 +1630,15 @@ class Interpreter:
                     result = (yield self._invoke_value_step(n, value, args))
                     self.last_member_procedure = value.node.data["procedure"]
                     return result
+                charge("call")
                 bind_arguments(name, args, [], fail)
                 return value
         elif isinstance(receiver, Pair) and name in ("囫", "囵"):
+            charge("call")
             bind_arguments(name, args, [], fail)
             return receiver.left if name == "囫" else receiver.right
         elif isinstance(receiver, (str, list)):
+            charge("call")
             if name == "量":
                 bind_arguments(name, args, [], fail)
                 return float(len(receiver))
@@ -1565,13 +1652,18 @@ class Interpreter:
                 bound = bind_arguments(name, args, ["句"], fail)
                 if not isinstance(bound["句"], str):
                     self.fail(n, "「含」需要两个句")
-                return bound["句"] in receiver
+                bulk(len(receiver) + len(bound["句"]))
+                result = bound["句"] in receiver
+                check_budget()
+                return result
             if isinstance(receiver, list) and name == "逐位":
                 bound = bind_arguments(name, args, ["回调"], fail)
                 callback = bound["回调"]
                 if not isinstance(callback, Function) or len(callback.node.data["params"]) != 2:
                     self.fail(n, "阵的逐位回调须为接受两个参数的算或作")
+                bulk(len(receiver))
                 for index, value in enumerate(receiver[:]):
+                    charge("helper_item")
                     (yield self._invoke_value_step(n, callback, [(None, float(index)), (None, value)]))
                 self.last_member_procedure = False
                 return None
@@ -1581,7 +1673,9 @@ class Interpreter:
                 parameters = {"删": ["位"], "弹": [], "查": ["值"]}[name]
                 bound = bind_arguments(name, args, parameters, fail)
                 if name == "查":
+                    bulk(len(receiver))
                     for index, value in enumerate(receiver[:]):
+                        charge("helper_item")
                         if (yield self._equals_step(n, value, bound["值"])):
                             self.last_member_procedure = False
                             return float(index)
@@ -1589,6 +1683,7 @@ class Interpreter:
                     return None
                 position = bound["位"] if name == "删" else float(len(receiver) - 1)
                 (yield self._get_index_step(n, receiver, position))
+                bulk(len(receiver) - int(position) - 1)
                 return receiver.pop(int(position))
             if name == "增" and isinstance(receiver, list):
                 bound = bind_arguments(name, args, ["值"], fail)
@@ -1602,6 +1697,7 @@ class Interpreter:
     def _call_step(self, n, name, args):
         fail = lambda message: self.fail(n, message)
         if name == "读":
+            charge("call")
             kwargs = bind_arguments(name, args, ["提示"], fail, optional=True)
             prompt = kwargs.get("提示", "")
             if not isinstance(prompt, str):
@@ -1628,6 +1724,8 @@ class Interpreter:
         return _drive(self._invoke_step(n, function, args, receiver, caller, environment, parameter_types))
 
     def _invoke_step(self, n, function, args, receiver=None, caller=None, environment=None, parameter_types=None, _result_caller=None):
+        guard_budget()
+        charge("call")
         caller = self if caller is None else caller
         if caller._native_context is not self._native_context and (caller._native_context.capability.allowed or self._native_context.capability.allowed):
             caller.fail(n, '函数不能跨原生能力上下文调用')
@@ -1636,13 +1734,14 @@ class Interpreter:
         # at invocation, without rejecting calls before an import has run or
         # treating ordinary imported bindings/type aliases as declarations.
         environment = self.global_scope if environment is None else environment
-        if any(environment.protected(key) or key in self.types for key, _ in params):
+        if any(environment.protected(key) or key in self.types for key, _ in budget_items(params)):
             self.fail(function, "参数名不能与函数名、形名或内置名称重名")
-        kwargs = bind_arguments(name, args, [p[0] for p in params], lambda message: caller.fail(n, message))
+        kwargs = bind_arguments(name, args, [p[0] for p in budget_items(params)], lambda message: caller.fail(n, message))
         local = Scope(environment, "function")
         if receiver is not None:
             local.values["其"] = receiver
         for key, typ in params:
+            charge("helper_item")
             value = kwargs[key]
             if not self.type_matches(value, parameter_types[key] if parameter_types is not None else self.type_identity(typ, function)):
                 caller.fail(n, f"函数「{name}」的实参「{key}」须为{typ}，实际收到{value_type_name(value)}" + self.type_detail(value, typ, parameter_types[key] if parameter_types is not None else self.type_identity(typ, function)))
@@ -1664,6 +1763,7 @@ class Interpreter:
                     caller.fail(n, f"函数「{name}」没有执行「得」")
                 value = None
         except RuError as error:
+            guard_budget()
             at_token(error, function.token)
             self.locate_error(error)
             raise

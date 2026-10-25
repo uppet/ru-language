@@ -4,6 +4,7 @@ No browser code, network, image loading or host object is exposed to Ru. The
 host retains real Ru Function values; the ordinary interpreter owns closures.
 This is resource accounting for trusted local code, not a security sandbox.
 """
+from .execution_budget import checked_member, checked_operation, json_input, items as budget_items
 import json
 from collections import deque
 from dataclasses import dataclass
@@ -12,8 +13,9 @@ import os
 import base64
 import re
 import secrets
-import sys
 import time
+from .execution_budget import (Budget, BudgetPolicy, DEFAULT_BUDGET_POLICY, _CURRENT_BUDGET, current_budget,
+                               charge, bulk, check_budget, guard_budget)
 import tracemalloc
 from types import MappingProxyType
 
@@ -29,7 +31,6 @@ MAX_IMAGES = 8
 MAX_RESOURCE_PIXELS = 4194304
 MAX_RESOURCE_BYTES = 131072
 MAX_RECIPE_COMMANDS = MAX_COMMANDS - 1
-MAX_CALLBACK_LINES = 500000
 MAX_CALLBACK_SECONDS = 1.0
 MAX_GRAPHICS_MEMORY = 64 * 1024 * 1024
 MAX_IMAGE_FILE_BYTES = 64 * 1024 * 1024
@@ -113,8 +114,10 @@ RECORDER_MEMBERS = frozenset(CANVAS_PARAMS) - frozenset(CALLBACK_NAMES) - {
 _DEFAULT_TEXT_METRICS = {"全": 1.0, "半": 0.56, "行": 1.5}
 
 
+@checked_operation
 def _measure_text(canvas, text, fail):
     """机 其 测文：宿主实测钩优先，否则按字度逐码点回退（半角＝码点 < 一）。"""
+    bulk(len(text))
     size = canvas.text_size
     measurer = canvas.host.text_measurer
     if measurer is not None:
@@ -124,7 +127,7 @@ def _measure_text(canvas, text, fail):
             fail("如观测文宿主返回无效宽度")
         return float(width)
     half, full = canvas.metrics["半"], canvas.metrics["全"]
-    return float(sum(half if ord(char) < 0x4E00 else full for char in text) * size)
+    return float(sum(half if ord(char) < 0x4E00 else full for char in budget_items(text)) * size)
 
 
 def _address_space_used():
@@ -217,7 +220,9 @@ def memory_protection_status():
                       "或由外部 cgroup／Job Object 负责进程级配额"}
 
 
+@checked_operation
 def _json(value):
+    json_input(value)
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
@@ -346,27 +351,28 @@ class Canvas:
             event["resources"] = [json.loads(self.resources[key].definition) for key in refs]
         return event
 
+    @checked_operation
     def command(self, command, fail):
         if command["op"] != "background":
             if self.transform != IDENTITY:
                 command["transform"] = list(self.transform)
             if self.clips:
-                command["clips"] = [dict(clip, transform=list(clip["transform"])) for clip in self.clips]
-        size = len(json.dumps(command, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) + 1
+                command["clips"] = [dict(clip, transform=list(clip["transform"])) for clip in budget_items(self.clips)]
+        size = len(_json(command).encode("utf-8")) + 1
         if len(self.commands) >= MAX_COMMANDS or self.command_bytes + size > MAX_FRAME_BYTES - 1024:
             fail("如观每帧最多 2048 个绘制命令、256 KiB 数据；请减少图形或文字")
-        refs = ({item["resource"] for item in self.commands if item["op"] == "image"}
+        refs = ({item["resource"] for item in budget_items(self.commands) if item["op"] == "image"}
                 if self.resources else set())
         if command["op"] == "image":
             refs.add(command["resource"])
-        if len(self.commands) + 1 + sum(self.resources[key].count for key in refs) > MAX_COMMANDS:
+        if len(self.commands) + 1 + sum(self.resources[key].count for key in budget_items(refs)) > MAX_COMMANDS:
             fail("如观每帧根命令与引用缓存配方合计最多 2048 个命令")
         if refs:
             # Account exact serialized boundaries without decoding/copying every
             # cached recipe again for each dynamic primitive in a warm frame.
             frame_size = len(_json(self.scene([])).encode("utf-8")) + self.command_bytes + size - 3
             frame_size += len(',"resources":') + 2 + len(refs) - 1
-            frame_size += sum(self.resources[key].byte_size for key in refs)
+            frame_size += sum(self.resources[key].byte_size for key in budget_items(refs))
             if frame_size > MAX_FRAME_BYTES:
                 fail("如观完整绘图帧超过 256 KiB UTF-8 数据；请减少图形或文字")
         self.commands.append(command)
@@ -389,6 +395,7 @@ class DrawingRecorder(Canvas):
         if self.stack:
             raise RuError("如观缓存保存与恢复须成对", category="运行错误")
 
+    @checked_operation
     def command(self, command, fail):
         if len(self.commands) >= MAX_RECIPE_COMMANDS:
             fail("如观单张缓存最多 2047 个命令；须为贴图保留一个命令")
@@ -408,7 +415,12 @@ class DrawingRecorder(Canvas):
 
 
 class GraphicsHost:
-    def __init__(self, interpreter, emit, *, now_seconds=None, auto_load=True):
+    def __init__(self, interpreter, emit, *, now_seconds=None, auto_load=True, budget_policy=None):
+        if budget_policy is not None and not isinstance(budget_policy, BudgetPolicy):
+            raise TypeError("budget_policy must be BudgetPolicy or None")
+        self.budget_policy = DEFAULT_BUDGET_POLICY if budget_policy is None else budget_policy
+        self.budget_snapshot = None
+        self._budget_event_sequence = 0
         self.interpreter, self.emit = interpreter, emit
         self.canvas = None
         self.phase = "initialization"
@@ -579,6 +591,7 @@ class GraphicsHost:
             return {"type": "file_failed", "id": job["handle"], "error": str(exc)[:512] or "装载失败"}
 
     def handle(self, event, *, canvas_id=None):
+        guard_budget()
         canvas = self.canvas
         if canvas is None:
             raise RuError("如观画布已关闭", category="运行错误")
@@ -728,61 +741,47 @@ class GraphicsHost:
         previous = canvas.commands
         previous_bytes = canvas.command_bytes
         canvas.commands, canvas.command_bytes = [], 2
+        inherited_budget = current_budget()
+        if inherited_budget is not None:
+            inherited_budget.guard()
         started = time.monotonic()
         # Sample the allocation baseline per callback so the budget measures
         # this callback's net growth. Slow growth across many callbacks is
         # covered by the session-level address-space quota instead.
-        self.memory_start = tracemalloc.get_traced_memory()[0]
-        deadline, lines = started + MAX_CALLBACK_SECONDS, 0
-        remaining = 128
-        def check():
-            # Preserve the original short-circuit priority and strict boundaries.
-            # A diagnostic uses the exact sample that tripped its budget; do not
-            # sample again after cleanup or round a just-over-limit value away.
-            executed_lines = lines + (128 - remaining)
-            if executed_lines > MAX_CALLBACK_LINES:
-                self.interpreter.fail(node, f"如观回调超过执行行预算（实际 {executed_lines} Python 跟踪行，阈值 {MAX_CALLBACK_LINES} 行）；已关闭交互，请简化回调后重跑")
-            sampled = time.monotonic()
-            if sampled > deadline:
-                elapsed = sampled - started
-                # Subtraction can itself round a strict deadline overrun to the
-                # limit. Explain that edge without exposing absolute host times.
-                comparison = ("；微小超限差额经浮点运算舍入"
-                              if elapsed <= MAX_CALLBACK_SECONDS else "")
-                self.interpreter.fail(node, f"如观回调超过时间预算（实际约 {elapsed!r} 秒墙钟耗时，阈值 {MAX_CALLBACK_SECONDS:g} 秒{comparison}）；已关闭交互，请简化回调后重跑")
-            allocated = tracemalloc.get_traced_memory()[0] - self.memory_start
-            if allocated > MAX_GRAPHICS_MEMORY:
-                self.interpreter.fail(node, f"如观新增内存超过分配预算（实际 {allocated} 字节，阈值 {MAX_GRAPHICS_MEMORY} 字节／{MAX_GRAPHICS_MEMORY / (1024 * 1024):g} MiB）；已关闭交互，请减少数据后重跑")
-        def trace(frame, action, arg):
-            nonlocal lines, remaining
-            if action == "line":
-                # Keep the exact line budget and 128-line check cadence, but
-                # use cached small integers between checks. This avoids one
-                # allocation per traced line while tracemalloc is active.
-                remaining -= 1
-                if remaining == 0:
-                    lines += 128
-                    remaining = 128
-                    check()
-            return trace
-        # The callback layer guards time, work and allocation with the
-        # portable trace budget above. Process-wide resource quotas belong
-        # at the session boundary: session spawners set them once at process
-        # startup via install_address_space_limit, never per callback here.
-        old_trace = sys.gettrace()
+        self.memory_start = (inherited_budget.memory_start if inherited_budget is not None
+                             else tracemalloc.get_traced_memory()[0])
+        budget, budget_token = inherited_budget, None
+        if budget is None:
+            self._budget_event_sequence += 1
+            budget = Budget(self.budget_policy, clock=time.monotonic,
+                            memory=lambda: tracemalloc.get_traced_memory()[0],
+                            started=started, memory_start=self.memory_start,
+                            seconds=MAX_CALLBACK_SECONDS, memory_limit=MAX_GRAPHICS_MEMORY,
+                            event_sequence=self._budget_event_sequence, node=node)
+        # Work units and cooperative time/allocation checks share this context.
+        # Process-wide quotas remain session-level; the external watchdog is
+        # still needed for opaque blocking operations. Never install a trace.
         previous_phase, self.phase = self.phase, "event"
         try:
-            sys.settrace(trace)
+            if inherited_budget is None:
+                budget_token = _CURRENT_BUDGET.set(budget)
+            budget.check()
             self.interpreter.invoke_value(node, fn, [(None, value) for value in values])
-            check()
+            budget.check()
             if self.canvas:
                 self.canvas.check_balanced()
+            budget.check()
         except BaseException:
             self.close()
+            if budget.error is not None:
+                raise budget.error
             raise
         finally:
             self.phase = previous_phase
-            sys.settrace(old_trace)
+            if budget_token is not None:
+                budget.close()
+                _CURRENT_BUDGET.reset(budget_token)
+            self.budget_snapshot = budget.snapshot()
         if self.canvas is canvas:
             if kind in ASYNC_EVENTS:
                 # 装载就绪：旧装帧已作废（源可能已换或行已消失），不恢复不
@@ -806,6 +805,7 @@ class GraphicsHost:
             self.handle({"type": "frame"})
 
 
+@checked_member('graphics_kind')
 def graphics_member(owner, n, receiver, name, args):
     from .interpreter import Instance, Function
     if not isinstance(receiver, Instance):
@@ -813,6 +813,7 @@ def graphics_member(owner, n, receiver, name, args):
     kind = getattr(receiver.type, "graphics_kind", None)
     if kind is None:
         return False, None
+    charge("call")
     fail = lambda message: owner.fail(n, message)
     def number(value, label, low=-100000, high=100000, integer=False):
         if not isinstance(value, float) or not math.isfinite(value) or not low <= value <= high or (integer and value != int(value)):
@@ -974,6 +975,7 @@ def graphics_member(owner, n, receiver, name, args):
         from .interpreter import RuMap
         result = RuMap()
         for key in ("全", "半", "行"):
+            charge("helper_item")
             owner.map_put(n, result, key, canvas.metrics[key])
         return True, result
     elif name == "测文":
@@ -1047,6 +1049,7 @@ def graphics_member(owner, n, receiver, name, args):
                 fail(name + f"点阵须为包含 {minimum} 至 256 个点的阵")
             points = []
             for point in source:
+                charge("helper_item")
                 if not isinstance(point, list) or len(point) != 2:
                     fail(name + "每个点须为恰含两个坐标的阵")
                 points.append([number(point[0], "横坐标"), number(point[1], "纵坐标")])
@@ -1061,6 +1064,7 @@ def graphics_member(owner, n, receiver, name, args):
         kept = [item for item in canvas.commands if item["op"] in LOAD_MANAGEMENT_OPS]
         canvas.commands, canvas.command_bytes = [], 2
         for item in kept:
+            charge("helper_item")
             canvas.command(item, fail)
         canvas.command({"op": "background", "color": background}, fail)
     elif name in ("弧", "扇形"):
