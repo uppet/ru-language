@@ -383,6 +383,35 @@ static void sdl_render_command_transformed(const char *cmd, const double t[6]) {
                      -rot * 180.0 / M_PI, NULL, SDL_FLIP_NONE);
 }
 
+/* draw_image 级变换：只旋转/缩放图片纹理本身，画面其余不动。
+ * 旋转中心 = 图片绘制中心（唱片/旋钮场景）；shear 按平移近似（诚实清单）。 */
+static int sdl_render_image_transformed(const char *cmd, const double t[6]) {
+    char op[32];
+    long id;
+    int tw = 0, th = 0;
+    double x, y, w, h;
+    float tx, ty; double rot, sx, sy;
+    SDL_Texture *tex;
+    SDL_Rect dst;
+    SDL_Point center;
+    if (!sdl_jstr(cmd, "op", op, sizeof op)) return 0;
+    if (strcmp(op, "draw_image") && strcmp(op, "image")) return 0;
+    id = (long)sdl_jnum(cmd, "id", -1);
+    tex = sdl_image_find(id, &tw, &th);
+    if (!tex || tw <= 0 || th <= 0) return 0;
+    x = sdl_jnum(cmd, "x", 0); y = sdl_jnum(cmd, "y", 0);
+    w = sdl_jnum(cmd, "width", -1); h = sdl_jnum(cmd, "height", -1);
+    if (w < 0) w = tw;
+    if (h < 0) h = th;
+    sdl_transform_split(t, &tx, &ty, &rot, &sx, &sy);
+    dst.x = (int)(x + tx); dst.y = (int)(y + ty);
+    dst.w = (int)(w * sx); dst.h = (int)(h * sy);
+    center.x = dst.w / 2; center.y = dst.h / 2;
+    SDL_RenderCopyEx(sdl_renderer, tex, NULL, &dst,
+                     -rot * 180.0 / M_PI, &center, SDL_FLIP_NONE);
+    return 1;
+}
+
 static void sdl_render_command_full(const char *cmd) {
     double t[6];
     SDL_Rect clip_saved;
@@ -394,10 +423,9 @@ static void sdl_render_command_full(const char *cmd) {
         float tx, ty; double rot, sx, sy;
         sdl_transform_split(t, &tx, &ty, &rot, &sx, &sy);
         if (rot != 0 || sx != 1 || sy != 1) {
-            /* 临时改 t 为纯平移，走纹理路径 */
-            double tt[6] = {1, 0, 0, 1, t[4], t[5]};
-            (void)tt;
-            sdl_render_command_transformed(cmd, t);
+            /* 图片命令优先走图片级变换（只转图不转画面） */
+            if (!sdl_render_image_transformed(cmd, t))
+                sdl_render_command_transformed(cmd, t);
         } else {
             sdl_render_command(cmd);
         }
@@ -438,14 +466,9 @@ static void sdl_render_command(const char *cmd) {
             int rc;
             sdl_set_color(fill);
             rc = SDL_RenderFillRect(sdl_renderer, &r);
-            if (getenv("RU_SDL_DEBUG")) {
-                Uint32 px;
-                SDL_Rect pt = {60, 40, 1, 1};
-                fprintf(stderr, "[sdl] fillrect rc=%d err=%s clip=%d\n",
-                        rc, SDL_GetError(), (int)SDL_RenderIsClipEnabled(sdl_renderer));
-                if (SDL_RenderReadPixels(sdl_renderer, &pt, SDL_PIXELFORMAT_RGBA8888, &px, 4) == 0)
-                    fprintf(stderr, "[sdl] px(60,40) after fill = %08x\n", px);
-            }
+            if (getenv("RU_SDL_DEBUG"))
+                fprintf(stderr, "[sdl] fillrect rc=%d clip=%d\n",
+                        rc, (int)SDL_RenderIsClipEnabled(sdl_renderer));
         }
         if (sok && sw > 0) {
             sdl_set_color(stroke);
@@ -711,6 +734,7 @@ static void sdl_load_image(void *ud, long handle, const char *source) {
     SDL_Surface *surf;
     (void)ud;
     snprintf(path, sizeof path, "%s/%s", sdl_program_dir, source);
+    if (getenv("RU_SDL_DEBUG")) fprintf(stderr, "[sdl] load_image %s\n", path);
     surf = IMG_Load(path);
     if (!surf) {
         ru_graphics_post_image_failed(handle, "图像载入失败");
