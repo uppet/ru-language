@@ -247,6 +247,11 @@ def build(program, source_path, output, cc=None, emit_c=None, modules=None, targ
                 raise RuError("pkg-config 找不到 SDL2 开发包：" + pc.stderr.strip(), category="编译错误")
             sdl_flags = pc.stdout.split()
             extra_sources = [str(sdl_host), "-DRU_SDL_HOST", "-I", str(Path(__file__).parent.parent)] + sdl_flags
+            # libcurl 可用则启用 网 服务（拉/投）；缺失时 网 回退诚实失败事件
+            pc_curl = subprocess.run(["pkg-config", "--cflags", "--libs", "libcurl"],
+                                     capture_output=True, text=True)
+            if pc_curl.returncode == 0:
+                extra_sources += pc_curl.stdout.split() + ["-DRU_SDL_HAS_CURL"]
             if os.environ.get("RU_HEADLESS_SMOKE"):
                 # 冒烟模式：dummy video driver 下渲染 N 帧存 smoke.png 后退出
                 # （帧数由 RU_SMOKE_FRAMES 环境变量控制，默认 3）。

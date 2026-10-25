@@ -50,6 +50,11 @@ typedef struct RuGuiHost {
     int auto_load;
 } RuGuiHost;
 
+/* 协议常量镜像（与 graphics_runtime.h 一致） */
+enum {
+    RU_G_MAX_FILE_TEXT_BYTES = 8 * 1024 * 1024,
+};
+
 void ru_graphics_set_host(const RuGuiHost *host);
 
 void ru_graphics_post_close(void);

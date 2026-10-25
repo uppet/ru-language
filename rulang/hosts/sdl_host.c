@@ -21,6 +21,8 @@
  *   - bezier 用 32 段折线采样；
  *   - clip 的 transform 字段忽略（clip 矩形直接取 x/y/width/height）。
  */
+#define _POSIX_C_SOURCE 200809L /* strdup */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,6 +30,8 @@
 #include <time.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <dirent.h>
+#include <errno.h>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -36,8 +40,12 @@
 #include <SDL.h>
 #include <SDL_ttf.h>
 #include <SDL_image.h>
+#if defined(RU_SDL_HAS_CURL)
+#include <curl/curl.h>
+#endif
 
 #define SDL_MAX_IMAGES 64
+#define SDL_MAX_CACHES 8 /* 与协议「每画布至多 8 张缓存图像」对齐 */
 #define SDL_FONT_CACHE 8
 #define SMOKE_FRAMES_DEFAULT 3
 
@@ -115,6 +123,31 @@ static void sdl_image_drop(long id) {
             sdl_images[i] = sdl_images[--sdl_images_n];
             return;
         }
+}
+
+static struct {
+    char id[32];
+    SDL_Texture *tex;
+    int w, h;
+} sdl_caches[SDL_MAX_CACHES];
+static int sdl_caches_n;
+
+static SDL_Texture *sdl_cache_find(const char *id, int *w, int *h) {
+    int i;
+    for (i = 0; i < sdl_caches_n; i++)
+        if (!strcmp(sdl_caches[i].id, id)) {
+            if (w) *w = sdl_caches[i].w;
+            if (h) *h = sdl_caches[i].h;
+            return sdl_caches[i].tex;
+        }
+    return NULL;
+}
+
+static void sdl_caches_clear(void) {
+    int i;
+    for (i = 0; i < sdl_caches_n; i++)
+        if (sdl_caches[i].tex) SDL_DestroyTexture(sdl_caches[i].tex);
+    sdl_caches_n = 0;
 }
 
 static const char *sdl_jvalue(const char *json, const char *key);
@@ -568,11 +601,21 @@ static void sdl_render_command(const char *cmd) {
     }
     if (!strcmp(op, "draw_image") || !strcmp(op, "image")) {
         long id = (long)sdl_jnum(cmd, "id", -1);
+        char resource[32];
         double x = sdl_jnum(cmd, "x", 0), y = sdl_jnum(cmd, "y", 0);
         double w = sdl_jnum(cmd, "width", -1), h = sdl_jnum(cmd, "height", -1);
-        SDL_Texture *tex = sdl_image_find(id, NULL, NULL);
+        SDL_Texture *tex = NULL;
+        int tw = 0, th = 0;
+        if (sdl_jstr(cmd, "resource", resource, sizeof resource) && resource[0])
+            tex = sdl_cache_find(resource, &tw, &th);
+        else
+            tex = sdl_image_find(id, &tw, &th);
+        if (w < 0) w = tw;
+        if (h < 0) h = th;
+        if (getenv("RU_SDL_DEBUG")) fprintf(stderr, "[sdl] image resource='%s' tex=%p %dx%d\n",
+                                            resource, (void *)tex, tw, th);
         SDL_Rect dst = {(int)x, (int)y, (int)w, (int)h};
-        if (tex && w >= 0 && h >= 0) SDL_RenderCopy(sdl_renderer, tex, NULL, &dst);
+        if (tex && w > 0 && h > 0) SDL_RenderCopy(sdl_renderer, tex, NULL, &dst);
         return;
     }
     /* text_focus/blur/update、image_request/release、file/service_request
@@ -580,37 +623,99 @@ static void sdl_render_command(const char *cmd) {
 }
 
 /* —— 帧渲染 —— */
+/* 渲染一个 JSON 命令数组（"commands":[...] 的值体，[ 之后）。 */
+static void sdl_render_command_list(const char *p) {
+    for (;;) {
+        const char *start;
+        int depth;
+        while (*p == ' ' || *p == '\t' || *p == ',') p++;
+        if (*p != '{') break;
+        start = p;
+        depth = 0;
+        while (*p) {
+            if (*p == '{') depth++;
+            else if (*p == '}') { depth--; if (!depth) { p++; break; } }
+            p++;
+        }
+        {
+            size_t len = (size_t)(p - start);
+            char *one = (char *)malloc(len + 1);
+            if (one) {
+                memcpy(one, start, len);
+                one[len] = '\0';
+                sdl_render_command_full(one);
+                free(one);
+            }
+        }
+    }
+}
+
+/* 解析帧 JSON 的 "resources" 数组：每个缓存定义离屏渲染为纹理，
+ * 供本帧 image/resource 命令引用。缓存随帧重建（协议每帧重发定义）。 */
+static void sdl_render_resources(const char *json) {
+    const char *res = sdl_jvalue(json, "resources");
+    const char *p;
+    if (!res || *res != '[') return;
+    sdl_caches_clear();
+    p = res + 1;
+    for (;;) {
+        const char *start;
+        int depth;
+        char id[32];
+        double w, h;
+        const char *cmds;
+        SDL_Texture *tex;
+        while (*p == ' ' || *p == '\t' || *p == ',') p++;
+        if (*p != '{') break;
+        start = p;
+        depth = 0;
+        while (*p) {
+            if (*p == '{') depth++;
+            else if (*p == '}') { depth--; if (!depth) { p++; break; } }
+            p++;
+        }
+        {
+            size_t len = (size_t)(p - start);
+            char *one = (char *)malloc(len + 1);
+            if (!one) continue;
+            memcpy(one, start, len);
+            one[len] = '\0';
+            if (sdl_jstr(one, "id", id, sizeof id) && id[0]
+                && (w = sdl_jnum(one, "width", 0)) >= 1 && w <= 4096
+                && (h = sdl_jnum(one, "height", 0)) >= 1 && h <= 4096
+                && sdl_caches_n < SDL_MAX_CACHES
+                && (cmds = sdl_jvalue(one, "commands")) != NULL && *cmds == '[') {
+                tex = SDL_CreateTexture(sdl_renderer, SDL_PIXELFORMAT_RGBA8888,
+                                        SDL_TEXTUREACCESS_TARGET, (int)w, (int)h);
+                if (getenv("RU_SDL_DEBUG")) fprintf(stderr, "[sdl] cache '%s' %dx%d tex=%p target_ok=%d\n",
+                                                    id, (int)w, (int)h, (void *)tex,
+                                                    (int)SDL_RenderTargetSupported(sdl_renderer));
+                if (tex) {
+                    SDL_Texture *prev = SDL_GetRenderTarget(sdl_renderer);
+                    SDL_SetRenderTarget(sdl_renderer, tex);
+                    SDL_SetRenderDrawColor(sdl_renderer, 0, 0, 0, 0);
+                    SDL_RenderClear(sdl_renderer);
+                    sdl_render_command_list(cmds + 1);
+                    SDL_SetRenderTarget(sdl_renderer, prev);
+                    snprintf(sdl_caches[sdl_caches_n].id, sizeof sdl_caches[sdl_caches_n].id, "%s", id);
+                    sdl_caches[sdl_caches_n].tex = tex;
+                    sdl_caches[sdl_caches_n].w = (int)w;
+                    sdl_caches[sdl_caches_n].h = (int)h;
+                    sdl_caches_n++;
+                }
+            }
+            free(one);
+        }
+    }
+}
+
 static void sdl_render_frame(const char *json) {
     const char *cmds;
     if (sdl_closed || !sdl_renderer) return;
     sdl_update_handlers(json);
+    sdl_render_resources(json);
     cmds = sdl_jvalue(json, "commands");
-    if (cmds && *cmds == '[') {
-        const char *p = cmds + 1;
-        for (;;) {
-            const char *start;
-            int depth;
-            while (*p == ' ' || *p == '\t' || *p == ',') p++;
-            if (*p != '{') break;
-            start = p;
-            depth = 0;
-            while (*p) {
-                if (*p == '{') depth++;
-                else if (*p == '}') { depth--; if (!depth) { p++; break; } }
-                p++;
-            }
-            {
-                size_t len = (size_t)(p - start);
-                char *one = (char *)malloc(len + 1);
-                if (one) {
-                    memcpy(one, start, len);
-                    one[len] = '\0';
-                    sdl_render_command_full(one);
-                    free(one);
-                }
-            }
-        }
-    }
+    if (cmds && *cmds == '[') sdl_render_command_list(cmds + 1);
     SDL_RenderPresent(sdl_renderer);
     sdl_frame_counter++;
 #ifdef HEADLESS_SMOKE
@@ -822,12 +927,204 @@ static void sdl_load_file(void *ud, long handle, const char *source, int as_text
     free(buf);
 }
 
+/* —— 服务（档／网） ——
+ * 档：写（flag=追加）/ 列，本地文件系统；错误格式与 Python 宿主一致。
+ * 网：拉（GET）/ 投（POST 附文），libcurl 同步执行；超时 10s、8MiB 上限，
+ *     错误按能力诚实原则回失败事件。 */
+static void sdl_fail_errno(long handle, int err) {
+    char msg[600];
+    snprintf(msg, sizeof msg, "[errno %d] %s", err, strerror(err));
+    ru_graphics_post_service_response(handle, 0, NULL, msg);
+}
+
+static void sdl_service_file(long handle, const char *action,
+                             const char *path, const char *text, int flag) {
+    if (!path || !path[0]) {
+        ru_graphics_post_service_response(handle, 0, NULL, "档 路径不可为空");
+        return;
+    }
+    if (!strcmp(action, "写")) {
+        FILE *f = fopen(path, flag ? "a" : "w");
+        if (!f) { sdl_fail_errno(handle, errno); return; }
+        if (text && fputs(text, f) == EOF) { int e = errno; fclose(f); sdl_fail_errno(handle, e ? e : EIO); return; }
+        if (fclose(f) != 0) { sdl_fail_errno(handle, errno); return; }
+        ru_graphics_post_service_response(handle, 1, "", NULL);
+        return;
+    }
+    if (!strcmp(action, "列")) {
+        DIR *d = opendir(path);
+        if (!d) { sdl_fail_errno(handle, errno); return; }
+        /* 排序 + 换行连接，超 8MiB 失败（与 Python 同配额） */
+        char **names = NULL;
+        size_t n = 0, cap = 0, total = 0;
+        struct dirent *de;
+        int fail = 0;
+        while ((de = readdir(d)) != NULL) {
+            if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, "..")) continue;
+            if (n == cap) {
+                size_t nc = cap ? cap * 2 : 32;
+                char **nn = realloc(names, nc * sizeof *nn);
+                if (!nn) { fail = 1; break; }
+                names = nn; cap = nc;
+            }
+            names[n] = strdup(de->d_name);
+            if (!names[n]) { fail = 1; break; }
+            total += strlen(names[n]) + 1;
+            if (total > RU_G_MAX_FILE_TEXT_BYTES) { fail = 1; break; }
+            n++;
+        }
+        closedir(d);
+        if (fail) {
+            size_t i;
+            for (i = 0; i < n; i++) free(names[i]);
+            free(names);
+            ru_graphics_post_service_response(handle, 0, NULL, "列档结果超过配额");
+            return;
+        }
+        /* 简单插入排序（目录项通常不多） */
+        {
+            size_t i, j;
+            for (i = 1; i < n; i++) {
+                char *k = names[i];
+                for (j = i; j > 0 && strcmp(names[j - 1], k) > 0; j--) names[j] = names[j - 1];
+                names[j] = k;
+            }
+        }
+        {
+            size_t i, len = 1;
+            char *buf;
+            for (i = 0; i < n; i++) len += strlen(names[i]) + 1;
+            buf = malloc(len);
+            if (!buf) {
+                for (i = 0; i < n; i++) free(names[i]);
+                free(names);
+                ru_graphics_post_service_response(handle, 0, NULL, "列档结果超过配额");
+                return;
+            }
+            buf[0] = 0;
+            for (i = 0; i < n; i++) {
+                if (i) strcat(buf, "\n");
+                strcat(buf, names[i]);
+                free(names[i]);
+            }
+            free(names);
+            ru_graphics_post_service_response(handle, 1, buf, NULL);
+            free(buf);
+        }
+        return;
+    }
+    {
+        char msg[600];
+        snprintf(msg, sizeof msg, "档 不识此操作：%s", action);
+        ru_graphics_post_service_response(handle, 0, NULL, msg);
+    }
+}
+
+#if defined(RU_SDL_HAS_CURL)
+struct sdl_curl_buf { char *data; size_t len; };
+
+static size_t sdl_curl_write(void *ptr, size_t size, size_t nmemb, void *ud) {
+    struct sdl_curl_buf *b = ud;
+    size_t n = size * nmemb;
+    if (b->len + n > (size_t)RU_G_MAX_FILE_TEXT_BYTES + 1) n = (size_t)RU_G_MAX_FILE_TEXT_BYTES + 1 - b->len;
+    if (n) {
+        char *nd = realloc(b->data, b->len + n + 1);
+        if (!nd) return 0;
+        b->data = nd;
+        memcpy(b->data + b->len, ptr, n);
+        b->len += n;
+        b->data[b->len] = 0;
+    }
+    return size * nmemb; /* 如实返回；超配额时 curl 会继续调但不再存 */
+}
+
+static void sdl_service_net(long handle, const char *action,
+                            const char *url, const char *text, int flag) {
+    CURL *c;
+    CURLcode rc;
+    struct sdl_curl_buf buf = {NULL, 0};
+    long code = 0;
+    char msg[600];
+    if (!url || !url[0]) {
+        ru_graphics_post_service_response(handle, 0, NULL, "网 网址不可为空");
+        return;
+    }
+    if (strncmp(url, "http://", 7) && strncmp(url, "https://", 8)) {
+        ru_graphics_post_service_response(handle, 0, NULL, "网 只识 http/https");
+        return;
+    }
+    if (strcmp(action, "拉") && strcmp(action, "投")) {
+        snprintf(msg, sizeof msg, "网 不识此操作：%s", action);
+        ru_graphics_post_service_response(handle, 0, NULL, msg);
+        return;
+    }
+    c = curl_easy_init();
+    if (!c) {
+        ru_graphics_post_service_response(handle, 0, NULL, "网 初始化失败");
+        return;
+    }
+    curl_easy_setopt(c, CURLOPT_URL, url);
+    curl_easy_setopt(c, CURLOPT_TIMEOUT, 10L);
+    curl_easy_setopt(c, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, sdl_curl_write);
+    curl_easy_setopt(c, CURLOPT_WRITEDATA, &buf);
+    curl_easy_setopt(c, CURLOPT_USERAGENT, "ru-lang-sdl/1.0");
+    if (!strcmp(action, "投")) {
+        curl_easy_setopt(c, CURLOPT_POST, 1L);
+        curl_easy_setopt(c, CURLOPT_POSTFIELDS, text ? text : "");
+        curl_easy_setopt(c, CURLOPT_POSTFIELDSIZE, text ? (long)strlen(text) : 0L);
+        curl_easy_setopt(c, CURLOPT_HTTPHEADER, flag
+            ? curl_slist_append(NULL, "Content-Type: application/json")
+            : curl_slist_append(NULL, "Content-Type: text/plain; charset=utf-8"));
+    } else {
+        struct curl_slist *h = curl_slist_append(NULL, "Accept: text/plain, */*;q=0.8");
+        curl_easy_setopt(c, CURLOPT_HTTPHEADER, h);
+    }
+    rc = curl_easy_perform(c);
+    curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &code);
+    curl_easy_cleanup(c);
+    if (rc != CURLE_OK) {
+        free(buf.data);
+        snprintf(msg, sizeof msg, "网 %s", curl_easy_strerror(rc));
+        ru_graphics_post_service_response(handle, 0, NULL, msg);
+        return;
+    }
+    if (code >= 400) {
+        free(buf.data);
+        snprintf(msg, sizeof msg, "网 HTTP %ld", code);
+        ru_graphics_post_service_response(handle, 0, NULL, msg);
+        return;
+    }
+    if (buf.len > (size_t)RU_G_MAX_FILE_TEXT_BYTES) {
+        free(buf.data);
+        ru_graphics_post_service_response(handle, 0, NULL, "网 响应超过配额");
+        return;
+    }
+    ru_graphics_post_service_response(handle, 1, buf.data ? buf.data : "", NULL);
+    free(buf.data);
+}
+#endif /* RU_SDL_HAS_CURL */
+
 static void sdl_service(void *ud, long handle, const char *svc, const char *action,
                         const char *path, const char *text, int flag) {
-    (void)ud; (void)svc; (void)action; (void)path; (void)text; (void)flag;
-    /* v1：网络服务未接线（计划 M4 的 HTTP 客户端未实现），
-       诚实返回失败事件，让程序侧得到确定响应。 */
-    ru_graphics_post_service_response(handle, 0, NULL, "服务不可用：SDL 壳网络未接线");
+    (void)ud;
+    if (!svc) svc = "";
+    if (!action) action = "";
+    if (!strcmp(svc, "档")) { sdl_service_file(handle, action, path, text, flag); return; }
+#if defined(RU_SDL_HAS_CURL)
+    if (!strcmp(svc, "网")) { sdl_service_net(handle, action, path, text, flag); return; }
+#else
+    if (!strcmp(svc, "网")) {
+        ru_graphics_post_service_response(handle, 0, NULL,
+            "服务不可用：SDL 壳构建未启用 libcurl（RU_SDL_HAS_CURL）");
+        return;
+    }
+#endif
+    {
+        char msg[600];
+        snprintf(msg, sizeof msg, "宿主无此服务：%s", svc);
+        ru_graphics_post_service_response(handle, 0, NULL, msg);
+    }
 }
 
 static void sdl_set_text_input(void *ud, int active, int x, int y, int w, int h) {
@@ -965,7 +1262,7 @@ static void sdl_push_event(SDL_Event *ev) {
 }
 
 static const RuGuiHost sdl_host = {
-    NULL, "", sdl_open, sdl_close, sdl_frame,
+    NULL, "档 网", sdl_open, sdl_close, sdl_frame,
     sdl_now, sdl_measure_text, NULL,
     sdl_load_image, sdl_load_file, sdl_service,
     sdl_set_text_input, sdl_idle,
