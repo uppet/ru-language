@@ -127,8 +127,8 @@ def compiler_command(selected, windows=None):
 
 
 def build(program, source_path, output, cc=None, emit_c=None, modules=None, target="c", full_runtime=False, allow_native=False, source_prefix_maps=(), style_check=None, emit_llvm=None, llvm_clang=None, mi_manifest=None, assets=None):
-    if target not in ("c", "js", "llvm", "ui", "desktop"):
-        raise RuError("编译目标须为 c、js、llvm、ui 或 desktop", category="编译错误")
+    if target not in ("c", "js", "llvm", "ui", "desktop", "sdl"):
+        raise RuError("编译目标须为 c、js、llvm、ui、desktop 或 sdl", category="编译错误")
     if target != 'llvm' and (emit_llvm is not None or llvm_clang is not None):
         raise RuError('--emit-llvm 和 --llvm-clang 只适用于 LLVM 目标', category='编译错误')
     if mi_manifest and target not in ('c', 'llvm'):
@@ -137,6 +137,10 @@ def build(program, source_path, output, cc=None, emit_c=None, modules=None, targ
         raise RuError('LLVM AOT M1 不支持 --cc、--emit-c 或 --allow-native；编译器请用 --llvm-clang 指定', category='能力错误')
     if target in ("ui", "desktop") and (cc is not None or emit_c is not None):
         raise RuError("如UI 网页／桌面目标不能使用 --cc 或 --emit-c", category="编译错误")
+    if target == "sdl" and (emit_llvm is not None or llvm_clang is not None or mi_manifest):
+        raise RuError("SDL 目标不支持 --emit-llvm/--llvm-clang/--mi-manifest", category="编译错误")
+    if target == "sdl" and allow_native:
+        raise RuError("SDL 目标暂不支持 native Mi", category="编译错误")
     if target in ("ui", "desktop") and allow_native:
         raise RuError("--allow-native 只适用于 C 编译目标", category="能力错误")
     if target in ("ui", "desktop") and source_prefix_maps:
@@ -231,7 +235,24 @@ def build(program, source_path, output, cc=None, emit_c=None, modules=None, targ
         # destination remains exactly the path selected by the caller.
         cfile, binary = temp / "program.c", temp / "program.exe"
         cfile.write_text(generated, encoding="utf-8")
-        invocation = command + ["-std=c99", "-O2", "-Wall", "-Wextra", "-Wno-unused-function", str(cfile), "-o", str(binary)]
+        extra_sources = []
+        if target == "sdl":
+            sdl_host = Path(__file__).parent / "hosts" / "sdl_host.c"
+            pkg = shutil.which("pkg-config")
+            if not pkg:
+                raise RuError("SDL 目标需要 pkg-config 与 SDL2/SDL2_ttf/SDL2_image 开发包", category="编译错误")
+            pc = subprocess.run([pkg, "--cflags", "--libs", "sdl2", "SDL2_ttf", "SDL2_image"],
+                                capture_output=True, text=True)
+            if pc.returncode:
+                raise RuError("pkg-config 找不到 SDL2 开发包：" + pc.stderr.strip(), category="编译错误")
+            sdl_flags = pc.stdout.split()
+            extra_sources = [str(sdl_host), "-DRU_SDL_HOST", "-I", str(Path(__file__).parent.parent)] + sdl_flags
+            if os.environ.get("RU_HEADLESS_SMOKE"):
+                # 冒烟模式：dummy video driver 下渲染 N 帧存 smoke.png 后退出
+                # （帧数由 RU_SMOKE_FRAMES 环境变量控制，默认 3）。
+                extra_sources.append("-DHEADLESS_SMOKE")
+            generated_dir = output.parent
+        invocation = command + ["-std=c99", "-O2", "-Wall", "-Wextra", "-Wno-unused-function", str(cfile)] + extra_sources + ["-o", str(binary)]
         if sys.platform != 'win32':
             invocation.append('-lm')
         try:
@@ -327,7 +348,7 @@ def make_parser():
     p.add_argument("source")
     p.add_argument("--strict-style", action="store_true", help="将缺少完整语句结束句点的书写提示作为错误；默认只在标准错误提示")
     p.add_argument("-o", "--output", help="输出路径；C 默认去掉源文件扩展名，JS 默认为同名 .js")
-    p.add_argument("--target", choices=("c", "js", "llvm", "ui", "desktop"), default="c", help="编译目标：c（默认）、js（Node.js）、llvm（LLVM 14 / Linux、Windows x86-64 AOT）、ui（如UI 自包含网页，浏览器打开即交互）或 desktop（如UI 桌面分发目录：WebView 壳 + 档服务桥）")
+    p.add_argument("--target", choices=("c", "js", "llvm", "ui", "desktop", "sdl"), default="c", help="编译目标：c（默认）、js（Node.js）、llvm（LLVM 14 / Linux、Windows x86-64 AOT）、ui（如UI 自包含网页，浏览器打开即交互）、desktop（如UI 桌面分发目录：WebView 壳 + 档服务桥）或 sdl（如观 SDL2 原生桌面壳：单二进制，需 SDL2/SDL2_ttf/SDL2_image 开发包）")
     p.add_argument("--assets", metavar="目录", help="仅 --target ui／desktop：内嵌资产目录，供 件目/图载/件载 以相对路径访问；图像转 data URL、文本内联、其余转 base64，总量 ≤16 MiB")
     p.add_argument("--cc", help="C 编译器（默认依次查找 clang、gcc、cc；也支持 CC 环境变量）")
     p.add_argument("--emit-c", metavar="PATH", help="额外保存可审阅的独立 C99 源码")

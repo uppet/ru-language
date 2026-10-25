@@ -87,6 +87,9 @@ void ru_graphics_post_file_ready(long id, const char *utf8);
 void ru_graphics_post_file_failed(long id, const char *err);
 void ru_graphics_post_service_response(long id, int ok, const char *value, const char *error);
 int ru_graphics_app_run(void);
+/* SDL 壳入口（hosts/sdl_host.c）声明镜像；RU_SDL_HOST 时 main 改调它。 */
+void ru_sdl_app_run(void);
+void ru_sdl_host_register(void);
 
 /* ---- 基础工具 ---- */
 typedef struct { char *data; size_t len, cap; } RuGBuf;

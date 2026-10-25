@@ -78,6 +78,11 @@ void ru_graphics_post_service_response(long handle, int ok,
 /* 程序 main 内部在模块初始化后自动调用；壳一般无需直接调。 */
 int ru_graphics_app_run(void);
 
+/* SDL 壳入口（hosts/sdl_host.c）：注册 SDL 宿主并进入 app_run。
+ * 生成的 main 在 RU_SDL_HOST 定义时改调本函数。 */
+void ru_sdl_app_run(void);
+void ru_sdl_host_register(void); /* 仅注册宿主（main 开头用） */
+
 #ifdef __cplusplus
 }
 #endif

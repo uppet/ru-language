@@ -810,12 +810,24 @@ class Compiler:
             self.line('}')
         self.line('int main(int argc, char **argv) {')
         self.indent += 1
+        if self.uses_graphics and self.supports_c_graphics:
+            # RU_SDL_HOST：链 sdl_host.c 时必须在模块初始化之前注册宿主，
+            # 否则 如观 模块初始化（画布创建）会因无宿主而失败。
+            self.line('#ifdef RU_SDL_HOST')
+            self.line('ru_sdl_host_register();')
+            self.line('#endif')
         self.line(f'ru_source = {cstr(display_text(self.source_path_mapper(self.source_name)))}; ru_init();')
         self.line(f'Val root = {self.module_ids[self.root]}_init(); (void) root; (void) argc; (void) argv;')
         if self.can_panic:
             self.line('if (ru_panicking) return ru_panic_uncaught();')
         if self.uses_graphics and self.supports_c_graphics:
+            # RU_SDL_HOST：壳宿主已注册，app_run 进入事件泵；
+            # 否则（测试宿主）用已注册的宿主直接进 app_run。
+            self.line('#ifdef RU_SDL_HOST')
+            self.line('ru_sdl_app_run();')
+            self.line('#else')
             self.line('ru_graphics_app_run();')
+            self.line('#endif')
         self.line('int status = 0;')
         if self.entry:
             self.line('Val arguments = ru_arguments(argc, argv);')
