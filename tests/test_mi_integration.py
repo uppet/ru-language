@@ -48,7 +48,7 @@ class MiIntegration(unittest.TestCase):
     def test_llvm_is_explicit_and_c_remains_default(self):
         parser = make_parser()
         options = {action.dest: action for action in parser._subparsers._group_actions[0].choices['build']._actions}
-        self.assertEqual(tuple(options['target'].choices), ('c', 'js', 'llvm', 'ui'))
+        self.assertEqual(tuple(options['target'].choices), ('c', 'js', 'llvm', 'ui', 'desktop', 'sdl'))
         self.assertEqual(options['target'].default, 'c')
         self.assertIn('llvm_clang', options)
         self.assertIn('emit_llvm', options)
