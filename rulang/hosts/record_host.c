@@ -198,5 +198,9 @@ void record_host_install(void) { ru_graphics_set_host(&record_host); }
 
 #if defined(__GNUC__)
 __attribute__((constructor))
-#endif
 static void record_host_auto_install(void) { record_host_install(); }
+#elif defined(_MSC_VER)
+/* MSVC/clang-cl 无 GNU constructor 属性：注册进 CRT 初始化段，等效 pre-main 调用 */
+#pragma section(".CRT$XCU", read)
+__declspec(allocate(".CRT$XCU")) static void (*record_host_auto_install_p)(void) = record_host_install;
+#endif
