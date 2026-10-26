@@ -45,19 +45,54 @@ def compile_c(source, workdir):
     return Compiler(program, str(src), modules=modules).compile()
 
 
+MAIN_SHIM = '''\
+#include "rulang/graphics_abi.h"
+void record_host_install(void);
+int ru_program_main(int argc, char **argv);
+int main(int argc, char **argv) {
+    record_host_install();
+    return ru_program_main(argc, argv);
+}
+'''
+
+
+def build_c(workdir, c_path):
+    """编译 program.c + record host + main shim；返回 exe 路径。
+
+    shim 显式调 record_host_install()：不依赖 pre-main 钩子（constructor 属性
+    和 .CRT$XCU 在 Windows 各 clang 模式下行为不可移植，实测均静默失效）。
+    -Dmain=ru_program_main 只作用于 program.c（分步编译，避免 shim 的 main 被重命名）。
+    """
+    exe = workdir / 'program'
+    shim = workdir / 'main_shim.c'
+    shim.write_text(MAIN_SHIM, encoding='utf-8')
+    objects = []
+    for src, extra in ((c_path, ['-Dmain=ru_program_main']),
+                       (RECORD_HOST, []), (shim, [])):
+        obj = workdir / (Path(src).stem + '.o')
+        compiled = subprocess.run(
+            [CC, '-O1', '-std=gnu99', '-I', str(ROOT), *extra,
+             '-c', str(src), '-o', str(obj)],
+            capture_output=True, text=True)
+        if compiled.returncode != 0:
+            raise AssertionError(f"C 编译失败 ({Path(src).name}):\n{compiled.stderr}")
+        objects.append(obj)
+    build = subprocess.run(
+        [CC, *[str(o) for o in objects],
+         *([] if sys.platform == 'win32' else ['-lm']), '-o', str(exe)],
+        capture_output=True, text=True)
+    if build.returncode != 0:
+        raise AssertionError(f"C 链接失败:\n{build.stderr}")
+    return exe
+
+
 def run_c(source, script_lines):
     """编译 + 链 record host + 用脚本驱动；返回 (frames, CompletedProcess)。"""
     with tempfile.TemporaryDirectory() as directory:
         workdir = Path(directory)
         c_path = workdir / 'program.c'
         c_path.write_text(compile_c(source, workdir), encoding='utf-8')
-        exe = workdir / 'program'
-        build = subprocess.run(
-            [CC, '-O1', '-std=gnu99', '-I', str(ROOT), str(c_path),
-             str(RECORD_HOST), *([] if sys.platform == 'win32' else ['-lm']), '-o', str(exe)],
-            capture_output=True, text=True)
-        if build.returncode != 0:
-            raise AssertionError(f"C 编译失败:\n{build.stderr}")
+        exe = build_c(workdir, c_path)
         script = ''.join(json.dumps(line, ensure_ascii=False) + '\n'
                          for line in script_lines)
         run = subprocess.run([str(exe)], input=script, capture_output=True,
@@ -267,15 +302,7 @@ class CGraphicsErrorParityTests(unittest.TestCase):
             workdir = Path(directory)
             c_path = workdir / 'program.c'
             c_path.write_text(compile_c(source, workdir), encoding='utf-8')
-            exe = workdir / 'program'
-            # Windows 上 clang 以 MSVC 为 backend：getenv 触发 _CRT deprecation，
-            # 必须静默才能 -Werror-free 编译 runtime.h（既有债）。
-            build = subprocess.run(
-                [CC, '-O1', '-std=gnu99', '-D_CRT_SECURE_NO_WARNINGS',
-                 '-I', str(ROOT), str(c_path),
-                 str(RECORD_HOST), *([] if sys.platform == 'win32' else ['-lm']), '-o', str(exe)],
-                capture_output=True, text=True)
-            self.assertEqual(build.returncode, 0, build.stderr)
+            exe = build_c(workdir, c_path)
             run = subprocess.run([str(exe)], capture_output=True, text=True,
                                  timeout=30)
         self.assertNotEqual(run.returncode, 0, f"C 侧未报错: {body}")
