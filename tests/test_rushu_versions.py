@@ -18,7 +18,7 @@ from rushu.versions import version_info
 
 class VersionTests(unittest.TestCase):
     def test_native_library_versions(self):
-        self.assertEqual(ru_version, "0.23.0")
+        self.assertEqual(ru_version, "0.24.0")
         self.assertEqual(rushu_version, "0.9.0")
 
     def test_installed_versions(self):

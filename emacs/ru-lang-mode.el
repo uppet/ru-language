@@ -1,13 +1,13 @@
 ;;; ru-lang-mode.el --- Editing support for the 如 language -*- lexical-binding: t; -*-
 
-;; Version: 0.12.0
+;; Version: 0.13.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: languages
 ;; URL: https://github.com/uppet/ru-language
 
 ;;; Commentary:
 
-;; A dependency-free major mode for ru-language 0.23.0 source files.  The
+;; A dependency-free major mode for ru-language 0.24.0 source files.  The
 ;; lightweight lexer mirrors rulang/frontend.py; it deliberately accepts
 ;; incomplete input.  It is an editing aid, not a compiler or language server.
 ;; See README.md in this directory for loading, indentation and navigation.

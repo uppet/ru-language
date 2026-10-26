@@ -2,11 +2,11 @@
 
 ## 取得同一套工具链
 
-当前稳定组合为 **如 0.23.0、语言规范 0.23.0、如书 0.8.9**，均来自语言仓库的 `main`；如言 VS Code 扩展配套版本为 **0.8.7**。本版包含包与具名模块，以及显式启用的 Windows x64 C 原生后端。学习与普通使用从 `main` 开始；`wip` 用于后续开发。语言仍处于原型阶段，不表示永久冻结语法，各平台实测范围见下文及[验证记录](../VALIDATION.md)。
+当前稳定组合为 **如 0.24.0、语言规范 0.24.0、如书 0.9.0**，来自语言仓库的 `main`；如言 VS Code 扩展配套版本为 **0.8.8**，Emacs 模式为 **0.13.0**。本版在已有包、具名模块与 Windows x64 C 原生后端之上，汇总自举／LLVM 工具链、Python 显式求值栈、如观逻辑工作预算与 `续.` 循环继续语法。学习与普通使用从 `main` 开始；`wip` 用于后续开发。语言仍处于原型阶段，不表示永久冻结语法，各平台能力边界见下文及[验证记录](../VALIDATION.md)。
 
-以上组合适用于本提交已经合入 `main` 的情况；功能分支合入前，请以实际 `main` 的版本为准。本次新增 `另若` 条件链并同步编辑器，不代表已创建正式 release 或 tag。验证范围见[变更记录](../CHANGELOG.md)。
+以上组合适用于本提交已经合入 `main` 的情况；功能分支合入前，请以实际 `main` 的版本为准。本次是源码版本与分支同步，不代表创建了正式 release、tag、安装包或 Marketplace 发布；独立扩展的提交与安装版本须分别核对。变更范围见[变更记录](../CHANGELOG.md)。
 
-`bs` 正在开发如／规范 0.23.0，增加 [LLVM AOT 实验目标](llvm-aot.md) 和[自编译链](bootstrap.md)，支持 LLVM 14／Linux 和 Windows x86-64；如书 0.9.0 提供可选的[如言原生解释内核与如观](rushu-native-interpreter.md)。本工作线已整合上游 `另若`，但独立如言前端仍有明确范围，未替换完整 Python 前端；HTTP／构建驱动去 Python 见[计划](如书去python计划.md)，Dart 性能目标尚未达成。该工作线不改变 `main` 的稳定组合。
+原 `bs`／`wip` 工作线的 [LLVM AOT 实验目标](llvm-aot.md) 和[自编译链](bootstrap.md)已纳入本版，目标仍为 LLVM 14／Linux 和 Windows x86-64；如书 0.9.0 提供可选的[如言原生解释内核与如观](rushu-native-interpreter.md)。这些实验能力不因此变成完整 Python 前端的替换：独立如言前端仍有明确范围，HTTP／构建驱动去 Python 见[计划](如书去python计划.md)，Dart 性能目标尚未达成。默认 Python 与独立 browser-js 路径继续保留。
 
 需要已安装 Python 3.10+ 和 Git。仓库现已公开，可直接获取源码。全新安装：
 
@@ -20,7 +20,7 @@ python3 -m rushu
 
 Windows 可把 `python3` 换成 `py -3`。打开终端打印的完整本机地址，保留其中的启动令牌。如书启动、离线编辑及 Python／浏览器 JS 执行均不需要 npm；只有 CLI JavaScript 产物执行需要 Node.js 18+。
 
-独立的[如言 VS Code 扩展](https://github.com/uppet/ru-vscode) **0.8.7** 配套如 0.23.0，支持 `另若` 条件链、连写的 `尽取`、包语法与原生库接口提示；已有旧版扩展时请同步更新。扩展与语言仓库分别发布，扩展不内置解释器。其“运行当前文件”走普通 CLI，不是如书画布入口。把扩展的 `ru.cliPath` 指向本机语言仓库的 `ru` 文件，解释器路径指向已安装的 Python；普通文本编辑加终端命令同样可用。
+独立的[如言 VS Code 扩展](https://github.com/uppet/ru-vscode) **0.8.8** 配套如 0.24.0，新增 `续.` 高亮、悬停与补全，保留 `另若` 条件链、连写的 `尽取`、包语法与原生库接口提示；已有旧版扩展时请同步更新。扩展与语言仓库分别维护，版本号不代表 Marketplace 已发布，扩展也不内置解释器。其“运行当前文件”走普通 CLI，不是如书画布入口。把扩展的 `ru.cliPath` 指向本机语言仓库的 `ru` 文件，解释器路径指向已安装的 Python；普通文本编辑加终端命令同样可用。
 
 启动后继续[入门小路](first-steps.md)。只想运行 `.ru` 文件时，可用 `python3 ru run examples/hello.ru`；交互输入用 `python3 ru repl`。
 
@@ -53,7 +53,7 @@ python3 -c "import rushu; print(rushu.__version__)"
 
 从较旧版本升级时，按 [标准模块导入迁移](standard-module-imports-migration.md) 改用 `如:观`、`如:竞`，并查看 [阵与典遍历](array-sort-map.md)。保存书本不会自动迁移源码，也不打包外部模块。需要可重复结果时重启 Python 会话并按顺序运行；本次补丁不改变会话重定义规则。
 
-## 稳定版 0.22.0 的执行与生成检查对照
+## 稳定版 0.24.0 的执行与生成检查对照
 
 | 入口 | 状态与宿主 | 生成结果检查 |
 | --- | --- | --- |
@@ -61,11 +61,13 @@ python3 -c "import rushu; print(rushu.__version__)"
 | 如书显式 JS 加速（browser-js） | 每次新 Worker，不共享前格或 Python 变量；提供如观画布，帧率请求 1～60 | 同一浏览器编译器的能力／模块检查，只允许随附标准库；编译后丢弃产物，不执行源码 |
 | CLI `run`／REPL | Python；REPL 可保留状态；不提供如观画布 | `generate` 默认 `--target ru`，检查源码及本地依赖，默认保存后不执行 |
 | CLI `build --target js`／`generate --target js` | Node.js 18+ 独立 CommonJS 程序；不是浏览器，不提供如观画布 | 生成时先检查如源码再本地编译为 Node.js 产物，默认不执行 |
+| 如书可选原生解释内核 | 如言编写并由 LLVM AOT 构建的持久解释进程；仍解释执行代码格，不是代码格 JIT | 原生前端有独立能力范围，详见[内核指南](rushu-native-interpreter.md)；不新增生成目标或原生 DLL 权限 |
+| CLI `build --target llvm` | LLVM 14／Linux 或 Windows x86-64 的独立 AOT 程序；普通产物不提供如观画布 | 解析与能力检查后构建；不自动运行，不等同如书解释内核 |
 | CLI `build`（默认 C） | C99 编译器生成的独立程序；不提供如观画布；Windows x64 原生依赖须另行显式启用 | 构建不运行；在线生成如源码后可另行构建 |
 
-`如:密` 与随附三方库 `如见` 目前仅支持 **Windows x64 本地 Python 或 C 独立程序**。审阅源码后，Python 文件执行须使用 `run --allow-native`；C 检查与构建分别使用 `check --target c --allow-native` 与 `build --allow-native`，并满足有限静态 ABI 签名约束。两者默认均关闭原生能力；Node.js、browser-js、如书与 REPL 不能启用。`check --target python` 可在受支持的开发宿主检查源码和导入图，不加载 DLL。权限和生命周期边界见[原生库指南](native-library.md)。
+`如:密` 与随附三方库 `如见` 的常规原生入口为 **Windows x64 本地 Python 或 C 独立程序**。审阅源码后，Python 文件执行须使用 `run --allow-native`；C 检查与构建分别使用 `check --target c --allow-native` 与 `build --allow-native`，并满足有限静态 ABI 签名约束。两者默认均关闭原生能力；Node.js、browser-js、如书与 REPL 不能启用。`check --target python` 可在受支持的开发宿主检查源码和导入图，不加载 DLL。权限和生命周期边界见[原生库指南](native-library.md)。显式 Mi 清单下 LLVM 的受限原生适配另见[密模式 LLVM](mi-llvm.md)，不能据此为普通 LLVM 目标或如书代码格启用原生能力。
 
-C 原生后端用 Windows x64 C 工具链生成不需要 Python／libffi 的独立程序，仍依赖 Windows 与所调用的 DLL。生成／检查 C 的宿主不等于程序运行平台，不代表 Linux、macOS 或 Android 原生执行已经可用。0.21.0 已通过 [Windows x64 GCC CI](https://github.com/uppet/ru-language/actions/runs/38851331303) 的独立 `.exe`、DLL／回调及如见窗口自动化检查；本版实际回归及待验项见[0.22.0 验证记录](package-0.22.0-validation.md)。Windows Clang 与可见窗口的人工交互验收仍未完成。
+C 原生后端用 Windows x64 C 工具链生成不需要 Python／libffi 的独立程序，仍依赖 Windows 与所调用的 DLL。生成／检查 C 的宿主不等于程序运行平台，不代表 Linux、macOS 或 Android 原生执行已经可用。0.21.0 已通过 [Windows x64 GCC CI](https://github.com/uppet/ru-language/actions/runs/38851331303) 的独立 `.exe`、DLL／回调及如见窗口自动化检查；这些是历史验收记录，不代替本次精确提交的回归；本版变更与验证入口见[变更记录](../CHANGELOG.md)，包系统历史范围见[0.22.0 验证记录](package-0.22.0-validation.md)。LLVM 目标的 Windows Clang 验收与普通 C 后端的工具链配置须分别核对；可见窗口的人工交互验收仍未完成。
 
 [包与具名模块](packages.md)可在 Python、C 与 Node.js 使用；依赖须显式执行 `ru deps sync` 获取，普通运行、检查与构建不自动联网。如书 Python 使用本机已有依赖，书本不打包依赖文件；browser-js 仍只允许随附标准库。当前没有默认公共包目录或网络发布服务。
 
@@ -83,13 +85,13 @@ python3 ru ruguan-prompt --target browser-js -o ruguan-browser-system.txt
 ## 环境与已验证范围
 
 - 编译器 / REPL：Python **3.10+**，只用标准库，无 pip 依赖
-- 原生编译：Clang、GCC 或兼容的 C99 编译器；依次自动查找 `clang`、`gcc`、`cc`
+- C 目标：Clang、GCC 或兼容的 C99 编译器；依次自动查找 `clang`、`gcc`、`cc`。LLVM 目标另需匹配的 LLVM 14 工具链，见 [LLVM AOT](llvm-aot.md)
 - JavaScript 执行：Node.js **18+**，使用内置标准库，无 npm 依赖；不是浏览器 / DOM 目标
 - 可通过 `--cc gcc` 或 `CC=gcc` 指定编译器；参数通过 argv 传递，不经过 shell
 - 仓库初始化验证：Linux x86-64、Python 3.12.3、GCC 13.3.0；位置调用更新验证：Linux x86-64、Python 3.12.14、GCC 14.2.0。各次记录见 `VALIDATION.md`
 - 仓库只保存源码；`bin/`、`dist/` 由 `make examples` 或 `ru build` 在本机生成。原生程序依赖构建时的目标架构和系统库，应在目标系统重新构建
-- Windows：可在已有 WSL 中按上述命令使用。也提供 `ru.cmd`，可通过 `py -3 ru repl` 运行 Python 前端；Python 解释器对 Windows 控制台使用 Unicode 输出（含 `add.ru` 中文输入提示），重定向输出保持 UTF-8，无需修改系统代码页。上述 0.21.0 CI 已验证 Windows x64 上的 GCC 编译与真实 `.exe` 执行；Windows Clang、其他 Windows 架构及可见 GUI 人工交互仍未验证
-- macOS、其他架构和 Python 3.10/3.11 未在本次环境实测
+- Windows：可在已有 WSL 中按上述命令使用。也提供 `ru.cmd`，可通过 `py -3 ru repl` 运行 Python 前端；Python 解释器对 Windows 控制台使用 Unicode 输出（含 `add.ru` 中文输入提示），重定向输出保持 UTF-8，无需修改系统代码页。上述 0.21.0 CI 已验证 Windows x64 上的 GCC 编译与真实 `.exe` 执行；其他 Windows 架构及可见 GUI 人工交互不在该历史验证范围内；LLVM 目标另见其验收记录
+- Python 回归矩阵覆盖 Linux／Windows 的 3.10、3.12、3.14；具体提交结果见对应 CI。macOS、其他架构及未列出的 Python 版本不能据此视为已验收
 
 如需研究静态输出，工具链支持时可使用 `--cc "gcc -static"`；静态库、目标平台兼容性及第三方库再分发义务由该工具链决定。默认构建使用动态链接。
 

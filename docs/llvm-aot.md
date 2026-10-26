@@ -1,6 +1,6 @@
 # LLVM AOT 实验目标
 
-`bs` 工作线的如 0.23.0 增加直接 LLVM AOT 编译。当前目标为 **Linux 和 Windows x86-64、LLVM 14**，使用该版本的有类型指针 IR；不混用其他主版本的 bitcode 或工具。M1 的验收快照只包含 Linux，随后补充 Windows 原生目标。
+直接 LLVM AOT 编译由原 `bs` 工作线引入，现已包含在如 0.24.0 的源码同步版本中，仍作为实验目标。当前目标为 **Linux 和 Windows x86-64、LLVM 14**，使用该版本的有类型指针 IR；不混用其他主版本的 bitcode 或工具。M1 的验收快照只包含 Linux，随后补充 Windows 原生目标。
 
 ## 安装与运行
 
