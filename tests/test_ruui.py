@@ -571,7 +571,7 @@ class RuUIParityTests(unittest.TestCase):
             self.assertEqual([c['id'] for c in released], [1])
             requested = [c for e in events for c in ops(e['commands'], 'image_request')]
             self.assertEqual([(c['id'], c['source']) for c in requested],
-                             [(1, str(path / 'a.png')), (2, str(path / 'c.png'))])
+                             [(1, (path / 'a.png').as_posix()), (2, (path / 'c.png').as_posix())])
             self.assertIn('5x2', texts(events[-1]['commands']))
             switched = [e for e in events if ops(e['commands'], 'image_release')]
             self.assertTrue(switched)

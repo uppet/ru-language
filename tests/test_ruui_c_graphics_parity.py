@@ -268,8 +268,11 @@ class CGraphicsErrorParityTests(unittest.TestCase):
             c_path = workdir / 'program.c'
             c_path.write_text(compile_c(source, workdir), encoding='utf-8')
             exe = workdir / 'program'
+            # Windows 上 clang 以 MSVC 为 backend：getenv 触发 _CRT deprecation，
+            # 必须静默才能 -Werror-free 编译 runtime.h（既有债）。
             build = subprocess.run(
-                [CC, '-O1', '-std=gnu99', '-I', str(ROOT), str(c_path),
+                [CC, '-O1', '-std=gnu99', '-D_CRT_SECURE_NO_WARNINGS',
+                 '-I', str(ROOT), str(c_path),
                  str(RECORD_HOST), '-lm', '-o', str(exe)],
                 capture_output=True, text=True)
             self.assertEqual(build.returncode, 0, build.stderr)
