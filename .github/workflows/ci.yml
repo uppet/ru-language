@@ -105,7 +105,7 @@ jobs:
   player-windows-cross:
     if: always() && contains(github.ref, 'player-ruaudio')
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 25
     env:
       SDL_VERSION: "2.30.12"
       SDL_TTF_VERSION: "2.24.0"
