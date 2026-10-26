@@ -4,6 +4,8 @@ Imports are string paths or static named module chains in package manifests.
 The interpreter and both compilers use this loader. Both compilers lower all
 resolved modules into standalone outputs that need no source files at runtime.
 """
+from .execution_budget import checked_operation
+from .execution_budget import charge, bulk, check_budget, guard_budget, items as budget_items
 from pathlib import Path
 
 from .frontend import Node, RuError, parse, validate, comment_marker, block_comment_end
@@ -25,6 +27,7 @@ def reject_renamed_import(requested):
         raise RuError(f"标准外言「{requested}」已改名为「{replacement}」；请改用 外言 '{replacement}'", category="模块错误")
 
 
+@checked_operation
 def resolve_import(requested, importer_path):
     """Reserve exact bundled/retired names and 如: names, without local fallback."""
     reject_renamed_import(requested)
@@ -41,7 +44,9 @@ def resolve_import(requested, importer_path):
     return str((Path(importer_path).parent / requested).resolve())
 
 
+@checked_operation
 def generation_intent(source):
+    bulk(len(source))
     """Return the document before a final standalone, unquoted marker, or None.
 
     Intent may be loose Markdown/Org rather than valid Ru. This scanner only
@@ -52,12 +57,14 @@ def generation_intent(source):
     """
     lines = source.splitlines(keepends=True)
     while lines and not lines[-1].strip():
+        charge("helper_item")
         lines.pop()
     if not lines or lines[-1].strip() != GENERATION_MARKER:
         return None
     prefix = "".join(lines[:-1])
     quotes, closing, i = {"'": "'", '"': '"', "‘": "’", "“": "”"}, None, 0
     while i < len(prefix):
+        charge("helper_item")
         char = prefix[i]
         if closing:
             if char == "\\":
@@ -91,6 +98,7 @@ def reject_generation_document(source):
         raise error
 
 
+@checked_operation
 def read_source(path):
     if Path(path).name == "集录.ru":
         error = RuError("集录.ru 是静态包清单，不能作为源码执行；依赖同步请用 ru deps sync", category="包错误")
@@ -107,12 +115,15 @@ def import_nodes(value):
         if value.kind == "import":
             yield value
         for child in value.data.values():
+            charge("helper_item")
             yield from import_nodes(child)
     elif isinstance(value, dict):
         for child in value.values():
+            charge("helper_item")
             yield from import_nodes(child)
     elif isinstance(value, (list, tuple)):
         for child in value:
+            charge("helper_item")
             yield from import_nodes(child)
 
 
@@ -168,6 +179,7 @@ def load_module_graph(source_path, program=None):
             packages.check_declaration(path, supplied)
             graph[path] = supplied
             for imported in import_nodes(supplied):
+                charge("helper_item")
                 requested = imported.data["path"]
                 try:
                     if "name" in imported.data:
@@ -177,12 +189,14 @@ def load_module_graph(source_path, program=None):
                         if requested not in STANDARD_MODULES and requested not in BUNDLED_THIRD_PARTY_MODULES:
                             resolved = packages.path(resolved, path)
                 except RuError as error:
+                    guard_budget()
                     if not hasattr(error, "source_name"):
                         error.line, error.col = imported.token.line, imported.token.col
                     raise
                 imported.data["resolved"] = resolved
                 visit(resolved, origin=imported, origin_path=path)
         except RuError as error:
+            guard_budget()
             if not hasattr(error, "source_name"):
                 error.source_name = path
                 error.source_text = graph.sources.get(path, "")

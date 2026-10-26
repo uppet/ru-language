@@ -156,6 +156,11 @@ jobs:
         run: python -m unittest discover -s tests -p test_mi_llvm.py -v
       - name: Test Mi UTF8 owner bridges
         run: python -m unittest discover -s tests -p test_mi_utf8.py -v
+      - name: Test Windows LLVM callback lifecycle with frequent GC
+        if: runner.os == 'Windows'
+        env:
+          PYTHONPATH: tests
+        run: python -m unittest llvm_callback_cases -v
   windows-git-bash-bootstrap:
     # Keep this second full bootstrap independent of the LLVM acceptance budget.
     runs-on: windows-latest

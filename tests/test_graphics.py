@@ -87,102 +87,113 @@ class GraphicsTests(unittest.TestCase):
         with self.assertRaisesRegex(RuError,'预算'): self.host.handle({'type':'frame'})
         self.assertIsNone(self.host.snapshot())
         self.assertEqual(self.interpreter.global_scope.values['保留'],7.)
-    def test_callback_limits_are_tenfold_with_other_quotas_unchanged(self):
+    def test_logical_budget_keeps_wall_memory_watchdog_and_other_quotas(self):
         from rulang import graphics_runtime as runtime
         from rushu.kernel import GRAPHICS_TIMEOUT
         self.assertEqual(runtime.MAX_CALLBACK_SECONDS, 1.0)
-        self.assertEqual(runtime.MAX_CALLBACK_LINES, 500000)
+        from rulang.execution_budget import DEFAULT_BUDGET_POLICY
+        self.assertEqual(DEFAULT_BUDGET_POLICY.work_limit, 262144)
+        self.assertEqual(DEFAULT_BUDGET_POLICY.sample_every, 256)
+        self.assertEqual(DEFAULT_BUDGET_POLICY.model_version, 'logical-work-v2')
+        self.assertFalse(DEFAULT_BUDGET_POLICY.calibration_only)
         self.assertEqual(GRAPHICS_TIMEOUT, 10.0)
         self.assertEqual(GRAPHICS_TIMEOUT / runtime.MAX_CALLBACK_SECONDS, 10)
         self.assertEqual(runtime.MAX_GRAPHICS_MEMORY, 64 * 1024 * 1024)
         self.assertEqual(runtime.MAX_COMMANDS, 2048)
         self.assertEqual(runtime.MAX_FRAME_BYTES, 262144)
 
-    def test_callback_above_old_wall_budget_survives(self):
-        self.canvas('图 其 每帧 (作 帧: 图 其 线 帧 0 1 1. 为).')
+    def advance_callback_clock(self, seconds):
+        # Real interpreter callback/safe points, deterministic elapsed time. Do not
+        # use scheduler sleep accuracy as a proxy for the production deadline.
+        from contextlib import ExitStack
+        clock = [0.0]
         invoke = self.interpreter.invoke_value
         def delayed(*args):
-            time.sleep(.15)
+            clock[0] = seconds
             return invoke(*args)
-        started = time.monotonic()
-        with patch.object(self.interpreter, 'invoke_value', side_effect=delayed):
+        stack = ExitStack()
+        stack.enter_context(patch('rulang.graphics_runtime.time.monotonic', side_effect=lambda: clock[0]))
+        stack.enter_context(patch.object(self.interpreter, 'invoke_value', side_effect=delayed))
+        return stack, clock
+
+    def test_callback_above_old_wall_budget_survives(self):
+        self.canvas('图 其 每帧 (作 帧: 图 其 线 帧 0 1 1. 为).')
+        controlled, clock = self.advance_callback_clock(.15)
+        with controlled:
             self.host.handle({'type': 'frame'})
-        # Windows 计时粒度 ~15.6ms：sleep(.15) 可能早醒一个 tick（实测 .140）。
-        # 下限只需证明回调确实跑过了旧 0.1s 墙钟预算，留两档余量。
-        self.assertGreaterEqual(time.monotonic() - started, .12)
+        self.assertGreaterEqual(clock[0], .15)
         self.assertIsNotNone(self.host.snapshot())
         self.assertEqual(self.events[-1]['commands'][0]['x1'], 1)
 
+    def test_controlled_clock_rejects_the_old_wall_budget(self):
+        self.canvas('图 其 每帧 (作 帧: 图 其 线 帧 0 1 1. 为).')
+        controlled, clock = self.advance_callback_clock(.15)
+        with controlled, patch('rulang.graphics_runtime.MAX_CALLBACK_SECONDS', .1):
+            with self.assertRaisesRegex(RuError, '时间预算.*阈值 0.1 秒'):
+                self.host.handle({'type': 'frame'})
+        self.assertGreaterEqual(clock[0], .15)
+        self.assertIsNone(self.host.snapshot())
+
     def test_new_wall_budget_still_closes_callback(self):
         self.canvas('图 其 每帧 (作 帧: 图 其 线 0 0 1 1. 为).')
-        invoke = self.interpreter.invoke_value
-        def delayed(*args):
-            time.sleep(1.05)
-            return invoke(*args)
-        with patch.object(self.interpreter, 'invoke_value', side_effect=delayed):
+        controlled, clock = self.advance_callback_clock(1.05)
+        with controlled:
             with self.assertRaisesRegex(RuError, '时间预算.*阈值 1 秒'):
                 self.host.handle({'type': 'frame'})
+        self.assertGreaterEqual(clock[0], 1.05)
         self.assertIsNone(self.host.snapshot())
         self.run_ru('显 42.')
         self.assertEqual(self.output.getvalue(), '42\n')
 
-    def test_line_budget_survives_old_limit_and_stops_at_new_limit(self):
+    def test_work_budget_allows_finite_work_and_stops_empty_loop(self):
+        from rulang.execution_budget import current_budget
         self.canvas('图 其 每帧 (作 帧: 图 其 线 0 0 1 1. 为).')
         invoke = self.interpreter.invoke_value
-        def traced_work(*args):
-            # Two traced Python lines per iteration; elapsed time is isolated.
+        def semantic_work(*args):
             for _ in range(30000):
-                pass
+                current_budget().charge('helper_item')
             return invoke(*args)
         with patch('rulang.graphics_runtime.time.monotonic', return_value=0):
-            with patch.object(self.interpreter, 'invoke_value', side_effect=traced_work):
+            with patch.object(self.interpreter, 'invoke_value', side_effect=semantic_work):
                 self.host.handle({'type': 'frame'})
             self.assertIsNotNone(self.host.snapshot())
             self.run_ru('图 其 每帧 (作 帧: 循 环. 为).')
-            with self.assertRaisesRegex(RuError, '执行行预算.*阈值 500000 行'):
+            with self.assertRaisesRegex(RuError, '逻辑工作预算.*阈值 262144 工作单位'):
                 self.host.handle({'type': 'frame'})
         self.assertIsNone(self.host.snapshot())
+        self.assertIsNone(current_budget())
 
-    def test_exact_trace_counter_boundaries_and_check_cadence(self):
-        # Supply exact line events without tracing unittest/mock infrastructure.
-        # Production sys.settrace still covers all Python frames unchanged.
-        for count in (0, 127, 128, 129, 499999, 500000, 500001, 500096):
+    def test_exact_logical_counter_boundaries_and_check_cadence(self):
+        from rulang.execution_budget import current_budget, DEFAULT_BUDGET_POLICY
+        limit, cadence = DEFAULT_BUDGET_POLICY.work_limit, DEFAULT_BUDGET_POLICY.sample_every
+        for count in (0, cadence - 1, cadence, cadence + 1,
+                      limit - 1, limit, limit + 1, limit + cadence):
             with self.subTest(count=count):
                 self.canvas('图 其 每帧 (作 帧: 为).')
-                traces = []
                 seen = 0
+                old_trace = sys.gettrace()
                 def invoke(*args):
                     nonlocal seen
-                    trace = traces[0]
                     for seen in range(1, count + 1):
-                        trace(None, 'line', None)
-                with patch('rulang.graphics_runtime.sys.settrace', side_effect=traces.append), \
-                     patch('rulang.graphics_runtime.time.monotonic', return_value=0), \
+                        current_budget().charge('expr')
+                with patch('sys.settrace') as trace, \
+                     patch('rulang.graphics_runtime.time.monotonic', return_value=0) as clock, \
                      patch.object(self.interpreter, 'invoke_value', side_effect=invoke):
-                    if count <= 500000:
+                    if count <= limit:
                         self.host.handle({'type': 'frame'})
                         self.assertIsNotNone(self.host.canvas)
+                        self.assertEqual(clock.call_count, 4 + count // cadence)
                     else:
-                        with self.assertRaisesRegex(RuError, '500000 行'):
+                        with self.assertRaisesRegex(RuError, '262144 工作单位'):
                             self.host.handle({'type': 'frame'})
                         self.assertIsNone(self.host.canvas)
-                self.assertEqual(seen, count)
-                self.assertEqual(len(traces), 2)  # install and restore on both paths
-        # The previous implementation checks at multiples of 128, so the first
-        # in-callback failure is 500096; final check catches shorter overruns.
-        self.canvas('图 其 每帧 (作 帧: 为).')
-        traces = []
-        seen = 0
-        def invoke(*args):
-            nonlocal seen
-            for seen in range(1, 500200):
-                traces[0](None, 'line', None)
-        with patch('rulang.graphics_runtime.sys.settrace', side_effect=traces.append), \
-             patch('rulang.graphics_runtime.time.monotonic', return_value=0), \
-             patch.object(self.interpreter, 'invoke_value', side_effect=invoke):
-            with self.assertRaisesRegex(RuError, '500000 行'):
-                self.host.handle({'type': 'frame'})
-        self.assertEqual(seen, 500096)
+                        self.assertEqual(clock.call_count, 2 + limit // cadence)
+                self.assertEqual(seen, min(count, limit + 1))
+                self.assertEqual(self.host.budget_snapshot.charged_units, min(count, limit))
+                trace.assert_not_called()
+                self.assertIs(sys.gettrace(), old_trace)
+                self.assertIsNone(current_budget())
+                self.assertTrue(self.host.budget_snapshot.closed)
 
     def test_canvas_parameter_schema_is_immutable(self):
         from rulang.graphics_runtime import CANVAS_PARAMS
@@ -217,10 +228,8 @@ class GraphicsTests(unittest.TestCase):
     def test_cli_and_compilers_explicitly_reject(self):
         source="尽取 外言 '如:观'. 图 取 画布 20 20."
         with self.assertRaisesRegex(RuError,'仅在如书'): Interpreter().execute(parse(source))
-        # C 后端已支持如观图形运行时（见 tests/test_ruui_c_graphics_parity.py），
-        # 只有 JS 后端仍显式拒绝。
-        with self.assertRaisesRegex(RuError,'如书 Python'): JSCompiler(parse(source)).compile()
-        self.assertTrue(Compiler(parse(source)).compile())
+        for cls in (Compiler,JSCompiler):
+            with self.assertRaisesRegex(RuError,'如书 Python'): cls(parse(source)).compile()
     def test_documentation_and_interactive_data_book_repeat(self):
         import re
         from pathlib import Path
@@ -308,10 +317,9 @@ class GraphicsTests(unittest.TestCase):
             (root / 'wrapper.ru').write_text("观 取 外言 '如:观'.", encoding='utf-8')
             main.write_text("外 取 外言 './wrapper.ru'.", encoding='utf-8')
             graph = load_module_graph(main)
-            # wrapper 直接引用保留模块 如:观：JS 拒绝，C 已支持图形运行时。
-            self.assertTrue(Compiler(graph[graph.root], str(main), modules=graph).compile())
-            with self.assertRaisesRegex(RuError, '如书 Python'):
-                JSCompiler(graph[graph.root], str(main), modules=graph).compile()
+            for compiler in (Compiler, JSCompiler):
+                with self.assertRaisesRegex(RuError, '如书 Python'):
+                    compiler(graph[graph.root], str(main), modules=graph).compile()
 
     def test_no_callbacks_no_implicit_frame(self):
         self.canvas("图 其 背景 '#ffffff'.")

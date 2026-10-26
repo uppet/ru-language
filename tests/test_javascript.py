@@ -36,8 +36,8 @@ NATIVE_EXAMPLE_SOURCES = tuple(path for path in EXAMPLE_SOURCES
 # Graphics examples drive the 如观 canvas and only run in a 如书 Python
 # session or the browser runtime (see tests/test_ruui*.py); neither the C
 # compiler nor the Node compiler supports them yet.
-GRAPHICS_EXAMPLE_SOURCES = tuple(path for path in EXAMPLE_SOURCES
-                                 if path.stem.startswith('ruui-'))
+GRAPHICS_EXAMPLE_NAMES = ('ruui-counter.ru', 'ruui-mixer.ru', 'ruui-quiz.ru', 'ruui-textfield.ru')
+GRAPHICS_EXAMPLE_SOURCES = tuple(ROOT / 'examples' / name for name in GRAPHICS_EXAMPLE_NAMES)
 PORTABLE_EXAMPLE_SOURCES = tuple(path for path in EXAMPLE_SOURCES
                                  if path not in NATIVE_EXAMPLE_SOURCES
                                  and path not in GRAPHICS_EXAMPLE_SOURCES)
@@ -119,9 +119,18 @@ class JavaScriptCompileTests(unittest.TestCase):
                     Interpreter(stdout=output).execute(graph[graph.root], source_path=graph.root, modules=graph)
                 self.assertEqual(output.getvalue(), '')
 
+    def test_standalone_example_build_excludes_only_the_four_ui_sources(self):
+        import re
+        makefile = (ROOT / 'Makefile').read_text(encoding='utf-8')
+        alternatives = re.findall(r'(examples/ruui-[^\s]+)\) continue ;;', makefile)
+        self.assertEqual(len(alternatives), 1)
+        self.assertEqual(set(alternatives[0].split('|')),
+                         {'examples/' + name for name in GRAPHICS_EXAMPLE_NAMES})
+
     def test_python_only_graphics_examples_validate_and_explicitly_reject_node(self):
         from rulang.js_compiler import JSCompiler
-        self.assertGreaterEqual(len(GRAPHICS_EXAMPLE_SOURCES), 2)
+        self.assertEqual(len(GRAPHICS_EXAMPLE_SOURCES), 4)
+        self.assertTrue(all(path in EXAMPLE_SOURCES for path in GRAPHICS_EXAMPLE_SOURCES))
         for source_path in GRAPHICS_EXAMPLE_SOURCES:
             with self.subTest(example=str(source_path.relative_to(ROOT))):
                 # 如观 canvas is only available in a 如书 Python session; the

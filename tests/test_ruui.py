@@ -465,14 +465,17 @@ class RuUIParityTests(unittest.TestCase):
     # ---------- 3a：图载／件载／件目（宿主资源协议） ----------
 
     def load_program(self, directory, filename='a.png'):
-        directory = Path(directory).as_posix()
+        # Ru supports quoted strings; JSON escapes backslashes and quotes without
+        # Python repr introducing unsupported \u/\U escapes for Unicode paths.
+        directory_literal = json.dumps(str(directory), ensure_ascii=False)
+        filename_literal = json.dumps(filename, ensure_ascii=False)
         return f"""
 尽取 外言 '如UI'.
 
 果 取 [''].
-机 取 新 应用 宽: 360 高: 640 件目: '{directory}' 构: (算:
+机 取 新 应用 宽: 360 高: 640 件目: {directory_literal} 构: (算:
     得 列 [
-        (图载 '{filename}' 120 (作 宽 为 数 高 为 数 错 为 句:
+        (图载 {filename_literal} 120 (作 宽 为 数 高 为 数 错 为 句:
             果[0] 取 (宽 为 句) + 'x' + (高 为 句) + ':' + 错.
             为)),
         (文 (果 其 位 0))
@@ -480,6 +483,24 @@ class RuUIParityTests(unittest.TestCase):
 法).
 机 其 运行.
 """
+
+    def test_resource_paths_keep_windows_separators_quotes_and_unicode(self):
+        from rulang.frontend import lex
+        directory = "C:\\Users\\甲 O'Brien\\项目"
+        filename = 'a"b.png'
+        values = [token.value for token in lex(self.load_program(directory, filename))]
+        self.assertIn(directory, values)
+        self.assertIn(filename, values)
+        parse(self.load_program(directory, filename))
+
+    def test_resource_protocol_joins_windows_base_with_forward_slash(self):
+        # The UI protocol joins base/source, independent of the host OS.
+        directory = "C:\\Users\\甲 O'Brien\\项目"
+        events = run_python(self.load_program(directory))
+        requested = [c for event in events
+                     for c in ops(event['commands'], 'image_request')]
+        self.assertEqual([(c['id'], c['source']) for c in requested],
+                         [(1, directory + '/a.png')])
 
     def test_image_head_size_recognises_png_and_jpeg(self):
         from rulang.graphics_runtime import _image_head_size
@@ -542,7 +563,7 @@ class RuUIParityTests(unittest.TestCase):
         (文 (果 其 位 0))
     ].
 法).
-机 取 新 应用 宽: 360 高: 640 件目: '{d}' 构: (算:
+机 取 新 应用 宽: 360 高: 640 件目: {d} 构: (算:
     得 列 [
         (图载 'a.png' 120 (作 宽 为 数 高 为 数 错 为 句: 果[0] 取 (宽 为 句). 为)),
         (钮 '换' (作: 机 其 页 二页. 为))
@@ -551,14 +572,13 @@ class RuUIParityTests(unittest.TestCase):
 机 其 运行.
 """
         with tempfile.TemporaryDirectory() as directory:
-            directory = Path(directory).as_posix()
             path = Path(directory)
             (path / 'a.png').write_bytes(png_bytes(4, 3))
             (path / 'c.png').write_bytes(png_bytes(5, 2))
             host_events = []
             host = GraphicsHost(Interpreter(), host_events.append)
             try:
-                host.interpreter.execute(parse(source.format(d=directory)))
+                host.interpreter.execute(parse(source.format(d=json.dumps(directory, ensure_ascii=False))))
                 host.flush()
                 button = self.find_rect(host_events[0]['commands'], '#4677ff')
                 x, y = self.center(button)
@@ -571,7 +591,7 @@ class RuUIParityTests(unittest.TestCase):
             self.assertEqual([c['id'] for c in released], [1])
             requested = [c for e in events for c in ops(e['commands'], 'image_request')]
             self.assertEqual([(c['id'], c['source']) for c in requested],
-                             [(1, (path / 'a.png').as_posix()), (2, (path / 'c.png').as_posix())])
+                             [(1, directory + '/a.png'), (2, directory + '/c.png')])
             self.assertIn('5x2', texts(events[-1]['commands']))
             switched = [e for e in events if ops(e['commands'], 'image_release')]
             self.assertTrue(switched)
@@ -582,7 +602,7 @@ class RuUIParityTests(unittest.TestCase):
 尽取 外言 '如UI'.
 
 果 取 [''].
-机 取 新 应用 宽: 360 高: 640 件目: '{d}' 构: (算:
+机 取 新 应用 宽: 360 高: 640 件目: {d} 构: (算:
     得 列 [(文 果[0])].
 法).
 机 其 运行.
@@ -590,12 +610,11 @@ class RuUIParityTests(unittest.TestCase):
 机 其 件载 'data.bin' (作 字 为 句 错 为 句: 果[0] 取 果[0] + '|' + 字. 为) 'base64' 假.
 """
         with tempfile.TemporaryDirectory() as directory:
-            directory = Path(directory).as_posix()
             path = Path(directory)
             (path / 'note.txt').write_text('你好', encoding='utf-8')
             (path / 'data.bin').write_bytes(bytes([0, 255]))
             events = self.compare(
-                source.format(d=directory),
+                source.format(d=json.dumps(directory, ensure_ascii=False)),
                 [{'type': 'file_ready', 'id': 1, 'text': '你好'},
                  {'type': 'file_ready', 'id': 2, 'text': 'AP8='}])
         self.assertIn('你好/|AP8=', texts(events[-1]['commands']))

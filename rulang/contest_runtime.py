@@ -4,6 +4,8 @@ Scanner cursors only move forward. The opaque values are ordinary Instances,
 but their state and types are not exposed as fields or module exports. Writers
 retain at most 64 KiB of UTF-8 output and require an explicit final 清.
 """
+from .execution_budget import checked_member, checked_operation
+from .execution_budget import charge, bulk, check_budget, guard_budget, items as budget_items
 from functools import cmp_to_key
 import math
 
@@ -46,15 +48,18 @@ def install_contest(owner):
     owner.global_scope.parent = parent
 
 
+@checked_operation
 def _text(owner, n, value, label):
     if not isinstance(value, str):
         owner.fail(n, label + "须为句")
+    bulk(len(value))
     if "\x00" in value:
         owner.fail(n, label + "不能含 NUL")
     # A host-supplied text stream can contain lone surrogates. Validate once
     # on entry, without a second full-size encoded copy of a large string.
     try:
         for offset in range(0, len(value), _TEXT_CHUNK):
+            charge("helper_item")
             value[offset:offset + _TEXT_CHUNK].encode("utf-8", "strict")
     except UnicodeError:
         owner.fail(n, label + "不是有效的 UTF-8")
@@ -65,20 +70,26 @@ class _Scanner:
     def __init__(self, text):
         self.text, self.cursor = text, 0
 
+    @checked_operation
     def token(self):
         text, cursor, size = self.text, self.cursor, len(self.text)
         while cursor < size and text[cursor] in ASCII_WHITESPACE:
+            charge("helper_item")
             cursor += 1
         start = cursor
         while cursor < size and text[cursor] not in ASCII_WHITESPACE:
+            charge("helper_item")
             cursor += 1
         self.cursor = cursor
+        bulk(cursor - start)
         return None if start == size else text[start:cursor]
 
+    @checked_operation
     def line(self):
         text, start = self.text, self.cursor
         if start == len(text):
             return None
+        bulk(len(text) - start)
         end = text.find("\n", start)
         if end < 0:
             self.cursor = len(text)
@@ -100,22 +111,33 @@ class _Writer:
     def __init__(self, stream):
         self.stream, self.pending = stream, bytearray()
 
+    @checked_operation
     def flush(self, force=False):
         if self.pending:
-            _write_stream(self.stream, self.pending.decode("utf-8"))
+            bulk(len(self.pending))
+            decoded = self.pending.decode("utf-8")
+            check_budget()
+            _write_stream(self.stream, decoded)
             self.pending.clear()
         elif force:
             self.stream.flush()
 
+    @checked_operation
     def write(self, text):
         # Encode bounded pieces, preserving whole codepoints at every flush.
+        # This is one known-length encoding operation, regardless of chunking.
+        bulk(len(text))
         # Even a single enormous 写 call never becomes an enormous buffer.
         for start in range(0, len(text), _TEXT_CHUNK):
+            charge("helper_item")
+            check_budget()
             encoded = text[start:start + _TEXT_CHUNK].encode("utf-8")
             offset = 0
             while offset < len(encoded):
+                charge("helper_item")
                 end = min(len(encoded), offset + OUTPUT_LIMIT - len(self.pending))
                 while end < len(encoded) and end > offset and encoded[end] & 0xC0 == 0x80:
+                    charge("helper_item")
                     end -= 1
                 if end == offset:
                     self.flush()
@@ -135,6 +157,7 @@ _SCANNER_PARAMS = {"词": [], "数": [], "行": []}
 _WRITER_PARAMS = {"写": ["内容"], "行": ["值"], "清": []}
 
 
+@checked_member('contest_kind')
 def contest_member(owner, n, receiver, name, args):
     """Return (handled, value), using normal fatal errors rather than 卒."""
     from .interpreter import Function, Instance, display
@@ -145,6 +168,7 @@ def contest_member(owner, n, receiver, name, args):
               "writer": _WRITER_PARAMS}.get(kind, {})
     if name not in params:
         return False, None
+    charge("call")
     bound = bind_arguments(name, args, params[name], lambda message: owner.fail(n, message))
     if kind == "scanner":
         scanner = receiver.contest_state
@@ -192,21 +216,25 @@ def contest_member(owner, n, receiver, name, args):
         if name == "扫句":
             return True, _scanner(text)
         if name == "字列":
+            bulk(len(text))
             return True, list(text)
         scanner, result = _Scanner(text), []
         read = scanner.token if name == "拆词" else scanner.line
         while True:
+            charge("helper_item")
             item = read()
             if item is None:
                 return True, result
             result.append(item)
     if name == "合句":
         values = bound["列"]
-        if not isinstance(values, list) or any(not isinstance(value, str) for value in values):
+        if not isinstance(values, list) or any(not isinstance(value, str) for value in budget_items(values)):
             owner.fail(n, "列须为句 阵")
         separator = _text(owner, n, bound["隔"], "隔")
         for value in values:
+            charge("helper_item")
             _text(owner, n, value, "列中元素")
+        bulk(sum(map(len, values)) + len(separator) * max(0, len(values)-1))
         return True, separator.join(values)
     if name == "取整":
         value = bound["值"]
@@ -219,9 +247,12 @@ def contest_member(owner, n, receiver, name, args):
             owner.fail(n, "列须为阵")
         if not isinstance(comparator, Function) or comparator.node.data["procedure"]:
             owner.fail(n, "比较须为算")
+        bulk(len(values))
         snapshot = list(values)
+        check_budget()
 
         def compare(left, right):
+            charge("helper_item")
             result = owner.invoke_value(n, comparator, [(None, left), (None, right)])
             if not isinstance(result, float) or not math.isfinite(result):
                 owner.fail(n, "比较结果须为有限数")

@@ -1,3 +1,5 @@
+> 历史性能记录：下文 trace 行计量、检查频率及测量值保留原样，不代表当前候选政策。Python logical-work-v2 候选模型及不变的墙钟／净内存／外看门狗边界见[如观指南](ruguan-guide.md)；不能将不同模型的工作数直接比较。
+
 # Graphics host performance profile (2026-10-12)
 
 ## Scope and reproduction

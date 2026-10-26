@@ -1,4 +1,6 @@
 """Primitives for bundled text, math and deterministic random libraries."""
+from .execution_budget import checked_member, checked_operation
+from .execution_budget import charge, bulk, check_budget, guard_budget, items as budget_items
 # PCG32 algorithm: Copyright 2014 Melissa O'Neill; Apache License 2.0.
 # See docs/third-party-notices.md and https://www.apache.org/licenses/LICENSE-2.0.
 import math
@@ -42,10 +44,12 @@ class _Random:
             return 0
         threshold = (1 << 32) % count
         while True:
+            charge("helper_item")
             value = self.next()
             if value >= threshold:
                 return value % count
 
+@checked_operation
 def fixed_text(value, places):
     """Round the exact binary64 rational, half away from zero."""
     numerator, denominator = abs(value).as_integer_ratio()
@@ -65,6 +69,7 @@ _PARAMS = {
     "向下取整": ["值"], "向上取整": ["值"], "四舍五入": ["值"], "造源": ["种子"],
 }
 
+@checked_member('practical_kind')
 def practical_member(owner, n, receiver, name, args):
     from .interpreter import Instance
     if not isinstance(receiver, Instance):
@@ -72,6 +77,7 @@ def practical_member(owner, n, receiver, name, args):
     kind = getattr(receiver.type, "practical_kind", None)
     if kind is None:
         return False, None
+    charge("call")
     fail = lambda message: owner.fail(n, message)
     def number(value, label):
         if not isinstance(value, float) or not math.isfinite(value):
@@ -99,8 +105,10 @@ def practical_member(owner, n, receiver, name, args):
             fail("洗牌的列须为阵")
         if len(original) > 1 << 32:
             fail("洗牌的列超过随机范围限制")
+        bulk(len(original))
         result = original[:]
         for index in range(len(result) - 1, 0, -1):
+            charge("helper_item")
             target = receiver.practical_state.bounded(index + 1)
             result[index], result[target] = result[target], result[index]
         return True, result
@@ -109,13 +117,16 @@ def practical_member(owner, n, receiver, name, args):
     bound = bind_arguments(name, args, _PARAMS[name], fail)
     if name in ("拆分", "替换", "去空白"):
         for label, value in bound.items():
+            charge("helper_item")
             if not isinstance(value, str):
                 fail(label + "须为句")
         if name == "去空白":
+            bulk(len(bound["文"]))
             return True, bound["文"].strip(ASCII_WHITESPACE)
         separator = bound["隔"] if name == "拆分" else bound["旧"]
         if separator == "":
             fail(("隔" if name == "拆分" else "旧") + "不能为空句")
+        bulk(len(bound["文"]) + len(separator) + (len(bound["新文"]) if name != "拆分" else 0))
         return True, (bound["文"].split(separator) if name == "拆分"
                       else bound["文"].replace(separator, bound["新文"]))
     if name == "造源":

@@ -108,6 +108,6 @@ c.bytes=2;call(canvas,'描边',null);call(canvas,'折线',[[0,0],[0,0]]);
 assert.equal(c.commands.length,1);assert.equal(c.commands[0].fill,'');assert.equal(c.commands[0].stroke,'');assert.ok(c.bytes>2);
 console.log('atomic');
 """
-        result = test_browser_js.run_source(prelude + runtime + checks)
+        result = test_browser_js.run_node_script(prelude + runtime + checks, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, 'atomic\n')

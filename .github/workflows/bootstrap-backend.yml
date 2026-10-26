@@ -1,0 +1,64 @@
+name: Ordinary backend optimization acceptance
+on:
+  push:
+    branches: [main, wip, feature/backend-main-integration-20261023, feature/backend-wip-integration-20261023, feature/bs-full-integration-wip-20261024, feature/interpreter-stack-20261025, feature/graphics-logical-budget-20261025]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: backend-acceptance-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  backend:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    env:
+      PYTHONUTF8: "1"
+      PYTHONUNBUFFERED: "1"
+      GIT_CONFIG_COUNT: "1"
+      GIT_CONFIG_KEY_0: core.autocrlf
+      GIT_CONFIG_VALUE_0: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.10"
+      - name: Install matching LLVM14 tools
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y clang-14 llvm-14
+      - name: Prepare matching Windows LLVM14
+        if: runner.os == 'Windows'
+        run: python tools/prepare_workspace.py --with-llvm
+      - name: Create persistent diagnostic directory
+        run: python -c "from pathlib import Path; Path('bin/bootstrap/backend').mkdir(parents=True,exist_ok=True)"
+      - name: Required runner contract regressions
+        run: python -m unittest discover -s tests -p test_bootstrap_backend_ci.py -v
+      - name: Freeze actual source and LLVM14 executable identities before bootstrap
+        run: python tools/verify_bootstrap_backend_ci.py preflight --directory bin/bootstrap/backend
+      - name: Fresh105 and full native fixed point
+        run: python tools/bootstrap.py verify --directory bin/bootstrap/backend
+      - name: Require cache cleanup target and validation regressions without skips
+        run: python tools/verify_bs_review.py core --out bin/bootstrap/backend
+      - name: Required31 dual frontend lifecycle GC and wrong unwind controls
+        run: python tools/verify_bootstrap_backend_ci.py runtime --directory bin/bootstrap/backend
+      - name: Required Windows PythonLLVM ordinary callback with existing scalar opt-in
+        if: runner.os == 'Windows'
+        run: python tools/verify_bootstrap_backend_ci.py windows --directory bin/bootstrap/backend
+      - name: Windows nested callback recovery including UTF8 under GC threshold 1
+        if: runner.os == 'Windows'
+        run: python tools/verify_bs_review.py callbacks --out bin/bootstrap/backend
+      - name: Require complete exact source tool artifact and case evidence
+        run: python tools/verify_bootstrap_backend_ci.py combined --directory bin/bootstrap/backend
+      - name: Preserve bootstrap and lifecycle evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: backend-${{ matrix.os }}-${{ github.sha }}
+          path: bin/bootstrap/backend
+          if-no-files-found: error

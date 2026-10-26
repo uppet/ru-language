@@ -3,6 +3,7 @@
 No manifest expression is evaluated, and this module never starts a download.
 All filesystem identities use real paths, including boundary and cache checks.
 """
+from .execution_budget import charge, bulk, check_budget, guard_budget, checked_operation, items as budget_items
 from dataclasses import dataclass
 from pathlib import Path
 import re
@@ -22,8 +23,8 @@ class _StaticMap(dict):
 
 class _StaticList(list):
     def __init__(self, items):
-        self.locations = [item.token for item in items]
-        super().__init__(_literal(item) for item in items)
+        self.locations = [item.token for item in budget_items(items)]
+        super().__init__(_literal(item) for item in budget_items(items))
 
 
 def _error(message, token=None):
@@ -31,6 +32,7 @@ def _error(message, token=None):
 
 
 def _literal(n):
+    charge("helper_item")
     if n.kind in ('string', 'number', 'fact'):
         return n.data['value']
     if n.kind == 'null':
@@ -43,6 +45,7 @@ def _literal(n):
     if n.kind == 'map':
         result = _StaticMap(n.token)
         for key, value in n.data['entries']:
+            charge("helper_item")
             if key.kind != 'string':
                 _error('集录的典目须为字符串字面量', key.token)
             name = key.data['value']
@@ -61,6 +64,7 @@ def _identifier(value):
     try:
         tokens = lex(value)
     except RuError:
+        guard_budget()
         return False
     return (len(tokens) == 2 and tokens[0].kind == 'NAME' and tokens[0].value == value
             and value not in KEYWORDS)
@@ -98,6 +102,7 @@ class Manifest:
     dependencies: dict
 
 
+@checked_operation
 def load_manifest(path):
     path = Path(path).absolute()
     source = ''
@@ -111,6 +116,7 @@ def load_manifest(path):
             data = stream.read(MAX_MANIFEST_BYTES + 1)
         if len(data) > MAX_MANIFEST_BYTES:
             _error('集录超过 1 MiB 大小上限')
+        bulk(len(data))
         source = data.decode('utf-8-sig')
         parser = Parser(source)
         value = _literal(parser.expression(allow_call=False))
@@ -120,6 +126,7 @@ def load_manifest(path):
         if not isinstance(value, _StaticMap):
             _error('集录须为一个静态典')
         for key in value:
+            charge("helper_item")
             if key not in FIELDS:
                 _error('未知集录字段', value.keys_at[key])
         def token(key):
@@ -146,6 +153,7 @@ def load_manifest(path):
                 if not version_satisfies(__version__, requires):
                     _error('当前如言版本不满足「需如言」约束', token('需如言'))
             except RuError as error:
+                guard_budget()
                 error.line, error.col = token('需如言').line, token('需如言').col
                 raise
         root = path.parent
@@ -155,12 +163,13 @@ def load_manifest(path):
             _error('集录「公开」须为模块名阵或模块名到路径的典', token('公开'))
         public, used_paths = {}, set()
         for index, relative in enumerate(raw_public):
+            charge("helper_item")
             location = (raw_public.locations.get(relative, token('公开')) if isinstance(raw_public, _StaticMap)
                         else raw_public.locations[index])
             if not isinstance(relative, str):
                 _error('公开模块名须为句', location)
             parts = () if relative == '.' else tuple(relative.split('/'))
-            if not parts and relative != '.' or any(not _identifier(part) for part in parts):
+            if not parts and relative != '.' or any(not _identifier(part) for part in budget_items(parts)):
                 _error('公开模块名须为 / 分隔的包内名称，包根使用 .', location)
             canonical = (name,) + parts
             if canonical in public:
@@ -182,6 +191,7 @@ def load_manifest(path):
         if not isinstance(dependencies, dict):
             _error('集录「依赖」须为典', token('依赖'))
         for alias, descriptor in dependencies.items():
+            charge("helper_item")
             location = dependencies.locations.get(alias, token('依赖'))
             if not _identifier(alias) or alias == name or alias in ('如见', '如观', '如竞'):
                 _error('依赖别名无效或与当前包／固定外言名称冲突', location)
@@ -192,6 +202,7 @@ def load_manifest(path):
                 allowed = {'路径': {'路径'}, 'Git': {'Git', '引用', '子目录'},
                            '目录': {'目录', '包', '版'}}[next(iter(source_keys))]
                 for key, item in descriptor.items():
+                    charge("helper_item")
                     if key not in allowed:
                         _error('未知依赖来源字段', descriptor.keys_at[key])
                     if not isinstance(item, str) or not item:
@@ -200,6 +211,7 @@ def load_manifest(path):
             try:
                 validate_dependency(descriptor)
             except RuError as error:
+                guard_budget()
                 error.line, error.col = location.line, location.col
                 raise
         return Manifest(path, root, name, version, requires, source_root, public, dependencies)
@@ -208,6 +220,7 @@ def load_manifest(path):
         error.source_name, error.suppress_source = str(path), True
         raise error from None
     except RuError as error:
+        guard_budget()
         if error.category != '包错误':
             error.message = '集录语法无效；请使用单个静态典字面量'
             error.args = (error.message,)
@@ -219,10 +232,12 @@ def load_manifest(path):
         raise
 
 
+@checked_operation
 def find_manifest(source_path):
     path = Path(source_path).resolve()
     directory = path if path.is_dir() else path.parent
     for root in (directory, *directory.parents):
+        charge("helper_item")
         manifest = root / MANIFEST_NAME
         if manifest.is_file():
             return load_manifest(manifest)
@@ -258,6 +273,7 @@ class PackageResolver:
     def expected_name(self, owner, path):
         path = Path(path).resolve()
         for name, public_path in owner.public.items():
+            charge("helper_item")
             if path == public_path:
                 return name
         if _inside(path, owner.source_root) and path.suffix == '.ru':
@@ -306,6 +322,7 @@ class PackageResolver:
             # dependencies, so a local import never demands an unrelated sync.
             declared = False
             for alias, descriptor in source.dependencies.items():
+                charge("helper_item")
                 if '路径' in descriptor:
                     candidate = (source.root / descriptor['路径']).resolve()
                     if candidate == target.root:
@@ -313,11 +330,13 @@ class PackageResolver:
                         break
             if not declared:
                 for alias, descriptor in source.dependencies.items():
+                    charge("helper_item")
                     if '路径' in descriptor:
                         continue
                     try:
                         candidate = self.dependency(source, alias)
                     except RuError:
+                        guard_budget()
                         continue  # An unusable edge cannot grant path access.
                     if candidate.root == target.root:
                         declared = True
@@ -329,7 +348,7 @@ class PackageResolver:
         return str(path)
 
     def check_declaration(self, path, program):
-        declarations = [n for n in program if n.kind == 'module_decl']
+        declarations = [n for n in budget_items(program) if n.kind == 'module_decl']
         if not declarations:
             return
         owner = self.owner(path)

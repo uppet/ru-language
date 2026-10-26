@@ -1,0 +1,53 @@
+name: Graphics logical budget candidate acceptance and calibration
+on:
+  push:
+    branches: [feature/graphics-logical-budget-20261025, wip]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: graphics-logical-budget-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  logical-budget:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+        python: ['3.10', '3.12', '3.14']
+    env:
+      PYTHONUTF8: '1'
+      PYTHONUNBUFFERED: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Required native fixture compiler and UI parity engine
+        run: >-
+          python -c "import subprocess; subprocess.run(['gcc', '--version'], check=True); v=subprocess.check_output(['node', '--version'], text=True).strip(); print(v); assert int(v.lstrip('v').split('.')[0]) >= 18, v"
+      - name: Candidate default, required contracts and natural UI and large-text gates
+        run: python tools/calibrate_graphics_logical_budget.py --mode acceptance --sample-every 256 --corpus full --out bin/logical-budget/acceptance
+      - name: Fixed complete corpus, calibration only, original wall and memory bounds
+        if: always()
+        run: python tools/calibrate_graphics_logical_budget.py --mode measure --sample-every 256 --corpus full --out bin/logical-budget/full-256
+      - name: Fixed large-text corpus, unbounded work calibration only
+        if: always()
+        run: python tools/calibrate_graphics_logical_budget.py --mode measure --sample-every 256 --corpus large-text --out bin/logical-budget/large-text
+      - name: Predetermined cadence sensitivity, 64 logical units
+        if: always()
+        run: python tools/calibrate_graphics_logical_budget.py --mode measure --sample-every 64 --corpus sensitivity --out bin/logical-budget/sensitivity-64
+      - name: Predetermined cadence sensitivity, 1024 logical units
+        if: always()
+        run: python tools/calibrate_graphics_logical_budget.py --mode measure --sample-every 1024 --corpus sensitivity --out bin/logical-budget/sensitivity-1024
+      - name: Preserve all acceptance and calibration evidence, including failures
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: graphics-logical-budget-${{ matrix.os }}-${{ matrix.python }}-${{ github.sha }}
+          path: bin/logical-budget
+          if-no-files-found: error

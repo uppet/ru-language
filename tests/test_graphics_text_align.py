@@ -210,7 +210,7 @@ for(const bad of [null,true,false,0,NaN,Infinity,[],{},'', 'left','top','中 ','
 }
 console.log('atomic');
 """
-        result = test_browser_js.run_source(prelude + runtime + checks)
+        result = test_browser_js.run_node_script(prelude + runtime + checks, timeout=10)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout, 'atomic\n')
 

@@ -15,7 +15,7 @@ from pathlib import Path
 from rulang.app_builder import build_app_html
 
 ROOT = Path(__file__).resolve().parent.parent
-NODE = shutil.which('node') or ''
+NODE = shutil.which("node")
 
 DOM_STUB = r"""
 const __rafQueue = [];

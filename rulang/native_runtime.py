@@ -3,6 +3,9 @@
 This is a trusted-code bridge, NOT a sandbox. Incorrect declarations or native
 code can corrupt or terminate the process. No Win32 application policy lives here.
 """
+from .execution_budget import (checked_member, checked_operation, current_budget,
+                               _registered_native_finalizer, _enter_registered_native_finalizer)
+from .execution_budget import charge, bulk, check_budget, guard_budget, items as budget_items
 from dataclasses import dataclass
 import ctypes as C
 import math
@@ -142,6 +145,7 @@ class NativeMemory:
     def root(self):
         memory = self
         while memory.parent is not None:
+            charge("helper_item")
             memory = memory.parent
         return memory
 
@@ -167,7 +171,7 @@ class NativeSignature:
 
     def prototype(self):
         factory = C.WINFUNCTYPE if self.convention == 'win64' else C.CFUNCTYPE
-        return factory(self.result.ctype, *(p.ctype for p in self.params), use_last_error=True)
+        return factory(self.result.ctype, *(p.ctype for p in budget_items(self.params)), use_last_error=True)
 
 
 class NativeLibrary:
@@ -245,12 +249,13 @@ class NativeCallback:
         entry_error = None
         try:
             entry_error = C.get_last_error() if hasattr(C, 'get_last_error') else 0
+            guard_budget()
             if self.closed:
                 _fault("原生回调已关闭；外部代码仍持有其地址")
             if context is None or not owner_thread or context.depth == 0:
                 _fault("只支持原生调用期间、所属解释器线程上的同步回调")
-            values = [_wrap(NativeScalar(t, 0 if v is None else v), context) for t, v in zip(self.signature.params, args)]
-            result = self.owner.invoke_value(self.node, self.function, [(None, v) for v in values])
+            values = [_wrap(NativeScalar(t, 0 if v is None else v), context) for t, v in budget_items(zip(self.signature.params, args))]
+            result = self.owner.invoke_value(self.node, self.function, [(None, v) for v in budget_items(values)])
             _check_context(result, context)
             raw = _marshal(self.signature.result, result)
             if self.signature.result.kind == 'pointer' and raw:
@@ -258,7 +263,7 @@ class NativeCallback:
                 anchors = value.anchors if isinstance(value, NativeScalar) else (value,)
                 if self.closed and anchors:
                     _fault('关闭中的回调不能返回拥有型指针')
-                additions = {id(anchor): anchor for anchor in anchors}
+                additions = {id(anchor): anchor for anchor in budget_items(anchors)}
                 if len(set(self.return_owners) | set(additions)) > MAX_CALLBACK_RETURN_OWNERS:
                     _fault('单个回调返回的拥有型指针资源超过 128 个上限')
                 self.return_owners.update(additions)
@@ -276,7 +281,15 @@ class NativeCallback:
                     saved_error = C.get_last_error() if hasattr(C, 'get_last_error') else 0
                     try:
                         function, values = self.failure_hook
-                        _invoke(context, function, values)
+                        budget = current_budget()
+                        if budget is not None and budget.error is not None:
+                            # Only this registered action may finish after exhaustion.
+                            # The native safety checks remain in _invoke_body; all
+                            # callback/Ru entries still reject the sticky budget.
+                            with _registered_native_finalizer(budget, context, self, function, values) as frozen:
+                                _invoke_body(context, function, list(frozen))
+                        else:
+                            _invoke(context, function, values)
                     except BaseException:
                         pass  # Preserve the original callback error.
                     finally:
@@ -335,6 +348,8 @@ def _integer(value):
         if not math.isfinite(value) or value != math.trunc(value) or abs(value) > SAFE_INTEGER:
             _fault("数转原生整数须为安全整数；大整数请使用精确十进制句")
         return int(value)
+    if isinstance(value, str):
+        bulk(len(value))
     if isinstance(value, str) and re.fullmatch(r'[+-]?[0-9]+', value) and len(value) <= 128:
         return int(value)
     _fault("原生整数需要安全整数数、精确十进制句或原生整数")
@@ -355,10 +370,12 @@ def _check_anchors(value, active=None):
     active.add(id(value))
     if isinstance(value, NativeScalar):
         for anchor in value.anchors:
+            charge("helper_item")
             _check_anchors(anchor, active)
     elif isinstance(value, NativeMemory):
         value.check()
         for anchor in value.pins.values():
+            charge("helper_item")
             _check_anchors(anchor, active)
     elif isinstance(value, NativeCallback) and value.closed:
         _fault("原生回调已关闭")
@@ -431,18 +448,33 @@ def _retain(value, keepalive, active):
     keepalive.append(value)
     if isinstance(value, list):
         for child in value:
+            charge("helper_item")
             _retain(child, keepalive, active)
     elif isinstance(value, NativeScalar):
         for child in value.anchors:
+            charge("helper_item")
             _retain(child, keepalive, active)
     elif isinstance(value, NativeMemory):
         if value.parent is not None:
             _retain(value.parent, keepalive, active)
         for child in list(value.pins.values()):
+            charge("helper_item")
             _retain(child, keepalive, active)
 
 
+@checked_operation
+def _invoke_checked(context, function, values):
+    return _invoke_body(context, function, values)
+
+
 def _invoke(context, function, values):
+    # Ordinary native entry never inherits the registered-finalizer exception.
+    guard_budget()
+    return _invoke_checked(context, function, values)
+
+
+def _invoke_body(context, function, values):
+    _enter_registered_native_finalizer(context, function, values)
     if _mi_active_borrows:
         _fault("密只读借用期间拒绝未知 effect 原生调用")
     context.check()
@@ -451,7 +483,7 @@ def _invoke(context, function, values):
         _fault("原生调用实参数量与签名不符")
     keepalive = []
     _retain(values, keepalive, set())
-    converted = [_marshal(t, v) for t, v in zip(function.signature.params, values)]
+    converted = [_marshal(t, v) for t, v in budget_items(zip(function.signature.params, values))]
     # Snapshot all ownership anchors: a reentrant callback may close a resource
     # or overwrite a struct field, but its in-flight storage must stay allocated.
     context.depth += 1
@@ -459,8 +491,10 @@ def _invoke(context, function, values):
     try:
         if hasattr(C, 'set_last_error'):
             C.set_last_error(0)
+        check_budget()
         raw = function.function(*converted)
         code = C.get_last_error() if hasattr(C, 'get_last_error') else 0
+        check_budget()
         typ = function.signature.result
         result = None if typ.kind == 'void' else _wrap(NativeScalar(typ, 0 if raw is None else raw), context)
         error = context.errors[0] if context.errors else ('原生回调失败：错误报告或收束异常' if context.containment_failure else None)
@@ -508,13 +542,16 @@ def _check_context(value, context, active=None):
             _fault('原生值不能跨解释器能力上下文传递')
     elif isinstance(value, list):
         for item in value:
+            charge("helper_item")
             _check_context(item, context, active)
 
 
+@checked_member('native_payload')
 def native_member(owner, node, receiver, name, args):
     payload = getattr(receiver, 'native_payload', None)
     if payload is None:
         return False, None
+    charge("call")
     context = owner._native_context
     if getattr(receiver, 'native_context', context) is not context:
         owner.fail(node, '原生对象不能跨解释器能力上下文使用')
@@ -550,6 +587,7 @@ def _member(context, owner, node, obj, name, bind):
                 _fault("结构需要 1 至 128 个字段的阵")
             fields, used = [], set()
             for item in b['字段']:
+                charge("helper_item")
                 if not isinstance(item, list) or len(item) != 2 or not isinstance(item[0], str) or not item[0] or item[0] in used or item[0].startswith('_'):
                     _fault("结构字段须为不重复的 [字段句, 类型]；名称不能以下划线开头")
                 typ = _expect(item[1], NativeType, "结构字段需要原生类型")
@@ -557,7 +595,7 @@ def _member(context, owner, node, obj, name, bind):
                     _fault("结构字段不能为无值")
                 fields.append((item[0], typ))
                 used.add(item[0])
-            ctype = type('RuNativeStruct', (C.Structure,), {'_fields_': [(k, t.ctype) for k, t in fields]})
+            ctype = type('RuNativeStruct', (C.Structure,), {'_fields_': [(k, t.ctype) for k, t in budget_items(fields)]})
             if C.sizeof(ctype) > MAX_BUFFER:
                 _fault("原生结构超过缓冲上限")
             return NativeType('结构', ctype, 'struct', fields=tuple(fields))
@@ -566,15 +604,18 @@ def _member(context, owner, node, obj, name, bind):
             text = b['句']
             if not isinstance(text, str) or '\0' in text:
                 _fault("原生文本需要不含 NUL 的句")
+            bulk(len(text))
             encoded = text.encode('utf-8' if name == 'UTF8' else 'utf-16-le') + (b'\0' if name == 'UTF8' else b'\0\0')
             if len(encoded) > MAX_BUFFER:
                 _fault("原生文本超过缓冲上限")
             # UTF-16 buffers have explicit 2-byte alignment even on non-Windows tests.
+            bulk(len(encoded))
             storage = ((C.c_ubyte * len(encoded)) if name == 'UTF8' else (C.c_uint16 * (len(encoded) // 2))).from_buffer_copy(encoded)
             return NativeMemory(storage)
         if name == '缓冲':
             b = bind(['字节数'])
             size = _bounded(b['字节数'], 1, MAX_BUFFER, '缓冲大小')
+            bulk(size)
             return NativeMemory((C.c_ubyte * size)())
         if name in ('系统库', '动态库'):
             b = bind(['路径'])
@@ -596,8 +637,8 @@ def _member(context, owner, node, obj, name, bind):
             result = _expect(b['返回'], NativeType, "签名返回需要原生类型")
             if not isinstance(b['参数'], list) or len(b['参数']) > 64:
                 _fault("签名参数须为不超过 64 项的阵")
-            params = tuple(_expect(p, NativeType, "签名参数需要原生类型") for p in b['参数'])
-            if result.kind == 'struct' or any(p.kind in ('struct', 'void') for p in params):
+            params = tuple(_expect(p, NativeType, "签名参数需要原生类型") for p in budget_items(b['参数']))
+            if result.kind == 'struct' or any(p.kind in ('struct', 'void') for p in budget_items(params)):
                 _fault("首版不支持按值传递结构或无值参数；请显式传结构地址")
             if b['约定'] not in ('win64', 'cdecl'):
                 _fault("调用约定只支持 win64 或 cdecl；不支持变参")
@@ -676,6 +717,7 @@ def _member(context, owner, node, obj, name, bind):
             offset, count = b['字节偏移'], b['个数']
             for value, high, label in ((offset, obj.size, '字节偏移'),
                                        (count, MAX_U32_BATCH, '个数')):
+                charge("helper_item")
                 if not isinstance(value, float) or not math.isfinite(value) or value != math.trunc(value):
                     _fault('读U32LE阵' + label + '须为有限非负整数的普通数')
                 if not 0 <= value <= high:
@@ -687,10 +729,12 @@ def _member(context, owner, node, obj, name, bind):
                 _fault('读U32LE阵超出缓冲边界')
             # Only owned storage reaches this branch. Copy exactly the checked
             # span, then decode explicit LE independently of host alignment.
+            bulk(count * 4)
             raw = C.string_at(obj.address + offset, count * 4)
-            return [float(word[0]) for word in struct.iter_unpack('<I', raw)]
+            return [float(word[0]) for word in budget_items(struct.iter_unpack('<I', raw))]
         if name in ('解UTF8', '解UTF16'):
             bind([])
+            bulk(obj.size)
             raw = bytes(obj.storage)
             if name == '解UTF8':
                 at = raw.find(b'\0')
@@ -699,7 +743,7 @@ def _member(context, owner, node, obj, name, bind):
                 return raw[:at].decode('utf-8', 'strict')
             if len(raw) % 2:
                 _fault("UTF16 缓冲字节数须为偶数")
-            at = next((i for i in range(0, len(raw), 2) if raw[i:i+2] == b'\0\0'), -1)
+            at = next((i for i in budget_items(range(0, len(raw), 2)) if raw[i:i+2] == b'\0\0'), -1)
             if at < 0:
                 _fault("UTF16 缓冲缺少界内 NUL 终止符")
             return raw[:at].decode('utf-16-le', 'strict')
@@ -725,10 +769,11 @@ def _member(context, owner, node, obj, name, bind):
                 # Copy both bytes and a snapshot of pointer ownership. A later
                 # write to the source must not drop anchors of the copied bytes.
                 prefix = obj.prefix + (key,)
-                copied_pins = {prefix + path[len(value.prefix):]: anchor for path, anchor in value.pins.items()
+                copied_pins = {prefix + path[len(value.prefix):]: anchor for path, anchor in budget_items(value.pins.items())
                                if path[:len(value.prefix)] == value.prefix}
                 setattr(obj.storage, key, value.storage)
                 for path in list(obj.pins):
+                    charge("helper_item")
                     if path[:len(prefix)] == prefix:
                         del obj.pins[path]
                 obj.pins.update(copied_pins)
@@ -781,6 +826,7 @@ def _member(context, owner, node, obj, name, bind):
             if not isinstance(b['参数'], list) or len(b['参数']) != len(function.signature.params):
                 _fault("回调失败动作实参数量与签名不符")
             for typ, value in zip(function.signature.params, b['参数']):
+                charge("helper_item")
                 _marshal(typ, value)
             obj.failure_hook = (function, list(b['参数']))
             return obj
@@ -793,12 +839,15 @@ def _native_nodes(value):
         if (value.kind == 'import' and native_import(value.data.get('path'), value.data.get('resolved'))) or (value.kind in ('name', 'call') and value.data.get('name') == '__密'):
             yield value
         for child in value.data.values():
+            charge("helper_item")
             yield from _native_nodes(child)
     elif isinstance(value, dict):
         for child in value.values():
+            charge("helper_item")
             yield from _native_nodes(child)
     elif isinstance(value, (list, tuple)):
         for child in value:
+            charge("helper_item")
             yield from _native_nodes(child)
 
 

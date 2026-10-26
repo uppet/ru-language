@@ -25,12 +25,37 @@ ROOT = Path(__file__).resolve().parents[1]
 NODE = shutil.which('node')
 
 
-def run_source(source, timeout=10):
-    """以临时文件运行 JS 源码（Windows 命令行 ~8k 上限会截断 node -e 长参数）。"""
+def run_node_script(source, *, timeout=10):
+    """Keep CommonJS assertions and cwd intact without the Windows argv limit."""
     with tempfile.TemporaryDirectory() as directory:
-        target = Path(directory) / 'source.js'
-        target.write_text(source, encoding='utf-8')
-        return subprocess.run([NODE, str(target)], capture_output=True, text=True, timeout=timeout)
+        script = Path(directory) / 'checks.cjs'
+        script.write_text(source, encoding='utf-8')
+        return subprocess.run([NODE, str(script)], capture_output=True, text=True, timeout=timeout)
+
+
+class NodeScriptTransportTests(unittest.TestCase):
+    @unittest.skipUnless(NODE, 'Node required')
+    def test_large_commonjs_source_executes_with_same_cwd_and_failure_status(self):
+        source = "const assert=require('node:assert/strict');\n" + '// padding\n' * 4000
+        source += "assert.equal(process.cwd()," + json.dumps(str(Path.cwd())) + ");console.log('long-ok');"
+        self.assertGreater(len(source), 32767)
+        result = run_node_script(source, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, 'long-ok\n')
+        failed = run_node_script(source + "throw new Error('negative-control');", timeout=10)
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertIn('negative-control', failed.stderr)
+
+    def test_transport_preserves_bytes_and_timeout_without_source_argv(self):
+        source = "console.log('甲');\n" + ' ' * 40000
+        def inspect(command, **options):
+            self.assertEqual(len(command), 2)
+            self.assertNotIn('-e', command)
+            self.assertEqual(Path(command[1]).read_text(encoding='utf-8'), source)
+            self.assertEqual(options, dict(capture_output=True, text=True, timeout=10))
+            return subprocess.CompletedProcess(command, 7, '', 'expected')
+        with patch('subprocess.run', side_effect=inspect):
+            self.assertEqual(run_node_script(source, timeout=10).returncode, 7)
 
 
 def request(code, **extra):
