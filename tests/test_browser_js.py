@@ -25,6 +25,14 @@ ROOT = Path(__file__).resolve().parents[1]
 NODE = shutil.which('node')
 
 
+def run_source(source, timeout=10):
+    """以临时文件运行 JS 源码（Windows 命令行 ~8k 上限会截断 node -e 长参数）。"""
+    with tempfile.TemporaryDirectory() as directory:
+        target = Path(directory) / 'source.js'
+        target.write_text(source, encoding='utf-8')
+        return subprocess.run([NODE, str(target)], capture_output=True, text=True, timeout=timeout)
+
+
 def request(code, **extra):
     return compile_request(dict(code=code, cell_id='格/一', execution_count=3, generation=7, **extra))
 
