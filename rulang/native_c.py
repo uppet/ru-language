@@ -906,7 +906,7 @@ class NativeCPlan:
                         return False
                     # A loop may not run; block locals do not escape their scope.
                     allowed_names, scalar_names = initial
-                elif kind != 'break':
+                elif kind not in ('break', 'continue'):
                     return False
             return True
         return statements(data['body']) and bool(returns)

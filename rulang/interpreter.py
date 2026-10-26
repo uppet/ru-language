@@ -280,6 +280,11 @@ class Break(Exception):
     pass
 
 
+class Continue(Exception):
+    """Skip one loop iteration, never a callable or recoverable panic."""
+    pass
+
+
 class Panic(RuError):
     """Only explicit 卒 is recoverable; ordinary RuError remains fatal."""
     def __init__(self, reason, token):
@@ -713,6 +718,8 @@ class Interpreter:
                     raise Return((yield self._expr_step(d["expr"], scope)))
                 elif n.kind == "finish":
                     raise Finish()
+                elif n.kind == "continue":
+                    raise Continue()
                 elif n.kind == "break":
                     raise Break()
                 elif n.kind == "if":
@@ -733,6 +740,9 @@ class Interpreter:
                             (yield self._block_step(d["body"], scope))
                         except Break:
                             break
+                        except Continue:
+                            # Counted loops must advance even when the body exits early.
+                            pass
                         i += 1
         finally:
             self.structure_depth -= 1

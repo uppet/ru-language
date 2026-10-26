@@ -654,9 +654,9 @@ class Compiler:
                 self.line(f'{finished}: ;')
                 self.indent -= 1
                 self.line('}')
-            elif n.kind == 'break':
+            elif n.kind in ('break', 'continue'):
                 self.clean_scopes(self.loop_scopes[-1])
-                self.line('break;')
+                self.line(n.kind + ';')
             elif n.kind == 'if':
                 value = self.expr(d['condition'])
                 flag = self.new('condition')

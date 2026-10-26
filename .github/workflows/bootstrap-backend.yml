@@ -1,7 +1,7 @@
 name: Ordinary backend optimization acceptance
 on:
   push:
-    branches: [main, wip, feature/backend-main-integration-20261023, feature/backend-wip-integration-20261023, feature/bs-full-integration-wip-20261024, feature/interpreter-stack-20261025, feature/graphics-logical-budget-20261025]
+    branches: [feature/continue-syntax-20261026, main, wip, feature/backend-main-integration-20261023, feature/backend-wip-integration-20261023, feature/bs-full-integration-wip-20261024, feature/interpreter-stack-20261025, feature/graphics-logical-budget-20261025]
   pull_request:
 permissions:
   contents: read

@@ -21,7 +21,7 @@ _BUNDLED_PATHS = tuple(str((Path(__file__).parent / 'stdlib' / filename).resolve
                        for filename in STANDARD_MODULES.values())
 _KNOWN_KINDS = frozenset((
     'function', 'function_literal', 'type', 'bind', 'assign', 'import_all', 'print', 'expr',
-    'return', 'finish', 'break', 'scope', 'if', 'loop', 'try', 'panic', 'number', 'string',
+    'return', 'finish', 'break', 'continue', 'scope', 'if', 'loop', 'try', 'panic', 'number', 'string',
     'null', 'self', 'name', 'call', 'function_ref', 'invoke', 'array',
     'convert', 'unary', 'binary', 'member', 'index', 'slice', 'new', 'import',
 ))

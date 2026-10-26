@@ -35,6 +35,54 @@ def output(result, stream="stdout"):
 
 
 class KernelTests(unittest.TestCase):
+    def test_continue_counted_nested_scope_rescue_and_finish(self):
+        source = """
+次数调用 取 [0]. 算 次数: 次数调用[0] 取 次数调用[0]+1. 得 4. 法.
+计数 取 [0].
+循 (次数()) 次
+ 计数[0] 取 计数[0]+1.
+ 段: 试: 续. 救 因: 显 '不应恢复'. 终. 落.
+ 显 '不应执行'.
+环.
+显 计数[0]. 显 次数调用[0].
+总 取 [0]. 循 2 次 循 3 次 总[0] 取 总[0]+1. 续. 环. 环. 显 总[0].
+无穷 取 [0]. 循 无穷[0] 取 无穷[0]+1. 若 无穷[0] >= 3 则 破. 然. 续. 环. 显 无穷[0].
+盒 取 [空].
+试:
+ 循 3 次
+  试: 卒 '内'. 救 因:
+   段: 算 留: 得 因. 法. 盒[0] 取 算 留. 续. 落.
+  终.
+  显 '不应执行'.
+ 环.
+ 卒 '外'.
+救 因: 显 因. 终.
+显 (盒[0])().
+作 局部: 循 2 次 续. 环. 完. 显 '不应执行'. 为.
+局部. 显 '完成'.
+"""
+        result = self.run_cell(source, 'continue')
+        self.assertEqual(result['events'][-1]['status'], 'ok', result)
+        self.assertEqual(output(result), '4\n1\n6\n3\n外\n内\n完成\n')
+        self.assertEqual(output(self.run_cell('显 计数[0].')), '4\n')
+
+    def test_continue_rejects_callable_boundaries_before_side_effects(self):
+        for body in (
+            '续.',
+            '作 越界: 续. 为.',
+            '循 1 次 回调 取 (作: 续. 为). 环.',
+            '循 1 次 段: 算 越界: 续. 得 1. 法. 落. 环.',
+            '形 测试: 作 越界: 续. 为. 象.',
+        ):
+            with self.subTest(body=body):
+                result = self.run_cell("显 '不应执行'.\n"+body, 'invalid-continue')
+                self.assertEqual(result['events'][-1]['status'], 'error', result)
+                self.assertEqual(output(result), '')
+                error = next(e for e in result['events'] if e['type'] == 'error')
+                self.assertEqual(error['line'], 2)
+                self.assertIn('续', error['message'])
+                self.assertEqual(output(self.run_cell('显 7.')), '7\n')
+
     def setUp(self):
         self.session = Session()
         self.addCleanup(self.session.close)

@@ -552,3 +552,22 @@ test('另若 longest names, strings, comments and callable conditions stay disti
   assert.equal(result.tokens.find(t=>t.text==='另若值').face,null);
   for(let i=0;i<=source.length;i++)assert.doesNotThrow(()=>analyze(source.slice(0,i)));
 });
+
+test('continue keyword is whole, non-closing and has loop-boundary help',()=>{
+  const source='循 3 次\n若 真 则\n续。\n然.\n续.\n环.';
+  const result=analyze(source);
+  assert.equal(result.depth,0);
+  assert.equal(result.blocks.length,2);
+  assert.equal(result.tokens.filter(t=>t.text==='续'&&t.face==='keyword').length,2);
+  assert.equal(indentText(source),'循 3 次\n    若 真 则\n        续。\n    然.\n    续.\n环.');
+  assert.equal(analyze('循\n续.').depth,1);
+  for(const token of analyze('继续 续值 续2 _续 α续 𠀀续 续²').tokens) assert.notEqual(token.face,'keyword');
+  for(const text of ['续.','续。']) {
+    const token=analyze(text).tokens[0];
+    const help=tokenHelp(token);
+    assert.ok(help.includes('计次循环正常推进'));
+    assert.ok(help.includes('不能跨函数或回调'));
+    assert.ok(help.includes('不是块结束符'));
+  }
+  assert.equal(analyze("'续.' # 续.\n批。续。\n解.续.释.").tokens.filter(t=>t.text==='续'&&t.face==='keyword').length,0);
+});

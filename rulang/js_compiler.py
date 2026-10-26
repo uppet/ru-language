@@ -128,7 +128,7 @@ class JSCompiler(Compiler):
                 self.functions = {**self.functions, **self.local_functions(d['body'])}
                 self.known_values = self.known_values | self.scope_bindings(d['body'])
                 self.hoist(d['body'], function)
-                # Native braces preserve the enclosing return/break target.
+                # Native braces preserve the enclosing return/break/continue target.
                 self.block(d['body'], function)
                 self.functions, self.known_values = previous_functions, previous_values
                 self.indent -= 1
@@ -204,8 +204,8 @@ class JSCompiler(Compiler):
                 self.block(d['body'], function)
                 self.indent -= 1
                 self.line('}')
-            elif kind == 'break':
-                self.line('break;')
+            elif kind in ('break', 'continue'):
+                self.line(kind + ';')
             else:
                 self.error(n, 'JavaScript 后端不支持语句：' + kind)
 

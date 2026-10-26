@@ -1,7 +1,7 @@
 name: Interpreter explicit stack acceptance
 on:
   push:
-    branches: [feature/interpreter-stack-20261025, feature/graphics-logical-budget-20261025, wip]
+    branches: [feature/continue-syntax-20261026, feature/interpreter-stack-20261025, feature/graphics-logical-budget-20261025, wip]
   pull_request:
 permissions:
   contents: read

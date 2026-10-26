@@ -295,9 +295,43 @@ class BootstrapTests(unittest.TestCase):
 试: 显 合 (坏()) (后()). 救 原因: 显 原因. 终.
 作 提前: 段: 试: 完. 救 原因: 显 原因. 终. 落. 为.
 提前. 显 '完成'.
+次数调用 取 [0].
+算 次数: 次数调用[0] 取 次数调用[0]+1. 得 4. 法.
+计数[0] 取 0.
+循 (次数()) 次
+ 计数[0] 取 计数[0]+1.
+ 段: 试: 续. 救 原因: 显 '不应恢复'. 终. 落.
+ 显 '不应执行'.
+环.
+显 计数[0]. 显 次数调用[0].
+总 取 [0].
+循 2 次
+ 循 3 次 总[0] 取 总[0]+1. 续. 显 '不应执行'. 环.
+环.
+显 总[0].
+无穷 取 [0].
+循
+ 无穷[0] 取 无穷[0]+1.
+ 若 无穷[0] >= 3 则 破. 然.
+ 续. 显 '不应执行'.
+环.
+显 无穷[0].
+盒 取 [空].
+试:
+ 循 3 次
+  试: 卒 '内'. 救 原因:
+   段: 算 留: 得 原因. 法. 盒[0] 取 算 留. 续. 落.
+  终.
+  显 '不应执行'.
+ 环.
+ 卒 '外'.
+救 原因: 显 原因. 终.
+显 (盒[0])().
+作 回调局部: 循 2 次 续. 环. 完. 显 '不应执行'. 为.
+回调局部. 显 '续完成'.
 """)
         result = self.run_program(stress=True)
-        self.assertEqual((result.returncode,result.stdout),(0,'假\n真\n真\n1\n停止\n完成\n'),result.stderr)
+        self.assertEqual((result.returncode,result.stdout),(0,'假\n真\n真\n1\n停止\n完成\n4\n1\n6\n3\n外\n内\n续完成\n'),result.stderr)
         self.assertIn('live=0',result.stderr)
 
     def test_checked_unicode_file_io_and_standard_input(self):
@@ -381,6 +415,11 @@ class BootstrapTests(unittest.TestCase):
 
     def test_compile_error_locations_and_capability_boundaries(self):
         cases = (('显 1.\n未知 1.','未定义'),('显 1.\n破.','破不能'),
+                 ('显 1.\n续.','续不能'),
+                 ('显 1.\n作 越界: 续. 为.','续不能'),
+                 ('显 1.\n循 1 次 回调 取 (作: 续. 为). 环.','续不能'),
+                 ('显 1.\n循 1 次 段: 算 越界: 续. 得 1. 法. 落. 环.','续不能'),
+                 ('显 1.\n形 测试: 作 越界: 续. 为. 象.','续不能'),
                  ('显 1.\n得 1.','得只能'),('显 1.\n完.','完只能'),
                  ("显 1.\n模 取 外言 '如:观'.",'不支持'),
                  ("显 1.\n模 取 外言 '如:密'.",'不支持'))

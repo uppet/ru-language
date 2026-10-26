@@ -72,7 +72,7 @@ class LLVMCompiler(Compiler):
                  'unary', 'binary', 'member', 'index', 'slice', 'new', 'import',
                  'function', 'module_decl', 'type', 'bind', 'print', 'expr',
                  'return', 'import_all', 'finish', 'assign', 'panic', 'scope',
-                 'try', 'break', 'if', 'loop'}
+                 'try', 'break', 'continue', 'if', 'loop'}
         for n in walk_nodes(self.modules):
             if n.kind not in kinds:
                 self.error(n, 'LLVM AOT 尚不支持语法节点：' + n.kind)
@@ -426,10 +426,11 @@ class LLVMCompiler(Compiler):
                 self.scoped_block(d['rescue'], 2, function, reason=d['reason'], line=ln)
                 self.jump(done)
                 self.label(done)
-            elif kind == 'break':
-                target, depth = self.llvm_loops[-1]
+            elif kind in ('break', 'continue'):
+                done, resume, depth = self.llvm_loops[-1]
                 self.clean_environments(depth)
-                self.jump(target)
+                self.clear_temporaries()
+                self.jump(done if kind == 'break' else resume)
             elif kind == 'if':
                 flag = self.truth(self.expr(d['condition']))
                 self.clear_temporaries()
@@ -459,15 +460,20 @@ class LLVMCompiler(Compiler):
                     self.emit(f'{test} = icmp ult i64 {index}, {count}')
                     self.branch(test, body, done)
                 self.label(body)
-                self.llvm_loops.append((done, len(self.llvm_envs)))
+                # A counted continue must execute the increment, not restart
+                # the condition with the same counter. Infinite loops have no
+                # increment and resume directly at their condition/header.
+                resume = self.fresh('loop_increment') if d['count'] is not None else condition
+                self.llvm_loops.append((done, resume, len(self.llvm_envs)))
                 self.block(d['body'], function)
                 self.llvm_loops.pop()
-                if not self.terminated:
-                    if d['count'] is not None:
-                        value = self.load('i64', counter)
-                        inc = '%' + self.fresh()
-                        self.emit(f'{inc} = add i64 {value}, 1')
-                        self.emit(f'store i64 {inc}, i64* {counter}')
+                self.jump(resume)
+                if d['count'] is not None:
+                    self.label(resume)
+                    value = self.load('i64', counter)
+                    inc = '%' + self.fresh()
+                    self.emit(f'{inc} = add i64 {value}, 1')
+                    self.emit(f'store i64 {inc}, i64* {counter}')
                     self.jump(condition)
                 self.label(done)
             else:

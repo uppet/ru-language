@@ -1672,4 +1672,34 @@
                                 (get-text-property (ru-lang--token-start token) 'help-echo)))))
     (should (= (length ru-lang--blocks) 1))))
 
+
+(ert-deftest ru-lang-continue-is-not-a-block-boundary ()
+  (ru-lang-test--indent
+   "循 3 次\n若 真 则\n续。\n然.\n续.\n环."
+   "循 3 次\n    若 真 则\n        续。\n    然.\n    续.\n环.")
+  (ru-lang-test--buffer "循 3 次\n若 真 则\n续。\n然.\n续.\n环."
+    (font-lock-ensure)
+    (search-forward "续。")
+    (should (eq (get-text-property (- (point) 2) 'face) 'font-lock-keyword-face))
+    (ru-lang-up-block)
+    (should (looking-at "若"))
+    (goto-char (point-min))
+    (ru-lang-forward-block)
+    (should (eq (char-before) ?.)))
+  (dolist (name '("继续" "续值" "续2" "_续" "α续" "𠀀续" "续²"))
+    (ru-lang-test--buffer name
+      (font-lock-ensure)
+      (should-not (eq (get-text-property (point-min) 'face) 'font-lock-keyword-face))))
+  (let ((help (cdr (assoc "续" ru-lang--token-help))))
+    (should (string-match-p "计次循环正常推进" help))
+    (should (string-match-p "不能跨函数或回调" help))))
+
+(ert-deftest ru-lang-continue-strings-and-comments ()
+  (ru-lang-test--buffer "显 '续。'. # 续.\n批. 续。\n解. 续. 释."
+    (font-lock-ensure)
+    (search-forward "续。")
+    (should (eq (get-text-property (- (point) 2) 'face) 'font-lock-string-face))
+    (search-forward "续.")
+    (should (eq (get-text-property (- (point) 2) 'face) 'font-lock-comment-face))))
+
 (provide 'ru-lang-mode-tests)

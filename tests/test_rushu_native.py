@@ -379,6 +379,17 @@ class NativeKernelTests(reference.KernelTests):
         self.assertEqual(reference.output(self.run_cell('显 值.')), '17\n')
         self.assertEqual(self.session.snapshot()['generation'], 1)
 
+    def test_continue_cannot_evade_native_graphics_budget(self):
+        result = self.run_cell("观 取 外言 '如:观'. 图 取 观 其 画布 10 10. 值 取 23. 图 其 每帧 (作 帧: 循 续. 环. 为).", 'continue-budget')
+        self.assertIsNotNone(result['graphics'], result)
+        started = time.monotonic()
+        result = self.graphics_event({'type':'frame'}, expected_error=True)
+        self.assertLess(time.monotonic()-started, 5)
+        self.assertIsNone(result['graphics'])
+        self.assertTrue(any('预算' in e.get('message','') for e in result['events']), result)
+        self.assertEqual(reference.output(self.run_cell('显 值.')), '23\n')
+        self.assertEqual(self.session.snapshot()['generation'], 1)
+
     def test_graphics_monotonic_time_pause_resume_and_event_cache_restriction(self):
         from test_graphics_time_transport import SOURCE
         result = self.run_cell(SOURCE, 'timing')

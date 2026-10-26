@@ -1,7 +1,7 @@
 /** Editing aids for 如. These are tolerant lexical aids, not a parser/checker.
  * The structural model mirrors emacs/ru-lang-mode.el, including anonymous
  * 算/作 headers, contextual 为/终, longest names and literal strings. */
-export const KEYWORDS = new Set('显 取 为 得 完 破 若 则 另若 另 然 循 次 环 算 作 法 其 且 或 非 空 对 形 象 如 新 外言 尽取 尽 试 救 卒 真 假 典 成'.split(' '));
+export const KEYWORDS = new Set('显 取 为 得 完 破 续 若 则 另若 另 然 循 次 环 算 作 法 其 且 或 非 空 对 形 象 如 新 外言 尽取 尽 试 救 卒 真 假 典 成'.split(' '));
 const TYPES = new Set('数 句 阵 空 对 事实 典 件 录 件作成果'.split(' '));
 const BUILTINS = new Set('读 件 录 件作成果 读取 显出 错误 __如竞 __如观'.split(' '));
 const MEMBERS = new Set('含 位 段 增 删 弹 排序 另成 逐位 逐目 量 囫 囵 写 行 读 开 关 查 除 列 三角形 多边形 平移 旋转 缩放 保存 恢复 变换 重置变换 裁剪 取消裁剪 颜色 文字对齐 经过秒 间隔秒 弧 扇形 折线 贝塞尔 缓存 贴图'.split(' '));
@@ -173,6 +173,7 @@ export function analyze(source) {
 export const ASSIGNMENT_HELP = '取（词法规则）：函数内先更新当前局部，否则更新最近已有的非模块捕获绑定；未找到则新建当前局部，不隐式改写模块变量。直接救正文中的取写救局部；直接段／花括号作用域块中的取写块局部（含其中的若、循、试正文）；闭包共享捕获绑定，可更新捕获的块局部。:= 与取完全等价。参数属于本次调用局部。此提示不判断具体名称的运行时绑定。';
 export const TOKEN_HELP = {
   '另若': '另若 条件 则：同一若条件链的后续分支，可重复；整链只需一个然。依次判断，首个命中后不再求值后续条件；另只能在最后。另 若仍是嵌套，须各自收尾。',
+  '续': '续. 或续。跳过当前轮，继续当前调用内最内层循环；计次循环正常推进次数。不能跨函数或回调，循环外不合法。不带表达式，不是块结束符，也不结束作；完. 才提前结束当前作。此提示不判断当前位置是否合法。',
   '吾': '吾 言 工程 其 力学.：可选顶层一次模块声明。吾、言仍是普通名称，只在完整声明中识别。名称按包的正式根校验。',
   '言': '与吾组成完整模块声明：吾 言 工程 其 力学.；其他位置仍为普通名称。',
   '外言': '外言既接受原有字符串路径，也接受静态模块名：外言 工程 其 力学。整个其链属于模块名，不读取变量。包由集录.ru声明；缺远程依赖时显式 ru deps sync，运行和检查不联网。browser-js仍只允许固定标准库，不读取本机包。',

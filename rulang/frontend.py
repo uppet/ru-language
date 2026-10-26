@@ -59,7 +59,7 @@ MEMBER_PARAMS = {"含": ["句"], "位": ["位"], "段": ["始", "终"], "增": [
                  "排序": ["先于"], "另成": ["算法"], "逐位": ["回调"]}
 
 # 尽 remains reserved only to diagnose the retired two-token import spelling.
-KEYWORDS = set("显 取 为 得 完 破 若 则 另若 另 然 循 次 环 算 作 法 其 且 或 非 空 真 假 典 成 对 形 象 如 新 外言 尽取 尽 试 救 卒".split())
+KEYWORDS = set("显 取 为 得 完 破 续 若 则 另若 另 然 循 次 环 算 作 法 其 且 或 非 空 真 假 典 成 对 形 象 如 新 外言 尽取 尽 试 救 卒".split())
 NUMBER = re.compile(r"(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
 
 
@@ -415,6 +415,9 @@ class Parser:
         if self.accept("完"):
             self.expect(".")
             return node("finish", t)
+        if self.accept("续"):
+            self.expect(".")
+            return node("continue", t)
         if self.accept("破"):
             self.expect(".")
             return node("break", t)
@@ -1006,6 +1009,8 @@ def validate(program, existing_functions=(), existing_types=()):
                      bindings=bindings, method_definitions=True)
             elif n.kind == "import_all" and not top:
                 error(n, "「尽取 外言」只能用于顶层")
+            elif n.kind == "continue" and depth == 0:
+                error(n, "「续」只能出现在当前函数的循环内")
             elif n.kind == "break" and depth == 0:
                 error(n, "「破」只能出现在当前函数的循环内")
             elif n.kind == "return" and (function is None or function.data["procedure"]):
