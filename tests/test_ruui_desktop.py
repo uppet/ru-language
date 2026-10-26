@@ -49,9 +49,14 @@ class DesktopBuildTests(unittest.TestCase):
             self.assertIn("touch_start", page)
             self.assertIn("type: 'resize'", page.replace('"', "'"))
             self.assertIn("width: 100vw", page)
-            # 运行器可执行。
-            self.assertTrue((out / "run-webkitgtk.py").stat().st_mode & 0o111)
-            self.assertTrue((out / "run-pywebview.py").stat().st_mode & 0o111)
+            # 运行器可执行。Windows 无 POSIX 执行位（st_mode & 0o111 恒假），
+            # 只断存在性；posix 侧保留权限断言。
+            if sys.platform == 'win32':
+                self.assertTrue((out / "run-webkitgtk.py").is_file())
+                self.assertTrue((out / "run-pywebview.py").is_file())
+            else:
+                self.assertTrue((out / "run-webkitgtk.py").stat().st_mode & 0o111)
+                self.assertTrue((out / "run-pywebview.py").stat().st_mode & 0o111)
 
     def test_ui_page_has_no_desktop_glue(self):
         from rulang.app_builder import build_app_html
