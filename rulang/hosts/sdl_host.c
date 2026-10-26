@@ -9,7 +9,7 @@
  * 生成的 main 在 RU_SDL_HOST 定义时改调本入口（见 compiler.py）。
  *
  * 编译：cc -O2 -I<root> app.c rulang/hosts/sdl_host.c \
- *        $(pkg-config --cflags --libs sdl2 SDL2_ttf SDL2_image) -lm
+ *        $(pkg-config --cflags --libs sdl2 SDL2_ttf SDL2_image SDL2_mixer) -lm
  *
  * HEADLESS_SMOKE：dummy video driver 下渲染 smoke_frames 帧后把
  * 首帧/末帧存 PNG 并关闭画布，供无头 CI 验证。
@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <math.h>
 #include <time.h>
 #include <sys/stat.h>
@@ -793,8 +794,16 @@ static void sdl_open(void *ud, int w, int h) {
 static int sdl_audio_opened;
 /* 声道槽：chunk 在播放结束后由 finished 回调登记待释放。 */
 #define SDL_MAX_CHANNELS 64
+/* 音乐槽：Mix_LoadMUS 流式通道只有一条；用专用声道号对外表示，
+ * 停/暂停/续/音量/在播/进度 按此号分流到 music API。 */
+#define RU_MUSIC_CHANNEL 1000
 static Mix_Chunk *sdl_audio_chunks[SDL_MAX_CHANNELS];
 static int sdl_audio_dirty[SDL_MAX_CHANNELS];
+static Mix_Music *sdl_music_current;
+static char sdl_music_path[1024];
+static int sdl_music_playing;
+
+static void sdl_audio_music_finished(void) { sdl_music_playing = 0; }
 
 static void sdl_audio_finished(int channel) {
     if (channel >= 0 && channel < SDL_MAX_CHANNELS)
@@ -819,9 +828,37 @@ static int sdl_audio_open(void) {
     return 1;
 }
 
+/* 按扩展名分流：压缩/流媒体格式走 Mix_LoadMUS（mp3/ogg/flac/mod 等），
+ * 短音效 wav 走 chunk 多声道。 */
+static int sdl_audio_is_music_path(const char *path) {
+    const char *dot = strrchr(path, '.');
+    if (!dot) return 0;
+    return !strcasecmp(dot, ".mp3") || !strcasecmp(dot, ".ogg")
+        || !strcasecmp(dot, ".flac") || !strcasecmp(dot, ".opus")
+        || !strcasecmp(dot, ".mod") || !strcasecmp(dot, ".xm")
+        || !strcasecmp(dot, ".it") || !strcasecmp(dot, ".s3m");
+}
+
+static long sdl_audio_play_music(const char *path, int loop) {
+    if (!sdl_audio_open()) return -1;
+    if (!sdl_music_current || strcmp(sdl_music_path, path) != 0) {
+        Mix_Music *music = Mix_LoadMUS(path);
+        if (!music) return -1;
+        if (sdl_music_current) Mix_FreeMusic(sdl_music_current);
+        sdl_music_current = music;
+        strncpy(sdl_music_path, path, sizeof(sdl_music_path) - 1);
+        sdl_music_path[sizeof(sdl_music_path) - 1] = '\0';
+    }
+    Mix_HookMusicFinished(sdl_audio_music_finished);
+    if (Mix_PlayMusic(sdl_music_current, loop ? -1 : 0) < 0) return -1;
+    sdl_music_playing = 1;
+    return RU_MUSIC_CHANNEL;
+}
+
 static long sdl_audio_play(const char *path, int loop) {
     Mix_Chunk *chunk;
     int ch;
+    if (sdl_audio_is_music_path(path)) return sdl_audio_play_music(path, loop);
     if (!sdl_audio_open()) return -1;
     chunk = Mix_LoadWAV(path);
     if (!chunk) return -1;
@@ -832,34 +869,59 @@ static long sdl_audio_play(const char *path, int loop) {
 }
 
 static int sdl_audio_stop(long channel) {
+    if (channel == RU_MUSIC_CHANNEL) {
+        if (!sdl_music_playing && !Mix_PlayingMusic()) return 0;
+        Mix_HaltMusic();
+        sdl_music_playing = 0;
+        return 1;
+    }
     if (channel < 0 || channel >= SDL_MAX_CHANNELS || !sdl_audio_chunks[channel]) return 0;
     Mix_HaltChannel((int)channel);
     return 1;
 }
 
 static int sdl_audio_pause(long channel) {
+    if (channel == RU_MUSIC_CHANNEL) {
+        if (!sdl_music_playing) return 0;
+        Mix_PauseMusic();
+        return 1;
+    }
     if (channel < 0 || channel >= SDL_MAX_CHANNELS || !Mix_Playing((int)channel)) return 0;
     Mix_Pause((int)channel);
     return 1;
 }
 
 static int sdl_audio_resume(long channel) {
+    if (channel == RU_MUSIC_CHANNEL) {
+        if (!Mix_PausedMusic()) return 0;
+        Mix_ResumeMusic();
+        sdl_music_playing = 1;
+        return 1;
+    }
     if (channel < 0 || channel >= SDL_MAX_CHANNELS || !Mix_Paused((int)channel)) return 0;
     Mix_Resume((int)channel);
     return 1;
 }
 
 static int sdl_audio_volume(long channel, int pct) {
+    if (channel == RU_MUSIC_CHANNEL)
+        return Mix_VolumeMusic(pct * MIX_MAX_VOLUME / 100) * 100 / MIX_MAX_VOLUME;
     return Mix_Volume((int)channel, pct * MIX_MAX_VOLUME / 100) * 100 / MIX_MAX_VOLUME;
 }
 
 static double sdl_audio_position(long channel) {
+#if SDL_MIXER_VERSION_ATLEAST(2, 6, 0)
+    if (channel == RU_MUSIC_CHANNEL)
+        return sdl_music_current ? Mix_GetMusicPosition(sdl_music_current) : -1.0;
+#endif
     /* SDL_mixer 不暴露 chunk 播放位置；返回 -1 表示不可用。 */
     (void)channel;
     return -1.0;
 }
 
 static int sdl_audio_playing(long channel) {
+    if (channel == RU_MUSIC_CHANNEL)
+        return sdl_music_playing || Mix_PlayingMusic();
     return channel >= 0 && channel < SDL_MAX_CHANNELS && Mix_Playing((int)channel) != 0;
 }
 
@@ -890,6 +952,7 @@ static const RuAudioHost sdl_audio_host = {
 
 static void sdl_close(void *ud) {
 #ifdef RU_SDL_HAS_MIXER
+    if (sdl_music_current) { Mix_FreeMusic(sdl_music_current); sdl_music_current = NULL; sdl_music_path[0] = '\0'; }
     if (sdl_audio_opened) { Mix_CloseAudio(); sdl_audio_opened = 0; }
 #endif
     int i;

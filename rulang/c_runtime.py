@@ -199,6 +199,22 @@ static int ru_audio_member(Val receiver, const char *name, size_t argc,
 """
     if not uses_graphics:
         headers[4] = """
+/* 音频可独立使用：消费方（audio_runtime.h 与 SDL 宿主链接根）需要
+ * RuAudioHost 类型与注册入口；完整声明镜像 graphics_runtime.h。 */
+typedef struct RuAudioHost {
+    const char *name;
+    int (*open)(void);
+    void (*close)(void);
+    long (*play)(const char *path, int loop);
+    int (*stop)(long channel);
+    int (*pause)(long channel);
+    int (*resume)(long channel);
+    int (*volume)(long channel, int pct);
+    double (*position)(long channel);
+    int (*playing)(long channel);
+} RuAudioHost;
+static const RuAudioHost *ru_audio_host;
+void ru_audio_set_host(const RuAudioHost *host) { ru_audio_host = host; }
 static Env *ru_graphics_builtins(void) { return ru_practical_builtins(); }
 static int ru_graphics_member(Val receiver, const char *name, size_t argc,
                               const char **keys, Val *args, int line, Val *out)
