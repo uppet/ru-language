@@ -1,0 +1,628 @@
+{
+  "source_commit": "d964ea9f7e27065aa5bbcced8d6c7526a6224dd1",
+  "entry_module_count": 24,
+  "shapes": [
+    {
+      "result": "u16",
+      "parameters": [],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "i32",
+        "指针",
+        "i32",
+        "i32"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "指针",
+        "u32",
+        "指针",
+        "指针",
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32",
+        "指针",
+        "u32",
+        "u32",
+        "指针",
+        "指针",
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32",
+        "u32",
+        "指针",
+        "u32"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "intptr",
+      "parameters": [
+        "指针",
+        "u32",
+        "uintptr",
+        "intptr"
+      ],
+      "callback": true
+    },
+    {
+      "result": "u16",
+      "parameters": [
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "指针",
+      "parameters": [
+        "u32",
+        "指针",
+        "指针",
+        "u32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "指针",
+        "指针",
+        "指针",
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "i32"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32",
+        "u32"
+      ],
+      "callback": false
+    },
+    {
+      "result": "intptr",
+      "parameters": [
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32",
+        "u32",
+        "u32"
+      ],
+      "callback": false
+    },
+    {
+      "result": "u32",
+      "parameters": [
+        "u32"
+      ],
+      "callback": false
+    },
+    {
+      "result": "无值",
+      "parameters": [
+        "i32"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "i32"
+      ],
+      "callback": false
+    },
+    {
+      "result": "指针",
+      "parameters": [
+        "指针",
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "指针",
+      "parameters": [
+        "i32"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "u32",
+        "uintptr",
+        "intptr"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "i32"
+      ],
+      "callback": false
+    },
+    {
+      "result": "指针",
+      "parameters": [
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "指针",
+        "u32"
+      ],
+      "callback": false
+    },
+    {
+      "result": "指针",
+      "parameters": [],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "u32",
+        "uintptr",
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "i32",
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "u16",
+      "parameters": [
+        "i32"
+      ],
+      "callback": false
+    },
+    {
+      "result": "uintptr",
+      "parameters": [
+        "指针",
+        "uintptr",
+        "u32",
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "uintptr"
+      ],
+      "callback": false
+    },
+    {
+      "result": "指针",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32",
+        "i32",
+        "i32",
+        "u32"
+      ],
+      "callback": false
+    },
+    {
+      "result": "u32",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32"
+      ],
+      "callback": false
+    },
+    {
+      "result": "无值",
+      "parameters": [
+        "指针",
+        "指针",
+        "uintptr"
+      ],
+      "callback": false
+    },
+    {
+      "result": "uintptr",
+      "parameters": [],
+      "callback": false
+    },
+    {
+      "result": "u32",
+      "parameters": [],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "u32",
+        "u32",
+        "指针",
+        "i32",
+        "指针",
+        "i32"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "u32",
+        "u32",
+        "指针",
+        "i32",
+        "指针",
+        "i32",
+        "指针",
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "指针",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32"
+      ],
+      "callback": false
+    },
+    {
+      "result": "指针",
+      "parameters": [
+        "指针",
+        "u32",
+        "u32",
+        "指针",
+        "u32",
+        "u32",
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32",
+        "指针",
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "i64",
+        "指针",
+        "u32"
+      ],
+      "callback": false
+    },
+    {
+      "result": "u32",
+      "parameters": [
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "指针",
+        "u32",
+        "指针",
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "u32",
+      "parameters": [
+        "指针",
+        "u32",
+        "指针",
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "u32",
+        "指针",
+        "u32",
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "u16",
+        "u16"
+      ],
+      "callback": false
+    },
+    {
+      "result": "u32",
+      "parameters": [
+        "指针",
+        "u32",
+        "指针",
+        "u32"
+      ],
+      "callback": false
+    },
+    {
+      "result": "u32",
+      "parameters": [
+        "指针",
+        "u32"
+      ],
+      "callback": false
+    },
+    {
+      "result": "u32",
+      "parameters": [
+        "指针",
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "u32",
+      "parameters": [
+        "指针",
+        "指针",
+        "指针",
+        "u32",
+        "u32",
+        "u32",
+        "指针",
+        "u32",
+        "指针",
+        "u32",
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "u32",
+      "parameters": [
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "intptr",
+        "指针",
+        "u32",
+        "指针",
+        "u32"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32",
+        "u32",
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "指针",
+      "parameters": [
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "i32"
+      ],
+      "callback": false
+    },
+    {
+      "result": "无值",
+      "parameters": [
+        "i32",
+        "u32",
+        "指针",
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "无值",
+      "parameters": [
+        "指针",
+        "i32"
+      ],
+      "callback": false
+    },
+    {
+      "result": "无值",
+      "parameters": [
+        "指针"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "uintptr",
+        "uintptr"
+      ],
+      "callback": false
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "uintptr"
+      ],
+      "callback": false
+    },
+    {
+      "result": "intptr",
+      "parameters": [
+        "指针",
+        "u32",
+        "uintptr",
+        "intptr",
+        "uintptr",
+        "uintptr"
+      ],
+      "callback": true
+    }
+  ],
+  "scope": "Exact d964ea9 editor baseline only; not wij/current main; no GUI execution claim."
+}

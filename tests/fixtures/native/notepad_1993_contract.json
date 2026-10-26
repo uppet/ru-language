@@ -1,0 +1,749 @@
+{
+  "scope": "independent Python development oracle, not stage3/LLVM/Windows evidence",
+  "application_commit": "1993ac7cd9c0f8edec833dc1f261a58ccc42779f",
+  "application_tree": "8db0ac059856e1c14b6b5fe7416c3a9d873e44b2",
+  "compiler_commit": "3f14cc8eb913179198c79e959823e85b9e6d178c",
+  "compiler_tree": "4c9e9751592a043af725e7afa26bb4a1297ee709",
+  "entry": "src/main.ru",
+  "modules": [
+    {
+      "scope": "app",
+      "path": "src/main.ru",
+      "sha256": "318fbb20a50b62c9bd5df9cdca12906b64624182cdf6a32d92a5d7e520635295",
+      "git_blob": "932b60328a4ebbf56025954dcac4ada5a5616737"
+    },
+    {
+      "scope": "compiler",
+      "path": "rulang/stdlib/密.ru",
+      "sha256": "174a64c1c03499469ad825429db98577a314958cfb070d8c87bd03c4ca23700d",
+      "git_blob": "51f6f772b873386a953b60968cab593f94153fce"
+    },
+    {
+      "scope": "app",
+      "path": "src/i18n.ru",
+      "sha256": "e5ed0325977748d3567d60e61f13f17e3db31c8b5afa7c34eec5703d649cbe85",
+      "git_blob": "6bd9219e47fda9cdd0ec60e05e48007a72b3d64b"
+    },
+    {
+      "scope": "app",
+      "path": "src/i18n_catalog.ru",
+      "sha256": "b7ed44914d2b1ae14e255eff9574a0aeb8a45cb26bbf8bccdb69620dce5c93a9",
+      "git_blob": "450cc6818d4c97e9b076fa634437c86e3e629565"
+    },
+    {
+      "scope": "app",
+      "path": "src/i18n_settings.ru",
+      "sha256": "ac750ca70c937f482b762f165197db38e9c21406b61b7c3ac3f282e632532daa",
+      "git_blob": "acfa966ee840f9e321e2b614446fcb58a4c41ef0"
+    },
+    {
+      "scope": "app",
+      "path": "src/recent_files.ru",
+      "sha256": "d0f454ecfc8b02cb75fa5150ffd2b0b6df986dac13bf4a48c84037209e55d95a",
+      "git_blob": "b442d5a5979b6d96728ada6491bb3b9fdd088a63"
+    },
+    {
+      "scope": "app",
+      "path": "src/recent_files_policy.ru",
+      "sha256": "326374b9b89ac63dc107330907c79ed213b37903e46ca913874956a0c7bb8e2c",
+      "git_blob": "ba4c403858ceebdd4aed30ff091ecda5aeac850d"
+    },
+    {
+      "scope": "app",
+      "path": "src/file_codec.ru",
+      "sha256": "226d072982648d6b0fed51c869d67500252436cedc3f51132dd6cbc773e457eb",
+      "git_blob": "234c728c4e5b0485b7e79cd1dacf2ef804575bbd"
+    },
+    {
+      "scope": "app",
+      "path": "src/file_codec_flags.ru",
+      "sha256": "5aa2376e2c9efca36aa2f8798a6d6526ec915bfeb9bc02003e21775176884bb2",
+      "git_blob": "b69237170b40493ff1626ba0b37f6c11cf5c5975"
+    },
+    {
+      "scope": "app",
+      "path": "src/i18n_layout.ru",
+      "sha256": "abdb065ec9a6d2e9b352853285bba6fbc761ba6a4f42cadc82c854c023aa05a7",
+      "git_blob": "5a19a60ee405cbfdbe48ab9021a420622e861842"
+    },
+    {
+      "scope": "app",
+      "path": "src/win32.ru",
+      "sha256": "addd9b27f75864b15346664574b07fd536240019a9b3f5a33a02d73ab72a05b2",
+      "git_blob": "59ca84802b93bd1961cf71a0a9d70b159bf690ad"
+    },
+    {
+      "scope": "app",
+      "path": "src/editor.ru",
+      "sha256": "8970ba9ed54095cb2df707e606f15140d76c639b705cbee5949c23e36e752c3e",
+      "git_blob": "5bd3812b59e4f56ceb57caf84a087dafa85d2b17"
+    },
+    {
+      "scope": "app",
+      "path": "src/document.ru",
+      "sha256": "708f48fe5ee9c86e140e9aff4b5b4dac0cb1b7e2127527a6ea6ec479142dc273",
+      "git_blob": "fc378d5ceb6c8af6dca552243fedd6a6b5a46c19"
+    },
+    {
+      "scope": "app",
+      "path": "src/ui_arguments.ru",
+      "sha256": "d27989270478cf0772ed8aab567ee45116be30d9800ba58de6bdc1a8062a9307",
+      "git_blob": "7010ca2b242005dc59c15dc4f8946879398a9871"
+    },
+    {
+      "scope": "app",
+      "path": "src/status.ru",
+      "sha256": "73bbfe0910226d6bfb2e9a78ffe1d2ea5f8a2c1605f67b3b1fe9eb26366fe767",
+      "git_blob": "79c56b746e7c93ee549b12f0eef463f3354beb8e"
+    },
+    {
+      "scope": "app",
+      "path": "src/shortcuts.ru",
+      "sha256": "a7b4971aa790c4c84dab64131679fea35ac6bd0ac2698e4854af98d72c0920b8",
+      "git_blob": "2bbbf38a1aab9202366794013a6405a38bfe2cbb"
+    },
+    {
+      "scope": "app",
+      "path": "src/syntax.ru",
+      "sha256": "1fc38616d696ff524398e51570135463918e349e2dd80d046a7bc53c0656391f",
+      "git_blob": "6d8b1e3714511fb2eb53cebf608d064bcccf3a67"
+    },
+    {
+      "scope": "app",
+      "path": "src/syntax_policy.ru",
+      "sha256": "d863ddcc76a0c3eae587378476ad3a4dd460a38dddec358f72987c9e1262fad2",
+      "git_blob": "3d8e563cfe3bf47b4cbfb8b1ecdbd9f6d271ffa9"
+    },
+    {
+      "scope": "app",
+      "path": "src/ru_syntax.ru",
+      "sha256": "484061b2994db7e20c914bc61654eee726b632c620c8babce51bf73e20985442",
+      "git_blob": "36ceaf09a00490980d697ed7dabb27e17be32a8d"
+    },
+    {
+      "scope": "app",
+      "path": "src/ru_native_syntax.ru",
+      "sha256": "7a46ce9621d658b5fbec64e2540d1a418d7aa6808eed18563656a80afce5ae38",
+      "git_blob": "e21666edd982e4c7e40065c1f64ef43790568948"
+    },
+    {
+      "scope": "app",
+      "path": "src/ru_lexical.ru",
+      "sha256": "c6ae96fafdf565ab482112589245d54dc114a1941f67eff3f0f9da632d4e5067",
+      "git_blob": "797abb57e66d181ec550daa0ee8fb6098f77b4fe"
+    },
+    {
+      "scope": "app",
+      "path": "src/markdown_syntax.ru",
+      "sha256": "8ae5c6b71f48fd3e374095cbcbb0e1585ba1aea54d2a592d03446d49da760ce3",
+      "git_blob": "014aaf6d2ca2af68733a481108432cfadc79aacf"
+    },
+    {
+      "scope": "app",
+      "path": "src/markdown_policy.ru",
+      "sha256": "ea50b160244ac3f246057ecbc2360ba53ffacd4b2fa415f9bf284760f91249fd",
+      "git_blob": "0d578381cf3207a9fa9100c1547d87318dbae955"
+    },
+    {
+      "scope": "app",
+      "path": "src/associations.ru",
+      "sha256": "ad7cf08610b92a63fba8fcf53f327847b60abd37b4c0cb619c66f7f6ecdedcbd",
+      "git_blob": "a855439f60e104a9d675abbe008268c357bb5c72"
+    },
+    {
+      "scope": "app",
+      "path": "src/associations_policy.ru",
+      "sha256": "02c96b9d8c38953d460ddac56fab08ac7b59a78bc840668152b3b14ce3a3382f",
+      "git_blob": "f4b5b2d8fd7f4c1b49b2c4802b6d143eaab1530e"
+    },
+    {
+      "scope": "app",
+      "path": "src/file_drop.ru",
+      "sha256": "c61a8679075a971d5fdc9e0aac01d4adb6f9e143fb5c05abbb381b7124b5c9ec",
+      "git_blob": "20aa787cd14f5304c5ff87a2765810e318cafa54"
+    }
+  ],
+  "shapes": [
+    {
+      "result": "i32",
+      "parameters": [
+        "u32",
+        "u32",
+        "指针",
+        "i32",
+        "指针",
+        "i32"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "u32",
+        "u32",
+        "指针",
+        "i32",
+        "指针",
+        "i32",
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "i32"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "i32"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "i32",
+        "指针",
+        "i32",
+        "i32"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "i64",
+        "指针",
+        "u32"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "u16",
+        "u16"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "u32",
+        "uintptr",
+        "intptr"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "u32",
+        "uintptr",
+        "指针"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "u32",
+        "指针",
+        "u32",
+        "指针"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "uintptr"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "i32"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "i32",
+        "指针"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32",
+        "u32"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32",
+        "u32",
+        "u32"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32",
+        "u32",
+        "指针"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32",
+        "u32",
+        "指针",
+        "u32"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32",
+        "指针",
+        "u32",
+        "u32",
+        "指针",
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32",
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "uintptr"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "uintptr",
+        "uintptr"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "指针",
+        "u32"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "指针",
+        "u32",
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "指针",
+        "u32",
+        "指针",
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "result": "intptr",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "result": "intptr",
+      "parameters": [
+        "指针",
+        "u32",
+        "uintptr",
+        "intptr"
+      ]
+    },
+    {
+      "result": "intptr",
+      "parameters": [
+        "指针",
+        "u32",
+        "uintptr",
+        "intptr",
+        "uintptr",
+        "uintptr"
+      ]
+    },
+    {
+      "result": "u16",
+      "parameters": []
+    },
+    {
+      "result": "u16",
+      "parameters": [
+        "i32"
+      ]
+    },
+    {
+      "result": "u16",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "result": "u32",
+      "parameters": []
+    },
+    {
+      "result": "u32",
+      "parameters": [
+        "u32"
+      ]
+    },
+    {
+      "result": "u32",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "result": "u32",
+      "parameters": [
+        "指针",
+        "u32"
+      ]
+    },
+    {
+      "result": "u32",
+      "parameters": [
+        "指针",
+        "u32",
+        "指针",
+        "u32"
+      ]
+    },
+    {
+      "result": "u32",
+      "parameters": [
+        "指针",
+        "u32",
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "result": "u32",
+      "parameters": [
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "result": "u32",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32"
+      ]
+    },
+    {
+      "result": "u32",
+      "parameters": [
+        "指针",
+        "指针",
+        "指针",
+        "u32",
+        "u32",
+        "u32",
+        "指针",
+        "u32",
+        "指针",
+        "u32",
+        "指针"
+      ]
+    },
+    {
+      "result": "u32",
+      "parameters": [
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "intptr",
+        "指针",
+        "u32",
+        "指针",
+        "u32"
+      ]
+    },
+    {
+      "result": "uintptr",
+      "parameters": []
+    },
+    {
+      "result": "uintptr",
+      "parameters": [
+        "指针",
+        "uintptr",
+        "u32",
+        "指针"
+      ]
+    },
+    {
+      "result": "指针",
+      "parameters": []
+    },
+    {
+      "result": "指针",
+      "parameters": [
+        "i32"
+      ]
+    },
+    {
+      "result": "指针",
+      "parameters": [
+        "u32",
+        "指针",
+        "指针",
+        "u32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "指针",
+        "指针",
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "result": "指针",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "result": "指针",
+      "parameters": [
+        "指针",
+        "u32",
+        "u32",
+        "指针",
+        "u32",
+        "u32",
+        "指针"
+      ]
+    },
+    {
+      "result": "指针",
+      "parameters": [
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "result": "指针",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32"
+      ]
+    },
+    {
+      "result": "指针",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32",
+        "i32",
+        "i32",
+        "u32"
+      ]
+    },
+    {
+      "result": "指针",
+      "parameters": [
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "指针",
+        "i32"
+      ]
+    },
+    {
+      "result": "无值",
+      "parameters": [
+        "i32"
+      ]
+    },
+    {
+      "result": "无值",
+      "parameters": [
+        "i32",
+        "u32",
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "result": "无值",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "result": "无值",
+      "parameters": [
+        "指针",
+        "i32"
+      ]
+    },
+    {
+      "result": "无值",
+      "parameters": [
+        "指针",
+        "指针",
+        "uintptr"
+      ]
+    }
+  ],
+  "callbacks": [
+    {
+      "result": "intptr",
+      "parameters": [
+        "指针",
+        "u32",
+        "uintptr",
+        "intptr"
+      ]
+    },
+    {
+      "result": "intptr",
+      "parameters": [
+        "指针",
+        "u32",
+        "uintptr",
+        "intptr",
+        "uintptr",
+        "uintptr"
+      ]
+    }
+  ]
+}

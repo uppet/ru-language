@@ -1,0 +1,1222 @@
+{
+  "source_sha256": "1c0f3acb2ba51b06d96e5d41e22223ff2f2a52e7ea12642653d3c8cb8902d8f5",
+  "abi": "Windows x64 LLP64",
+  "structures": {
+    "POINT": {
+      "size": 8,
+      "alignment": 4,
+      "fields": [
+        {
+          "name": "x",
+          "type": "i32",
+          "offset": 0
+        },
+        {
+          "name": "y",
+          "type": "i32",
+          "offset": 4
+        }
+      ]
+    },
+    "RECT": {
+      "size": 16,
+      "alignment": 4,
+      "fields": [
+        {
+          "name": "left",
+          "type": "i32",
+          "offset": 0
+        },
+        {
+          "name": "top",
+          "type": "i32",
+          "offset": 4
+        },
+        {
+          "name": "right",
+          "type": "i32",
+          "offset": 8
+        },
+        {
+          "name": "bottom",
+          "type": "i32",
+          "offset": 12
+        }
+      ]
+    },
+    "MSG": {
+      "size": 48,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "hwnd",
+          "type": "指针",
+          "offset": 0
+        },
+        {
+          "name": "message",
+          "type": "u32",
+          "offset": 8
+        },
+        {
+          "name": "wParam",
+          "type": "uintptr",
+          "offset": 16
+        },
+        {
+          "name": "lParam",
+          "type": "intptr",
+          "offset": 24
+        },
+        {
+          "name": "time",
+          "type": "u32",
+          "offset": 32
+        },
+        {
+          "name": "pt",
+          "type": "POINT",
+          "offset": 36
+        },
+        {
+          "name": "lPrivate",
+          "type": "u32",
+          "offset": 44
+        }
+      ]
+    },
+    "WNDCLASS": {
+      "size": 80,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "size",
+          "type": "u32",
+          "offset": 0
+        },
+        {
+          "name": "style",
+          "type": "u32",
+          "offset": 4
+        },
+        {
+          "name": "proc",
+          "type": "指针",
+          "offset": 8
+        },
+        {
+          "name": "classExtra",
+          "type": "i32",
+          "offset": 16
+        },
+        {
+          "name": "windowExtra",
+          "type": "i32",
+          "offset": 20
+        },
+        {
+          "name": "instance",
+          "type": "指针",
+          "offset": 24
+        },
+        {
+          "name": "icon",
+          "type": "指针",
+          "offset": 32
+        },
+        {
+          "name": "cursor",
+          "type": "指针",
+          "offset": 40
+        },
+        {
+          "name": "background",
+          "type": "指针",
+          "offset": 48
+        },
+        {
+          "name": "menu",
+          "type": "指针",
+          "offset": 56
+        },
+        {
+          "name": "name",
+          "type": "指针",
+          "offset": 64
+        },
+        {
+          "name": "smallIcon",
+          "type": "指针",
+          "offset": 72
+        }
+      ]
+    },
+    "NMHDR": {
+      "size": 24,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "hwndFrom",
+          "type": "指针",
+          "offset": 0
+        },
+        {
+          "name": "idFrom",
+          "type": "uintptr",
+          "offset": 8
+        },
+        {
+          "name": "code",
+          "type": "u32",
+          "offset": 16
+        }
+      ]
+    },
+    "TCITEM": {
+      "size": 40,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "mask",
+          "type": "u32",
+          "offset": 0
+        },
+        {
+          "name": "state",
+          "type": "u32",
+          "offset": 4
+        },
+        {
+          "name": "stateMask",
+          "type": "u32",
+          "offset": 8
+        },
+        {
+          "name": "text",
+          "type": "指针",
+          "offset": 16
+        },
+        {
+          "name": "textMax",
+          "type": "i32",
+          "offset": 24
+        },
+        {
+          "name": "image",
+          "type": "i32",
+          "offset": 28
+        },
+        {
+          "name": "param",
+          "type": "intptr",
+          "offset": 32
+        }
+      ]
+    },
+    "OPENFILE": {
+      "size": 152,
+      "alignment": 8,
+      "fields": [
+        {
+          "name": "size",
+          "type": "u32",
+          "offset": 0
+        },
+        {
+          "name": "owner",
+          "type": "指针",
+          "offset": 8
+        },
+        {
+          "name": "instance",
+          "type": "指针",
+          "offset": 16
+        },
+        {
+          "name": "filter",
+          "type": "指针",
+          "offset": 24
+        },
+        {
+          "name": "customFilter",
+          "type": "指针",
+          "offset": 32
+        },
+        {
+          "name": "maxCustomFilter",
+          "type": "u32",
+          "offset": 40
+        },
+        {
+          "name": "filterIndex",
+          "type": "u32",
+          "offset": 44
+        },
+        {
+          "name": "file",
+          "type": "指针",
+          "offset": 48
+        },
+        {
+          "name": "maxFile",
+          "type": "u32",
+          "offset": 56
+        },
+        {
+          "name": "fileTitle",
+          "type": "指针",
+          "offset": 64
+        },
+        {
+          "name": "maxFileTitle",
+          "type": "u32",
+          "offset": 72
+        },
+        {
+          "name": "initialDir",
+          "type": "指针",
+          "offset": 80
+        },
+        {
+          "name": "title",
+          "type": "指针",
+          "offset": 88
+        },
+        {
+          "name": "flags",
+          "type": "u32",
+          "offset": 96
+        },
+        {
+          "name": "fileOffset",
+          "type": "u16",
+          "offset": 100
+        },
+        {
+          "name": "fileExtension",
+          "type": "u16",
+          "offset": 102
+        },
+        {
+          "name": "defaultExt",
+          "type": "指针",
+          "offset": 104
+        },
+        {
+          "name": "customData",
+          "type": "intptr",
+          "offset": 112
+        },
+        {
+          "name": "hook",
+          "type": "指针",
+          "offset": 120
+        },
+        {
+          "name": "template",
+          "type": "指针",
+          "offset": 128
+        },
+        {
+          "name": "reserved",
+          "type": "指针",
+          "offset": 136
+        },
+        {
+          "name": "reserved2",
+          "type": "u32",
+          "offset": 144
+        },
+        {
+          "name": "flagsEx",
+          "type": "u32",
+          "offset": 148
+        }
+      ]
+    },
+    "ALLFILEFILTER": {
+      "size": 30,
+      "alignment": 2,
+      "fields": [
+        {
+          "name": "c0",
+          "type": "u16",
+          "offset": 0
+        },
+        {
+          "name": "c1",
+          "type": "u16",
+          "offset": 2
+        },
+        {
+          "name": "c2",
+          "type": "u16",
+          "offset": 4
+        },
+        {
+          "name": "c3",
+          "type": "u16",
+          "offset": 6
+        },
+        {
+          "name": "c4",
+          "type": "u16",
+          "offset": 8
+        },
+        {
+          "name": "c5",
+          "type": "u16",
+          "offset": 10
+        },
+        {
+          "name": "c6",
+          "type": "u16",
+          "offset": 12
+        },
+        {
+          "name": "c7",
+          "type": "u16",
+          "offset": 14
+        },
+        {
+          "name": "c8",
+          "type": "u16",
+          "offset": 16
+        },
+        {
+          "name": "c9",
+          "type": "u16",
+          "offset": 18
+        },
+        {
+          "name": "c10",
+          "type": "u16",
+          "offset": 20
+        },
+        {
+          "name": "c11",
+          "type": "u16",
+          "offset": 22
+        },
+        {
+          "name": "c12",
+          "type": "u16",
+          "offset": 24
+        },
+        {
+          "name": "c13",
+          "type": "u16",
+          "offset": 26
+        },
+        {
+          "name": "c14",
+          "type": "u16",
+          "offset": 28
+        }
+      ]
+    },
+    "INITCONTROLS": {
+      "size": 8,
+      "alignment": 4,
+      "fields": [
+        {
+          "name": "size",
+          "type": "u32",
+          "offset": 0
+        },
+        {
+          "name": "classes",
+          "type": "u32",
+          "offset": 4
+        }
+      ]
+    }
+  },
+  "bindings": [
+    {
+      "name": "RegisterClassExW",
+      "library": "用户",
+      "symbol": "RegisterClassExW",
+      "result": "u16",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "name": "UnregisterClassW",
+      "library": "用户",
+      "symbol": "UnregisterClassW",
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "name": "CreateWindowExW",
+      "library": "用户",
+      "symbol": "CreateWindowExW",
+      "result": "指针",
+      "parameters": [
+        "u32",
+        "指针",
+        "指针",
+        "u32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "指针",
+        "指针",
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "name": "DefWindowProcW",
+      "library": "用户",
+      "symbol": "DefWindowProcW",
+      "result": "intptr",
+      "parameters": [
+        "指针",
+        "u32",
+        "uintptr",
+        "intptr"
+      ]
+    },
+    {
+      "name": "ShowWindow",
+      "library": "用户",
+      "symbol": "ShowWindow",
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "i32"
+      ]
+    },
+    {
+      "name": "UpdateWindow",
+      "library": "用户",
+      "symbol": "UpdateWindow",
+      "result": "i32",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "name": "GetMessageW",
+      "library": "用户",
+      "symbol": "GetMessageW",
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32",
+        "u32"
+      ]
+    },
+    {
+      "name": "TranslateMessage",
+      "library": "用户",
+      "symbol": "TranslateMessage",
+      "result": "i32",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "name": "DispatchMessageW",
+      "library": "用户",
+      "symbol": "DispatchMessageW",
+      "result": "intptr",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "name": "EnableWindow",
+      "library": "用户",
+      "symbol": "EnableWindow",
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "i32"
+      ]
+    },
+    {
+      "name": "PeekMessageW",
+      "library": "用户",
+      "symbol": "PeekMessageW",
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32",
+        "u32",
+        "u32"
+      ]
+    },
+    {
+      "name": "GetQueueStatus",
+      "library": "用户",
+      "symbol": "GetQueueStatus",
+      "result": "u32",
+      "parameters": [
+        "u32"
+      ]
+    },
+    {
+      "name": "PostQuitMessage",
+      "library": "用户",
+      "symbol": "PostQuitMessage",
+      "result": "无值",
+      "parameters": [
+        "i32"
+      ]
+    },
+    {
+      "name": "DestroyWindow",
+      "library": "用户",
+      "symbol": "DestroyWindow",
+      "result": "i32",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "name": "SetWindowTextW",
+      "library": "用户",
+      "symbol": "SetWindowTextW",
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "name": "GetWindowTextW",
+      "library": "用户",
+      "symbol": "GetWindowTextW",
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "i32"
+      ]
+    },
+    {
+      "name": "GetWindowTextLengthW",
+      "library": "用户",
+      "symbol": "GetWindowTextLengthW",
+      "result": "i32",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "name": "LoadCursorW",
+      "library": "用户",
+      "symbol": "LoadCursorW",
+      "result": "指针",
+      "parameters": [
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "name": "GetSysColorBrush",
+      "library": "用户",
+      "symbol": "GetSysColorBrush",
+      "result": "指针",
+      "parameters": [
+        "i32"
+      ]
+    },
+    {
+      "name": "SendMessageW",
+      "library": "用户",
+      "symbol": "SendMessageW",
+      "result": "intptr",
+      "parameters": [
+        "指针",
+        "u32",
+        "uintptr",
+        "intptr"
+      ]
+    },
+    {
+      "name": "PostMessageW",
+      "library": "用户",
+      "symbol": "PostMessageW",
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "u32",
+        "uintptr",
+        "intptr"
+      ]
+    },
+    {
+      "name": "MoveWindow",
+      "library": "用户",
+      "symbol": "MoveWindow",
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "i32"
+      ]
+    },
+    {
+      "name": "GetClientRect",
+      "library": "用户",
+      "symbol": "GetClientRect",
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "name": "SetFocus",
+      "library": "用户",
+      "symbol": "SetFocus",
+      "result": "指针",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "name": "MessageBoxW",
+      "library": "用户",
+      "symbol": "MessageBoxW",
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "指针",
+        "u32"
+      ]
+    },
+    {
+      "name": "CreateMenu",
+      "library": "用户",
+      "symbol": "CreateMenu",
+      "result": "指针",
+      "parameters": []
+    },
+    {
+      "name": "CreatePopupMenu",
+      "library": "用户",
+      "symbol": "CreatePopupMenu",
+      "result": "指针",
+      "parameters": []
+    },
+    {
+      "name": "AppendMenuW",
+      "library": "用户",
+      "symbol": "AppendMenuW",
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "u32",
+        "uintptr",
+        "指针"
+      ]
+    },
+    {
+      "name": "SetMenu",
+      "library": "用户",
+      "symbol": "SetMenu",
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "name": "DrawMenuBar",
+      "library": "用户",
+      "symbol": "DrawMenuBar",
+      "result": "i32",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "name": "GetKeyState",
+      "library": "用户",
+      "symbol": "GetKeyState",
+      "result": "u16",
+      "parameters": [
+        "i32"
+      ]
+    },
+    {
+      "name": "IsDialogMessageW",
+      "library": "用户",
+      "symbol": "IsDialogMessageW",
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "name": "SetTimer",
+      "library": "用户",
+      "symbol": "SetTimer",
+      "result": "uintptr",
+      "parameters": [
+        "指针",
+        "uintptr",
+        "u32",
+        "指针"
+      ]
+    },
+    {
+      "name": "KillTimer",
+      "library": "用户",
+      "symbol": "KillTimer",
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "uintptr"
+      ]
+    },
+    {
+      "name": "LoadImageW",
+      "library": "用户",
+      "symbol": "LoadImageW",
+      "result": "指针",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32",
+        "i32",
+        "i32",
+        "u32"
+      ]
+    },
+    {
+      "name": "GetModuleHandleW",
+      "library": "内核",
+      "symbol": "GetModuleHandleW",
+      "result": "指针",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "name": "GetModuleFileNameW",
+      "library": "内核",
+      "symbol": "GetModuleFileNameW",
+      "result": "u32",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32"
+      ]
+    },
+    {
+      "name": "RtlMoveMemory",
+      "library": "内核",
+      "symbol": "RtlMoveMemory",
+      "result": "无值",
+      "parameters": [
+        "指针",
+        "指针",
+        "uintptr"
+      ]
+    },
+    {
+      "name": "GetTickCount64",
+      "library": "内核",
+      "symbol": "GetTickCount64",
+      "result": "uintptr",
+      "parameters": []
+    },
+    {
+      "name": "GetOpenFileNameW",
+      "library": "对话",
+      "symbol": "GetOpenFileNameW",
+      "result": "i32",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "name": "GetSaveFileNameW",
+      "library": "对话",
+      "symbol": "GetSaveFileNameW",
+      "result": "i32",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "name": "CommDlgExtendedError",
+      "library": "对话",
+      "symbol": "CommDlgExtendedError",
+      "result": "u32",
+      "parameters": []
+    },
+    {
+      "name": "InitCommonControlsEx",
+      "library": "控件",
+      "symbol": "InitCommonControlsEx",
+      "result": "i32",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "name": "lstrlenA",
+      "library": "内核",
+      "symbol": "lstrlenA",
+      "result": "i32",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "name": "MultiByteToWideChar",
+      "library": "内核",
+      "symbol": "MultiByteToWideChar",
+      "result": "i32",
+      "parameters": [
+        "u32",
+        "u32",
+        "指针",
+        "i32",
+        "指针",
+        "i32"
+      ]
+    },
+    {
+      "name": "WideCharToMultiByte",
+      "library": "内核",
+      "symbol": "WideCharToMultiByte",
+      "result": "i32",
+      "parameters": [
+        "u32",
+        "u32",
+        "指针",
+        "i32",
+        "指针",
+        "i32",
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "name": "lstrlenW",
+      "library": "内核",
+      "symbol": "lstrlenW",
+      "result": "i32",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "name": "ShutdownBlockReasonCreate",
+      "library": "用户",
+      "symbol": "ShutdownBlockReasonCreate",
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "name": "ShutdownBlockReasonDestroy",
+      "library": "用户",
+      "symbol": "ShutdownBlockReasonDestroy",
+      "result": "i32",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "name": "LoadLibraryExW",
+      "library": "内核",
+      "symbol": "LoadLibraryExW",
+      "result": "指针",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32"
+      ]
+    },
+    {
+      "name": "FreeLibrary",
+      "library": "内核",
+      "symbol": "FreeLibrary",
+      "result": "i32",
+      "parameters": [
+        "指针"
+      ]
+    }
+  ],
+  "shapes": [
+    {
+      "result": "i32",
+      "parameters": [
+        "u32",
+        "u32",
+        "指针",
+        "i32",
+        "指针",
+        "i32"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "u32",
+        "u32",
+        "指针",
+        "i32",
+        "指针",
+        "i32",
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "i32"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "i32"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "u32",
+        "uintptr",
+        "intptr"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "u32",
+        "uintptr",
+        "指针"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "uintptr"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "i32"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32",
+        "u32"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32",
+        "u32",
+        "u32"
+      ]
+    },
+    {
+      "result": "i32",
+      "parameters": [
+        "指针",
+        "指针",
+        "指针",
+        "u32"
+      ]
+    },
+    {
+      "result": "intptr",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "result": "intptr",
+      "parameters": [
+        "指针",
+        "u32",
+        "uintptr",
+        "intptr"
+      ]
+    },
+    {
+      "result": "u16",
+      "parameters": [
+        "i32"
+      ]
+    },
+    {
+      "result": "u16",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "result": "u32",
+      "parameters": []
+    },
+    {
+      "result": "u32",
+      "parameters": [
+        "u32"
+      ]
+    },
+    {
+      "result": "u32",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32"
+      ]
+    },
+    {
+      "result": "uintptr",
+      "parameters": []
+    },
+    {
+      "result": "uintptr",
+      "parameters": [
+        "指针",
+        "uintptr",
+        "u32",
+        "指针"
+      ]
+    },
+    {
+      "result": "指针",
+      "parameters": []
+    },
+    {
+      "result": "指针",
+      "parameters": [
+        "i32"
+      ]
+    },
+    {
+      "result": "指针",
+      "parameters": [
+        "u32",
+        "指针",
+        "指针",
+        "u32",
+        "i32",
+        "i32",
+        "i32",
+        "i32",
+        "指针",
+        "指针",
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "result": "指针",
+      "parameters": [
+        "指针"
+      ]
+    },
+    {
+      "result": "指针",
+      "parameters": [
+        "指针",
+        "指针"
+      ]
+    },
+    {
+      "result": "指针",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32"
+      ]
+    },
+    {
+      "result": "指针",
+      "parameters": [
+        "指针",
+        "指针",
+        "u32",
+        "i32",
+        "i32",
+        "u32"
+      ]
+    },
+    {
+      "result": "无值",
+      "parameters": [
+        "i32"
+      ]
+    },
+    {
+      "result": "无值",
+      "parameters": [
+        "指针",
+        "指针",
+        "uintptr"
+      ]
+    }
+  ],
+  "callback": {
+    "result": "intptr",
+    "parameters": [
+      "指针",
+      "u32",
+      "uintptr",
+      "intptr"
+    ]
+  }
+}

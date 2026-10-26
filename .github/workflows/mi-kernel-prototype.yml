@@ -2,7 +2,7 @@ name: Mi source and owner prototype
 
 on:
   push:
-    branches: [mi-perf-prototype, bs, wip, main, "feature/bs-full-integration-*"]
+    branches: [feature/native-ffi-integration-20261026, mi-perf-prototype, bs, wip, main, "feature/bs-full-integration-*"]
   pull_request:
     branches: [bs, wip, main]
   workflow_dispatch:

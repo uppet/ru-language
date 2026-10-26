@@ -1,5 +1,10 @@
 """Negative controls for M4 acceptance and narrowly bounded PE normalization."""
 import struct
+import hashlib
+from pathlib import Path, PureWindowsPath
+import tempfile
+from unittest.mock import patch
+from tools import bootstrap_verify
 import unittest
 
 from tools.bootstrap_compare import compare_native, normalize_native
@@ -23,6 +28,41 @@ def pe_fixture(timestamp):
 
 
 class BootstrapVerifierTests(unittest.TestCase):
+    def test_windows_snapshot_uses_canonical_relative_posix_keys(self):
+        # Real Windows path semantics, exercised even on a POSIX test host.
+        class WindowsInput(PureWindowsPath):
+            def read_bytes(self):
+                return self.name.encode('utf-8')
+        paths = [WindowsInput('C:/source/tools/bootstrap.py'),
+                 WindowsInput('C:/source/bootstrap/compiler.ru')]
+        with patch.object(bootstrap_verify, 'ROOT', PureWindowsPath('C:/source')):
+            actual = bootstrap_verify.snapshots(paths)
+        self.assertEqual(actual, {
+            'bootstrap/compiler.ru': hashlib.sha256(b'compiler.ru').hexdigest(),
+            'tools/bootstrap.py': hashlib.sha256(b'bootstrap.py').hexdigest()})
+        self.assertNotIn('bootstrap\\compiler.ru', actual)
+
+    def test_native_snapshot_preserves_exact_bytes_and_membership(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            source = root/'nested'/'input.ru'
+            source.parent.mkdir()
+            source.write_bytes(b'first\r\n')
+            with patch.object(bootstrap_verify, 'ROOT', root):
+                before = bootstrap_verify.snapshots([source])
+                self.assertEqual(before, {'nested/input.ru': hashlib.sha256(b'first\r\n').hexdigest()})
+                source.write_bytes(b'changed\n')
+                self.assertNotEqual(before, bootstrap_verify.snapshots([source]))
+                self.assertEqual(bootstrap_verify.snapshots([]), {})
+
+    def test_snapshot_outside_root_is_rejected(self):
+        class WindowsInput(PureWindowsPath):
+            def read_bytes(self):
+                raise AssertionError('outside source must not be read')
+        with patch.object(bootstrap_verify, 'ROOT', PureWindowsPath('C:/source')):
+            with self.assertRaises(ValueError):
+                bootstrap_verify.snapshots([WindowsInput('C:/outside/input.ru')])
+
     def test_only_known_pe_timestamps_are_ignored(self):
         first, second = pe_fixture(1234), pe_fixture(5678)
         comparison = compare_native(first, second)

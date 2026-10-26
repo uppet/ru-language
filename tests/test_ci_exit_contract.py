@@ -152,7 +152,7 @@ class CIExitContractTests(unittest.TestCase):
 class MiPrototypePublicationContractTests(unittest.TestCase):
     def test_full_integration_and_mainline_run_exact_generation_checks(self):
         source = (ROOT / '.github/workflows/mi-kernel-prototype.yml').read_text(encoding='utf-8')
-        self.assertIn('branches: [mi-perf-prototype, bs, wip, main, "feature/bs-full-integration-*"]', source)
+        self.assertIn('branches: [feature/native-ffi-integration-20261026, mi-perf-prototype, bs, wip, main, "feature/bs-full-integration-*"]', source)
         self.assertIn('branches: [bs, wip, main]', source)
         for command in (
             'python experiments/mi_kernel/generate.py',
