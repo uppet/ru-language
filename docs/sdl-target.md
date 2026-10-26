@@ -66,5 +66,6 @@ SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy RU_SMOKE_FRAMES=6 ./app
 # dummy 驱动下渲染 N 帧，首帧/末帧存 smoke.png 后退出（帧数默认 3）
 ```
 
-CI 任务：`player-smoke`（Linux 构建+运行）、`player-windows-cross`
-（MinGW 交叉编译 .exe）、`player-windows-native`（MSYS2 原生构建+运行）。
+CI 任务：`player-smoke`（Linux 构建+运行）、`player-windows-native`
+（MSYS2 + pkg-config 原生构建+运行）、`player-windows-inject`
+（RU_SDL_CFLAGS/LIBS 注入路径构建，产物 artifact `ru-player-windows`）。

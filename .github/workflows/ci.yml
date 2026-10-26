@@ -102,50 +102,45 @@ jobs:
 
   # Windows 交叉编译锁：sdl_host.c 的 _WIN32 兼容层与 RU_SDL_CFLAGS/LIBS
   # 注入路径每次构建都过一遍，防止 POSIX-only 代码回溜进 SDL 目标。
-  player-windows-cross:
+    # Windows 参数注入路径锁：不经过 pkg-config，直接 RU_SDL_CFLAGS/LIBS
+  # 指向 MSYS2 ucrt64 的 include/lib——覆盖无 pkg-config 工具链的用户
+  # 场景（与 player-windows-native 互补），产物作为发行 artifact 留存。
+  # 注：Linux 宿主交叉编译（apt mingw）在 runner 上 apt 慢到不可用，
+  # 已由本任务取代；交叉路径以本机验证为准。
+  player-windows-inject:
     if: always() && contains(github.ref, 'player-ruaudio')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 25
-    env:
-      SDL_VERSION: "2.30.12"
-      SDL_TTF_VERSION: "2.24.0"
-      SDL_IMAGE_VERSION: "2.8.8"
-      SDL_MIXER_VERSION: "2.8.1"
+    runs-on: windows-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - name: Install MinGW cross compiler
-        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y gcc-mingw-w64-x86-64
-      - name: Fetch SDL2 MinGW devel packages
+      - name: Install SDL2 toolchain (MSYS2 ucrt64)
+        shell: bash
         run: |
-          mkdir -p /tmp/sdl-sdk && cd /tmp/sdl-sdk
-          curl -sL --fail -o SDL2.tar.gz "https://github.com/libsdl-org/SDL/releases/download/release-$SDL_VERSION/SDL2-devel-$SDL_VERSION-mingw.tar.gz"
-          curl -sL --fail -o SDL2_ttf.tar.gz "https://github.com/libsdl-org/SDL_ttf/releases/download/release-$SDL_TTF_VERSION/SDL2_ttf-devel-$SDL_TTF_VERSION-mingw.tar.gz"
-          curl -sL --fail -o SDL2_image.tar.gz "https://github.com/libsdl-org/SDL_image/releases/download/release-$SDL_IMAGE_VERSION/SDL2_image-devel-$SDL_IMAGE_VERSION-mingw.tar.gz"
-          curl -sL --fail -o SDL2_mixer.tar.gz "https://github.com/libsdl-org/SDL_mixer/releases/download/release-$SDL_MIXER_VERSION/SDL2_mixer-devel-$SDL_MIXER_VERSION-mingw.tar.gz"
-          for f in *.tar.gz; do tar xzf "$f"; done
-      - name: Build player.exe (MinGW cross)
+          /c/msys64/usr/bin/bash -lc "pacman -S --noconfirm --needed \
+            mingw-w64-ucrt-x86_64-pkgconf \
+            mingw-w64-ucrt-x86_64-SDL2 \
+            mingw-w64-ucrt-x86_64-SDL2_ttf \
+            mingw-w64-ucrt-x86_64-SDL2_image \
+            mingw-w64-ucrt-x86_64-SDL2_mixer"
+      - name: Build player.exe (RU_SDL env injection)
+        shell: bash
         env:
-          CC: x86_64-w64-mingw32-gcc
+          PYTHONUTF8: "1"
           RU_SDL_WITH_MIXER: "1"
         run: |
-          cd /tmp/sdl-sdk
-          inc=""; libs=""
-          for p in SDL2-$SDL_VERSION SDL2_ttf-$SDL_TTF_VERSION SDL2_image-$SDL_IMAGE_VERSION SDL2_mixer-$SDL_MIXER_VERSION; do
-            inc="$inc -I/tmp/sdl-sdk/$p/x86_64-w64-mingw32/include/SDL2"
-            libs="$libs -L/tmp/sdl-sdk/$p/x86_64-w64-mingw32/lib"
-          done
-          export RU_SDL_CFLAGS="$inc"
-          export RU_SDL_LIBS="$libs -lSDL2 -lSDL2_ttf -lSDL2_image -lSDL2_mixer -lwinmm -lsetupapi -limm32 -lversion -luuid -lole32 -lgdi32"
-          python3 -m rulang build examples/ruui-player.ru --target sdl -o /tmp/player.exe
-          test -s /tmp/player.exe
+          export PATH="/c/msys64/ucrt64/bin:$PATH"
+          U=/c/msys64/ucrt64
+          export RU_SDL_CFLAGS="-I$U/include/SDL2"
+          export RU_SDL_LIBS="-L$U/lib -lSDL2 -lSDL2_ttf -lSDL2_image -lSDL2_mixer"
+          RU_HEADLESS_SMOKE=1 CC=gcc python -m rulang build examples/ruui-player.ru --target sdl -o player.exe
       - name: Upload player.exe artifact
         uses: actions/upload-artifact@v4
         with:
           name: ru-player-windows
-          path: /tmp/player.exe
+          path: player.exe
           retention-days: 14
 
   # Windows 原生构建锁：MSYS2 ucrt64 工具链 + pkg-config 路径——这是
