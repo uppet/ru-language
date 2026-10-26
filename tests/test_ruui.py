@@ -465,6 +465,7 @@ class RuUIParityTests(unittest.TestCase):
     # ---------- 3a：图载／件载／件目（宿主资源协议） ----------
 
     def load_program(self, directory, filename='a.png'):
+        directory = Path(directory).as_posix()
         return f"""
 尽取 外言 '如UI'.
 
