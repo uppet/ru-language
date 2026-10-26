@@ -551,6 +551,7 @@ class RuUIParityTests(unittest.TestCase):
 机 其 运行.
 """
         with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory).as_posix()
             path = Path(directory)
             (path / 'a.png').write_bytes(png_bytes(4, 3))
             (path / 'c.png').write_bytes(png_bytes(5, 2))
@@ -589,6 +590,7 @@ class RuUIParityTests(unittest.TestCase):
 机 其 件载 'data.bin' (作 字 为 句 错 为 句: 果[0] 取 果[0] + '|' + 字. 为) 'base64' 假.
 """
         with tempfile.TemporaryDirectory() as directory:
+            directory = Path(directory).as_posix()
             path = Path(directory)
             (path / 'note.txt').write_text('你好', encoding='utf-8')
             (path / 'data.bin').write_bytes(bytes([0, 255]))
