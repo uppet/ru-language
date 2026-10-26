@@ -248,7 +248,9 @@ def build(program, source_path, output, cc=None, emit_c=None, modules=None, targ
                 sdl_flags = shlex.split(env_cflags) + shlex.split(env_libs)
                 pkg = None
             else:
-                pkg = shutil.which("pkg-config")
+                # 标准 PKG_CONFIG 环境变量优先（autoconf 同款约定），
+                # 避免 Windows 镜像自带的其他 pkg-config 抢占。
+                pkg = os.environ.get("PKG_CONFIG") or shutil.which("pkg-config")
                 if not pkg:
                     raise RuError("SDL 目标需要 pkg-config 与 SDL2/SDL2_ttf/SDL2_image 开发包；"
                                     "或设置 RU_SDL_CFLAGS 与 RU_SDL_LIBS 显式注入编译/链接参数",

@@ -163,6 +163,7 @@ jobs:
         shell: bash
         run: |
           /c/msys64/usr/bin/bash -lc "pacman -S --noconfirm --needed \
+            mingw-w64-ucrt-x86_64-pkgconf \
             mingw-w64-ucrt-x86_64-SDL2 \
             mingw-w64-ucrt-x86_64-SDL2_ttf \
             mingw-w64-ucrt-x86_64-SDL2_image \
@@ -172,7 +173,10 @@ jobs:
         env:
           PYTHONUTF8: "1"
         run: |
+          # ucrt64 置顶：gcc/pkg-config 都取 MSYS2 的，避开镜像自带
+          # Strawberry Perl 的 pkg-config.BAT（缺 Pod 模块，必然失败）
           export PATH="/c/msys64/ucrt64/bin:$PATH"
+          export PKG_CONFIG=/c/msys64/ucrt64/bin/pkg-config.exe
           RU_HEADLESS_SMOKE=1 CC=gcc python -m rulang build examples/ruui-player.ru --target sdl -o player.exe
       - name: Native headless smoke
         shell: bash
