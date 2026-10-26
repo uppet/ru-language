@@ -107,7 +107,9 @@ class GraphicsTests(unittest.TestCase):
         started = time.monotonic()
         with patch.object(self.interpreter, 'invoke_value', side_effect=delayed):
             self.host.handle({'type': 'frame'})
-        self.assertGreaterEqual(time.monotonic() - started, .15)
+        # Windows 计时粒度 ~15.6ms：sleep(.15) 可能早醒一个 tick（实测 .140）。
+        # 下限只需证明回调确实跑过了旧 0.1s 墙钟预算，留两档余量。
+        self.assertGreaterEqual(time.monotonic() - started, .12)
         self.assertIsNotNone(self.host.snapshot())
         self.assertEqual(self.events[-1]['commands'][0]['x1'], 1)
 
