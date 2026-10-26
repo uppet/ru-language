@@ -1,7 +1,7 @@
 name: Graphics logical budget candidate acceptance and calibration
 on:
   push:
-    branches: [feature/graphics-logical-budget-20261025]
+    branches: [feature/graphics-logical-budget-20261025, wip]
   pull_request:
 permissions:
   contents: read
