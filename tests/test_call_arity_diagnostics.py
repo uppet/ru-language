@@ -1,5 +1,6 @@
 """Call-count diagnostics explain grouping without changing call boundaries."""
 import io
+import sys
 import os
 from pathlib import Path
 import shutil
@@ -57,7 +58,7 @@ class CallArityDiagnosticTests(unittest.TestCase):
                     if backend is Compiler:
                         binary = root / 'program.exe'
                         compiled = subprocess.run([CC, '-std=c99', '-O1', '-Wall', '-Wextra',
-                            '-Werror', '-Wno-unused-function', '-pedantic', str(artifact), '-lm',
+                            '-Werror', '-Wno-unused-function', '-pedantic', str(artifact), *([] if sys.platform == 'win32' else ['-lm']),
                             '-o', str(binary)], text=True, capture_output=True, timeout=60)
                         self.assertEqual(compiled.returncode, 0, compiled.stderr)
                         command = [str(binary)]

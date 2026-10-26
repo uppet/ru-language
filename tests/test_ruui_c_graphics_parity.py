@@ -54,7 +54,7 @@ def run_c(source, script_lines):
         exe = workdir / 'program'
         build = subprocess.run(
             [CC, '-O1', '-std=gnu99', '-I', str(ROOT), str(c_path),
-             str(RECORD_HOST), '-lm', '-o', str(exe)],
+             str(RECORD_HOST), *([] if sys.platform == 'win32' else ['-lm']), '-o', str(exe)],
             capture_output=True, text=True)
         if build.returncode != 0:
             raise AssertionError(f"C 编译失败:\n{build.stderr}")
@@ -273,7 +273,7 @@ class CGraphicsErrorParityTests(unittest.TestCase):
             build = subprocess.run(
                 [CC, '-O1', '-std=gnu99', '-D_CRT_SECURE_NO_WARNINGS',
                  '-I', str(ROOT), str(c_path),
-                 str(RECORD_HOST), '-lm', '-o', str(exe)],
+                 str(RECORD_HOST), *([] if sys.platform == 'win32' else ['-lm']), '-o', str(exe)],
                 capture_output=True, text=True)
             self.assertEqual(build.returncode, 0, build.stderr)
             run = subprocess.run([str(exe)], capture_output=True, text=True,

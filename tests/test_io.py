@@ -398,7 +398,7 @@ class CheckedIOTests(unittest.TestCase):
                 code = code.replace('#ifndef RU_IO_RUNTIME_H', prefix+'\n#ifndef RU_IO_RUNTIME_H', 1)
                 cfile, binary = root/'program.c', root/'program'
                 cfile.write_text(code, encoding='utf-8')
-                compiled = subprocess.run([CC, '-std=c99', '-Werror=implicit-function-declaration', str(cfile), '-lm', '-o', str(binary)], capture_output=True, text=True)
+                compiled = subprocess.run([CC, '-std=c99', '-Werror=implicit-function-declaration', str(cfile), *([] if sys.platform == 'win32' else ['-lm']), '-o', str(binary)], capture_output=True, text=True)
                 self.assertEqual(compiled.returncode, 0, compiled.stderr)
                 result = subprocess.run([binary], capture_output=True, text=True, timeout=10)
                 self.assertEqual((result.returncode, result.stdout), (0, '失败\n真\n'), result.stderr)

@@ -51,7 +51,7 @@ class ConditionalExportTests(unittest.TestCase):
                             target = root / 'program.c'
                             target.write_text(generated, encoding='utf-8')
                             binary = root / ('program.exe' if os.name == 'nt' else 'program')
-                            built = subprocess.run([CC, '-std=c99', '-O0', str(target), '-lm',
+                            built = subprocess.run([CC, '-std=c99', '-O0', str(target), *([] if sys.platform == 'win32' else ['-lm']),
                                                     '-o', str(binary)], capture_output=True,
                                                    text=True, timeout=60)
                             self.assertEqual(built.returncode, 0, built.stderr)

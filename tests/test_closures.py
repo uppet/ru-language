@@ -135,7 +135,7 @@ def native(source, directory, stem='case', source_path=None, modules=None,
     path.write_text(generated, encoding='utf-8')
     built = subprocess.run([CC, '-std=c99', '-O1', '-g', '-Wall', '-Wextra',
         '-Werror', '-Wno-unused-function', '-pedantic', *extra_flags,
-        str(path), '-lm', '-o', str(binary)], capture_output=True, text=True)
+        str(path), *([] if sys.platform == 'win32' else ['-lm']), '-o', str(binary)], capture_output=True, text=True)
     if built.returncode:
         raise AssertionError(built.stderr)
     for source_file in remove_sources:

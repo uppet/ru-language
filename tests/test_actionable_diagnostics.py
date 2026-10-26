@@ -1,5 +1,6 @@
 """Error-only hints preserve evaluation, typed identity, and valid programs."""
 import io
+import sys
 import os
 from pathlib import Path
 import shutil
@@ -53,7 +54,7 @@ class ActionableDiagnostics(unittest.TestCase):
                             cfile.write_text(generated, encoding='utf-8')
                             built = subprocess.run([CC, '-std=c99', '-O1', '-Wall', '-Wextra',
                                 '-Werror', '-Wno-unused-function', '-pedantic', str(cfile),
-                                '-lm', '-o', str(binary)], capture_output=True, text=True, timeout=60)
+                                *([] if sys.platform == 'win32' else ['-lm']), '-o', str(binary)], capture_output=True, text=True, timeout=60)
                             self.assertEqual(built.returncode, 0, built.stderr)
                             command = [str(binary)]
                         else:
