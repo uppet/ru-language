@@ -238,25 +238,44 @@ def build(program, source_path, output, cc=None, emit_c=None, modules=None, targ
         extra_sources = []
         if target == "sdl":
             sdl_host = Path(__file__).parent / "hosts" / "sdl_host.c"
-            pkg = shutil.which("pkg-config")
-            if not pkg:
-                raise RuError("SDL 目标需要 pkg-config 与 SDL2/SDL2_ttf/SDL2_image 开发包", category="编译错误")
-            pc = subprocess.run([pkg, "--cflags", "--libs", "sdl2", "SDL2_ttf", "SDL2_image"],
-                                capture_output=True, text=True)
-            if pc.returncode:
-                raise RuError("pkg-config 找不到 SDL2 开发包：" + pc.stderr.strip(), category="编译错误")
-            sdl_flags = pc.stdout.split()
+            # 参数来源两条路：RU_SDL_CFLAGS/RU_SDL_LIBS 环境注入优先（无
+            # pkg-config 的 Windows 工具链、交叉编译都走这里）；否则退回
+            # pkg-config（POSIX 发行版包管理器布局）。
+            env_cflags = os.environ.get("RU_SDL_CFLAGS")
+            env_libs = os.environ.get("RU_SDL_LIBS")
+            if env_cflags is not None and env_libs is not None:
+                import shlex
+                sdl_flags = shlex.split(env_cflags) + shlex.split(env_libs)
+                pkg = None
+            else:
+                pkg = shutil.which("pkg-config")
+                if not pkg:
+                    raise RuError("SDL 目标需要 pkg-config 与 SDL2/SDL2_ttf/SDL2_image 开发包；"
+                                    "或设置 RU_SDL_CFLAGS 与 RU_SDL_LIBS 显式注入编译/链接参数",
+                                    category="编译错误")
+                pc = subprocess.run([pkg, "--cflags", "--libs", "sdl2", "SDL2_ttf", "SDL2_image"],
+                                    capture_output=True, text=True)
+                if pc.returncode:
+                    raise RuError("pkg-config 找不到 SDL2 开发包：" + pc.stderr.strip(), category="编译错误")
+                sdl_flags = pc.stdout.split()
             extra_sources = [str(sdl_host), "-DRU_SDL_HOST", "-I", str(Path(__file__).parent.parent)] + sdl_flags
             # libcurl 可用则启用 网 服务（拉/投）；缺失时 网 回退诚实失败事件
-            pc_curl = subprocess.run(["pkg-config", "--cflags", "--libs", "libcurl"],
-                                     capture_output=True, text=True)
-            if pc_curl.returncode == 0:
-                extra_sources += pc_curl.stdout.split() + ["-DRU_SDL_HAS_CURL"]
-            # SDL_mixer 提供 如:声 音频（可选：缺失时 播 返回 -1）
-            pc_mix = subprocess.run(["pkg-config", "--cflags", "--libs", "SDL2_mixer"],
-                                    capture_output=True, text=True)
-            if pc_mix.returncode == 0:
-                extra_sources += pc_mix.stdout.split() + ["-DRU_SDL_HAS_MIXER"]
+            if pkg:
+                pc_curl = subprocess.run([pkg, "--cflags", "--libs", "libcurl"],
+                                         capture_output=True, text=True)
+                if pc_curl.returncode == 0:
+                    extra_sources += pc_curl.stdout.split() + ["-DRU_SDL_HAS_CURL"]
+            # SDL_mixer 提供 如:声 音频（可选：缺失时 播 返回 -1）。
+            # 环境注入路径下用 RU_SDL_WITH_MIXER=1 显式开启（mixer 库名应已在 RU_SDL_LIBS 里）。
+            mixer_wanted = os.environ.get("RU_SDL_WITH_MIXER") == "1"
+            if pkg:
+                pc_mix = subprocess.run([pkg, "--cflags", "--libs", "SDL2_mixer"],
+                                        capture_output=True, text=True)
+                if pc_mix.returncode == 0:
+                    extra_sources += pc_mix.stdout.split() + ["-DRU_SDL_HAS_MIXER"]
+                    mixer_wanted = False
+            if mixer_wanted:
+                extra_sources.append("-DRU_SDL_HAS_MIXER")
             if os.environ.get("RU_HEADLESS_SMOKE"):
                 # 冒烟模式：dummy video driver 下渲染 N 帧存 smoke.png 后退出
                 # （帧数由 RU_SMOKE_FRAMES 环境变量控制，默认 3）。

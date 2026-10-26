@@ -21,6 +21,91 @@
  *   - bezier 用 32 段折线采样；
  *   - clip 的 transform 字段忽略（clip 矩形直接取 x/y/width/height）。
  */
+#if defined(_WIN32)
+/* Windows 壳：宽字符 API 保证中文路径/曲名在 ANSI 代码页外可用。 */
+#define SDL_MAIN_HANDLED 1
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+#include <time.h>
+#include <wchar.h>
+#include <windows.h>
+#include <sys/stat.h>
+#include <errno.h>
+#if defined(_MSC_VER)
+#define strcasecmp _stricmp
+#else
+#include <strings.h>
+#endif
+
+/* access(R_OK) 的跨平台替身：字体候选与 RU_FONT 探测。 */
+static int ru_path_readable(const char *path) {
+    DWORD attrs = GetFileAttributesA(path);
+    return attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+/* 档 列 的最小目录遍历：UTF-8 路径转宽字符进 Win32，条目名转回 UTF-8。 */
+typedef struct {
+    HANDLE handle;
+    WIN32_FIND_DATAW data;
+    int first;
+    int done;
+    char name[520];
+} RuDir;
+
+static RuDir *ru_dir_open(const char *path) {
+    char pattern[1024];
+    WCHAR wide[1200];
+    RuDir *dir;
+    snprintf(pattern, sizeof pattern, "%s/*", path);
+    if (!MultiByteToWideChar(CP_UTF8, 0, pattern, -1, wide, 1200)) return NULL;
+    dir = (RuDir *)calloc(1, sizeof *dir);
+    if (!dir) return NULL;
+    dir->handle = FindFirstFileW(wide, &dir->data);
+    if (dir->handle == INVALID_HANDLE_VALUE) { free(dir); return NULL; }
+    dir->first = 1;
+    return dir;
+}
+
+/* 返回当前条目的 UTF-8 文件名；遍历结束或转换失败返回 NULL。 */
+static const char *ru_dir_next(RuDir *dir) {
+    if (dir->done) return NULL;
+    if (!dir->first && !FindNextFileW(dir->handle, &dir->data)) {
+        dir->done = 1;
+        return NULL;
+    }
+    dir->first = 0;
+    if (!WideCharToMultiByte(CP_UTF8, 0, dir->data.cFileName, -1,
+                             dir->name, sizeof dir->name, NULL, NULL)) {
+        dir->done = 1;
+        return NULL;
+    }
+    return dir->name;
+}
+
+static void ru_dir_close(RuDir *dir) {
+    FindClose(dir->handle);
+    free(dir);
+}
+
+/* strdup 在各 Windows 工具链上的名字/可见性不统一，本地一份免分歧。 */
+static char *ru_strdup(const char *text) {
+    size_t size = strlen(text) + 1;
+    char *copy = (char *)malloc(size);
+    if (copy) memcpy(copy, text, size);
+    return copy;
+}
+
+/* 档 写：非 ASCII 路径经宽字符 fopen，行为与 POSIX UTF-8 路径对齐。 */
+static FILE *ru_fopen_utf8(const char *path, const char *mode) {
+    WCHAR wide_path[1024], wide_mode[32];
+    if (!MultiByteToWideChar(CP_UTF8, 0, path, -1, wide_path, 1024)) return NULL;
+    if (!MultiByteToWideChar(CP_UTF8, 0, mode, -1, wide_mode, 32)) return NULL;
+    return _wfopen(wide_path, wide_mode);
+}
+#define RU_FOPEN(path, mode) ru_fopen_utf8((path), (mode))
+#else
 #define _POSIX_C_SOURCE 200809L /* strdup */
 
 #include <stdio.h>
@@ -33,6 +118,27 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <errno.h>
+
+#define ru_path_readable(path) (access((path), R_OK) == 0)
+
+typedef DIR RuDir;
+#define ru_dir_open(path) opendir(path)
+#define ru_dir_close(dir) closedir(dir)
+
+static const char *ru_dir_next(DIR *dir) {
+    struct dirent *entry = readdir(dir);
+    return entry ? entry->d_name : NULL;
+}
+
+static char *ru_strdup(const char *text) {
+    size_t size = strlen(text) + 1;
+    char *copy = (char *)malloc(size);
+    if (copy) memcpy(copy, text, size);
+    return copy;
+}
+
+#define RU_FOPEN(path, mode) fopen((path), (mode))
+#endif
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -71,18 +177,26 @@ static char sdl_font_path[1024] = "";
 static const char *sdl_pick_font(void) {
     const char *env = getenv("RU_FONT");
     static const char *candidates[] = {
+#if defined(_WIN32)
+        "C:/Windows/Fonts/msyh.ttc",
+        "C:/Windows/Fonts/simhei.ttf",
+        "C:/Windows/Fonts/simsun.ttc",
+        "C:/Windows/Fonts/arialuni.ttf",
+#else
         /* Noto CJK 优先：默认程序文字多为中文，DejaVu 无 CJK 字形 */
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf",
         "/usr/share/fonts/opentype/noto/NotoSerifCJK-Regular.ttc",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+#endif
         NULL,
     };
     int i;
-    if (env && *env && !access(env, R_OK)) return env;
+    if (env && *env && ru_path_readable(env)) return env;
     for (i = 0; candidates[i]; i++)
-        if (!access(candidates[i], R_OK)) return candidates[i];
+        if (ru_path_readable(candidates[i])) return candidates[i];
     return NULL;
 }
 
@@ -985,12 +1099,23 @@ static void sdl_frame(void *ud, const char *json, size_t bytes) {
 }
 
 static double sdl_now(void *ud) {
+    (void)ud;
+#if defined(_WIN32)
+    static LARGE_INTEGER freq, t0;
+    LARGE_INTEGER t;
+    if (!freq.QuadPart) {
+        QueryPerformanceFrequency(&freq);
+        QueryPerformanceCounter(&t0);
+    }
+    QueryPerformanceCounter(&t);
+    return (double)(t.QuadPart - t0.QuadPart) / (double)freq.QuadPart;
+#else
     static struct timespec t0;
     struct timespec t;
-    (void)ud;
     if (!t0.tv_sec && !t0.tv_nsec) clock_gettime(CLOCK_MONOTONIC, &t0);
     clock_gettime(CLOCK_MONOTONIC, &t);
     return (double)(t.tv_sec - t0.tv_sec) + (double)(t.tv_nsec - t0.tv_nsec) * 1e-9;
+#endif
 }
 
 static double sdl_measure_text(void *ud, const char *utf8, size_t bytes, double size) {
@@ -1043,7 +1168,7 @@ static void sdl_load_file(void *ud, long handle, const char *source, int as_text
     size_t got;
     (void)ud;
     snprintf(path, sizeof path, "%s/%s", sdl_program_dir, source);
-    f = fopen(path, "rb");
+    f = RU_FOPEN(path, "rb");
     if (!f) {
         ru_graphics_post_file_failed(handle, "文件打开失败");
         return;
@@ -1116,7 +1241,7 @@ static void sdl_service_file(long handle, const char *action,
         return;
     }
     if (!strcmp(action, "写")) {
-        FILE *f = fopen(path, flag ? "a" : "w");
+        FILE *f = RU_FOPEN(path, flag ? "a" : "w");
         if (!f) { sdl_fail_errno(handle, errno); return; }
         if (text && fputs(text, f) == EOF) { int e = errno; fclose(f); sdl_fail_errno(handle, e ? e : EIO); return; }
         if (fclose(f) != 0) { sdl_fail_errno(handle, errno); return; }
@@ -1124,28 +1249,28 @@ static void sdl_service_file(long handle, const char *action,
         return;
     }
     if (!strcmp(action, "列")) {
-        DIR *d = opendir(path);
+        RuDir *d = ru_dir_open(path);
         if (!d) { sdl_fail_errno(handle, errno); return; }
         /* 排序 + 换行连接，超 8MiB 失败（与 Python 同配额） */
         char **names = NULL;
         size_t n = 0, cap = 0, total = 0;
-        struct dirent *de;
+        const char *entry_name;
         int fail = 0;
-        while ((de = readdir(d)) != NULL) {
-            if (!strcmp(de->d_name, ".") || !strcmp(de->d_name, "..")) continue;
+        while ((entry_name = ru_dir_next(d)) != NULL) {
+            if (!strcmp(entry_name, ".") || !strcmp(entry_name, "..")) continue;
             if (n == cap) {
                 size_t nc = cap ? cap * 2 : 32;
                 char **nn = realloc(names, nc * sizeof *nn);
                 if (!nn) { fail = 1; break; }
                 names = nn; cap = nc;
             }
-            names[n] = strdup(de->d_name);
+            names[n] = ru_strdup(entry_name);
             if (!names[n]) { fail = 1; break; }
             total += strlen(names[n]) + 1;
             if (total > RU_G_MAX_FILE_TEXT_BYTES) { fail = 1; break; }
             n++;
         }
-        closedir(d);
+        ru_dir_close(d);
         if (fail) {
             size_t i;
             for (i = 0; i < n; i++) free(names[i]);
