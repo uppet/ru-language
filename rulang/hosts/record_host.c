@@ -196,11 +196,13 @@ static const RuGuiHost record_host = {
 
 void record_host_install(void) { ru_graphics_set_host(&record_host); }
 
-#if defined(__GNUC__)
-__attribute__((constructor))
-static void record_host_auto_install(void) { record_host_install(); }
-#elif defined(_MSC_VER)
-/* MSVC/clang-cl 无 GNU constructor 属性：注册进 CRT 初始化段，等效 pre-main 调用 */
+#if defined(_MSC_VER)
+/* MSVC 目标（含 GNU 模式 clang——它同时定义 __GNUC__ 和 _MSC_VER，
+   故必须排在前）：constructor 属性在 COFF 上被 clang 静默忽略，
+   只能走 CRT 初始化段注册 pre-main 钩子 */
 #pragma section(".CRT$XCU", read)
 __declspec(allocate(".CRT$XCU")) static void (*record_host_auto_install_p)(void) = record_host_install;
+#elif defined(__GNUC__)
+__attribute__((constructor))
+static void record_host_auto_install(void) { record_host_install(); }
 #endif
