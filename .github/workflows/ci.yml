@@ -99,6 +99,54 @@ jobs:
         run: RU_HEADLESS_SMOKE=1 python3 -m rulang build examples/ruui-player.ru --target sdl -o /tmp/player
       - name: Headless smoke run
         run: SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy RU_SMOKE_FRAMES=6 /tmp/player
+
+  # Windows 交叉编译锁：sdl_host.c 的 _WIN32 兼容层与 RU_SDL_CFLAGS/LIBS
+  # 注入路径每次构建都过一遍，防止 POSIX-only 代码回溜进 SDL 目标。
+  player-windows-cross:
+    if: always() && contains(github.ref, 'player-ruaudio')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SDL_VERSION: "2.30.12"
+      SDL_TTF_VERSION: "2.24.0"
+      SDL_IMAGE_VERSION: "2.8.8"
+      SDL_MIXER_VERSION: "2.8.1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install MinGW cross compiler
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y gcc-mingw-w64-x86-64
+      - name: Fetch SDL2 MinGW devel packages
+        run: |
+          mkdir -p /tmp/sdl-sdk && cd /tmp/sdl-sdk
+          curl -sL --fail -o SDL2.tar.gz "https://github.com/libsdl-org/SDL/releases/download/release-$SDL_VERSION/SDL2-devel-$SDL_VERSION-mingw.tar.gz"
+          curl -sL --fail -o SDL2_ttf.tar.gz "https://github.com/libsdl-org/SDL_ttf/releases/download/release-$SDL_TTF_VERSION/SDL2_ttf-devel-$SDL_TTF_VERSION-mingw.tar.gz"
+          curl -sL --fail -o SDL2_image.tar.gz "https://github.com/libsdl-org/SDL_image/releases/download/release-$SDL_IMAGE_VERSION/SDL2_image-devel-$SDL_IMAGE_VERSION-mingw.tar.gz"
+          curl -sL --fail -o SDL2_mixer.tar.gz "https://github.com/libsdl-org/SDL_mixer/releases/download/release-$SDL_MIXER_VERSION/SDL2_mixer-devel-$SDL_MIXER_VERSION-mingw.tar.gz"
+          for f in *.tar.gz; do tar xzf "$f"; done
+      - name: Build player.exe (MinGW cross)
+        env:
+          CC: x86_64-w64-mingw32-gcc
+          RU_SDL_WITH_MIXER: "1"
+        run: |
+          cd /tmp/sdl-sdk
+          inc=""; libs=""
+          for p in SDL2-$SDL_VERSION SDL2_ttf-$SDL_TTF_VERSION SDL2_image-$SDL_IMAGE_VERSION SDL2_mixer-$SDL_MIXER_VERSION; do
+            inc="$inc -I/tmp/sdl-sdk/$p/x86_64-w64-mingw32/include/SDL2"
+            libs="$libs -L/tmp/sdl-sdk/$p/x86_64-w64-mingw32/lib"
+          done
+          export RU_SDL_CFLAGS="$inc"
+          export RU_SDL_LIBS="$libs -lSDL2 -lSDL2_ttf -lSDL2_image -lSDL2_mixer -lwinmm -lsetupapi -limm32 -lversion -luuid -lole32 -lgdi32"
+          python3 -m rulang build examples/ruui-player.ru --target sdl -o /tmp/player.exe
+          test -s /tmp/player.exe
+      - name: Upload player.exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ru-player-windows
+          path: /tmp/player.exe
+          retention-days: 14
   emacs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20

@@ -1,5 +1,12 @@
 # 如UI 音频播放器：如UI 界面 + 如:声 音频（SDL_mixer 后端）。
-# 构建：python -m rulang build examples/ruui-player.ru -t sdl -o player
+# 构建（Linux）：python -m rulang build examples/ruui-player.ru -t sdl -o player
+# 构建（Windows .exe，MinGW 交叉或 MSYS2 原生 gcc 均可）：
+#   1) 取 SDL2/SDL2_ttf/SDL2_image/SDL2_mixer 的 mingw 开发包并解压到同一目录
+#   2) RU_SDL_CFLAGS="各包 include/SDL2 的 -I 列表" \
+#      RU_SDL_LIBS="各包 lib 的 -L 列表 -lSDL2 -lSDL2_ttf -lSDL2_image -lSDL2_mixer" \
+#      RU_SDL_WITH_MIXER=1 \
+#      python -m rulang build examples/ruui-player.ru -t sdl -o player.exe
+#   3) 把 4 个 SDL2*.dll 放到 player.exe 旁边（发行包即 exe + 4 dll）
 # 音乐放 examples/player/music/*.wav（从仓库根运行；档服务按当前目录解析）。
 # 控制：点曲名播放；上一首/▶⏸/停/下一首；音量滑杆；刷新曲目重列目录。
 # 进度：SDL_mixer 不暴露 chunk 位置（如声 进度 返回 -1），
