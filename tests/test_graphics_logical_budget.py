@@ -620,10 +620,110 @@ class LogicalBudgetTests(unittest.TestCase):
 
 
 
+# NativeLibrary intentionally pins OS mappings for process lifetime. A fixture
+# DLL therefore belongs to the parent process, which never loads it; each native
+# assertion runs in a child and exits before the parent removes the directory.
+_NATIVE_CHILD_RECEIPT = 'RU_NATIVE_CASE_RESULT='
+_NATIVE_CHILD_CODE = r"""
+import json, pathlib, sys, unittest
+sys.path[:0] = [str(pathlib.Path(sys.argv[1]).parent), str(pathlib.Path(sys.argv[1]).parent.parent)]
+import test_graphics_logical_budget as module
+case = sys.argv[3]
+cls = module.WindowsNativeLogicalBudgetTests
+cls._child_library_path = pathlib.Path(sys.argv[2])
+result = unittest.TextTestRunner(verbosity=2).run(unittest.TestSuite([cls(case)]))
+receipt = {'case': case, 'ran': result.testsRun, 'failures': len(result.failures),
+           'errors': len(result.errors), 'skipped': len(result.skipped),
+           'success': result.wasSuccessful()}
+print(module._NATIVE_CHILD_RECEIPT + json.dumps(receipt), flush=True)
+sys.exit(0 if result.wasSuccessful() and result.testsRun == 1 and not result.skipped else 1)
+"""
+
+
+def _check_native_child_result(process, case):
+    import json
+    lines = [line[len(_NATIVE_CHILD_RECEIPT):] for line in process.stdout.splitlines()
+             if line.startswith(_NATIVE_CHILD_RECEIPT)]
+    expected = {'case': case, 'ran': 1, 'failures': 0, 'errors': 0,
+                'skipped': 0, 'success': True}
+    try:
+        valid = len(lines) == 1 and json.loads(lines[0]) == expected
+    except (ValueError, TypeError):
+        valid = False
+    if process.returncode != 0 or not valid:
+        raise AssertionError('Native fixture child did not execute exactly one passing, '
+                             'unskipped case: ' + case + '\n' + process.stdout + '\n' + process.stderr)
+
+
+def _isolated_native_test(method):
+    from functools import wraps
+    @wraps(method)
+    def run(self):
+        if self._child_library_path is not None:
+            return method(self)
+        import subprocess
+        process = subprocess.run([sys.executable, '-X', 'faulthandler', '-X', 'utf8', '-c',
+                                  _NATIVE_CHILD_CODE, str(Path(__file__).resolve()),
+                                  str(self.library), method.__name__],
+                                 capture_output=True, text=True, encoding='utf-8',
+                                 errors='replace', timeout=60)
+        # Keep native assertion tracebacks and source/compiler evidence in CI logs.
+        print(process.stdout, end='')
+        print(process.stderr, end='', file=sys.stderr)
+        _check_native_child_result(process, method.__name__)
+    return run
+
+
+class NativeFixtureChildContractTests(unittest.TestCase):
+    def test_native_child_process_preserves_failure_and_skip(self):
+        import subprocess
+        source = ("import unittest\n_NATIVE_CHILD_RECEIPT = 'RU_NATIVE_CASE_RESULT='\n"
+                  "class WindowsNativeLogicalBudgetTests(unittest.TestCase):\n"
+                  "    def test_success(self): self.assertTrue(True)\n"
+                  "    def test_failure(self): self.fail('intentional child failure')\n"
+                  "    def test_skip(self): self.skipTest('intentional child skip')\n")
+        with tempfile.TemporaryDirectory(prefix='logical-child-contract-') as directory:
+            module = Path(directory)/'test_graphics_logical_budget.py'
+            module.write_text(source, encoding='utf-8')
+            for case in ('test_success', 'test_failure', 'test_skip'):
+                with self.subTest(case=case):
+                    process = subprocess.run([sys.executable, '-X', 'utf8', '-c',
+                        _NATIVE_CHILD_CODE, str(module), str(Path(directory)/'unused.dll'), case],
+                        capture_output=True, text=True, encoding='utf-8', timeout=20)
+                    if case == 'test_success':
+                        _check_native_child_result(process, case)
+                    else:
+                        with self.assertRaises(AssertionError):
+                            _check_native_child_result(process, case)
+
+    def test_native_child_result_is_fail_closed(self):
+        import json
+        from types import SimpleNamespace
+        good = {'case': 'test_native', 'ran': 1, 'failures': 0, 'errors': 0,
+                'skipped': 0, 'success': True}
+        def process(receipt=good, returncode=0):
+            return SimpleNamespace(returncode=returncode,
+                stdout=_NATIVE_CHILD_RECEIPT+json.dumps(receipt)+'\n', stderr='')
+        _check_native_child_result(process(), 'test_native')
+        for field, value in [('case', 'other'), ('ran', 0), ('ran', 2),
+                             ('failures', 1), ('errors', 1), ('skipped', 1), ('success', False)]:
+            with self.subTest(field=field, value=value):
+                with self.assertRaises(AssertionError):
+                    _check_native_child_result(process(dict(good, **{field: value})), 'test_native')
+        with self.assertRaises(AssertionError):
+            _check_native_child_result(process(returncode=1), 'test_native')
+        for stdout in ('', _NATIVE_CHILD_RECEIPT+'invalid', process().stdout*2):
+            with self.subTest(stdout=stdout):
+                with self.assertRaises(AssertionError):
+                    _check_native_child_result(SimpleNamespace(returncode=0, stdout=stdout, stderr=''), 'test_native')
+
+
 # Native Python FFI is supported on Windows x64 only. This class is absent from
 # Linux discovery (not a skip), and mandatory on each supported CI Python.
 if sys.platform == 'win32':
     class WindowsNativeLogicalBudgetTests(unittest.TestCase):
+        _child_library_path = None
+
         @classmethod
         def setUpClass(cls):
             import ctypes
@@ -635,9 +735,16 @@ if sys.platform == 'win32':
             import subprocess
             if ctypes.sizeof(ctypes.c_void_p)!=8 or platform.machine().lower() not in ('amd64','x86_64'):
                 raise AssertionError('Native budget acceptance requires Windows x64')
+            if cls._child_library_path is not None:
+                cls.library = cls._child_library_path
+                cls.counter_library = ctypes.CDLL(str(cls.library))
+                cls.counter_library.cleanup_count.argtypes = [ctypes.c_uint64]
+                cls.counter_library.cleanup_count.restype = ctypes.c_uint64
+                return
             compiler=shutil.which(os.environ.get('CC','gcc'))
             if compiler is None: raise AssertionError('Required C compiler missing; no skip allowed')
             cls.directory=tempfile.TemporaryDirectory(prefix='logical-native-')
+            cls.addClassCleanup(cls.directory.cleanup)
             cls.library=Path(cls.directory.name)/'bridge.dll'
             source=Path(__file__).resolve().parents[1]/'tests/fixtures/native/logical_budget_bridge.c'
             built=subprocess.run([compiler,'-shared','-O2',str(source),'-o',str(cls.library)],capture_output=True,timeout=60)
@@ -646,14 +753,10 @@ if sys.platform == 'win32':
                               'source_sha256':hashlib.sha256(source.read_bytes()).hexdigest(),
                               'compiler_sha256':hashlib.sha256(Path(compiler).read_bytes()).hexdigest(),
                               'compile_command':[compiler,'-shared','-O2',str(source),'-o',str(cls.library)]}))
-            cls.counter_library=ctypes.CDLL(str(cls.library))
-            cls.counter_library.cleanup_count.argtypes=[ctypes.c_uint64]
-            cls.counter_library.cleanup_count.restype=ctypes.c_uint64
 
-        @classmethod
-        def tearDownClass(cls): cls.directory.cleanup()
-
-        def setUp(self): self.counter_library.cleanup_count(1)
+        def setUp(self):
+            if self._child_library_path is not None:
+                self.counter_library.cleanup_count(1)
 
         def setup_callback(self,body,limit=None,hook=False,twice=False):
             import json
@@ -738,6 +841,11 @@ if sys.platform == 'win32':
             self.assertEqual(vm.global_scope.values['结果'],[-9.0])
             self.assertEqual(self.counter_library.cleanup_count(0),1)
             self.assertIsNone(host.budget_snapshot.first_exhaustion_kind)
+
+
+    for _name, _method in list(vars(WindowsNativeLogicalBudgetTests).items()):
+        if _name.startswith('test_'):
+            setattr(WindowsNativeLogicalBudgetTests, _name, _isolated_native_test(_method))
 
 
 if __name__=='__main__': unittest.main()
