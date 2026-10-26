@@ -6,6 +6,8 @@ import subprocess
 import tempfile
 import unittest
 
+import test_browser_js
+
 from rulang.compiler import Compiler
 from rulang.frontend import parse
 from rulang.js_compiler import JSCompiler
@@ -84,7 +86,7 @@ class NativeDiagnosticTests(unittest.TestCase):
     @unittest.skipUnless(NODE, 'Node.js unavailable')
     def test_javascript_host_failure_does_not_invent_a_location(self):
         code = JSCompiler(parse(''), '<测试>').compile() + '\nR.finish(new Error("host failure"));'
-        result = subprocess.run([NODE, '-e', code], capture_output=True, text=True, timeout=10)
+        result = test_browser_js.run_source(code)
         self.assertEqual(result.returncode, 1)
         self.assertEqual(result.stderr, '<程序>: error: 运行错误：host failure\n')
 
@@ -95,7 +97,7 @@ class NativeDiagnosticTests(unittest.TestCase):
         code = compiler.compile()
         code += ('\nconst failure = new R.RuError({path:' + json.dumps(name) + '},"bad",[7,8]);'
                  'R.finish(failure);process.stdout.write(failure.source);')
-        result = subprocess.run([NODE, '-e', code], capture_output=True, text=True, timeout=10)
+        result = test_browser_js.run_source(code)
         self.assertEqual(result.returncode, 1)
         self.assertEqual(result.stdout, name)
         self.assertEqual(compiler.source_name, name)
