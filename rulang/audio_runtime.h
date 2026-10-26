@@ -11,7 +11,7 @@
 #define RULANG_AUDIO_RUNTIME_H
 
 /* RuAudioHost 声明与 ru_audio_set_host 实现见宿主 ABI／graphics_runtime.h；
- * 本文件仅消费 ru_audio_host 全局与 RuAudioHost 类型。 */
+ * 本文件仅消费 ru_audio_host_slot() 与 RuAudioHost 类型。 */
 
 static RuClass ru_audio_service_class = {"如声工具", NULL, NULL, 0, NULL, NULL, 0, NULL};
 
@@ -34,7 +34,7 @@ static int ru_audio_member(Val receiver, const char *name, size_t argc, const ch
     if (receiver.kind != RU_OBJECT) return 0;
     klass = ((RuObject *)receiver.heap)->klass;
     if (klass != &ru_audio_service_class) return 0;
-    h = ru_audio_host;
+    h = *ru_audio_host_slot();
 /* RU_MEMBERS: 播,停,暂停,续,音量,进度,在播 */
     if (!strcmp(name, "播")) {
         const char *path;

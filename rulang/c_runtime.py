@@ -213,8 +213,12 @@ typedef struct RuAudioHost {
     double (*position)(long channel);
     int (*playing)(long channel);
 } RuAudioHost;
-static const RuAudioHost *ru_audio_host;
-void ru_audio_set_host(const RuAudioHost *host) { ru_audio_host = host; }
+static const RuAudioHost **ru_audio_host_slot(void)
+{
+    static const RuAudioHost *host;
+    return &host;
+}
+void ru_audio_set_host(const RuAudioHost *host) { *ru_audio_host_slot() = host; }
 static Env *ru_graphics_builtins(void) { return ru_practical_builtins(); }
 static int ru_graphics_member(Val receiver, const char *name, size_t argc,
                               const char **keys, Val *args, int line, Val *out)

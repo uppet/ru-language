@@ -269,9 +269,15 @@ static void ru_g_drain_events(int line);
  * ru_audio_builtins 定义在 audio_runtime.h（拼接序在后），此处前置声明；
  * 未用如声的程序由 c_runtime 换入 audio stub，符号仍然齐。 */
 static Env *ru_audio_builtins(void);
-static const RuAudioHost *ru_audio_host;
+/* accessor 藏 static：从不链接音频宿主的翻译单元不触发 -Werror=unused-variable
+ *（同 rn_trap_freelist_head 手法，保持 C99 无 __attribute__）。 */
+static const RuAudioHost **ru_audio_host_slot(void)
+{
+    static const RuAudioHost *host;
+    return &host;
+}
 void ru_graphics_set_host(const RuGuiHost *host) { ru_g_host = host; }
-void ru_audio_set_host(const RuAudioHost *host) { ru_audio_host = host; }
+void ru_audio_set_host(const RuAudioHost *host) { *ru_audio_host_slot() = host; }
 
 static double ru_g_now(int line) {
     double sample;
