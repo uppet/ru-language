@@ -1,5 +1,6 @@
 """Required continue gate must reject missing, failed, or skipped LLVM tests."""
 import importlib.util
+from contextlib import ExitStack
 from pathlib import Path
 from types import SimpleNamespace
 import unittest
@@ -38,6 +39,30 @@ class ContinueGateTests(unittest.TestCase):
     def test_missing_selection_is_error(self):
         with patch.object(gate, 'LLVMToolchain'), patch.object(gate.unittest.defaultTestLoader, 'loadTestsFromTestCase', return_value=unittest.TestSuite()):
             with self.assertRaisesRegex(RuntimeError, 'incomplete'): gate.main()
+
+
+    def test_windows_conditional_native_skip_fails_required_gate(self):
+        # Ordinary discovery may lack LLVM14; the dedicated Windows gate must
+        # still select all eight contracts and reject a conditional class skip.
+        executed = []
+        def passed(test):
+            executed.append(test.id())
+        classes = (gate.ContinueLLVMTests, gate.ContinueNativeCTests,
+                   gate.ContinueNativeLLVMTests)
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(gate, 'LLVMToolchain'))
+            stack.enter_context(patch.object(gate.os, 'name', 'nt'))
+            for cls in classes:
+                stack.enter_context(patch.object(cls, 'setUpClass', classmethod(lambda cls: None)))
+                stack.enter_context(patch.object(cls, '__unittest_skip__',
+                                                cls is gate.ContinueNativeLLVMTests, create=True))
+                for name in unittest.defaultTestLoader.getTestCaseNames(cls):
+                    stack.enter_context(patch.object(cls, name, passed))
+            suite, expected = gate.selected_suite()
+            self.assertEqual(suite.countTestCases(), 8)
+            self.assertEqual(len(expected), 8)
+            self.assertEqual(gate.main(), 1)
+        self.assertEqual(len(executed), 7)
 
 native_spec = importlib.util.spec_from_file_location('verify_continue_native_kernel', ROOT/'tools/verify_continue_native_kernel.py')
 native_gate = importlib.util.module_from_spec(native_spec)

@@ -197,7 +197,7 @@ class ContinueNativeCTests(ContinueNativeContract, native_acceptance.NativeExecu
             raise AssertionError(result.stderr)
 
 
-@unittest.skipUnless(native_acceptance.WINDOWS_X64, 'real Windows x64 LLVM callback required')
+@unittest.skipUnless(native_acceptance.WINDOWS_X64 and LLVM, 'real Windows x64 LLVM 14 callback required')
 class ContinueNativeLLVMTests(ContinueNativeContract, unittest.TestCase):
     build_executable = llvm_acceptance.LLVMCallbackTests.build_executable
     run_executable = llvm_acceptance.LLVMCallbackTests.run_executable
