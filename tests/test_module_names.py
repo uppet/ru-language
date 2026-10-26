@@ -22,7 +22,7 @@ RENAMED = {'如观': '如:观', '如竞': '如:竞', '如:竞赛': '如:竞'}
 
 class ModuleNameTests(unittest.TestCase):
     def test_canonical_names_are_the_only_standard_names(self):
-        expected = {'如:观', '如:竞', '如:文本', '如:数学', '如:随机', '如:密'}
+        expected = {'如:观', '如:竞', '如:文本', '如:数学', '如:随机', '如:密', '如:声'}
         self.assertEqual(set(STANDARD_MODULES), expected)
         # Browser JS allows every bundled module (standard library plus the
         # 如见／如UI third-party bundles) except the 密 crypto module.
