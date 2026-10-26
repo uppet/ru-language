@@ -81,7 +81,7 @@ jobs:
           sudo apt-get install --no-install-recommends -y \
             libsdl2-dev libsdl2-ttf-dev libsdl2-image-dev libsdl2-mixer-dev \
             pkg-config
-      - name: Generate test WAV
+      - name: Generate test media (WAV chunk + MP3 music)
         run: |
           python3 - <<'PY'
           import wave, struct, math
@@ -90,6 +90,10 @@ jobs:
               w.writeframes(b''.join(
                   struct.pack('<h', int(12000*math.sin(2*math.pi*440*t/22050)))
                   for t in range(22050//4)))
+          # 极小合法 MP3：MPEG1-L3 128kbps 静音帧（mpg123 可解，验证 music 通道装载）
+          frame = bytes([0xFF, 0xFB, 0x90, 0x00]) + bytes(413)
+          with open('examples/player/music/ci_beep.mp3', 'wb') as f:
+              f.write(frame * 12)
           PY
       - name: Build player (SDL target)
         run: RU_HEADLESS_SMOKE=1 python3 -m rulang build examples/ruui-player.ru --target sdl -o /tmp/player
