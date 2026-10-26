@@ -36,7 +36,7 @@ NATIVE_EXAMPLE_SOURCES = tuple(path for path in EXAMPLE_SOURCES
 # Graphics examples drive the 如观 canvas and only run in a 如书 Python
 # session or the browser runtime (see tests/test_ruui*.py); neither the C
 # compiler nor the Node compiler supports them yet.
-GRAPHICS_EXAMPLE_NAMES = ('ruui-counter.ru', 'ruui-mixer.ru', 'ruui-quiz.ru', 'ruui-textfield.ru')
+GRAPHICS_EXAMPLE_NAMES = ('ruui-counter.ru', 'ruui-mixer.ru', 'ruui-notepad.ru', 'ruui-player.ru', 'ruui-quiz.ru', 'ruui-textfield.ru')
 GRAPHICS_EXAMPLE_SOURCES = tuple(ROOT / 'examples' / name for name in GRAPHICS_EXAMPLE_NAMES)
 PORTABLE_EXAMPLE_SOURCES = tuple(path for path in EXAMPLE_SOURCES
                                  if path not in NATIVE_EXAMPLE_SOURCES
@@ -129,7 +129,7 @@ class JavaScriptCompileTests(unittest.TestCase):
 
     def test_python_only_graphics_examples_validate_and_explicitly_reject_node(self):
         from rulang.js_compiler import JSCompiler
-        self.assertEqual(len(GRAPHICS_EXAMPLE_SOURCES), 4)
+        self.assertEqual(len(GRAPHICS_EXAMPLE_SOURCES), 6)
         self.assertTrue(all(path in EXAMPLE_SOURCES for path in GRAPHICS_EXAMPLE_SOURCES))
         for source_path in GRAPHICS_EXAMPLE_SOURCES:
             with self.subTest(example=str(source_path.relative_to(ROOT))):

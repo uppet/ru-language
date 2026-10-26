@@ -228,7 +228,10 @@ class GraphicsTests(unittest.TestCase):
     def test_cli_and_compilers_explicitly_reject(self):
         source="尽取 外言 '如:观'. 图 取 画布 20 20."
         with self.assertRaisesRegex(RuError,'仅在如书'): Interpreter().execute(parse(source))
-        for cls in (Compiler,JSCompiler):
+        # C 后端已支持如观（录制/SDL 宿主，--target sdl），编译不再拒绝；
+        # JavaScript 后端仍无图形运行时，保持拒绝。
+        Compiler(parse(source)).compile()
+        for cls in (JSCompiler,):
             with self.assertRaisesRegex(RuError,'如书 Python'): cls(parse(source)).compile()
     def test_documentation_and_interactive_data_book_repeat(self):
         import re
@@ -317,9 +320,10 @@ class GraphicsTests(unittest.TestCase):
             (root / 'wrapper.ru').write_text("观 取 外言 '如:观'.", encoding='utf-8')
             main.write_text("外 取 外言 './wrapper.ru'.", encoding='utf-8')
             graph = load_module_graph(main)
-            for compiler in (Compiler, JSCompiler):
-                with self.assertRaisesRegex(RuError, '如书 Python'):
-                    compiler(graph[graph.root], str(main), modules=graph).compile()
+            # C 后端已支持如观：可编译；JavaScript 后端仍拒绝标准库如:观。
+            self.assertTrue(Compiler(graph[graph.root], str(main), modules=graph).compile())
+            with self.assertRaisesRegex(RuError, '如书 Python'):
+                JSCompiler(graph[graph.root], str(main), modules=graph).compile()
 
     def test_no_callbacks_no_implicit_frame(self):
         self.canvas("图 其 背景 '#ffffff'.")

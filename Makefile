@@ -41,7 +41,9 @@ examples-js:
 	python3 ru build examples/packages/应用/main.ru --target js -o dist/packages.js
 	node --check dist/packages.js
 	@set -e; for source in examples/*.ru; do \
-		case "$$source" in *ruui-*) echo "skip $$source (图形例：JS 后端不支持)"; continue ;; esac; \
+		case "$$source" in \
+			examples/ruui-counter.ru|examples/ruui-mixer.ru|examples/ruui-notepad.ru|examples/ruui-player.ru|examples/ruui-quiz.ru|examples/ruui-textfield.ru) continue ;; \
+		esac; \
 		output="dist/$$(basename "$$source" .ru).js"; \
 		python3 ru build "$$source" --target js -o "$$output"; \
 		node --check "$$output"; \
