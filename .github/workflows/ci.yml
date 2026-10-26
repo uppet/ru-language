@@ -92,7 +92,7 @@ jobs:
                   for t in range(22050//4)))
           PY
       - name: Build player (SDL target)
-        run: RU_HEADLESS_SMOKE=1 python3 -m rulang build examples/ruui-player.ru -t sdl -o /tmp/player
+        run: RU_HEADLESS_SMOKE=1 python3 -m rulang build examples/ruui-player.ru --target sdl -o /tmp/player
       - name: Headless smoke run
         run: SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy RU_SMOKE_FRAMES=6 /tmp/player
   emacs:
