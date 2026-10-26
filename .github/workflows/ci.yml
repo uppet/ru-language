@@ -147,6 +147,38 @@ jobs:
           name: ru-player-windows
           path: /tmp/player.exe
           retention-days: 14
+
+  # Windows 原生构建锁：MSYS2 ucrt64 工具链 + pkg-config 路径——这是
+  # Windows 用户实际走的路线，比交叉编译更接近真实场景（含运行验证）。
+  player-windows-native:
+    if: always() && contains(github.ref, 'player-ruaudio')
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install SDL2 toolchain (MSYS2 ucrt64)
+        shell: bash
+        run: |
+          /c/msys64/usr/bin/bash -lc "pacman -S --noconfirm --needed \
+            mingw-w64-ucrt-x86_64-SDL2 \
+            mingw-w64-ucrt-x86_64-SDL2_ttf \
+            mingw-w64-ucrt-x86_64-SDL2_image \
+            mingw-w64-ucrt-x86_64-SDL2_mixer"
+      - name: Build player.exe (native Windows gcc)
+        shell: bash
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          export PATH="/c/msys64/ucrt64/bin:$PATH"
+          RU_HEADLESS_SMOKE=1 CC=gcc python -m rulang build examples/ruui-player.ru --target sdl -o player.exe
+      - name: Native headless smoke
+        shell: bash
+        run: |
+          export PATH="/c/msys64/ucrt64/bin:$PATH"
+          SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy RU_SMOKE_FRAMES=6 ./player.exe
   emacs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
