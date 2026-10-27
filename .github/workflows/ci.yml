@@ -136,11 +136,34 @@ jobs:
           export RU_SDL_CFLAGS="-I$U/include/SDL2"
           export RU_SDL_LIBS="-L$U/lib -lSDL2 -lSDL2_ttf -lSDL2_image -lSDL2_mixer"
           RU_HEADLESS_SMOKE=1 CC=gcc python -m rulang build examples/ruui-player.ru --target sdl -o player.exe
-      - name: Upload player.exe artifact
+      - name: Stage release bundle (exe + DLL + music + usage)
+        shell: bash
+        run: |
+          mkdir -p dist/examples/player/music
+          cp player.exe dist/
+          cp /c/msys64/ucrt64/bin/SDL2.dll \
+             /c/msys64/ucrt64/bin/SDL2_ttf.dll \
+             /c/msys64/ucrt64/bin/SDL2_image.dll \
+             /c/msys64/ucrt64/bin/SDL2_mixer.dll dist/
+          cp examples/player/music/* dist/examples/player/music/ 2>/dev/null || true
+          cat > dist/用法.txt <<'EOF'
+          如播放器（player-ruaudio 分支，Windows x64）
+
+          用法：
+            1) 解压到任意目录
+            2) 把音乐放进 examples/player/music/（支持 wav/mp3/ogg/flac）
+            3) 双击 player.exe（保持 exe 旁的目录结构；曲库按当前目录解析）
+
+          说明：
+            - 字体用系统 C:/Windows/Fonts/msyh.ttc；可用环境变量 RU_FONT 指定
+            - 控制：点曲名播放；上一首/播放暂停/停/下一首；音量滑杆；刷新重列目录
+            - 中文路径/曲名 UTF-8 安全（宿主内全部宽字符 API）
+          EOF
+      - name: Upload release bundle
         uses: actions/upload-artifact@v4
         with:
           name: ru-player-windows
-          path: player.exe
+          path: dist/
           retention-days: 14
 
   # Windows 原生构建锁：MSYS2 ucrt64 工具链 + pkg-config 路径——这是
