@@ -260,9 +260,15 @@ jobs:
       - name: Native headless smoke
         shell: bash
         run: |
+          # DLL 落到 exe 旁：git-bash 的 PATH 转换对混合 C:/ 条目不可靠，
+          # 且 127 无任何输出可诊断——同目录加载是 Windows 首选路径，确定性强
+          cp "$SDK_SDL2/x86_64-w64-mingw32/bin/SDL2.dll" \
+             "$SDK_TTF/x86_64-w64-mingw32/bin/SDL2_ttf.dll" \
+             "$SDK_IMG/x86_64-w64-mingw32/bin/SDL2_image.dll" \
+             "$SDK_MIX/x86_64-w64-mingw32/bin/SDL2_mixer.dll" .
+          # 诊断：跑之前先看 exe 声明了哪些 DLL
+          x86_64-w64-mingw32-objdump -p player.exe | grep "DLL Name" || true
           export PATH="/c/msys64/ucrt64/bin:$PATH"
-          # exe 同目录无 SDL DLL，不挂 SDK bin 的话 execve 直接 127（假闪退）
-          export PATH="$SDK_SDL2/x86_64-w64-mingw32/bin:$SDK_TTF/x86_64-w64-mingw32/bin:$SDK_IMG/x86_64-w64-mingw32/bin:$SDK_MIX/x86_64-w64-mingw32/bin:$PATH"
           SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy RU_SMOKE_FRAMES=6 ./player.exe
   emacs:
     runs-on: ubuntu-24.04
