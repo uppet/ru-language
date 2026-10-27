@@ -404,23 +404,27 @@ static void sdl_transform_split(const double t[6], float *tx, float *ty,
 /* —— 剪辑区 —— */
 static void sdl_apply_clips(const char *json, SDL_Rect *saved) {
     const char *p = sdl_jvalue(json, "clips");
-    int any = 0;
+    SDL_Rect acc;
+    int have_acc = 0;
     (void)saved;
-    if (!p || *p != '[') return;
+    /* 无 clips 的命令必须显式清空：SDL 裁剪状态是渲染器级全局的，
+     * 上一条带裁剪的命令若不清，会把后续绘制全部裁掉。
+     * （2026-10-27 真机踩过：滚 区域内一条裁剪命令后，全屏只剩
+     * 滚 内容可见——恢复逻辑把"未启用"误恢复成 {0,0,0,0} 空裁剪。） */
+    if (!p || *p != '[') { SDL_RenderSetClipRect(sdl_renderer, NULL); return; }
     while ((p = strstr(p, "\"width\"")) != NULL) {
         SDL_Rect r;
         r.x = (int)sdl_jnum(p - 64, "x", 0);
         r.y = (int)sdl_jnum(p - 64, "y", 0);
         r.w = (int)sdl_jnum(p, "width", 0);
         r.h = (int)sdl_jnum(p, "height", 0);
-        if (!any) {
-            SDL_RenderGetClipRect(sdl_renderer, saved);
-            SDL_RenderSetClipRect(sdl_renderer, NULL);
-        }
-        SDL_RenderSetClipRect(sdl_renderer, &r);
-        any = 1;
+        /* SDL 只支持单裁剪区：多层裁剪取交集 */
+        if (have_acc) SDL_IntersectRect(&acc, &r, &acc);
+        else { acc = r; have_acc = 1; }
         p += 7;
     }
+    if (have_acc) SDL_RenderSetClipRect(sdl_renderer, &acc);
+    else SDL_RenderSetClipRect(sdl_renderer, NULL);
 }
 
 /* —— 绘图助手 —— */
@@ -583,8 +587,10 @@ static void sdl_render_command_full(const char *cmd) {
     } else {
         sdl_render_command(cmd);
     }
-    if (had_clip || SDL_RenderIsClipEnabled(sdl_renderer))
-        SDL_RenderSetClipRect(sdl_renderer, &clip_saved);
+    /* 恢复必须区分"原本未启用"与"启用于空矩形"：GetClipRect 在不启用时
+     * 填 {0,0,0,0}，直接 SetClipRect(&saved) 会把空裁剪焊死成全局状态。 */
+    if (had_clip) SDL_RenderSetClipRect(sdl_renderer, &clip_saved);
+    else SDL_RenderSetClipRect(sdl_renderer, NULL);
 }
 
 /* —— 逐命令渲染（无 transform/clips；偏移已由纹理路径或直绘处理） —— */
