@@ -857,6 +857,8 @@ static void sdl_render_frame(const char *json) {
                 }
                 saved = 1;
             }
+            fprintf(stderr, "[sdl] HEADLESS_SMOKE: %d frames rendered, exiting (smoke build, not for release)\n",
+                    smoke_frames);
             ru_graphics_post_close();
         }
     }

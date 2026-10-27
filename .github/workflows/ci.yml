@@ -125,17 +125,24 @@ jobs:
             mingw-w64-ucrt-x86_64-SDL2_ttf \
             mingw-w64-ucrt-x86_64-SDL2_image \
             mingw-w64-ucrt-x86_64-SDL2_mixer"
-      - name: Build player.exe (RU_SDL env injection)
+      - name: Build player.exe (RU_SDL env injection, release 无 smoke 宏)
         shell: bash
         env:
           PYTHONUTF8: "1"
           RU_SDL_WITH_MIXER: "1"
         run: |
+          # 发行 exe 严禁 RU_HEADLESS_SMOKE：smoke 构建会隐藏窗口并
+          # 在 N 帧后静默退出（2026-10-27 真机踩过：看似闪退，实为自毁）
           export PATH="/c/msys64/ucrt64/bin:$PATH"
           U=/c/msys64/ucrt64
           export RU_SDL_CFLAGS="-I$U/include/SDL2"
           export RU_SDL_LIBS="-L$U/lib -lSDL2 -lSDL2_ttf -lSDL2_image -lSDL2_mixer"
-          RU_HEADLESS_SMOKE=1 CC=gcc python -m rulang build examples/ruui-player.ru --target sdl -o player.exe
+          CC=gcc python -m rulang build examples/ruui-player.ru --target sdl -o player.exe
+          # 发行防呆：smoke 自毁路径的标记串不得出现在二进制里
+          # （#ifdef 文本总在生成的 .c 里，查二进制才有效）
+          if grep -aq "HEADLESS_SMOKE: %d frames" player.exe; then
+            echo "smoke self-destruct leaked into release exe" >&2; exit 1
+          fi
       - name: Stage release bundle (exe + DLL + music + usage)
         shell: bash
         run: |
