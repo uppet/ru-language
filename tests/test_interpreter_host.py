@@ -25,11 +25,42 @@ class InterpreterFrameTests(unittest.TestCase):
 static RuFunction *rul_function_descriptor(int32_t id) { (void)id; return NULL; }
 static RuClass *rul_class_descriptor(int32_t id) { (void)id; return NULL; }
 static Val rul_module_import(int32_t id) { (void)id; return v_null(); }
+static int borrowed_calls;
+static Val borrowed_identity(Env *global, Val self, int line, Val *args) {
+    (void)global; (void)self; (void)line;
+    ++borrowed_calls; return v_copy(args[0]);
+}
 int main(void) {
     RuLLVMFrame *outer, *inner, *empty, *last;
     Val returned=v_null();
     int i;
     ru_init();
+    {
+        const char *names[]={"value"}, *types[]={""};
+        const char *positional[]={NULL}, *named[]={"value"};
+        RuFunction descriptor={0};
+        descriptor.name="borrowed";descriptor.count=1;descriptor.names=names;
+        descriptor.types=types;descriptor.code=borrowed_identity;
+        Val callable=v_function(&descriptor,NULL,v_null());
+        Val *arguments=ru_scratch_alloc(sizeof(Val),1);
+        arguments[0]=v_str("caller-owned");
+        for(i=0;i<2;++i) {
+            const char **keys=i?named:positional;
+            ru_call_depth=500;
+            Val failed=v_call(callable,1,keys,arguments,1);
+            assert(ru_panicking && failed.kind==RU_NULL && borrowed_calls==i);
+            /* A failed borrowed call must not free its caller's scratch block.
+             * Named binding must free only its own reordered argument block. */
+            if(!ru_scratch || ru_scratch->data!=arguments)return 61;
+            assert(!strcmp(arguments[0].s->data,"caller-owned"));
+            ru_call_depth=0;ru_panic_clear();
+            Val retried=v_call(callable,1,keys,arguments,1);
+            assert(!ru_panicking && borrowed_calls==i+1);
+            assert(!strcmp(retried.s->data,"caller-owned"));v_drop(retried);
+            assert(ru_scratch && ru_scratch->data==arguments);
+        }
+        v_drop(arguments[0]);ru_scratch_free(arguments);v_drop(callable);
+    }
     outer=rul_frame_new(1000);
     for(i=0;i<1000;++i)assert(outer->values[i].kind==RU_NULL);
     rul_number(rul_slot(outer,999),42);

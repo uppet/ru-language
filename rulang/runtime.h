@@ -385,6 +385,37 @@ static void env_bind(Env *env, const char *name, Val value, int line)
     }
     env_set(target, name, value);
 }
+/* RU_FEATURE: binding_cache */
+#if defined(__GNUC__) || defined(__clang__)
+#define RU_CACHE_MISS __attribute__((noinline))
+#elif defined(_MSC_VER)
+#define RU_CACHE_MISS __declspec(noinline)
+#else
+#define RU_CACHE_MISS
+#endif
+typedef struct { const char *name; RuBinding *ptr; } RuBindingCache;
+static RU_CACHE_MISS Val env_cget_miss(Env *env,RuBindingCache *c,int line)
+{
+    c->ptr=env_find_local(env,c->name);
+    return c->ptr?v_copy(c->ptr->value):env_get(env,c->name,line);
+}
+static Val env_cget(Env *env,RuBindingCache *c,int line)
+{
+    RuBinding *b=c->ptr;
+    return b?v_copy(b->value):env_cget_miss(env,c,line);
+}
+static RU_CACHE_MISS void env_cbind_miss(Env *env,RuBindingCache *c,Val value,int line)
+{
+    env_bind(env,c->name,value,line);c->ptr=env_find_local(env,c->name);
+}
+static void env_cbind(Env *env,RuBindingCache *c,Val value,int line)
+{
+    RuBinding *b=c->ptr;
+    if(b&&!b->reserved&&strcmp(c->name,"读"))b->value=value;
+    else env_cbind_miss(env,c,value,line);
+}
+/* RU_ELSE_FEATURE */
+/* RU_END_FEATURE */
 static void env_free(Env *env)
 {
     Env **slot; RuBinding *b;
@@ -639,7 +670,8 @@ static Val v_convert(Val value,int kind,int line)
     if(kind==RU_ARRAY)return v_array(1,&value,line);
     ru_fail(line,"未知转换类型");return v_null();
 }
-static Val ru_finite(double n,int line) { if(!isfinite(n))ru_fail(line,"运算结果不是有限数字");return v_num(n); }
+static double ru_finite_number(double n,int line) { if(!isfinite(n))ru_fail(line,"运算结果不是有限数字");return n; }
+static Val ru_finite(double n,int line) { return v_num(ru_finite_number(n,line)); }
 static Val v_unary(const char *op,Val v,int line)
 {
     if(!strcmp(op,"非"))return v_fact(!v_truth(v));
@@ -684,7 +716,7 @@ static int ru_compare_seen(RuCompared **table, size_t *capacity, size_t *count,
     return 0;
 }
 /* RU_FEATURE: pair */
-static int v_equal(Val a, Val b, int line)
+static int ru_pair_equal(Val a, Val b, int line)
 {
     (void)ru_panicking;
     typedef struct { Val a, b; } Compare;
@@ -719,19 +751,52 @@ static int v_equal(Val a, Val b, int line)
     free(stack); free(seen); return equal;
 }
 /* RU_ELSE_FEATURE */
-/* No pair constructor is reachable: equality is shallow for every live kind. */
+/* RU_END_FEATURE */
 static int v_equal(Val a, Val b, int line)
 {
     (void)ru_panicking;
     if (a.kind != b.kind) return 0;
     if (a.kind == RU_NUM || a.kind == RU_FACT) return a.n == b.n;
     if (a.kind == RU_STR) return !strcmp(a.s->data, b.s->data);
+/* RU_FEATURE: pair */
+    if (a.kind == RU_PAIR) return ru_pair_equal(a,b,line);
+/* RU_ELSE_FEATURE */
+/* RU_END_FEATURE */
     if (a.kind == RU_OBJECT) return ru_object_equal(a,b,line);
     if (a.kind == RU_CLASS) return a.klass == b.klass;
     if (a.kind == RU_MODULE) return a.module == b.module;
     return a.kind == RU_NULL || a.heap == b.heap;
 }
-/* RU_END_FEATURE */
+static void ru_numeric_pair(const char *op,Val a,Val b,int line)
+{ if(a.kind!=RU_NUM||b.kind!=RU_NUM)ru_fail(line,"算术运算符 %s 需要两个数字",op); }
+static Val v_add(Val a,Val b,int line)
+{
+    if(a.kind==RU_STR&&b.kind==RU_STR) {Val v;if(a.s->len>SIZE_MAX-b.s->len)ru_fail(line,"字符串过长");v=ru_string_alloc(a.s->len+b.s->len,line);memcpy(v.s->data,a.s->data,a.s->len);memcpy(v.s->data+a.s->len,b.s->data,b.s->len);return v;}
+    ru_numeric_pair("+",a,b,line);return ru_finite(a.n+b.n,line);
+}
+static Val v_sub(Val a,Val b,int line)
+{ ru_numeric_pair("-",a,b,line);return ru_finite(a.n-b.n,line); }
+static Val v_mul(Val a,Val b,int line)
+{ ru_numeric_pair("*",a,b,line);return ru_finite(a.n*b.n,line); }
+static Val v_div(Val a,Val b,int line)
+{ ru_numeric_pair("/",a,b,line);if(b.n==0)ru_fail(line,"除数不能为零");return ru_finite(a.n/b.n,line); }
+#ifdef RU_ENABLE_MODULO
+static Val v_mod(Val a,Val b,int line)
+{ ru_numeric_pair("%",a,b,line);if(b.n==0)ru_fail(line,"除数不能为零");return ru_finite(fmod(a.n,b.n),line); }
+#endif
+static int ru_order(Val a,Val b,int line)
+{
+    if(a.kind!=b.kind || (a.kind!=RU_NUM&&a.kind!=RU_STR))ru_fail(line,"比较需要相同的数字或字符串类型%s",(a.kind==RU_FACT||b.kind==RU_FACT)?"；比较结果为事实，若要连续比较，请拆成两个比较并用「且」连接":"");
+    return a.kind==RU_NUM?(a.n>b.n)-(a.n<b.n):strcmp(a.s->data,b.s->data);
+}
+static Val v_lt(Val a,Val b,int line) {return v_fact(ru_order(a,b,line)<0);}
+static Val v_le(Val a,Val b,int line) {return v_fact(ru_order(a,b,line)<=0);}
+static Val v_gt(Val a,Val b,int line) {return v_fact(ru_order(a,b,line)>0);}
+static Val v_ge(Val a,Val b,int line) {return v_fact(ru_order(a,b,line)>=0);}
+static Val v_eq(Val a,Val b,int line) {return v_fact(v_equal(a,b,line));}
+static Val v_ne(Val a,Val b,int line) {return v_fact(!v_equal(a,b,line));}
+static Val v_contains(Val a,Val b,int line)
+{if(a.kind!=RU_STR||b.kind!=RU_STR)ru_fail(line,"含 需要两个字符串");return v_fact(strstr(a.s->data,b.s->data)!=NULL);}
 static Val v_binary(const char *op,Val a,Val b,int line)
 {
 /* RU_OPERATORS: 对 */
@@ -743,28 +808,22 @@ static Val v_binary(const char *op,Val a,Val b,int line)
 /* RU_OPERATORS: 或 */
     if(!strcmp(op,"或"))return v_fact(v_truth(a)||v_truth(b));
 /* RU_END_MEMBERS */
-    if(!strcmp(op,"==")||!strcmp(op,"!=")) {int equal=v_equal(a,b,line);return v_fact(!strcmp(op,"==")?equal:!equal);}
 /* RU_OPERATORS: 含 */
-    if(!strcmp(op,"含")) { if(a.kind!=RU_STR||b.kind!=RU_STR)ru_fail(line,"含 需要两个字符串");return v_fact(strstr(a.s->data,b.s->data)!=NULL); }
+    if(!strcmp(op,"含"))return v_contains(a,b,line);
 /* RU_END_MEMBERS */
-    if(!strcmp(op,"<")||!strcmp(op,"<=")||!strcmp(op,">")||!strcmp(op,">=")) {
-        int cmp;if(a.kind!=b.kind || (a.kind!=RU_NUM&&a.kind!=RU_STR))ru_fail(line,"比较需要相同的数字或字符串类型%s",(a.kind==RU_FACT||b.kind==RU_FACT)?"；比较结果为事实，若要连续比较，请拆成两个比较并用「且」连接":"");
-        cmp=a.kind==RU_NUM?(a.n>b.n)-(a.n<b.n):strcmp(a.s->data,b.s->data);
-        if (!strcmp(op,"<")) return v_fact(cmp<0);
-        if (!strcmp(op,"<=")) return v_fact(cmp<=0);
-        if (!strcmp(op,">")) return v_fact(cmp>0);
-        return v_fact(cmp>=0);
-    }
-    if(!strcmp(op,"+")&&a.kind==RU_STR&&b.kind==RU_STR) {Val v;if(a.s->len>SIZE_MAX-b.s->len)ru_fail(line,"字符串过长");v=ru_string_alloc(a.s->len+b.s->len,line);memcpy(v.s->data,a.s->data,a.s->len);memcpy(v.s->data+a.s->len,b.s->data,b.s->len);return v;}
-    if(!strcmp(op,"+")||!strcmp(op,"-")||!strcmp(op,"*")||!strcmp(op,"/")||!strcmp(op,"%")) {
-        if(a.kind!=RU_NUM||b.kind!=RU_NUM)ru_fail(line,"算术运算符 %s 需要两个数字",op);
-        if((op[0]=='/'||op[0]=='%')&&b.n==0)ru_fail(line,"除数不能为零");
-        switch(op[0]) {case '+':return ru_finite(a.n+b.n,line);case '-':return ru_finite(a.n-b.n,line);case '*':return ru_finite(a.n*b.n,line);case '/':return ru_finite(a.n/b.n,line);
+    if(!strcmp(op,"=="))return v_eq(a,b,line);
+    if(!strcmp(op,"!="))return v_ne(a,b,line);
+    if(!strcmp(op,"<"))return v_lt(a,b,line);
+    if(!strcmp(op,"<="))return v_le(a,b,line);
+    if(!strcmp(op,">"))return v_gt(a,b,line);
+    if(!strcmp(op,">="))return v_ge(a,b,line);
+    if(!strcmp(op,"+"))return v_add(a,b,line);
+    if(!strcmp(op,"-"))return v_sub(a,b,line);
+    if(!strcmp(op,"*"))return v_mul(a,b,line);
+    if(!strcmp(op,"/"))return v_div(a,b,line);
 #ifdef RU_ENABLE_MODULO
-        case '%':return ru_finite(fmod(a.n,b.n),line);
+    if(!strcmp(op,"%"))return v_mod(a,b,line);
 #endif
-        }
-    }
     ru_fail(line,"未知二元运算符：%s",op);return v_null();
 }
 static void v_print(Val v, int line)
@@ -1141,10 +1200,11 @@ static void ru_bind(const char *name,size_t count,const char **names,size_t argc
 }
 static Val v_call(Val callable,size_t argc,const char **keys,Val *args,int line)
 {
-    RuCallable *f;RuFunction *fn;Val *bound,result;size_t i;
+    RuCallable *f;RuFunction *fn;Val *bound=args,result;size_t i;
     if(callable.kind!=RU_FUNCTION)ru_fail(line,"值不是函数%s",((callable.kind==RU_ARRAY||callable.kind==RU_STR||callable.kind==RU_MAP)&&argc==1&&args[0].kind==RU_ARRAY)?"；若要索引，请让方括号紧邻接收者，如 列[0]；列 [0] 会被解析为调用":"");
     f=(RuCallable *)callable.heap;fn=f->function;
-    bound=(Val *)ru_scratch_alloc((fn->count?fn->count:1)*sizeof(Val),line);ru_bind(fn->name,fn->count,fn->names,argc,keys,args,bound,line);
+    if(argc!=fn->count||(argc&&keys[0])) {bound=(Val *)ru_scratch_alloc((fn->count?fn->count:1)*sizeof(Val),line);ru_bind(fn->name,fn->count,fn->names,argc,keys,args,bound,line);}
+    else for(i=0;i<argc;++i)if(keys[i])ru_fail(line,"不能混用位置实参与命名实参");
     for(i=0;i<fn->count;++i) {
 /* RU_FEATURE: user_class */
         ru_annotation_ready(fn->types[i],f->global,line);
@@ -1152,7 +1212,7 @@ static Val v_call(Val callable,size_t argc,const char **keys,Val *args,int line)
 /* RU_END_FEATURE */
         if(!v_is_type(bound[i],fn->types[i],f->global))ru_fail(line,"函数「%s」的实参「%s」须为%s，实际收到%s%s",fn->name,fn->names[i],fn->types[i],v_type_name(bound[i]),v_type_detail(bound[i],fn->types[i],f->global,line));
     }
-    ru_enter(line);result=fn->code(f->closure,f->self,line,bound);ru_leave();ru_scratch_free(bound);return result;
+    ru_enter(line);result=fn->code(f->closure,f->self,line,bound);ru_leave();if(bound!=args)ru_scratch_free(bound);return result;
 }
 /* Look up protocol methods without treating fields as methods. */
 static RuFunction *ru_protocol(Val object, const char *name, Env **owner)
@@ -1504,7 +1564,7 @@ static Val v_member(Val receiver,const char *name,size_t argc,const char **keys,
     if(!strcmp(name,"查")){ru_bind(name,1,one,argc,keys,args,bound,line);return v_array_find(receiver,bound[0],line);}
 /* RU_END_MEMBERS */
 /* RU_MEMBERS: 含 */
-    if(!strcmp(name,"含")){const char *text[]={"句"};ru_bind(name,1,text,argc,keys,args,bound,line);return v_binary("含",receiver,bound[0],line);}
+    if(!strcmp(name,"含")){const char *text[]={"句"};ru_bind(name,1,text,argc,keys,args,bound,line);return v_contains(receiver,bound[0],line);}
 /* RU_END_MEMBERS */
     ru_fail(line,"未知成员：%s",name);return v_null();
 }

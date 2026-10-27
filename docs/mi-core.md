@@ -11,7 +11,7 @@
 
 最多一个视图，不能逃逸、写入、返回或在内核中调用外部函数。错误仍是现有退出式 `ru_fail`，不是新增可恢复异常。原生回调错误边界沿用现有实现。
 
-CLI 将清单列为输入保护，程序输出及 `--emit-c` 均不得覆盖清单。默认编译目标仍为 C，C/JS 路径不强制要求 LLVM 工具链；显式 --target llvm 才选择 LLVM AOT。对照基线的普通输出由 `tests/fixtures/mi-default-ae1a994.json` 固定；正常回归矩阵保持不变。
+CLI 将清单列为输入保护，程序输出及 `--emit-c` 均不得覆盖清单。默认编译目标仍为 C，C/JS 路径不强制要求 LLVM 工具链；显式 --target llvm 才选择 LLVM AOT。普通输出快照由 `tests/fixtures/mi-default.json` 固定：C 快照已随共享运行时与运算符降低优化更新，JavaScript 仍保留 ae1a994 基线；正常回归矩阵保持不变。
 
 ## 独立验证门
 

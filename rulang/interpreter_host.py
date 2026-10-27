@@ -41,7 +41,7 @@ def integrate_host(runtime):
     insert('ru_enter(line);result=fn->code',
            'if(ru_call_depth>=500) {\n'
            '        Val reason=v_str("调用或源码结构过深，请拆分为较小的步骤。");\n'
-           '        ru_panic_raise(reason,line,1);v_drop(reason);ru_scratch_free(bound);return v_null();\n'
+           '        ru_panic_raise(reason,line,1);v_drop(reason);if(bound!=args)ru_scratch_free(bound);return v_null();\n'
            '    }\n    ru_enter(line);result=fn->code')
     insert('static Val v_member(Val receiver,const char *name,size_t argc,const char **keys,Val *args,int line)\n{',
            'static int ru_interpreter_member(Val, const char *, size_t, const char **, Val *, int, Val *);\n'

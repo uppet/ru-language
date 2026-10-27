@@ -1,4 +1,4 @@
-"""Opt-in integration contracts frozen against main/wip ae1a994 (Ru 0.23.0)."""
+"""Opt-in integration contracts and ordinary C/JS output snapshots."""
 import hashlib
 import json
 from pathlib import Path
@@ -29,8 +29,8 @@ def historical_output_bytes(generated, compiler):
 
 
 class MiIntegration(unittest.TestCase):
-    def test_default_generated_outputs_match_pre_mi_baseline(self):
-        fixture = json.loads((Path(__file__).parent / 'fixtures/mi-default-ae1a994.json').read_text(encoding='utf-8'))
+    def test_default_generated_outputs_match_baseline(self):
+        fixture = json.loads((Path(__file__).parent / 'fixtures/mi-default.json').read_text(encoding='utf-8'))
         actual = [hashlib.sha256(historical_output_bytes(cls(parse(source), '/fixed/example.ru').compile(), cls)).hexdigest()
                   for source in fixture['sources'] for cls in (Compiler, JSCompiler)]
         self.assertEqual(actual, fixture['sha256'])

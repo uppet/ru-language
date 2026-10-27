@@ -18,9 +18,15 @@ def cstr(value):
     return '"' + ''.join(out) + '"'
 
 
+BINARY_OPERATIONS = {'+': 'add', '-': 'sub', '*': 'mul', '/': 'div', '%': 'mod',
+                     '==': 'eq', '!=': 'ne', '<': 'lt', '<=': 'le', '>': 'gt', '>=': 'ge',
+                     '对': 'pair', '含': 'contains'}
+
+
 class Compiler:
     supports_browser_graphics = False
     supports_mi_llvm = False
+    _cache_local_bindings = True
 
     def __init__(self, program, source_name='<源码>', modules=None, full_runtime=False, allow_native=False, source_prefix_maps=(), mi_manifest=None, mi_backend='c'):
         if mi_backend not in ('c', 'llvm') or (mi_backend == 'llvm' and not mi_manifest):
@@ -334,10 +340,170 @@ class Compiler:
             self.line('}')
         return name
 
+    def binding_access(self, name, line, value=None):
+        """Cache only the environment rooted by this function invocation.
+
+        Keep the spelling in one declaration: repeating UTF-8 C escapes at
+        every cached access would needlessly grow standalone contest sources.
+        Nested block/rescue environments retain their ordinary lookup path.
+        A rooted function Env keeps its binding addresses stable; its values
+        can change through closures. Ancestor hits must never be retained, as
+        a later local binding may shadow them. Reserved writes use env_bind.
+        """
+        if (self._cache_local_bindings and self.current_function and not self.lexical_envs
+                and name in self.cached_binding_names):
+            cache = self.binding_caches.setdefault(name, f'ru_b{len(self.binding_caches)}')
+            if value is None:
+                return f'env_cget(env, &{cache}, {line})'
+            return f'env_cbind(env, &{cache}, {value}, {line})'
+        if value is None:
+            return f'env_get(env, {cstr(name)}, {line})'
+        return f'env_bind(env, {cstr(name)}, {value}, {line})'
+
+    @staticmethod
+    def repeated_local_bindings(fn):
+        """Avoid caching one-off accesses and known nonlocal names."""
+        counts = {}
+        def visit(value):
+            if isinstance(value, Node):
+                if value.kind in ('function', 'function_literal', 'type', 'scope'):
+                    return
+                if value.kind == 'try':
+                    visit(value.data['body'])
+                    return
+                if value.kind in ('name', 'call', 'new', 'bind'):
+                    name = value.data['name']
+                    counts[name] = counts.get(name, 0) + 1
+                visit(value.data)
+            elif isinstance(value, dict):
+                for item in value.values():
+                    visit(item)
+            elif isinstance(value, (list, tuple)):
+                for item in value:
+                    visit(item)
+        visit(fn.data['body'])
+        local = {name for name, _ in fn.data['params']} | Compiler.scope_bindings(fn.data['body'])
+        return {name for name in local if counts.get(name, 0) > 1}
+
+    def local_binding_cache_names(self, fn):
+        if fn is None:
+            return set()
+        outer = set().union(*self.function_value_scopes[id(fn)][:-1])
+        parameters = {name for name, _ in fn.data['params']}
+        return self.repeated_local_bindings(fn) - (outer - parameters)
+
     def drop(self, *names):
         for name in names:
             self.line(f'v_drop({name});')
             self.live_temps.remove(name)
+
+    def condition(self, n):
+        """Produce an unboxed truth value, preserving short-circuit effects."""
+        d = n.data
+        if n.kind == 'fact':
+            return str(int(d['value']))
+        if n.kind == 'null':
+            return '0'
+        if n.kind == 'number':
+            return '1'  # Even zero and negative zero are true in Ru.
+        if n.kind == 'unary' and d['op'] == '非':
+            return f'!({self.condition(d["expr"])})'
+        if n.kind == 'binary' and d['op'] in ('且', '或'):
+            left = self.condition(d['left'])
+            flag = self.new('condition')
+            self.line(f'int {flag} = {left};')
+            self.line(f'if ({flag if d["op"] == "且" else "!"+flag}) {{')
+            self.indent += 1
+            right = self.condition(d['right'])
+            self.line(f'{flag} = {right};')
+            self.indent -= 1
+            self.line('}')
+            return flag
+        if n.kind == 'binary' and d['op'] in ('==', '!=', '<', '<=', '>', '>='):
+            left, right = self.expr(d['left']), self.expr(d['right'])
+            flag = self.new('condition')
+            if d['op'] in ('==', '!='):
+                expression = f'v_equal({left}, {right}, {n.token.line})'
+                if d['op'] == '!=':
+                    expression = '!' + expression
+            else:
+                expression = f'ru_order({left}, {right}, {n.token.line}) {d["op"]} 0'
+            self.line(f'int {flag} = {expression};')
+            if self.can_panic:
+                self.line('if (ru_panicking) {')
+                self.indent += 1
+                self.panic_transfer()
+                self.indent -= 1
+                self.line('}')
+            self.drop(left, right)
+            return flag
+        value = self.expr(n)
+        flag = self.new('condition')
+        self.line(f'int {flag} = v_truth({value});')
+        self.drop(value)
+        return flag
+
+    @staticmethod
+    def numeric_expression(n):
+        """Successful evaluation has numeric type; bindings remain dynamic.
+
+        A numeric operand rules out the string overload of +. No assumption
+        about a mutable local, a capture, or a container element is retained.
+        """
+        d = n.data
+        if n.kind == 'number':
+            return True
+        if n.kind == 'convert':
+            return d['target'] == '数'
+        if n.kind == 'unary':
+            return d['op'] in ('+', '-')
+        if n.kind == 'binary':
+            return d['op'] in ('-', '*', '/', '%') or (d['op'] == '+' and
+                (Compiler.numeric_expression(d['left']) or Compiler.numeric_expression(d['right'])))
+        return False
+
+    def scalar_number(self, n):
+        d, ln = n.data, n.token.line
+        if n.kind == 'number':
+            return d['value'].hex()
+        if n.kind == 'convert':
+            value = self.expr(d['expr'])
+            out = self.new('number')
+            self.line(f'double {out} = v_convert({value}, RU_NUM, {ln}).n;')
+            self.drop(value)
+            return out
+        if n.kind == 'unary':
+            if self.numeric_expression(d['expr']):
+                value = self.scalar_number(d['expr'])
+            else:
+                boxed = self.expr(d['expr'])
+                self.line(f'if ({boxed}.kind != RU_NUM) ru_fail({ln}, "运算符 %s 需要数字", {cstr(d["op"])});')
+                value = self.new('number')
+                self.line(f'double {value} = {boxed}.n;')
+                self.drop(boxed)
+            out = self.new('number')
+            self.line(f'double {out} = ru_finite_number({d["op"]}({value}), {ln});')
+            return out
+        operands, boxes = [], []
+        for child in (d['left'], d['right']):
+            if self.numeric_expression(child):
+                operands.append(self.scalar_number(child))
+            else:
+                value = self.expr(child)
+                boxes.append(value)
+                operands.append(value + '.n')
+        # Both operands must be evaluated before checking this operator's types.
+        if boxes:
+            invalid = ' || '.join(value + '.kind != RU_NUM' for value in boxes)
+            self.line(f'if ({invalid}) ru_fail({ln}, "算术运算符 %s 需要两个数字", {cstr(d["op"])});')
+        left, right = operands
+        if d['op'] in ('/', '%'):
+            self.line(f'if ({right} == 0) ru_fail({ln}, "除数不能为零");')
+        expression = f'fmod({left}, {right})' if d['op'] == '%' else f'{left} {d["op"]} {right}'
+        out = self.new('number')
+        self.line(f'double {out} = ru_finite_number({expression}, {ln});')
+        self.drop(*boxes)
+        return out
 
     def panic_context(self, env_name):
         self.live_temps, self.handlers, self.lexical_envs, self.loop_scopes = [], [], [], []
@@ -395,6 +561,8 @@ class Compiler:
 
     def expr(self, n):
         d, ln = n.data, n.token.line
+        if n.kind != 'number' and self.numeric_expression(n):
+            return self.temp(f'v_num({self.scalar_number(n)})')
         if n.kind == 'fact':
             return self.temp(f"v_fact({int(d['value'])})")
         if n.kind == 'map':
@@ -416,7 +584,7 @@ class Compiler:
         if n.kind == 'name':
             if d['name'] in self.functions or d['name'] == '读':
                 return self.call(n, d['name'], [])
-            return self.temp(f"env_get(env, {cstr(d['name'])}, {ln})")
+            return self.temp(self.binding_access(d['name'], ln))
         if n.kind == 'call':
             return self.call(n, d['name'], d['args'])
         if n.kind == 'function_literal':
@@ -455,25 +623,15 @@ class Compiler:
             self.drop(arg)
             return out
         if n.kind == 'binary':
-            left = self.expr(d['left'])
             if d['op'] in ('且', '或'):
-                flag = self.new('truth')
-                self.line(f'int {flag} = v_truth({left});')
-                self.drop(left)
-                out = self.temp(f'v_fact({flag})')
-                self.line(f'if ({"" if d["op"] == "且" else "!"}{flag}) {{')
-                self.indent += 1
-                right = self.expr(d['right'])
-                self.line(f'{out} = v_fact(v_truth({right}));')
-                self.drop(right)
-                self.indent -= 1
-                self.line('}')
-                return out
+                return self.temp(f'v_fact({self.condition(n)})')
+            left = self.expr(d['left'])
             right = self.expr(d['right'])
             if d['op'] == '含':
                 out = self.temp(f'v_member({left}, "含", 1, (const char *[]){{NULL}}, (Val[]){{{right}}}, {ln})', can_panic=True)
             else:
-                out = self.temp(f"v_binary({cstr(d['op'])}, {left}, {right}, {ln})", can_panic=True)
+                operation = BINARY_OPERATIONS[d['op']]
+                out = self.temp(f'v_{operation}({left}, {right}, {ln})', can_panic=True)
             self.drop(left, right)
             return out
         if n.kind == 'member':
@@ -498,7 +656,7 @@ class Compiler:
                 self.drop(receiver, start, end)
             return out
         if n.kind == 'new':
-            klass = self.temp(f"env_get(env, {cstr(d['name'])}, {ln})")
+            klass = self.temp(self.binding_access(d['name'], ln))
             args, values = self.argument_values(d['args'])
             out = self.temp(f'v_new({klass}, {args}, {ln})')
             self.drop(klass, *values)
@@ -513,7 +671,7 @@ class Compiler:
         if n.kind == 'name':
             if d['name'] == '读':
                 self.error(n, '内置「读」暂不支持函数引用')
-            return self.temp(f"env_get(env, {cstr(d['name'])}, {ln})")
+            return self.temp(self.binding_access(d['name'], ln))
         if n.kind == 'member' and not d['args']:
             receiver = self.expr(d['receiver'])
             out = self.temp(f"v_member_reference({receiver}, {cstr(d['name'])}, {ln})")
@@ -533,7 +691,7 @@ class Compiler:
             out = self.temp(f'read_input({prompt}, {n.token.line})')
             self.drop(prompt)
             return out
-        function = self.temp(f'env_get(env, {cstr(name)}, {n.token.line})')
+        function = self.temp(self.binding_access(name, n.token.line))
         actuals, values = self.argument_values(args)
         out = self.temp(f'v_call({function}, {actuals}, {n.token.line})', can_panic=True)
         self.drop(function, *values)
@@ -558,7 +716,7 @@ class Compiler:
             if n.kind in ('bind', 'print', 'expr', 'return', 'import_all'):
                 value = self.expr(d['expr'])
                 if n.kind == 'bind':
-                    self.line(f"env_bind(env, {cstr(d['name'])}, {value}, {ln});")
+                    self.line(self.binding_access(d['name'], ln, value) + ';')
                 elif n.kind == 'print':
                     self.line(f'v_print({value}, {ln});')
                 elif n.kind == 'import_all':
@@ -658,10 +816,7 @@ class Compiler:
                 self.clean_scopes(self.loop_scopes[-1])
                 self.line(n.kind + ';')
             elif n.kind == 'if':
-                value = self.expr(d['condition'])
-                flag = self.new('condition')
-                self.line(f'int {flag} = v_truth({value});')
-                self.drop(value)
+                flag = self.condition(d['condition'])
                 self.line(f'if ({flag}) {{')
                 self.indent += 1
                 self.block(d['yes'], function)
@@ -704,8 +859,17 @@ class Compiler:
         self.line('(void) self; (void) args; (void) call_line;')
         self.line(f'Env *local = env_new(global, RU_SCOPE_FUNCTION, {fn.token.line}); Env *env = local;')
         self.panic_context('local')
+        self.binding_caches = {}
+        self.cached_binding_names = self.local_binding_cache_names(fn)
+        # A body assignment may update a capture, not create a local. Exclude
+        # possible outer bindings conservatively; parameters always stay local.
+        cache_position = len(self.lines)
         for i, (key, _) in enumerate(fn.data['params']):
-            self.line(f'env_set(env, {cstr(key)}, args[{i}]);')
+            spelling = cstr(key)
+            if self._cache_local_bindings and key in self.cached_binding_names:
+                cache = self.binding_caches.setdefault(key, f'ru_b{len(self.binding_caches)}')
+                spelling = cache + '.name'
+            self.line(f'env_set(env, {spelling}, args[{i}]);')
         self.hoist(fn.data['body'], True)
         self.block(fn.data['body'], True)
         self.line('env_free(env);')
@@ -715,6 +879,10 @@ class Compiler:
         self.line('return v_null();')
         if self.can_panic:
             self.line(f'{self.panic_exit}: env_free(local); ru_source = previous_source; return v_null();')
+        if self.binding_caches:
+            declarations = ', '.join(f'{cache}={{{cstr(name)},0}}'
+                                     for name, cache in self.binding_caches.items())
+            self.lines.insert(cache_position, f'    RuBindingCache {declarations};')
         self.indent -= 1
         self.line('}')
 

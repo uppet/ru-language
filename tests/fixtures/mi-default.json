@@ -1,0 +1,25 @@
+{
+  "source_name": "/fixed/example.ru",
+  "sources": [
+    "显 1.",
+    "显 2 + 3.",
+    "若 0 则 显 1. 另 显 2. 然.",
+    "算 加一 x: 得 x + 1. 法. 显 加一 4."
+  ],
+  "order": [
+    "C",
+    "JavaScript"
+  ],
+  "sha256": [
+    "a7d09b72d273e3f875763a9585c9b06579a60ecea2c2519d7fe95b91cb724c6a",
+    "ee3f5a89e40c4300ec064c1f86ec1c894dab0e9d4b476f719f53c59f2dbe3343",
+    "9b47b4ba608a0dc0e18cdfc3ec488409508a97c62b4b08dffaa8c91fb11d705f",
+    "be91a5852ec42dfea94e64d77d867f9612c7fc8fff08f091460033d77d2b4585",
+    "1f2e040f793e9c93ebef938c538667f6eb150bd427e19412f4bbdac9bd883434",
+    "44cdc281310fdc93665a2a7d72dda94d0cfca71f4db7c346850e20d6627faaf0",
+    "09600abb7c39743549bc22d32a5ff23d053527414a489bb1c653c5f4f45deb8f",
+    "277927a257cf62dbd74aabd74f77b4678f02880ca4e4250ac8b783d84101d944"
+  ],
+  "historical_baseline": "ae1a9947e1b1b1785499967fea93c7e3ca09b37b",
+  "revision_note": "C snapshot updated for shared scalar equality, positional arguments, numeric SSA, scalar conditions and cache hit/miss separation; JavaScript snapshot unchanged. Historical ae1a994 fixture retained separately."
+}
