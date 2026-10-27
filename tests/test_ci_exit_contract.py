@@ -52,6 +52,46 @@ GIT_BASH_JOB = """  windows-git-bash-bootstrap:
 """
 
 
+NATIVE_NOTEBOOK_JOB = """  native-notebook:
+    # Independent fresh bootstrap; do not share artifacts or extend AOT deadlines.
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.10"
+      - name: Install notebook LLVM 14 tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y clang-14 llvm-14
+      - name: Prepare notebook Windows LLVM 14
+        if: runner.os == 'Windows'
+        run: python tools/prepare_workspace.py --with-llvm
+      - name: Check notebook LLVM tools
+        run: python -c "from rulang.llvm_toolchain import LLVMToolchain; print(LLVMToolchain().version)"
+      - name: Test AOT notebook sessions
+        run: python tools/verify_continue_native_kernel.py
+"""
+
+
+def check_native_notebook_contract(source):
+    """Pin the independent full native notebook gate, setup and original budget."""
+    marker = "  native-notebook:\n"
+    if source.count(marker) != 1:
+        raise AssertionError("missing or duplicate native notebook acceptance job")
+    body = re.split(r"^  [a-zA-Z]", source.split(marker, 1)[1], maxsplit=1, flags=re.MULTILINE)[0]
+    if marker + body != NATIVE_NOTEBOOK_JOB:
+        raise AssertionError("native notebook setup, two-platform matrix, budget and full gate must be preserved")
+
+
 def check_git_bash_contract(source):
     """Pin the standalone Windows path-variant acceptance job, not just its name."""
     marker = "  windows-git-bash-bootstrap:\n"
@@ -140,6 +180,46 @@ class CIExitContractTests(unittest.TestCase):
                 self.assertNotEqual(unsafe, self.source)
                 with self.assertRaises(AssertionError):
                     check_git_bash_contract(unsafe)
+
+    def test_native_notebook_has_independent_fresh_two_platform_acceptance(self):
+        check_native_notebook_contract(self.source)
+        check_contract(self.source)
+        # Moving this gate must not consume or enlarge the ordinary AOT budget.
+        aot = self.source.split('  llvm-aot:\n', 1)[1].split('  native-notebook:\n', 1)[0]
+        self.assertIn('    timeout-minutes: 20\n', aot)
+        self.assertNotIn('verify_continue_native_kernel.py', aot)
+
+    def test_native_notebook_acceptance_mutations_are_rejected(self):
+        mutations = [
+            self.source.replace(NATIVE_NOTEBOOK_JOB, ''),
+            self.source.replace(NATIVE_NOTEBOOK_JOB, NATIVE_NOTEBOOK_JOB * 2),
+        ]
+        for old, new in [
+            ('timeout-minutes: 20', 'timeout-minutes: 30'),
+            ('os: [ubuntu-22.04, windows-latest]', 'os: [windows-latest]'),
+            ('os: [ubuntu-22.04, windows-latest]', 'os: [ubuntu-22.04]'),
+            ('python-version: "3.10"', 'python-version: "3.14"'),
+            ('    steps:', '    if: false\n    steps:'),
+            ('    steps:', '    continue-on-error: true\n    steps:'),
+            ('      - name: Test AOT notebook sessions\n',
+             '      - name: Test AOT notebook sessions\n        if: false\n'),
+            ('      - name: Test AOT notebook sessions\n',
+             '      - name: Test AOT notebook sessions\n        continue-on-error: true\n'),
+            ('      - name: Check notebook LLVM tools\n',
+             '      - name: Check notebook LLVM tools\n        if: false\n'),
+            ('python tools/verify_continue_native_kernel.py',
+             'python -m unittest discover -s tests -p test_rushu_native.py'),
+            ('actions/checkout@', 'actions/download-artifact@'),
+        ]:
+            mutations.append(self.source.replace(NATIVE_NOTEBOOK_JOB, NATIVE_NOTEBOOK_JOB.replace(old, new)))
+        for line in NATIVE_NOTEBOOK_JOB.splitlines(keepends=True):
+            if line.startswith(('        run:', '          sudo ', '      - uses:')):
+                mutations.append(self.source.replace(NATIVE_NOTEBOOK_JOB, NATIVE_NOTEBOOK_JOB.replace(line, '')))
+        for index, unsafe in enumerate(mutations):
+            with self.subTest(mutation=index):
+                self.assertNotEqual(unsafe, self.source)
+                with self.assertRaises(AssertionError):
+                    check_native_notebook_contract(unsafe)
 
     def test_required_steps_cannot_continue_on_error(self):
         for name in COMMANDS:

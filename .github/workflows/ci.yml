@@ -119,8 +119,6 @@ jobs:
         run: python tools/bootstrap.py verify
       - name: Test AOT interpreter host
         run: python -m unittest discover -s tests -p test_interpreter_host.py -v
-      - name: Test AOT notebook sessions
-        run: python tools/verify_continue_native_kernel.py
       - name: Test direct LLVM Mi kernels
         run: python -m unittest discover -s tests -p test_mi_llvm.py -v
       - name: Test Mi UTF8 owner bridges
@@ -130,6 +128,33 @@ jobs:
         env:
           PYTHONPATH: tests
         run: python -m unittest llvm_callback_cases -v
+  native-notebook:
+    # Independent fresh bootstrap; do not share artifacts or extend AOT deadlines.
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-latest]
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.10"
+      - name: Install notebook LLVM 14 tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y clang-14 llvm-14
+      - name: Prepare notebook Windows LLVM 14
+        if: runner.os == 'Windows'
+        run: python tools/prepare_workspace.py --with-llvm
+      - name: Check notebook LLVM tools
+        run: python -c "from rulang.llvm_toolchain import LLVMToolchain; print(LLVMToolchain().version)"
+      - name: Test AOT notebook sessions
+        run: python tools/verify_continue_native_kernel.py
   windows-git-bash-bootstrap:
     # Keep this second full bootstrap independent of the LLVM acceptance budget.
     runs-on: windows-latest

@@ -147,6 +147,60 @@ def bad_pure_ru_source(source):
     return source.replace(old, new)
 
 
+
+NATIVE_HELPER_IMPORT = "密发射器 取 外言 'native_emit.ru'.\n"
+
+
+def source_import_count(source):
+    # Test-only lexical guard, not a Ru parser/application frontend. Ignore
+    # strings and comments so generated source fragments are not dependencies.
+    bare = re.sub(r"#[^\n]*|'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"",
+                  ' ', source, flags=re.S)
+    return len(re.findall(r'(?<!\w)外言(?!\w)', bare))
+
+
+def copy_negative_compiler(original, directory):
+    """Freeze only the reviewed compiler + unchanged static native helper."""
+    original, directory = Path(original), Path(directory)
+    helper = original.with_name('native_emit.ru')
+    for path in (original, helper):
+        if path.is_symlink() or not path.is_file() or path.resolve().parent != original.parent.resolve():
+            raise AssertionError('negative compiler dependency must be a local regular file')
+    originals = [file_identity(path) for path in (original, helper)]
+    source_bytes, helper_bytes = original.read_bytes(), helper.read_bytes()
+    source, helper_source = source_bytes.decode('utf-8'), helper_bytes.decode('utf-8')
+    if (not source.startswith(NATIVE_HELPER_IMPORT) or source_import_count(source) != 1
+            or source_import_count(helper_source) != 0):
+        raise AssertionError('negative compiler requires exactly the reviewed static native_emit import')
+    copied, copied_helper = directory/'compiler.ru', directory/'native_emit.ru'
+    if any(path.exists() or path.is_symlink() for path in (copied, copied_helper)):
+        raise AssertionError('negative compiler destinations must be fresh')
+    copied.write_bytes(bad_pure_ru_source(source).encode('utf-8'))
+    copied_helper.write_bytes(helper_bytes)
+    verify_identities(originals)
+    copies = [file_identity(path) for path in (copied, copied_helper)]
+    if copies[1]['sha256'] != originals[1]['sha256'] or copies[1]['size'] != originals[1]['size']:
+        raise AssertionError('native helper copy differs from frozen original')
+    return copied, {'mutation':'reset cursor at panic-transfer unwind emission',
+        'original_source_sha256': originals[0]['sha256'],
+        'mutated_source_sha256': copies[0]['sha256'],
+        'topology':'compiler.ru plus exact unchanged native_emit.ru; no other imports',
+        'original_inputs': originals, 'copied_inputs': copies}
+
+def require_frozen_compiler_manifest(dependencies, frozen):
+    # Match the production host's canonical filesystem identities, not the Ru
+    # frontend's slash spelling. Do not let canonicalization collapse aliases.
+    if (not isinstance(dependencies, list) or len(dependencies) != 2
+            or any(not isinstance(path, str) or not Path(path).is_absolute()
+                   or '..' in Path(path).parts for path in dependencies)):
+        raise AssertionError('negative compiler manifest requires two absolute non-traversing paths')
+    actual = {str(Path(path).resolve()) for path in dependencies}
+    expected = {item['path'] for item in frozen}
+    if len(actual) != 2 or len(frozen) != 2 or len(expected) != 2 or actual != expected:
+        raise AssertionError('negative compiler manifest must match exact frozen two-file topology')
+    verify_identities(frozen)
+
+
 def sections(stdout):
     result, position = {}, 0
     for index, (name, _, _) in enumerate(CASES):
@@ -199,6 +253,70 @@ class BootstrapSlotStructureTests(unittest.TestCase):
         correct, _ = lower(LLVMCompiler, source)
         unsafe, _ = lower(UnsafeUnwindSlots, source)
         self.assertNotEqual(correct, unsafe)
+        self._assert_negative_compiler_topology()
+
+    def _assert_negative_compiler_topology(self):
+        original = REPO/'bootstrap/compiler.ru'
+        helper = original.with_name('native_emit.ru')
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root/'copy'; target.mkdir()
+            with prohibit_python_frontend():
+                copied, record = copy_negative_compiler(original, target)
+            with self.subTest(topology='exact helper and sole unsafe compiler mutation'):
+                self.assertEqual(copied.read_bytes(), bad_pure_ru_source(original.read_bytes().decode()).encode())
+                self.assertEqual((target/'native_emit.ru').read_bytes(), helper.read_bytes())
+                verify_identities(record['original_inputs'] + record['copied_inputs'])
+                self.assertEqual(source_import_count("# 外言 ignored\n显 '外言'."), 0)
+            paths = [str(target/'compiler.ru'), str(target/'native_emit.ru')]
+            require_frozen_compiler_manifest(paths, record['copied_inputs'])
+            require_frozen_compiler_manifest([Path(path).as_posix() for path in paths], record['copied_inputs'])
+            if os.name == 'nt':
+                # Windows resolves case and any short temporary-root spelling
+                # back to the same actual files; Linux remains case-sensitive.
+                require_frozen_compiler_manifest([path.swapcase() for path in paths], record['copied_inputs'])
+            invalid_manifests = [paths[:1], paths+paths[:1], [paths[0], paths[0]],
+                [paths[0], str(root/'outside.ru')],
+                [paths[0], str(target/'..'/'copy'/'native_emit.ru')],
+                [paths[0], 'native_emit.ru']]
+            for invalid_paths in invalid_manifests:
+                with self.subTest(manifest=invalid_paths), self.assertRaises(AssertionError):
+                    require_frozen_compiler_manifest(invalid_paths, record['copied_inputs'])
+
+            for index, identity in enumerate(record['copied_inputs']):
+                path = Path(identity['path']); before = path.read_bytes()
+                with self.subTest(tampered_copy=index):
+                    path.write_bytes(before+b'\n# changed')
+                    with self.assertRaisesRegex(AssertionError, 'input changed'):
+                        verify_identities(record['copied_inputs'])
+                    path.write_bytes(before)
+            fixtures = root/'fixtures'; fixtures.mkdir()
+            compiler = fixtures/'compiler.ru'; dependency = fixtures/'native_emit.ru'
+            source_bytes, helper_bytes = original.read_bytes(), helper.read_bytes()
+            invalid = [
+                (source_bytes.replace(b'native_emit.ru', b'../native_emit.ru', 1), helper_bytes),
+                (source_bytes.replace(b'native_emit.ru', b'unknown.ru', 1), helper_bytes),
+                (source_bytes + "\n另件 取 外言\n 'unknown.ru'.\n".encode(), helper_bytes),
+                (source_bytes, helper_bytes + "\n另件 取 外言 'unknown.ru'.\n".encode()),
+                (source_bytes, helper_bytes + "\n另件 取 外言 路径.\n".encode()),
+            ]
+            for index, (compiler_bytes, dependency_bytes) in enumerate(invalid):
+                compiler.write_bytes(compiler_bytes); dependency.write_bytes(dependency_bytes)
+                destination = root/('invalid-'+str(index)); destination.mkdir()
+                with self.subTest(unknown_or_escape=index), prohibit_python_frontend():
+                    with self.assertRaisesRegex(AssertionError, 'exactly the reviewed static'):
+                        copy_negative_compiler(compiler, destination)
+                    self.assertEqual(list(destination.iterdir()), [])
+            compiler.write_bytes(source_bytes); dependency.write_bytes(helper_bytes)
+            destination = root/'mutation'; destination.mkdir()
+            mutation = bad_pure_ru_source
+            def mutate_original(text):
+                dependency.write_bytes(helper_bytes+b'\n# changed during copy')
+                return mutation(text)
+            with self.subTest(tampered_original='during copy'):
+                with patch(__name__+'.bad_pure_ru_source', side_effect=mutate_original):
+                    with self.assertRaisesRegex(AssertionError, 'input changed'):
+                        copy_negative_compiler(compiler, destination)
 
 
 @unittest.skipUnless(REQUIRED, 'required isolated slot gate not requested')
@@ -248,19 +366,16 @@ class BootstrapSlotReuseTests(unittest.TestCase):
             # Every build/emission must succeed; only the known first-case runtime
             # ownership error qualifies as negative-control rejection.
             negative_source = cls.output/'pure-ru-negative-source'; negative_source.mkdir()
-            original = REPO/'bootstrap/compiler.ru'
-            copied = negative_source/'compiler.ru'
-            compiler_source = original.read_text(encoding='utf-8')
-            if re.search(r'(?m)^[^\n#]*\b取\s+外言\s+[\'\"]', compiler_source):
-                raise AssertionError('this gate requires the main single-file compiler, without native_emit imports')
-            copied.write_text(bad_pure_ru_source(compiler_source),
-                              encoding='utf-8', newline='\n')
-            cls.report['pure_ru_negative'] = {'mutation':'reset cursor at panic-transfer unwind emission',
-                'original_source_sha256':digest(original),'mutated_source_sha256':digest(copied),
-                'topology':'single-file compiler; no native_emit dependency copied'}
-            broken = cls.pure_ru_build(toolchain, stage3, copied, 'stage3-unsafe-compiler')
+            copied, negative = copy_negative_compiler(REPO/'bootstrap/compiler.ru', negative_source)
+            cls.report['pure_ru_negative'] = negative
+            frozen_negative = negative['original_inputs'] + negative['copied_inputs']
+            verify_identities(frozen_negative)
+            broken = cls.pure_ru_build(toolchain, stage3, copied, 'stage3-unsafe-compiler',
+                                      frozen_dependencies=negative['copied_inputs'])
+            verify_identities(frozen_negative)
             binary = cls.pure_ru_build(toolchain, broken, source_path, 'stage3-unsafe-unwind')
             cls.execute('stage3-unsafe-unwind', binary)
+            verify_identities(frozen_negative)
             if digest(stage3) != cls.report['stage3']['sha256']:
                 raise AssertionError('stage3 changed during gate execution')
             verify_identities(cls.report['toolchain']['executables'].values())
@@ -277,7 +392,7 @@ class BootstrapSlotReuseTests(unittest.TestCase):
         cls.receipt.write_text(json.dumps(cls.report, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
 
     @classmethod
-    def pure_ru_build(cls, toolchain, frontend, source, label):
+    def pure_ru_build(cls, toolchain, frontend, source, label, *, frozen_dependencies=()):
         from tools import bootstrap
         if bootstrap.ROOT.resolve() != REPO:
             raise AssertionError('bootstrap host loaded from a different repository')
@@ -290,6 +405,8 @@ class BootstrapSlotReuseTests(unittest.TestCase):
             [frontend, source, REPO/'tools/bootstrap.py', REPO/'rulang/llvm_toolchain.py',
              REPO/'rulang/c_runtime.py', *[REPO/'rulang'/name for name in headers]]]
         identities.extend(tools['executables'].values())
+        identities.extend(frozen_dependencies)
+        verify_identities(identities)
         cls.report['builds'][label] = {'host':'tools.bootstrap.compile_native',
                                       'source_sha256':digest(source),
                                       'frontend_sha256':digest(frontend),
@@ -306,6 +423,8 @@ class BootstrapSlotReuseTests(unittest.TestCase):
             dependencies = json.loads(source_manifest.decode('utf-8'))
             if not isinstance(dependencies, list) or not all(isinstance(path,str) and Path(path).is_absolute() for path in dependencies):
                 raise AssertionError('invalid actual frontend source manifest')
+            if frozen_dependencies:
+                require_frozen_compiler_manifest(dependencies, frozen_dependencies)
             dependency_identities = [file_identity(path) for path in sorted(set(dependencies) | {str(Path(source).resolve())})]
             (directory/'actual-program.ll').write_text(program, encoding='utf-8', newline='\n')
             (directory/'actual-runtime.c').write_text(runtime, encoding='utf-8', newline='\n')

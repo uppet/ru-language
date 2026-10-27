@@ -127,7 +127,7 @@ class NativeSuiteIdentityTests(unittest.TestCase):
 class CurrentEditorOracleTests(unittest.TestCase):
     def test_exact_graph_rejects_missing_duplicate_and_changed_dependencies(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
             rows = []
             for index in range(26):
                 path = root/(str(index)+'.ru'); path.write_bytes(str(index).encode())
