@@ -71,6 +71,11 @@ typedef struct RuAudioHost {
     int (*volume)(long channel, int pct);    /* 设音量，返回实际生效值（0..100） */
     double (*position)(long channel);        /* 已播秒数；<0 不可用 */
     int (*playing)(long channel);            /* 1 在播 0 空闲 */
+    /* 播放器增强（2026-10-27 player-ruaudio）：宿主可不实现，
+     * 运行时按空指针/返回值诚实回退（时长/定位 <0 或 0，波形图 0）。 */
+    double (*duration)(long channel);        /* 总时长秒数；<0 不可用 */
+    int (*seek)(long channel, double seconds);/* 定位；1 成 0 败/不支持 */
+    int (*waveform)(const char *path, const char *out_bmp, int width, int height);
 } RuAudioHost;
 
 void ru_audio_set_host(const RuAudioHost *host);

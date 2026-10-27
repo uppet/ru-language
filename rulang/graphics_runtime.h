@@ -77,6 +77,9 @@ typedef struct RuAudioHost {
     int (*volume)(long channel, int pct);
     double (*position)(long channel);
     int (*playing)(long channel);
+    double (*duration)(long channel);        /* 总时长秒数；<0 不可用 */
+    int (*seek)(long channel, double seconds);/* 定位；1 成 0 败/不支持 */
+    int (*waveform)(const char *path, const char *out_bmp, int width, int height);
 } RuAudioHost;
 
 void ru_graphics_set_host(const RuGuiHost *host);

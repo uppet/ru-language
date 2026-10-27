@@ -116,15 +116,25 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - name: Install SDL2 toolchain (MSYS2 ucrt64)
+      - name: Install MinGW toolchain (MSYS2 ucrt64, 无 SDL 包)
         shell: bash
         run: |
           /c/msys64/usr/bin/bash -lc "pacman -S --noconfirm --needed \
-            mingw-w64-ucrt-x86_64-pkgconf \
-            mingw-w64-ucrt-x86_64-SDL2 \
-            mingw-w64-ucrt-x86_64-SDL2_ttf \
-            mingw-w64-ucrt-x86_64-SDL2_image \
-            mingw-w64-ucrt-x86_64-SDL2_mixer"
+            mingw-w64-ucrt-x86_64-gcc \
+            mingw-w64-ucrt-x86_64-pkgconf"
+      - name: Fetch official SDL2 release zips (libsdl-org, win32-x64)
+        shell: bash
+        run: |
+          set -e
+          mkdir -p /c/sdl-sdk
+          cd /c/sdl-sdk
+          curl -fsSL -o SDL2.zip https://github.com/libsdl-org/SDL/releases/download/release-2.30.12/SDL2-2.30.12-win32-x64.zip
+          curl -fsSL -o SDL2_ttf.zip https://github.com/libsdl-org/SDL_ttf/releases/download/release-2.24.0/SDL2_ttf-2.24.0-win32-x64.zip
+          curl -fsSL -o SDL2_image.zip https://github.com/libsdl-org/SDL_image/releases/download/release-2.8.8/SDL2_image-2.8.8-win32-x64.zip
+          curl -fsSL -o SDL2_mixer.zip https://github.com/libsdl-org/SDL_mixer/releases/download/release-2.8.1/SDL2_mixer-2.8.1-win32-x64.zip
+          for f in SDL2 SDL2_ttf SDL2_image SDL2_mixer; do unzip -q -o $f.zip; done
+          # 官方 zip 解出目录名
+          ls -d SDL2-2.30.12 SDL2_ttf-2.24.0 SDL2_image-2.8.8 SDL2_mixer-2.8.1
       - name: Build player.exe (RU_SDL env injection, release 无 smoke 宏)
         shell: bash
         env:
@@ -134,9 +144,9 @@ jobs:
           # 发行 exe 严禁 RU_HEADLESS_SMOKE：smoke 构建会隐藏窗口并
           # 在 N 帧后静默退出（2026-10-27 真机踩过：看似闪退，实为自毁）
           export PATH="/c/msys64/ucrt64/bin:$PATH"
-          U=/c/msys64/ucrt64
-          export RU_SDL_CFLAGS="-I$U/include/SDL2"
-          export RU_SDL_LIBS="-L$U/lib -lSDL2 -lSDL2_ttf -lSDL2_image -lSDL2_mixer"
+          S=/c/sdl-sdk
+          export RU_SDL_CFLAGS="-I$S/SDL2-2.30.12/x86_64-w64-mingw32/include/SDL2 -I$S/SDL2_ttf-2.24.0/x86_64-w64-mingw32/include/SDL2 -I$S/SDL2_image-2.8.8/x86_64-w64-mingw32/include/SDL2 -I$S/SDL2_mixer-2.8.1/x86_64-w64-mingw32/include/SDL2"
+          export RU_SDL_LIBS="-L$S/SDL2-2.30.12/x86_64-w64-mingw32/lib -L$S/SDL2_ttf-2.24.0/x86_64-w64-mingw32/lib -L$S/SDL2_image-2.8.8/x86_64-w64-mingw32/lib -L$S/SDL2_mixer-2.8.1/x86_64-w64-mingw32/lib -lSDL2 -lSDL2_ttf -lSDL2_image -lSDL2_mixer"
           CC=gcc python -m rulang build examples/ruui-player.ru --target sdl -o player.exe
           # 发行防呆：smoke 自毁路径的标记串不得出现在二进制里
           # （#ifdef 文本总在生成的 .c 里，查二进制才有效）
@@ -148,22 +158,28 @@ jobs:
         run: |
           mkdir -p dist/examples/player/music
           cp player.exe dist/
-          cp /c/msys64/ucrt64/bin/SDL2.dll \
-             /c/msys64/ucrt64/bin/SDL2_ttf.dll \
-             /c/msys64/ucrt64/bin/SDL2_image.dll \
-             /c/msys64/ucrt64/bin/SDL2_mixer.dll dist/
+          cp /c/sdl-sdk/SDL2-2.30.12/x86_64-w64-mingw32/bin/SDL2.dll \
+             /c/sdl-sdk/SDL2_ttf-2.24.0/x86_64-w64-mingw32/bin/SDL2_ttf.dll \
+             /c/sdl-sdk/SDL2_image-2.8.8/x86_64-w64-mingw32/bin/SDL2_image.dll \
+             /c/sdl-sdk/SDL2_mixer-2.8.1/x86_64-w64-mingw32/bin/SDL2_mixer.dll dist/
           cp examples/player/music/* dist/examples/player/music/ 2>/dev/null || true
           cat > dist/用法.txt <<'EOF'
-          如播放器（player-ruaudio 分支，Windows x64）
+          如UI 播放器 v3（player-ruaudio 分支，Windows x64）
 
           用法：
             1) 解压到任意目录
-            2) 把音乐放进 examples/player/music/（支持 wav/mp3/ogg/flac）
+            2) 把音乐放进 examples/player/music/（支持 .wav / .mp3 / .ogg）
             3) 双击 player.exe（保持 exe 旁的目录结构；曲库按当前目录解析）
 
+          界面：
+            - 标题栏：当前曲目 + 播放状态；时间：已播 / 总时长（mm:ss）
+            - 波形图：播放开始后自动生成（缓存为 <曲名>.波形.bmp，可删）
+            - 进度条：拖动即定位；播完自动下一首
+            - 曲库列表点击播放；音量滑杆；上一首/播放暂停/下一首；刷新曲库
+
           说明：
+            - 首次播放生成波形缓存，mp3/ogg 大文件可能等一两秒
             - 字体用系统 C:/Windows/Fonts/msyh.ttc；可用环境变量 RU_FONT 指定
-            - 控制：点曲名播放；上一首/播放暂停/停/下一首；音量滑杆；刷新重列目录
             - 中文路径/曲名 UTF-8 安全（宿主内全部宽字符 API）
           EOF
       - name: Upload release bundle
@@ -184,24 +200,34 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - name: Install SDL2 toolchain (MSYS2 ucrt64)
+      - name: Install MinGW toolchain (MSYS2 ucrt64, 无 SDL 包)
         shell: bash
         run: |
           /c/msys64/usr/bin/bash -lc "pacman -S --noconfirm --needed \
-            mingw-w64-ucrt-x86_64-pkgconf \
-            mingw-w64-ucrt-x86_64-SDL2 \
-            mingw-w64-ucrt-x86_64-SDL2_ttf \
-            mingw-w64-ucrt-x86_64-SDL2_image \
-            mingw-w64-ucrt-x86_64-SDL2_mixer"
+            mingw-w64-ucrt-x86_64-gcc \
+            mingw-w64-ucrt-x86_64-pkgconf"
+      - name: Fetch official SDL2 release zips (libsdl-org, win32-x64)
+        shell: bash
+        run: |
+          set -e
+          mkdir -p /c/sdl-sdk
+          cd /c/sdl-sdk
+          curl -fsSL -o SDL2.zip https://github.com/libsdl-org/SDL/releases/download/release-2.30.12/SDL2-2.30.12-win32-x64.zip
+          curl -fsSL -o SDL2_ttf.zip https://github.com/libsdl-org/SDL_ttf/releases/download/release-2.24.0/SDL2_ttf-2.24.0-win32-x64.zip
+          curl -fsSL -o SDL2_image.zip https://github.com/libsdl-org/SDL_image/releases/download/release-2.8.8/SDL2_image-2.8.8-win32-x64.zip
+          curl -fsSL -o SDL2_mixer.zip https://github.com/libsdl-org/SDL_mixer/releases/download/release-2.8.1/SDL2_mixer-2.8.1-win32-x64.zip
+          for f in SDL2 SDL2_ttf SDL2_image SDL2_mixer; do unzip -q -o $f.zip; done
       - name: Build player.exe (native Windows gcc)
         shell: bash
         env:
           PYTHONUTF8: "1"
         run: |
-          # ucrt64 置顶：gcc/pkg-config 都取 MSYS2 的，避开镜像自带
-          # Strawberry Perl 的 pkg-config.BAT（缺 Pod 模块，必然失败）
+          # ucrt64 置顶：gcc 取 MSYS2 的，避开镜像自带 Strawberry 工具链
           export PATH="/c/msys64/ucrt64/bin:$PATH"
-          export PKG_CONFIG=/c/msys64/ucrt64/bin/pkg-config.exe
+          S=/c/sdl-sdk
+          export RU_SDL_WITH_MIXER=1
+          export RU_SDL_CFLAGS="-I$S/SDL2-2.30.12/x86_64-w64-mingw32/include/SDL2 -I$S/SDL2_ttf-2.24.0/x86_64-w64-mingw32/include/SDL2 -I$S/SDL2_image-2.8.8/x86_64-w64-mingw32/include/SDL2 -I$S/SDL2_mixer-2.8.1/x86_64-w64-mingw32/include/SDL2"
+          export RU_SDL_LIBS="-L$S/SDL2-2.30.12/x86_64-w64-mingw32/lib -L$S/SDL2_ttf-2.24.0/x86_64-w64-mingw32/lib -L$S/SDL2_image-2.8.8/x86_64-w64-mingw32/lib -L$S/SDL2_mixer-2.8.1/x86_64-w64-mingw32/lib -lSDL2 -lSDL2_ttf -lSDL2_image -lSDL2_mixer"
           RU_HEADLESS_SMOKE=1 CC=gcc python -m rulang build examples/ruui-player.ru --target sdl -o player.exe
       - name: Native headless smoke
         shell: bash

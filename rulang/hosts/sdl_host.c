@@ -1041,11 +1041,41 @@ static int sdl_audio_playing(long channel) {
     return channel >= 0 && channel < SDL_MAX_CHANNELS && Mix_Playing((int)channel) != 0;
 }
 
+static double sdl_audio_duration(long channel) {
+#if SDL_MIXER_VERSION_ATLEAST(2, 6, 0)
+    if (channel == RU_MUSIC_CHANNEL)
+        return sdl_music_current ? Mix_MusicDuration(sdl_music_current) : -1.0;
+#endif
+    /* chunk 通道：按 44.1kHz S16 立体声字节率折算（与 Mix_OpenAudio 参数一致）。 */
+    if (channel >= 0 && channel < SDL_MAX_CHANNELS && sdl_audio_chunks[channel])
+        return (double)sdl_audio_chunks[channel]->alen / 176400.0;
+    return -1.0;
+}
+
+static int sdl_audio_seek(long channel, double seconds) {
+    if (seconds < 0) return 0;
+#if SDL_MIXER_VERSION_ATLEAST(2, 6, 0)
+    if (channel == RU_MUSIC_CHANNEL)
+        return sdl_music_current && Mix_SetMusicPosition(seconds) == 0;
+#endif
+    (void)seconds;
+    /* chunk（wav 短音效）不支持定位。 */
+    return 0;
+}
+
+/* 波形图不依赖 mixer：只要 SDL 可用就解码渲染（见 sdl_waveform.h）。 */
+#include "sdl_waveform.h"
+
+static int sdl_audio_waveform(const char *path, const char *out_bmp, int width, int height) {
+    return sdl_waveform_bmp(path, out_bmp, width, height);
+}
+
 static const RuAudioHost sdl_audio_host = {
     "SDL_mixer",
     sdl_audio_open, NULL,
     sdl_audio_play, sdl_audio_stop, sdl_audio_pause, sdl_audio_resume,
-    sdl_audio_volume, sdl_audio_position, sdl_audio_playing
+    sdl_audio_volume, sdl_audio_position, sdl_audio_playing,
+    sdl_audio_duration, sdl_audio_seek, sdl_audio_waveform
 };
 
 #else
@@ -1058,10 +1088,17 @@ static int sdl_audio_resume(long channel) { (void)channel; return 0; }
 static int sdl_audio_volume(long channel, int pct) { (void)channel; (void)pct; return 0; }
 static double sdl_audio_position(long channel) { (void)channel; return -1.0; }
 static int sdl_audio_playing(long channel) { (void)channel; return 0; }
+static double sdl_audio_duration(long channel) { (void)channel; return -1.0; }
+static int sdl_audio_seek(long channel, double seconds) { (void)seconds; return 0; }
+#include "sdl_waveform.h"
+static int sdl_audio_waveform(const char *path, const char *out_bmp, int width, int height) {
+    return sdl_waveform_bmp(path, out_bmp, width, height);
+}
 static const RuAudioHost sdl_audio_host = {
     "SDL_mixer(缺)", sdl_audio_open, NULL,
     sdl_audio_play, sdl_audio_stop, sdl_audio_pause, sdl_audio_resume,
-    sdl_audio_volume, sdl_audio_position, sdl_audio_playing
+    sdl_audio_volume, sdl_audio_position, sdl_audio_playing,
+    sdl_audio_duration, sdl_audio_seek, sdl_audio_waveform
 };
 
 #endif

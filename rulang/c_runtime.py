@@ -214,6 +214,10 @@ typedef struct RuAudioHost {
     int (*volume)(long channel, int pct);
     double (*position)(long channel);
     int (*playing)(long channel);
+    /* 播放器增强（2026-10-27 player-ruaudio）：宿主可不实现（置空），调用侧已判空。 */
+    double (*duration)(long channel);
+    int (*seek)(long channel, double seconds);
+    int (*waveform)(const char *path, const char *out_bmp, int width, int height);
 } RuAudioHost;
 static const RuAudioHost **ru_audio_host_slot(void)
 {

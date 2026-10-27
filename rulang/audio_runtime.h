@@ -21,6 +21,12 @@ static long ru_audio_int(Val v, const char *label, int line) {
     return (long)v.n;
 }
 
+static double ru_audio_num(Val v, const char *label, int line) {
+    if (v.kind != RU_NUM)
+        ru_fail(line, "实参「%s」须为数", label);
+    return v.n;
+}
+
 static int ru_audio_member(Val receiver, const char *name, size_t argc, const char **keys,
                            Val *args, int line, Val *out) {
     RuClass *klass;
@@ -29,13 +35,13 @@ static int ru_audio_member(Val receiver, const char *name, size_t argc, const ch
     const char *chan_names[] = {"声道", NULL};
     const char *play_names[] = {"路径", "循环", NULL};
     const char *vol_names[] = {"声道", "音量", NULL};
-    Val bound[2];
+    Val bound[3];
     (void)path_names; (void)chan_names; (void)play_names; (void)vol_names; (void)bound;
     if (receiver.kind != RU_OBJECT) return 0;
     klass = ((RuObject *)receiver.heap)->klass;
     if (klass != &ru_audio_service_class) return 0;
     h = *ru_audio_host_slot();
-/* RU_MEMBERS: 播,停,暂停,续,音量,进度,在播 */
+/* RU_MEMBERS: 播,停,暂停,续,音量,进度,在播,时长,定位,波形图 */
     if (!strcmp(name, "播")) {
         const char *path;
         long ch;
@@ -51,7 +57,7 @@ static int ru_audio_member(Val receiver, const char *name, size_t argc, const ch
         return 1;
     }
     if (!strcmp(name, "停") || !strcmp(name, "暂停") || !strcmp(name, "续")
-        || !strcmp(name, "进度") || !strcmp(name, "在播")) {
+        || !strcmp(name, "进度") || !strcmp(name, "在播") || !strcmp(name, "时长")) {
         long ch;
         int ok;
         ru_bind(name, 1, chan_names, argc, keys, args, bound, line);
@@ -61,8 +67,39 @@ static int ru_audio_member(Val receiver, const char *name, size_t argc, const ch
         else if (!strcmp(name, "暂停")) ok = h->pause(ch);
         else if (!strcmp(name, "续")) ok = h->resume(ch);
         else if (!strcmp(name, "进度")) { *out = v_num(h->position(ch)); return 1; }
+        else if (!strcmp(name, "时长")) { *out = v_num(h->duration ? h->duration(ch) : -1.0); return 1; }
         else ok = h->playing(ch);
         *out = v_fact(ok);
+        return 1;
+    }
+    if (!strcmp(name, "定位")) {
+        long ch;
+        double seconds;
+        const char *pos_names[] = {"声道", "秒", NULL};
+        ru_bind(name, 2, pos_names, argc, keys, args, bound, line);
+        if (!h) ru_fail(line, "如声音频无宿主；如:声 仅支持 SDL 宿主（-t sdl）");
+        ch = ru_audio_int(bound[0], "声道", line);
+        seconds = ru_audio_num(bound[1], "秒", line);
+        if (seconds < 0) seconds = 0;
+        *out = v_fact(h->seek ? h->seek(ch, seconds) : 0);
+        return 1;
+    }
+    if (!strcmp(name, "波形图")) {
+        const char *wave_names[] = {"路径", "宽", "高", NULL};
+        const char *path;
+        char out_path[1600];
+        int width, height;
+        ru_bind(name, 3, wave_names, argc, keys, args, bound, line);
+        if (!h) ru_fail(line, "如声音频无宿主；如:声 仅支持 SDL 宿主（-t sdl）");
+        if (bound[0].kind != RU_STR || !bound[0].s->len)
+            ru_fail(line, "波形图 的「路径」须为非空句");
+        path = bound[0].s->data;
+        width = (int)ru_audio_num(bound[1], "宽", line);
+        height = (int)ru_audio_num(bound[2], "高", line);
+        if (width < 16 || height < 16)
+            ru_fail(line, "波形图 的「宽」「高」须 ≥ 16");
+        snprintf(out_path, sizeof(out_path), "%s.波形.bmp", path);
+        *out = v_fact(h->waveform ? h->waveform(path, out_path, width, height) : 0);
         return 1;
     }
     if (!strcmp(name, "音量")) {
