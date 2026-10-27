@@ -13,7 +13,7 @@ def integrate_host(runtime):
             raise ValueError('interpreter host runtime integration anchor changed')
         runtime = runtime.replace(anchor, replacement)
 
-    beginning = 'typedef struct { size_t count; Val values[]; } RuLLVMFrame;'
+    beginning = 'typedef struct { size_t count; uint64_t roots; Val values[]; } RuLLVMFrame;'
     ending = 'void rul_copy(void *out, void *value)'
     if runtime.count(beginning) != 1 or runtime.count(ending) != 1:
         raise ValueError('interpreter LLVM frame integration anchor changed')
@@ -38,11 +38,13 @@ def integrate_host(runtime):
     insert('if(ru_call_depth>=128)', 'if(ru_call_depth>=1024)')
     insert('void rul_string(void *out, const char *value) { rul_put(out, v_str(value)); }',
            'void rul_string(void *out, const char *value) { rul_put(out, ru_interpreter_literal(value)); }')
-    insert('ru_enter(line);result=fn->code',
+    insert('void rul_init_string(void *out, const char *value) { rul_init_put(out, v_str(value)); }',
+           'void rul_init_string(void *out, const char *value) { rul_init_put(out, ru_interpreter_literal(value)); }')
+    insert('ru_enter(line);result=',
            'if(ru_call_depth>=500) {\n'
            '        Val reason=v_str("调用或源码结构过深，请拆分为较小的步骤。");\n'
            '        ru_panic_raise(reason,line,1);v_drop(reason);if(bound!=args)ru_scratch_free(bound);return v_null();\n'
-           '    }\n    ru_enter(line);result=fn->code')
+           '    }\n    ru_enter(line);result=')
     insert('static Val v_member(Val receiver,const char *name,size_t argc,const char **keys,Val *args,int line)\n{',
            'static int ru_interpreter_member(Val, const char *, size_t, const char **, Val *, int, Val *);\n'
            'static Val v_member(Val receiver,const char *name,size_t argc,const char **keys,Val *args,int line)\n{\n'

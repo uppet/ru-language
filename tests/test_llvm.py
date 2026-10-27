@@ -73,7 +73,8 @@ class LLVMValidationTests(unittest.TestCase):
                 patch('subprocess.run', side_effect=AssertionError('external tool invoked')):
             ir = LLVMCompiler(program).compile()
             self.assertIn('define void @ru_function_', ir)
-            self.assertIn('call void @rul_binary', ir)
+            self.assertIn(' = fmul double ', ir)
+            self.assertIn('call double @rul_finite_number', ir)
             with contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(main(['check', str(self.source), '--target', 'llvm']), 0)
 
@@ -484,11 +485,15 @@ class LLVMExecutionTests(unittest.TestCase):
 """
         self.source.write_text(source,encoding='utf-8')
         binary=self.root/'sanitized'
+        emitted=self.root/'sanitized.ll'
         # Clang 14's ASan PIE startup also intermittently segfaults for an
         # empty C main on this WSL host. Use a fixed image for this runtime
         # regression; normal builds keep the toolchain's default PIE policy.
-        build(parse(source),self.source,binary,target='llvm',
+        build(parse(source),self.source,binary,target='llvm',emit_llvm=emitted,
               llvm_clang=clang+' -fsanitize=address,undefined -fno-omit-frame-pointer -fno-pie -no-pie')
+        instrumented=emitted.read_text(encoding='utf-8')
+        self.assertIn('__asan_report',instrumented)
+        self.assertIn('__ubsan_handle',instrumented)
         result=subprocess.run([str(binary)],capture_output=True,text=True,timeout=30,
                               env={**os.environ,'RU_GC_THRESHOLD':'1','RU_GC_STATS':'1'})
         self.assertEqual(result.returncode,0,result.stderr)

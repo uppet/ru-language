@@ -6,7 +6,7 @@ metadata output, not to this host. Never pass application source to this module.
 import re
 from pathlib import Path
 
-from rulang.c_runtime import _FEATURE, _MAP_REGION
+from rulang.c_runtime import _FEATURE, _MAP_REGION, _LLVM_REGION
 from rulang.native_c_runtime import integrate_io, integrate_runtime
 
 NATIVE_PROTOCOL = 'bootstrap-native-v1'
@@ -34,4 +34,5 @@ def fixed_native_runtime():
     # Identical full-runtime feature expansion, with no source pruning/analysis.
     source = _FEATURE.sub(lambda m: m[2], _MAP_REGION.sub(lambda m: m[1], '\n'.join(headers)))
     source = re.sub(r'/\* RU_(?:MEMBERS: [^*]*|OPERATORS: [^*]*|END_MEMBERS) \*/\n', '', source)
+    source = _LLVM_REGION.sub(lambda m: m[1], source)
     return source + '\n' + (directory/'llvm_runtime.h').read_text(encoding='utf-8')

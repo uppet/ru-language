@@ -87,6 +87,8 @@ class BootstrapNativeHostTests(unittest.TestCase):
         self.invoke()
         self.assertEqual(self.calls[0][-1],'--allow-native=bootstrap-native-v1')
         self.assertIn('ru_native_callback_dispatch',self.toolchain.runtime)
+        self.assertEqual(self.toolchain.runtime.count('} RuFunction;'),1)
+        self.assertIn('RuDirectCode direct;',self.toolchain.runtime)
         self.assertEqual(self.output.read_bytes(),b'MZfake-toolchain')
 
     def test_default_path_does_not_enable_native(self):
@@ -94,6 +96,8 @@ class BootstrapNativeHostTests(unittest.TestCase):
         self.invoke(allow=False)
         self.assertEqual(len(self.calls[0]),8)
         self.assertNotIn('ru_native_callback_dispatch',self.toolchain.runtime)
+        self.assertEqual(self.toolchain.runtime.count('} RuFunction;'),1)
+        self.assertIn('RuDirectCode direct;',self.toolchain.runtime)
 
     def test_default_rejects_unexpected_native_metadata(self):
         with self.assertRaises((ValueError,RuntimeError)):

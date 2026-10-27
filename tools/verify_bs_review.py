@@ -85,20 +85,20 @@ def configure(out,editor,mingw):
  with open(os.environ['GITHUB_ENV'],'a',encoding='utf-8') as stream:stream.write('RU_LLVM_CLANG='+tools['clang']+'\n')
 
 def build_proof(folder):
+ from tools.benchmark_bootstrap_syntax import ORDINARY_FILES, splice_frontend, adapt_driver
  candidate=folder/'compiler'; application=folder/'application'
  exported=archived_files(ROOT,ADAPTER)
  def original(name):return exported[name]
- changed={'bootstrap/compiler.ru','rulang/llvm_compiler.py','rulang/llvm_runtime.h','rulang/llvm_toolchain.py'}
+ drivers={'tools/bootstrap.py','tools/bootstrap_native_runtime.py'}
+ copied={'rulang/'+name for name in ORDINARY_FILES}
+ changed={'bootstrap/compiler.ru'}|copied|drivers
  # Preserve exact exported bytes; only the emitter splice normalizes newlines.
  for name in tracked_files(ROOT,ADAPTER):
   if name not in changed:require((candidate/name).read_bytes()==original(name),'unplanned adapter change: '+name)
- for name in changed-{'bootstrap/compiler.ru'}:require((candidate/name).read_bytes()==(ROOT/name).read_bytes(),'ordinary compiler mismatch: '+name)
+ for name in copied:require((candidate/name).read_bytes()==(ROOT/name).read_bytes(),'ordinary compiler mismatch: '+name)
+ for name in drivers:require((candidate/name).read_text(encoding='utf-8')==adapt_driver(name,original(name).decode().replace('\r\n','\n')),'driver adaptation mismatch: '+name)
  old=original('bootstrap/compiler.ru').decode().replace('\r\n','\n'); current=(ROOT/'bootstrap/compiler.ru').read_text(encoding='utf-8')
- start,end='算 新号 全 前:','算 读文 文件:'
- require(old.count(start)==old.count(end)==current.count(start)==current.count(end)==1,'ambiguous emitter markers')
- wanted=old[:old.index(start)]+current[current.index(start):current.index(end)]+old[old.index(end):]
- abi=next(l for l in current.splitlines() if l.startswith('LLVM接口 取 '))
- wanted='\n'.join(abi if l.startswith('LLVM接口 取 ') else l for l in wanted.splitlines())+'\n'
+ wanted=splice_frontend(old,current)
  require((candidate/'bootstrap/compiler.ru').read_text(encoding='utf-8')==wanted,'emitter splice mismatch')
  proof=json.loads((folder/'bootstrap/proof.json').read_text(encoding='utf-8'))
  build=json.loads((folder/'bootstrap/build.json').read_text(encoding='utf-8'))

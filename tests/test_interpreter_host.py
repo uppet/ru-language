@@ -2,7 +2,6 @@
 import os
 from pathlib import Path
 import subprocess
-import sys
 import tempfile
 import unittest
 
@@ -19,7 +18,7 @@ class InterpreterFrameTests(unittest.TestCase):
         except RuError as error:
             self.skipTest(str(error))
         bridge = Path(__file__).resolve().parents[1]/'rulang/llvm_runtime.h'
-        runtime = integrate_host(runtime_source({}, '', full=True)+'\n'+bridge.read_text(encoding='utf-8'))
+        runtime = integrate_host(runtime_source({}, '', full=True, llvm=True)+'\n'+bridge.read_text(encoding='utf-8'))
         checks = r'''
 #include <assert.h>
 static RuFunction *rul_function_descriptor(int32_t id) { (void)id; return NULL; }
@@ -61,6 +60,40 @@ int main(void) {
         }
         v_drop(arguments[0]);ru_scratch_free(arguments);v_drop(callable);
     }
+    {
+        union { double align; void *pointer; unsigned char bytes[4096]; } storage;
+        RuLLVMFrame *stack_frame=(RuLLVMFrame *)storage.bytes;
+        assert(rul_frame_size(4)<=sizeof(storage.bytes));
+        rul_frame_init(stack_frame,4);
+        rul_init_string(rul_slot(stack_frame,0),"stack literal");
+        rul_init_number(rul_slot(stack_frame,1),7);
+        assert(stack_frame->active_count==2);
+        rul_clear_count(stack_frame,1);
+        assert(stack_frame->active_count==1 && stack_frame->values[0].kind==RU_NULL);
+        rul_frame_drop(stack_frame);
+        assert(ru_llvm_active_frames==NULL);
+    }
+    {
+        union { double align; void *pointer; unsigned char bytes[4096]; } storage;
+        Val ignored=v_null();
+        RuLLVMFrame *local=(RuLLVMFrame *)storage.bytes;
+        assert(rul_local_frame_size(3)<=sizeof(storage.bytes));
+        rul_local_frame_init(local,3);
+        rul_local_frame_roots(local,3,0);
+        void *first=rul_local_slot(local,0,&ignored);
+        void *second=rul_local_slot(local,1,&ignored);
+        assert(first==&local->values[0] && second==&local->values[1]);
+        rul_init_string(first,"first");rul_init_number(second,17);
+        assert(local->active_count==2 && ignored.kind==RU_NULL);
+        rul_local_clear_mask(local,1,0,0);
+        assert(local->active_count==1 && local->values[0].kind==RU_NULL);
+        rul_init_string(first,"reused");
+        assert(local->active_count==2);
+        rul_local_clear_mask(local,2,0,0);
+        assert(local->active_count==0 && !local->written[0] && !local->written[1]);
+        rul_local_frame_drop(local);
+        assert(ru_llvm_active_frames==NULL);
+    }
     outer=rul_frame_new(1000);
     for(i=0;i<1000;++i)assert(outer->values[i].kind==RU_NULL);
     rul_number(rul_slot(outer,999),42);
@@ -72,7 +105,7 @@ int main(void) {
     rul_string(rul_slot(inner,2),"returned");
     /* A callee can return into an outer frame or an initialized C-stack Val. */
     rul_copy(rul_slot(outer,600),rul_slot(inner,2));
-    rul_copy(&returned,rul_slot(inner,2));
+    rul_return_copy(&returned,rul_slot(inner,2));
     rul_frame_free(inner);
     assert(outer->active_count==3);
     assert(!strcmp(outer->values[600].s->data,"returned"));
@@ -104,11 +137,10 @@ int main(void) {
 }
 '''
         with tempfile.TemporaryDirectory(prefix='ru-interpreter-frames-') as temp:
-            source = Path(temp)/'frames.c'
-            binary = Path(temp)/('frames.exe' if sys.platform == 'win32' else 'frames')
-            source.write_text('#define RU_ENABLE_MODULO 1\n'+runtime+checks, encoding='utf-8')
-            toolchain.run(toolchain.clang+['-std=c99', '-O2', str(source), '-o', str(binary),
-                                           *toolchain.link_flags])
+            # Use the product's runtime link, including its LLVM support code.
+            program = (f'target triple = "{toolchain.triple}"\n'
+                       f'target datalayout = "{toolchain.data_layout}"\n')
+            binary, _ = toolchain.compile(program, '#define RU_ENABLE_MODULO 1\n'+runtime+checks, Path(temp))
             result = subprocess.run([str(binary)], capture_output=True, text=True,
                 encoding='utf-8', timeout=30,
                 env={**os.environ, 'RU_GC_THRESHOLD': '1', 'RU_GC_STATS': '1'})

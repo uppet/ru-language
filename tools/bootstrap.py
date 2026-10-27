@@ -320,7 +320,7 @@ def compile_native(compiler, source, output, toolchain, *, emit_llvm=None, keep_
         else:
             if 'RU_BOOTSTRAP_NATIVE_' in descriptors:
                 raise ValueError('native metadata requires explicit --allow-native')
-            runtime = runtime_source({}, '', full=True)+'\n'+(ROOT/'rulang/llvm_runtime.h').read_text(encoding='utf-8')
+            runtime = runtime_source({}, '', full=True, llvm=True)+'\n'+(ROOT/'rulang/llvm_runtime.h').read_text(encoding='utf-8')
         if interpreter_host:
             from rulang.interpreter_host import integrate_host
             runtime = integrate_host(runtime)

@@ -10,6 +10,57 @@ from unittest.mock import patch
 
 from tools.verify_bs_review import archived_files, source_identity, tracked_files
 from tools import verify_bs_review as review
+from tools import benchmark_bootstrap_syntax as benchmark
+
+
+class BenchmarkAdapterTests(unittest.TestCase):
+    def test_splice_preserves_native_sections_and_literal_control_characters(self):
+        # These are literal table entries, not source line delimiters.
+        table = "表 取 '\x1c\x1d\x1e\x85\u2028\u2029'.\n"
+        spans = (
+            ('算 新号 全 前:', '算 读文 文件:'),
+            ('算 检函 全 模块 函 保护 值域:', '算 检块 全 模块 体 函 循深 可声明 顶 保护 值域:'),
+            ('算 描述符 全:', "    序 取 0. 类列 取 全['类']. 类指 取 []."),
+            ('算 发全 全 三元 布局:', '算 元初 参数 为 句 阵:'),
+        )
+        def source(label):
+            return table + ''.join(a+'\n'+label+'\n'+b+'\n原生保留\n' for a, b in spans) + 'LLVM接口 取 '+label+'\n'+table
+        actual = benchmark.splice_frontend(source('old'), source('new'))
+        self.assertEqual(actual, source('new'))
+        self.assertEqual(actual.count(table), 2)
+        with self.assertRaisesRegex(ValueError, 'ambiguous'):
+            benchmark.splice_frontend(source('old')+spans[0][0], source('new'))
+
+    def test_standalone_measure_retains_timeout_and_finishes_all_pairs(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            out = Path(temporary)
+            benchmark.save(out/'inputs.json', {'files': {}})
+            for arm in ('c-llvm', 'bootstrap'):
+                (out/arm).mkdir()
+                (out/arm/'program.exe').write_bytes(arm.encode())
+            stdout = '\n'.join('PASS: case-'+str(i) for i in range(149))+'\nTOTAL PASS: 149\n'
+            for size in (100000, 1000000):
+                stdout += f'PERF_RU size={size} initial_ms=10 edit_ms=2 initial_read_bytes={size} edit_read_bytes=32768\n'
+            stdout += 'RU_GUI_SYNC size=1000000 wall_ms=5 read_bytes=1000000 source_chars=636370\n'
+            invoked = []
+            def run(command, **kwargs):
+                self.assertEqual(json.loads((out/'measurement/plan.json').read_text())['retries'], 0)
+                invoked.append(Path(command[0]).parent.name)
+                if len(invoked) == 1:
+                    raise subprocess.TimeoutExpired(command, 180, output=b'partial', stderr=b'timeout')
+                return subprocess.CompletedProcess(command, 0, stdout.encode(), b'')
+            with patch.object(benchmark.subprocess, 'run', side_effect=run), patch('builtins.print'), \
+                 self.assertRaisesRegex(RuntimeError, 'invalid samples retained'):
+                benchmark.measure(SimpleNamespace(output=out))
+            self.assertEqual(invoked, ['c-llvm', 'bootstrap', 'bootstrap', 'c-llvm']*3)
+            evidence = out/'measurement'
+            attempts = json.loads((evidence/'attempts.json').read_text())
+            self.assertEqual(len(attempts), 12)
+            self.assertTrue(attempts[0]['timeout'])
+            self.assertEqual((evidence/'1-c-llvm.stdout').read_bytes(), b'partial')
+            self.assertEqual((evidence/'1-c-llvm.stderr').read_bytes(), b'timeout')
+            self.assertEqual(len(list(evidence.glob('*.stdout'))), 12)
+            self.assertTrue(json.loads((evidence/'after.json').read_text())['verified'])
 
 
 class GitFilenameTests(unittest.TestCase):

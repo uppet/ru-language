@@ -29,7 +29,11 @@ def prepared_stages():
     global _STAGES
     if _STAGES is None:
         temporary = tempfile.TemporaryDirectory(prefix='ru-selfhost-')
-        unittest.addModuleCleanup(temporary.cleanup)
+        def cleanup():
+            global _STAGES
+            temporary.cleanup()
+            _STAGES = None
+        unittest.addModuleCleanup(cleanup)
         directory = Path(temporary.name)/'stages'
         with contextlib.redirect_stdout(io.StringIO()):
             report = bootstrap(directory)

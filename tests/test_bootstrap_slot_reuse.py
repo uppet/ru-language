@@ -55,7 +55,12 @@ def prohibit_python_frontend():
         yield
 
 
-class UncachedReuseSlots(LLVMCompiler):
+class ContiguousSlots(LLVMCompiler):
+    """Isolate slot reuse from the independent-payload storage optimization."""
+    independent_slots = False
+
+
+class UncachedReuseSlots(ContiguousSlots):
     """Exact prior925 address emission, with the same normal slot reuse."""
     def slot(self):
         ident = '%' + self.fresh('v')
@@ -100,13 +105,52 @@ def lower(compiler_type, source, triple=None, layout=None):
 
 
 def normalize(ir):
+    # Storage selection is independent of the physical-slot reuse under test.
+    # The monotonic and reusable layouts have different static root maps. Their
+    # actual cleanup is exercised by the runtime cases and negative controls.
+    ir = re.sub(r'^  call void @llvm\.lifetime\.(?:start|end)\.p0i8\([^\n]*\)\n', '', ir, flags=re.M)
+    ir = re.sub(r'^  call void @rul_frame_roots\([^\n]*\)\n', '', ir, flags=re.M)
+    ir = re.sub(r'  %frame_bytes = call i64 @rul_frame_size\(i32 (\d+)\)\n'
+                r'  %frame = alloca i8, i64 %frame_bytes, align 16\n'
+                r'  call void @rul_frame_init\(i8\* %frame, i32 \1\)',
+                r'  %frame = call i8* @rul_frame_new(i32 \1)', ir)
+    ir = re.sub(r'call void @rul_frame_drop\(i8\* %frame\)',
+                'call void @rul_frame_free(i8* %frame)', ir)
     ir = re.sub(r'(@rul_clear_count\(i8\* %frame, i32 )\d+', r'\g<1>LIVE', ir)
     ir = re.sub(r'(@rul_frame_new\(i32 )\d+', r'\g<1>FRAME', ir)
     return re.sub(r'(@rul_slot\(i8\* %frame, i32 )\d+', r'\g<1>SLOT', ir)
 
 
 def frames(ir):
-    return [int(value) for value in re.findall(r'@rul_frame_new\(i32 (\d+)\)', ir)]
+    return [int(value) for value in re.findall(r'@rul_(?:local_)?frame_(?:new\(|init\(i8\* %frame, )i32 (\d+)\)', ir)]
+
+
+def value_operations(ir):
+    """Compare every value/control operation after resolving argument storage.
+
+    Each pack is consumed immediately after its copies. Real forced-GC cases
+    separately verify lifetime and ownership, including the negative controls.
+    """
+    aliases = dict(re.findall(r'(%pack\d+) = getelementptr i8, i8\* (%v\d+), i64 0', ir))
+    first = None
+    for line in ir.splitlines():
+        match = re.search(r'@rul_args_set\(i8\* %argpack, i32 0, i8\* (%v\d+)\)', line)
+        if match:
+            first = match[1]
+        if re.search(r'call void @rul_(?:init_)?(?:call|new|array|member_finish)\(', line):
+            for pointer in re.findall(r'%pack\d+\b', line):
+                if pointer not in aliases:
+                    assert first is not None, line
+                    aliases[pointer] = first
+    output = []
+    for line in ir.splitlines(True):
+        if line.startswith('  ') and (
+                re.search(r'@(?:llvm\.lifetime\.|rul_(?:local_)?(?:frame_|slot\(|clear))', line)
+                or re.search(r'@rul_args_(?:size|set)\(', line)
+                or re.match(r'  %(?:frame|value_storage\d+|argpack|pack\d+) = (?:alloca|getelementptr)', line)):
+            continue
+        output.append(re.sub(r'%pack\d+\b', lambda item: aliases.get(item[0], item[0]), line))
+    return ''.join(output)
 
 
 def digest(path):
@@ -224,12 +268,15 @@ class BootstrapSlotStructureTests(unittest.TestCase):
         for name, source, _ in CASES:
             with self.subTest(case=name):
                 old, old_runtime = lower(LegacyMonotonicSlots, source)
-                new, new_runtime = lower(LLVMCompiler, source)
+                new, new_runtime = lower(ContiguousSlots, source)
                 uncached, uncached_runtime = lower(UncachedReuseSlots, source)
                 self.assertEqual(normalize(old), normalize(uncached))
                 self.assertEqual(canonical_addresses(uncached), new)
                 self.assertEqual(old_runtime, uncached_runtime)
                 self.assertEqual(old_runtime, new_runtime)
+                independent, independent_runtime = lower(LLVMCompiler, source)
+                self.assertEqual(value_operations(new), value_operations(independent))
+                self.assertEqual(new_runtime, independent_runtime)
                 self.assertEqual(len(frames(old)), len(frames(new)))
                 self.assertTrue(all(new_size <= old_size for old_size,new_size in zip(frames(old),frames(new))))
 
@@ -239,7 +286,7 @@ class BootstrapSlotStructureTests(unittest.TestCase):
             names = re.findall(r'^  (%\w+) =', body, re.M)
             self.assertEqual(len(names), len(set(names)))
             extent = frames(body)[0]
-            indices = [int(value) for value in re.findall(r'@rul_slot\(i8\* %frame, i32 (\d+)\)', body)]
+            indices = [int(value) for value in re.findall(r'@rul_(?:local_)?slot\(i8\* %frame, i32 (\d+)[,)]', body)]
             self.assertEqual(extent, max(indices, default=-1)+1)
             self.assertEqual(len(indices), len(set(indices)))
             self.assertEqual(indices, list(range(extent)))
@@ -499,14 +546,17 @@ class BootstrapSlotReuseTests(unittest.TestCase):
         result = self.outputs['python-unsafe-unwind']
         self.assertEqual(result.returncode, 1)
         self.assertEqual(result.stdout, CASES[0][0]+'\n')
-        self.assertIn('值不是函数', result.stderr)
+        # Argument storage can change which value overwrites the live callee
+        # slot: a non-function, or the one-argument inner function 等.
+        # Require this specific first-case corruption, not any runtime failure.
+        self.assertRegex(result.stderr, r'值不是函数|函数「等」需要 1 个位置实参，收到 3 个')
         self.assertTrue(gc_zero(result.stderr), result.stderr)
 
     def test_stage3_unsafe_unwind_reset_is_rejected(self):
         result = self.outputs['stage3-unsafe-unwind']
         self.assertEqual(result.returncode, 1)
         self.assertEqual(result.stdout, CASES[0][0]+'\n')
-        self.assertIn('值不是函数', result.stderr)
+        self.assertRegex(result.stderr, r'值不是函数|函数「等」需要 1 个位置实参，收到 3 个')
         self.assertTrue(gc_zero(result.stderr), result.stderr)
 
 

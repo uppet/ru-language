@@ -10,6 +10,10 @@ typedef struct RuLLVMFrame {
     Val values[];
 } RuLLVMFrame;
 static RuLLVMFrame *ru_llvm_active_frames;
+/* This host also tracks scalar writes for its reset protocol. Keep that
+ * stronger bookkeeping when the ordinary emitter supplies a static root map. */
+void rul_frame_roots(void *opaque,int32_t low,int32_t high)
+{ (void)opaque;(void)low;(void)high; }
 static RuFunction *rul_function_descriptor(int32_t id);
 static RuClass *rul_class_descriptor(int32_t id);
 static Val rul_module_import(int32_t id);
@@ -33,12 +37,16 @@ static void rul_put(void *out,Val value)
      * retain normal ownership, and do not belong to a temporary frame. */
     v_drop(*(Val *)out);*(Val *)out=value;
 }
-void *rul_frame_new(int32_t count)
+static void rul_init_put(void *out,Val value) { rul_put(out,value); }
+__attribute__((always_inline)) uint64_t rul_frame_size(int32_t count)
 {
-    RuLLVMFrame *frame;size_t i;
-    if(count<0||(size_t)count>(SIZE_MAX-sizeof(*frame))/(sizeof(Val)+sizeof(size_t)+1))
+    if(count<0||(size_t)count>(SIZE_MAX-sizeof(RuLLVMFrame))/(sizeof(Val)+sizeof(size_t)+1))
         ru_fail(0,"LLVM 临时值过多");
-    frame=ru_scratch_alloc(sizeof(*frame)+(size_t)count*(sizeof(Val)+sizeof(size_t)+1),0);
+    return sizeof(RuLLVMFrame)+(size_t)count*(sizeof(Val)+sizeof(size_t)+1);
+}
+__attribute__((always_inline)) void rul_frame_init(void *opaque,int32_t count)
+{
+    RuLLVMFrame *frame=opaque;size_t i;
     frame->count=(size_t)count;frame->active_count=0;
     frame->active=(size_t *)(frame->values+count);
     frame->written=(unsigned char *)(frame->active+count);
@@ -46,7 +54,12 @@ void *rul_frame_new(int32_t count)
     for(i=0;i<(size_t)count;++i)frame->values[i]=v_null();
     frame->previous=ru_llvm_active_frames;frame->next=NULL;
     if(ru_llvm_active_frames)ru_llvm_active_frames->next=frame;
-    ru_llvm_active_frames=frame;return frame;
+    ru_llvm_active_frames=frame;
+}
+void *rul_frame_new(int32_t count)
+{
+    void *frame=ru_scratch_alloc((size_t)rul_frame_size(count),0);
+    rul_frame_init(frame,count);return frame;
 }
 void *rul_slot(void *opaque,int32_t index)
 {
@@ -75,12 +88,32 @@ void rul_clear_count(void *opaque,int32_t count)
     }
     frame->active_count=kept;
 }
-void rul_frame_free(void *opaque)
+void rul_frame_drop(void *opaque)
 {
     RuLLVMFrame *frame=opaque;
     rul_clear(frame);
     if(frame->next)frame->next->previous=frame->previous;
     else ru_llvm_active_frames=frame->previous;
     if(frame->previous)frame->previous->next=frame->next;
-    ru_scratch_free(frame);
 }
+void rul_frame_free(void *opaque)
+{
+    rul_frame_drop(opaque);ru_scratch_free(opaque);
+}
+
+/* Match the ordinary emitter without weakening the host's written registry. */
+__attribute__((always_inline)) uint64_t rul_local_frame_size(int32_t count)
+{ return rul_frame_size(count); }
+__attribute__((always_inline)) void rul_local_frame_init(void *opaque,int32_t count)
+{ rul_frame_init(opaque,count); }
+__attribute__((always_inline)) void rul_local_frame_roots(void *opaque,int32_t low,int32_t high)
+{ rul_frame_roots(opaque,low,high); }
+__attribute__((always_inline)) void *rul_local_slot(void *opaque,int32_t index,void *storage)
+{ (void)storage;return rul_slot(opaque,index); }
+void rul_local_clear_count(void *opaque,int32_t count) { rul_clear_count(opaque,count); }
+/* Even an empty static mask must reset the host's dynamic written registry. */
+void rul_local_clear_mask(void *opaque,int32_t count,int32_t low,int32_t high)
+{ (void)low;(void)high;rul_clear_count(opaque,count); }
+
+void rul_local_clear(void *opaque) { rul_clear(opaque); }
+void rul_local_frame_drop(void *opaque) { rul_frame_drop(opaque); }

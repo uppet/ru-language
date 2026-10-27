@@ -1,6 +1,6 @@
 # 如言编译器自编译与固定点验收
 
-`bootstrap/compiler.ru` 以如言实现词法、递归下降／Pratt 解析、语义准备、依赖读取、直接 LLVM IR 发射和运行时描述符生成。它使用现有动态值／GC 运行时的私有 ABI v1，如程序正文直接生成 LLVM；生成的少量 C 只承载描述符、模块缓存与聚合调用桥。
+`bootstrap/compiler.ru` 以如言实现词法、递归下降／Pratt 解析、语义准备、依赖读取、直接 LLVM IR 发射和运行时描述符生成。它使用现有动态值／GC 运行时的私有 ABI v1，如程序正文直接生成 LLVM；生成的少量 C 只承载描述符、模块缓存与运行时接入。普通函数描述符直接指向 LLVM 的指针接口入口，不再逐函数生成聚合调用适配桥。
 
 这是独立的实验编译前端。常规 `ru build` 仍使用完整的 Python 前端；首次自编译范围与完整语言工具链的替换分开验收。LLVM 仍需外部工具，构建驱动 `tools/bootstrap.py` 仍用 Python 准备固定运行时、调用原生如言编译器和 LLVM、检查路径并发布产物。后续代的驱动不调用 Python 的如词法／语法分析器、模块加载器或代码生成器。
 
@@ -75,6 +75,7 @@ python3 -m unittest discover -s tests -p test_prepare_workspace.py -v
 python3 -m unittest discover -s tests -p test_llvm.py -v
 python3 -m unittest discover -s tests -p test_bootstrap_verifier.py -v
 python3 -m unittest discover -s tests -p test_bootstrap.py -v
+python3 -m unittest discover -s tests -p test_scalar_lowering.py -v
 ```
 
 自编译回归实际生成三代机器码，三代各自运行同套 35 项检查（共 105 项），并验证核心语义、继承和方法闭包、作用域闭包、模块缓存、Unicode 路径／入口、二进制与独立 IR。测试明确禁用后续驱动调用 Python 前端；另只复制原生编译器与独立测试源到空目录，清空 PATH，在该目录发射 IR，并交给真实 assembler 验证。仅运行 unittest 不会持久保存完整验收报告；交付验收使用上面的 `verify`。
@@ -82,6 +83,8 @@ python3 -m unittest discover -s tests -p test_bootstrap.py -v
 完整证据及平台结果见 [M4 逐代验收](bootstrap-m4-validation.md) 与 [M3 首次自编译历史记录](bootstrap-validation.md)。生成机器码和达到自身 IR 固定点不表示已经对齐 Dart AOT 性能；M1 的原始性能数据仍保留，未重新包装为本阶段的性能达标证据。
 
 普通LLVM路径的参数槽、临时值清理、局部绑定缓存及目标属性优化，另经 [2026-10-24 语法着色六轮对照](bootstrap-llvm-syntax-performance.md) 验收。该报告明确固定原生适配层的边界，并提供同源C→LLVM对照、逐轮数据和复现脚本。
+
+后续数值 SSA、条件分支、小帧根位图和生命周期标记在 Python LLVM 与如言 LLVM 发射器中保持一致，细节见 [私有 ABI 与优化边界](llvm-aot.md#编译路径与私有-abi)。共享运行时和可迁移的 C 发射优化也进入 C 对照端。历史性能报告不能代替修改后的重新测量；`tools/benchmark_bootstrap_syntax.py` 按预先固定的六对交替顺序保留全部输出、失败和超时，不补跑或以某端胜出作为正确性门限。
 
 ## Windows 原生 FFI 显式构建
 

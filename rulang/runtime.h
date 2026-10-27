@@ -35,7 +35,12 @@ typedef struct { RuHeap gc; Val first, second; } RuPair;
 typedef struct { RuHeap gc; size_t len, capacity; Val *items; } RuArray;
 typedef struct { RuHeap gc; RuClass *klass; size_t len; Val *fields; } RuObject;
 typedef Val (*RuCode)(Env *, Val, int, Val *);
+/* RU_LLVM */
+typedef void (*RuDirectCode)(void *, void *, int32_t, void *, void *);
+typedef struct { const char *name; size_t count; const char **names, **types; RuCode code; int procedure; RuDirectCode direct; } RuFunction;
+/* RU_ELSE_LLVM */
 typedef struct { const char *name; size_t count; const char **names, **types; RuCode code; int procedure; } RuFunction;
+/* RU_END_LLVM */
 typedef struct { RuHeap gc; RuFunction *function; Env *global, *closure; Val self; } RuCallable;
 struct RuClass { const char *name; RuClass *parent; Env *global; size_t count; const char **names, **types; size_t methods_count; RuFunction **methods; };
 typedef struct RuBinding { char *name; Val value; int reserved; struct RuBinding *next; } RuBinding;
@@ -1212,7 +1217,14 @@ static Val v_call(Val callable,size_t argc,const char **keys,Val *args,int line)
 /* RU_END_FEATURE */
         if(!v_is_type(bound[i],fn->types[i],f->global))ru_fail(line,"函数「%s」的实参「%s」须为%s，实际收到%s%s",fn->name,fn->names[i],fn->types[i],v_type_name(bound[i]),v_type_detail(bound[i],fn->types[i],f->global,line));
     }
+/* RU_LLVM */
+    ru_enter(line);result=v_null();
+    if(fn->direct) fn->direct(f->closure,&f->self,line,bound,&result);
+    else result=fn->code(f->closure,f->self,line,bound);
+    ru_leave();if(bound!=args)ru_scratch_free(bound);return result;
+/* RU_ELSE_LLVM */
     ru_enter(line);result=fn->code(f->closure,f->self,line,bound);ru_leave();if(bound!=args)ru_scratch_free(bound);return result;
+/* RU_END_LLVM */
 }
 /* Look up protocol methods without treating fields as methods. */
 static RuFunction *ru_protocol(Val object, const char *name, Env **owner)

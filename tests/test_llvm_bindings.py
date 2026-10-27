@@ -85,7 +85,7 @@ class LLVMBindingExecutionTests(unittest.TestCase):
                                 patch.object(LLVMCompiler, 'compile', side_effect=AssertionError('host codegen')):
                             compile_native(native, entry, binary, TOOLCHAIN, keep_frontend=True)
                         ir = Path(str(binary)+'.frontend.ll').read_text(encoding='utf-8')
-                    self.assertIn('call void @rul_get_cached(', ir)
+                    self.assertIn('call void @rul_init_get_cached(', ir)
                     self.assertIn('call void @rul_bind_cached(', ir)
                     result = subprocess.run([str(binary)], capture_output=True, text=True,
                         encoding='utf-8', timeout=45, env={**os.environ,

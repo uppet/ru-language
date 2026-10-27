@@ -143,7 +143,7 @@ class BackendNativeCallbackTests(unittest.TestCase):
                     for symbol in selection['ordinary_functions'].values():
                         match = re.search(r'define void @'+re.escape(symbol)+r'\(i8\* %global.*?\n\}',ir,re.S)
                         self.assertIsNotNone(match,'ordinary LLVM body missing: '+symbol)
-                        self.assertIn('@rul_frame_new(',match[0])
+                        self.assertRegex(match[0],r'@rul_(?:local_)?frame_(?:new|init)\(')
                     self.assertEqual(len(re.findall(r'^define void @ru_mi_kernel_',ir,re.M)),1)
                     modified = probe_runtime(runtime) if instrumented else runtime
                     probe.update(original_runtime_sha256=sha(runtime.encode()),executed_runtime_sha256=sha(modified.encode()),

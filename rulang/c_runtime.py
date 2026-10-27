@@ -14,6 +14,7 @@ from .frontend import Node
 # Markers describe closed sets of statically spelled Ru member names. Unknown
 # receiver types are safe: all implementations of a used name remain eligible.
 _MAP_REGION = re.compile(r'/\* RU_MAP \*/\n(.*?)/\* RU_END_MAP \*/\n', re.S)
+_LLVM_REGION = re.compile(r'/\* RU_LLVM \*/\n(.*?)/\* RU_ELSE_LLVM \*/\n(.*?)/\* RU_END_LLVM \*/\n', re.S)
 _FEATURE = re.compile(r'/\* RU_FEATURE: (\w+) \*/\n(.*?)/\* RU_ELSE_FEATURE \*/\n(.*?)/\* RU_END_FEATURE \*/\n', re.S)
 _REGION = re.compile(r'/\* RU_MEMBERS: ([^\n*]+) \*/\n(.*?)/\* RU_END_MEMBERS \*/\n', re.S)
 _C_NONCODE = re.compile(r'/\*.*?\*/|//[^\n]*|"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'', re.S)
@@ -161,7 +162,7 @@ static int ru_io_member(Val receiver, const char *name, size_t argc, const char 
 '''
 
 
-def runtime_source(modules, generated, full=False, native_plan=None):
+def runtime_source(modules, generated, full=False, native_plan=None, *, llvm=False):
     directory = Path(__file__).parent
     headers = [(directory / name).read_text(encoding='utf-8')
                for name in ('runtime.h', 'io_runtime.h', 'contest_runtime.h', 'practical_runtime.h')]
@@ -171,6 +172,9 @@ def runtime_source(modules, generated, full=False, native_plan=None):
         headers[1] = integrate_io(headers[1])
         headers.append((directory / 'native_runtime.h').read_text(encoding='utf-8'))
         headers.append(native_plan.emit_c())
+    # The C product keeps its original RuCode ABI. LLVM descriptors optionally
+    # carry a direct pointer entry, with the same common v_call checks.
+    headers = [_LLVM_REGION.sub(lambda m: m[1] if llvm else m[2], header) for header in headers]
     if full:
         source = _FEATURE.sub(lambda m: m[2], _MAP_REGION.sub(lambda m: m[1], '\n'.join(headers)))
         return re.sub(r'/\* RU_(?:MEMBERS: [^*]*|OPERATORS: [^*]*|END_MEMBERS) \*/\n', '', source)
