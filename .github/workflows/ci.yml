@@ -128,13 +128,17 @@ jobs:
           set -e
           mkdir -p /c/sdl-sdk
           cd /c/sdl-sdk
-          curl -fsSL -o SDL2.zip https://github.com/libsdl-org/SDL/releases/download/release-2.30.12/SDL2-2.30.12-win32-x64.zip
-          curl -fsSL -o SDL2_ttf.zip https://github.com/libsdl-org/SDL_ttf/releases/download/release-2.24.0/SDL2_ttf-2.24.0-win32-x64.zip
-          curl -fsSL -o SDL2_image.zip https://github.com/libsdl-org/SDL_image/releases/download/release-2.8.8/SDL2_image-2.8.8-win32-x64.zip
-          curl -fsSL -o SDL2_mixer.zip https://github.com/libsdl-org/SDL_mixer/releases/download/release-2.8.1/SDL2_mixer-2.8.1-win32-x64.zip
+          curl -fsSL -o SDL2.zip https://github.com/libsdl-org/SDL/releases/download/release-2.30.12/SDL2-devel-2.30.12-mingw.zip
+          curl -fsSL -o SDL2_ttf.zip https://github.com/libsdl-org/SDL_ttf/releases/download/release-2.24.0/SDL2_ttf-devel-2.24.0-mingw.zip
+          curl -fsSL -o SDL2_image.zip https://github.com/libsdl-org/SDL_image/releases/download/release-2.8.8/SDL2_image-devel-2.8.8-mingw.zip
+          curl -fsSL -o SDL2_mixer.zip https://github.com/libsdl-org/SDL_mixer/releases/download/release-2.8.1/SDL2_mixer-devel-2.8.1-mingw.zip
           for f in SDL2 SDL2_ttf SDL2_image SDL2_mixer; do unzip -q -o $f.zip; done
-          # 官方 zip 解出目录名
-          ls -d SDL2-2.30.12 SDL2_ttf-2.24.0 SDL2_image-2.8.8 SDL2_mixer-2.8.1
+          # 官方 devel zip 根目录即版本号目录；写 GITHUB_ENV 供后续步骤
+          echo "SDK_SDL2=$(echo $PWD/SDL2-2*/)" >> "$GITHUB_ENV"
+          echo "SDK_TTF=$(echo $PWD/SDL2_ttf-*/)" >> "$GITHUB_ENV"
+          echo "SDK_IMG=$(echo $PWD/SDL2_image-*/)" >> "$GITHUB_ENV"
+          echo "SDK_MIX=$(echo $PWD/SDL2_mixer-*/)" >> "$GITHUB_ENV"
+          ls -d "$SDK_SDL2" "$SDK_TTF" "$SDK_IMG" "$SDK_MIX" 2>/dev/null || cat "$GITHUB_ENV" | grep SDK_
       - name: Build player.exe (RU_SDL env injection, release 无 smoke 宏)
         shell: bash
         env:
@@ -144,9 +148,8 @@ jobs:
           # 发行 exe 严禁 RU_HEADLESS_SMOKE：smoke 构建会隐藏窗口并
           # 在 N 帧后静默退出（2026-10-27 真机踩过：看似闪退，实为自毁）
           export PATH="/c/msys64/ucrt64/bin:$PATH"
-          S=/c/sdl-sdk
-          export RU_SDL_CFLAGS="-I$S/SDL2-2.30.12/x86_64-w64-mingw32/include/SDL2 -I$S/SDL2_ttf-2.24.0/x86_64-w64-mingw32/include/SDL2 -I$S/SDL2_image-2.8.8/x86_64-w64-mingw32/include/SDL2 -I$S/SDL2_mixer-2.8.1/x86_64-w64-mingw32/include/SDL2"
-          export RU_SDL_LIBS="-L$S/SDL2-2.30.12/x86_64-w64-mingw32/lib -L$S/SDL2_ttf-2.24.0/x86_64-w64-mingw32/lib -L$S/SDL2_image-2.8.8/x86_64-w64-mingw32/lib -L$S/SDL2_mixer-2.8.1/x86_64-w64-mingw32/lib -lSDL2 -lSDL2_ttf -lSDL2_image -lSDL2_mixer"
+          export RU_SDL_CFLAGS="-I$SDK_SDL2/x86_64-w64-mingw32/include/SDL2 -I$SDK_TTF/x86_64-w64-mingw32/include/SDL2 -I$SDK_IMG/x86_64-w64-mingw32/include/SDL2 -I$SDK_MIX/x86_64-w64-mingw32/include/SDL2"
+          export RU_SDL_LIBS="-L$SDK_SDL2/x86_64-w64-mingw32/lib -L$SDK_TTF/x86_64-w64-mingw32/lib -L$SDK_IMG/x86_64-w64-mingw32/lib -L$SDK_MIX/x86_64-w64-mingw32/lib -lSDL2 -lSDL2_ttf -lSDL2_image -lSDL2_mixer"
           CC=gcc python -m rulang build examples/ruui-player.ru --target sdl -o player.exe
           # 发行防呆：smoke 自毁路径的标记串不得出现在二进制里
           # （#ifdef 文本总在生成的 .c 里，查二进制才有效）
@@ -158,10 +161,10 @@ jobs:
         run: |
           mkdir -p dist/examples/player/music
           cp player.exe dist/
-          cp /c/sdl-sdk/SDL2-2.30.12/x86_64-w64-mingw32/bin/SDL2.dll \
-             /c/sdl-sdk/SDL2_ttf-2.24.0/x86_64-w64-mingw32/bin/SDL2_ttf.dll \
-             /c/sdl-sdk/SDL2_image-2.8.8/x86_64-w64-mingw32/bin/SDL2_image.dll \
-             /c/sdl-sdk/SDL2_mixer-2.8.1/x86_64-w64-mingw32/bin/SDL2_mixer.dll dist/
+          cp "$SDK_SDL2/x86_64-w64-mingw32/bin/SDL2.dll" \
+             "$SDK_TTF/x86_64-w64-mingw32/bin/SDL2_ttf.dll" \
+             "$SDK_IMG/x86_64-w64-mingw32/bin/SDL2_image.dll" \
+             "$SDK_MIX/x86_64-w64-mingw32/bin/SDL2_mixer.dll" dist/
           cp examples/player/music/* dist/examples/player/music/ 2>/dev/null || true
           cat > dist/用法.txt <<'EOF'
           如UI 播放器 v3（player-ruaudio 分支，Windows x64）
@@ -212,11 +215,16 @@ jobs:
           set -e
           mkdir -p /c/sdl-sdk
           cd /c/sdl-sdk
-          curl -fsSL -o SDL2.zip https://github.com/libsdl-org/SDL/releases/download/release-2.30.12/SDL2-2.30.12-win32-x64.zip
-          curl -fsSL -o SDL2_ttf.zip https://github.com/libsdl-org/SDL_ttf/releases/download/release-2.24.0/SDL2_ttf-2.24.0-win32-x64.zip
-          curl -fsSL -o SDL2_image.zip https://github.com/libsdl-org/SDL_image/releases/download/release-2.8.8/SDL2_image-2.8.8-win32-x64.zip
-          curl -fsSL -o SDL2_mixer.zip https://github.com/libsdl-org/SDL_mixer/releases/download/release-2.8.1/SDL2_mixer-2.8.1-win32-x64.zip
+          curl -fsSL -o SDL2.zip https://github.com/libsdl-org/SDL/releases/download/release-2.30.12/SDL2-devel-2.30.12-mingw.zip
+          curl -fsSL -o SDL2_ttf.zip https://github.com/libsdl-org/SDL_ttf/releases/download/release-2.24.0/SDL2_ttf-devel-2.24.0-mingw.zip
+          curl -fsSL -o SDL2_image.zip https://github.com/libsdl-org/SDL_image/releases/download/release-2.8.8/SDL2_image-devel-2.8.8-mingw.zip
+          curl -fsSL -o SDL2_mixer.zip https://github.com/libsdl-org/SDL_mixer/releases/download/release-2.8.1/SDL2_mixer-devel-2.8.1-mingw.zip
           for f in SDL2 SDL2_ttf SDL2_image SDL2_mixer; do unzip -q -o $f.zip; done
+          # 官方 devel zip 根目录即版本号目录；写 GITHUB_ENV 供后续步骤
+          echo "SDK_SDL2=$(echo $PWD/SDL2-2*/)" >> "$GITHUB_ENV"
+          echo "SDK_TTF=$(echo $PWD/SDL2_ttf-*/)" >> "$GITHUB_ENV"
+          echo "SDK_IMG=$(echo $PWD/SDL2_image-*/)" >> "$GITHUB_ENV"
+          echo "SDK_MIX=$(echo $PWD/SDL2_mixer-*/)" >> "$GITHUB_ENV"
       - name: Build player.exe (native Windows gcc)
         shell: bash
         env:
@@ -224,10 +232,9 @@ jobs:
         run: |
           # ucrt64 置顶：gcc 取 MSYS2 的，避开镜像自带 Strawberry 工具链
           export PATH="/c/msys64/ucrt64/bin:$PATH"
-          S=/c/sdl-sdk
           export RU_SDL_WITH_MIXER=1
-          export RU_SDL_CFLAGS="-I$S/SDL2-2.30.12/x86_64-w64-mingw32/include/SDL2 -I$S/SDL2_ttf-2.24.0/x86_64-w64-mingw32/include/SDL2 -I$S/SDL2_image-2.8.8/x86_64-w64-mingw32/include/SDL2 -I$S/SDL2_mixer-2.8.1/x86_64-w64-mingw32/include/SDL2"
-          export RU_SDL_LIBS="-L$S/SDL2-2.30.12/x86_64-w64-mingw32/lib -L$S/SDL2_ttf-2.24.0/x86_64-w64-mingw32/lib -L$S/SDL2_image-2.8.8/x86_64-w64-mingw32/lib -L$S/SDL2_mixer-2.8.1/x86_64-w64-mingw32/lib -lSDL2 -lSDL2_ttf -lSDL2_image -lSDL2_mixer"
+          export RU_SDL_CFLAGS="-I$SDK_SDL2/x86_64-w64-mingw32/include/SDL2 -I$SDK_TTF/x86_64-w64-mingw32/include/SDL2 -I$SDK_IMG/x86_64-w64-mingw32/include/SDL2 -I$SDK_MIX/x86_64-w64-mingw32/include/SDL2"
+          export RU_SDL_LIBS="-L$SDK_SDL2/x86_64-w64-mingw32/lib -L$SDK_TTF/x86_64-w64-mingw32/lib -L$SDK_IMG/x86_64-w64-mingw32/lib -L$SDK_MIX/x86_64-w64-mingw32/lib -lSDL2 -lSDL2_ttf -lSDL2_image -lSDL2_mixer"
           RU_HEADLESS_SMOKE=1 CC=gcc python -m rulang build examples/ruui-player.ru --target sdl -o player.exe
       - name: Native headless smoke
         shell: bash
