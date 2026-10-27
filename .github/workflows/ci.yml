@@ -146,7 +146,7 @@ jobs:
           echo "SDK_MIX=$MIX_DIR" >> "$GITHUB_ENV"
           grep SDK_ "$GITHUB_ENV"
           # 探针：同 flags 编一个含全部头的小文件，挂了就地报错
-          printf '#include <SDL.h>\n#include <SDL_ttf.h>\n#include <SDL_image.h>\n#include <SDL_mixer.h>\nint main(void){return 0;}\n' > probe.c
+          printf '#include <SDL.h>\n#include <SDL_ttf.h>\n#include <SDL_image.h>\n#include <SDL_mixer.h>\nint main(int argc, char **argv){(void)argc;(void)argv;return 0;}\n' > probe.c
           C="-I$SDL2_DIR/x86_64-w64-mingw32/include/SDL2 -I$TTF_DIR/x86_64-w64-mingw32/include/SDL2 -I$IMG_DIR/x86_64-w64-mingw32/include/SDL2 -I$MIX_DIR/x86_64-w64-mingw32/include/SDL2"
           PATH="/c/msys64/ucrt64/bin:$PATH" sh -c "gcc $C -c probe.c -o probe.o" && echo PROBE-OK || { echo PROBE-FAIL; exit 1; }
       - name: Build player.exe (RU_SDL env injection, release 无 smoke 宏)
