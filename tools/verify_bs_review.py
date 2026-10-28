@@ -48,7 +48,9 @@ def core(out, names=None, label='new-suites'):
  require(stage.is_file(),'missing verified stage3')
  os.environ['RU_FRAME_TEST_COMPILER']=str(stage.resolve())
  os.environ['RU_BINDING_TEST_COMPILER']=str(stage.resolve())
- names=names or ['test_llvm_bindings','test_llvm_frames','test_llvm_target_attributes','test_bs_review']
+ os.environ['RU_SCALAR_TEST_COMPILER']=str(stage.resolve())
+ names=names or ['test_llvm_bindings','test_llvm_frames','test_llvm_target_attributes','test_bs_review',
+                       'test_c_bindings','test_llvm_lowering','test_scalar_lowering']
  suite=unittest.defaultTestLoader.loadTestsFromNames(names)
  def ids(tests):
   for test in tests:
@@ -61,7 +63,7 @@ def core(out, names=None, label='new-suites'):
    executed.append(test.id());super().startTest(test)
  with (out/(label+'.log')).open('w',encoding='utf-8') as log:
   result=unittest.TextTestRunner(stream=log,verbosity=2,resultclass=Result).run(suite)
- report={'tests_run':result.testsRun,'skipped':result.skipped,'failures':[(str(t),s) for t,s in result.failures],
+ report={'tests_run':result.testsRun,'skipped':[(str(t),reason) for t,reason in result.skipped],'failures':[(str(t),s) for t,s in result.failures],
   'errors':[(str(t),s) for t,s in result.errors],'planned':planned,'executed':executed,
   'stage3_sha256':sha(stage),'source_sha256':source_identity()}
  save(out/(label+'.json'),report)

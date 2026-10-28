@@ -1,6 +1,7 @@
 """Review evidence must identify Git paths without quoting or whitespace loss."""
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -11,6 +12,42 @@ from unittest.mock import patch
 from tools.verify_bs_review import archived_files, source_identity, tracked_files
 from tools import verify_bs_review as review
 from tools import benchmark_bootstrap_syntax as benchmark
+
+
+class CoreSuiteRegistrationTests(unittest.TestCase):
+    def test_new_suites_use_verified_stage3_and_skips_fail_closed(self):
+        for skipped in (False, True):
+            with self.subTest(skipped=skipped), tempfile.TemporaryDirectory() as temporary:
+                out = Path(temporary)
+                stage = out/('stage3.exe' if os.name == 'nt' else 'stage3')
+                stage.write_bytes(b'verified-stage3-fixture')
+                parent = self
+                class Probe(unittest.TestCase):
+                    def runTest(self):
+                        for name in ('RU_FRAME_TEST_COMPILER', 'RU_BINDING_TEST_COMPILER',
+                                     'RU_SCALAR_TEST_COMPILER'):
+                            parent.assertEqual(os.environ[name], str(stage.resolve()))
+                        if skipped:
+                            self.skipTest('deliberate missing toolchain')
+                def load(names):
+                    self.assertEqual(set(names), {
+                        'test_llvm_bindings', 'test_llvm_frames', 'test_llvm_target_attributes',
+                        'test_bs_review', 'test_c_bindings', 'test_llvm_lowering',
+                        'test_scalar_lowering'})
+                    self.assertEqual(len(names), len(set(names)))
+                    return unittest.TestSuite([Probe()])
+                with patch.object(review.unittest.defaultTestLoader, 'loadTestsFromNames', side_effect=load), \
+                     patch.object(review, 'source_identity', return_value={}), \
+                     patch.dict(os.environ), patch('builtins.print'):
+                    if skipped:
+                        with self.assertRaisesRegex(RuntimeError, 'without skips'):
+                            review.core(out)
+                    else:
+                        review.core(out)
+                report = json.loads((out/'new-suites.json').read_text())
+                self.assertEqual(report['planned'], report['executed'])
+                self.assertEqual(report['tests_run'], len(report['planned']))
+                self.assertEqual(bool(report['skipped']), skipped)
 
 
 class BenchmarkAdapterTests(unittest.TestCase):
