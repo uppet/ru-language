@@ -177,7 +177,7 @@ jobs:
              "$SDK_MIX/x86_64-w64-mingw32/bin/SDL2_mixer.dll" dist/
           cp examples/player/music/* dist/examples/player/music/ 2>/dev/null || true
           cat > dist/用法.txt <<'EOF'
-          如UI 播放器 v3.2（player-ruaudio 分支，Windows x64）
+          如UI 播放器 v4 网易云暗色主题（player-ruaudio 分支，Windows x64）
 
           用法：
             1) 解压到任意目录
@@ -194,6 +194,13 @@ jobs:
             - 首次播放生成波形缓存，mp3/ogg 大文件可能等一两秒
             - 字体用系统 C:/Windows/Fonts/msyh.ttc；可用环境变量 RU_FONT 指定
             - 中文路径/曲名 UTF-8 安全（宿主内全部宽字符 API）
+
+          v4 更新（网易云暗色主题）：
+            - 全局面板三层深灰 + 品牌红 #EC4141 点缀
+            - 顶栏：品牌行「如声 · 本地音乐 · N 首」+ 分段控件
+              （列表循环 / 单曲循环 / 刷新曲库）
+            - 底栏：走带 ◀◀ ▶ ▶▶ 红色高亮 + 曲名时间 + 进度/音量条
+            - 空闲时时间不再走表；未播放时曲行不显示 ▶ 误标记
 
           v3.2 修复：
             - 滚动列表之外的所有内容（时间、进度条、按钮）此前不可见——
