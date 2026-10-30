@@ -177,18 +177,19 @@ jobs:
              "$SDK_MIX/x86_64-w64-mingw32/bin/SDL2_mixer.dll" dist/
           cp examples/player/music/* dist/examples/player/music/ 2>/dev/null || true
           cat > dist/用法.txt <<'EOF'
-          如UI 播放器 v5 移动四屏（player-ruaudio 分支，Windows x64）
+          如UI 播放器 v5.1 移动四屏 + 播放队列（player-ruaudio 分支，Windows x64）
 
           用法：
             1) 解压到任意目录
             2) 把音乐放进 examples/player/music/（支持 .wav / .mp3 / .ogg）
             3) 双击 player.exe（保持 exe 旁的目录结构；曲库按当前目录解析）
 
-          界面（竖屏 480x840，四屏 + 底部导航）：
+          界面（竖屏 480x840，四屏 + 队列 + 底部导航）：
             - 首页：问候 + 扩展名筛选条 + FEATURED 卡 + 推荐曲目
             - 搜索：输入框实时过滤 + 扩展名筛选 + 结果计数
             - 曲库：全部歌曲列表，点击播放
-            - 播放中：波形横幅 + 进度条拖动定位 + 走带控制 + 音量
+            - 播放中：唱盘 + 进度条拖动定位 + 走带控制 + 音量
+            - 队列（播放中 ≡ 进入）：播放队列，当前曲目薄荷绿高亮，点击跳播
             - 任意页底部迷你播放条（曲名/时间/控制），点击进播放中
 
           说明：
