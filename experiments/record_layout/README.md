@@ -39,6 +39,7 @@ python experiments/record_layout/benchmark.py --count 100000 --scans 4 --repeats
 复现（仓库根目录）：
 
 ```sh
+mkdir -p experiments/record_layout/evidence
 python experiments/record_layout/sort_verify.py > experiments/record_layout/evidence/sort-correctness.json
 python experiments/record_layout/sort_benchmark.py --count 12000 --repeats 3 --directory /tmp/ru-record-sort-bench
 ```
