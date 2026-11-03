@@ -27,6 +27,14 @@ typedef struct Env Env;
 typedef struct Val { int kind; double n; RuString *s; RuHeap *heap; RuClass *klass; Env *module; } Val;
 struct RuHeap { size_t roots; unsigned mark; int kind; RuHeap *next; };
 struct RuString { RuHeap gc; size_t len; char data[]; };
+/* RU_FEATURE: string_index */
+/* Only long immutable strings carry a trailing index, after data[len]'s NUL.
+ * Short strings keep their original allocation size. The footer need not be
+ * aligned: all access uses memcpy, never a cast to a size_t/struct pointer. */
+#define RU_STRING_INDEX_MIN_BYTES 1024
+typedef struct { size_t chars, cursor_char, cursor_byte; } RuStringIndex;
+/* RU_ELSE_FEATURE */
+/* RU_END_FEATURE */
 /* RU_MAP */
 typedef struct { Val key, value; uint64_t hash; unsigned state; } RuMapEntry;
 typedef struct { RuHeap gc; size_t len, used, capacity; uint64_t version; RuMapEntry *entries; } RuMap;
@@ -270,6 +278,33 @@ static RuHeap *ru_new_heap(size_t size, int kind, int line)
     h->kind=kind; h->roots=1; h->next=ru_heap; ru_heap=h; ++ru_live;
     return h;
 }
+/* RU_FEATURE: string_index */
+static size_t ru_string_allocation_size(size_t len,int line)
+{
+    size_t extra=len>=RU_STRING_INDEX_MIN_BYTES?sizeof(RuStringIndex):0;
+    if(len>SIZE_MAX-sizeof(RuString)-1-extra)ru_fail(line,"字符串过长");
+    return sizeof(RuString)+len+1+extra;
+}
+static RuStringIndex ru_string_index_read(Val v)
+{
+    RuStringIndex index;
+    memcpy(&index,v.s->data+v.s->len+1,sizeof(index));return index;
+}
+static void ru_string_index_write(Val v,RuStringIndex index)
+{
+    memcpy(v.s->data+v.s->len+1,&index,sizeof(index));
+}
+static Val ru_string_alloc(size_t len, int line)
+{
+    Val v=v_null();
+    v.kind=RU_STR; v.heap=ru_new_heap(ru_string_allocation_size(len,line),RU_STR,line); v.s=(RuString *)v.heap;
+    v.s->len=len; v.s->data[len]=0;
+    if(len>=RU_STRING_INDEX_MIN_BYTES){
+        RuStringIndex index={SIZE_MAX,0,0};ru_string_index_write(v,index);
+    }
+    return v;
+}
+/* RU_ELSE_FEATURE */
 static Val ru_string_alloc(size_t len, int line)
 {
     Val v=v_null();
@@ -277,6 +312,7 @@ static Val ru_string_alloc(size_t len, int line)
     v.kind=RU_STR; v.heap=ru_new_heap(sizeof(RuString)+len+1,RU_STR,line); v.s=(RuString *)v.heap;
     v.s->len=len; v.s->data[len]=0; return v;
 }
+/* RU_END_FEATURE */
 static int ru_valid_utf8(const char *text, size_t length)
 {
     size_t i = 0, remaining;
@@ -849,8 +885,34 @@ static size_t ru_index(Val v,size_t max,int endpoint,int line)
     if(v.n>(double)max||(!endpoint&&v.n==(double)max))ru_fail(line,"索引越界");
     return (size_t)v.n;
 }
+/* RU_FEATURE: string_index */
+static size_t ru_utf8_len(Val v)
+{
+    size_t i,n=0;RuStringIndex index;
+    int indexed=v.s->len>=RU_STRING_INDEX_MIN_BYTES;
+    if(indexed){index=ru_string_index_read(v);if(index.chars!=SIZE_MAX)return index.chars;}
+    for(i=0;i<v.s->len;++i)if(((unsigned char)v.s->data[i]&0xc0)!=0x80)++n;
+    if(indexed){index.chars=n;ru_string_index_write(v,index);}return n;
+}
+static size_t ru_utf8_offset(Val v,size_t at)
+{
+    size_t i=0,n=0;RuStringIndex index;
+    int indexed=v.s->len>=RU_STRING_INDEX_MIN_BYTES;
+    if(indexed){
+        index=ru_string_index_read(v);
+        if(index.chars==v.s->len)return at<v.s->len?at:v.s->len;
+        if(at>=index.cursor_char){i=index.cursor_byte;n=index.cursor_char;}
+    }
+    for(;i<v.s->len;++i)if(((unsigned char)v.s->data[i]&0xc0)!=0x80){
+        if(n==at)break;
+        ++n;
+    }
+    if(indexed){index.cursor_char=n;index.cursor_byte=i;ru_string_index_write(v,index);}return i;
+}
+/* RU_ELSE_FEATURE */
 static size_t ru_utf8_len(Val v) {size_t i,n=0;for(i=0;i<v.s->len;++i)if(((unsigned char)v.s->data[i]&0xc0)!=0x80)++n;return n;}
 static size_t ru_utf8_offset(Val v,size_t at) {size_t i,n=0;for(i=0;i<v.s->len;++i)if(((unsigned char)v.s->data[i]&0xc0)!=0x80){if(n++==at)return i;}return v.s->len;}
+/* RU_END_FEATURE */
 static size_t v_length(Val v,int line)
 {
     if(v.kind==RU_STR)return ru_utf8_len(v);

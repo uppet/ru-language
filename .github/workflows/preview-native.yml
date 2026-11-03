@@ -3,6 +3,8 @@ name: Preview native toolchain acceptance
 on:
   push:
     branches: [feature/preview-native-toolchain-20261024, feature/native-ffi-integration-20261026, wip, bs]
+  # Native-library candidates need stage3/Windows evidence before wip merges.
+  pull_request:
   workflow_dispatch:
 
 permissions:

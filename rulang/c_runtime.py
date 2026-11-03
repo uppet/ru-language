@@ -214,6 +214,10 @@ static int ru_practical_member(Val receiver, const char *name, size_t argc,
     definitions = {m[1] for m in _FUNCTION.finditer(mask_noncode(preliminary))}
     panic = native_plan is not None or any(n.kind in ('panic', 'try') for n in walk_nodes(modules))
     features = {'type_detail': user_class or 'v_array' in definitions,
+                # Slice paths justify the footer helpers' source cost. Length
+                # and single-index-only programs retain their original runtime,
+                # including established standalone source-size/hash contracts.
+                'string_index': 'v_slice' in definitions,
                 'binding_cache': bool({'env_cget', 'env_cbind'} & definitions),
                 'callable': 'ru_enter' in definitions,
                 'panic': panic,

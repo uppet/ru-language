@@ -281,6 +281,30 @@ class LLVMExecutionTests(unittest.TestCase):
         self.assertEqual(result.returncode,0,result.stderr)
         self.assertEqual(result.stdout,'真\n真\n真\n真\n假\n假\n-1\n-0\n假\n真\n真\n4\n😀\n😀é\n9.00719925474099e+15\n假\n')
 
+    def test_string_cursor_shared_alias_forward_and_reverse(self):
+        source = """
+文 取 'a甲😀éé乙'. 别 取 文.
+显 文 其 量. 显 文[0:3]. 显 别[3:7].
+显 文[1:2]. 显 别[6]. 显 文[0]. 显 别[7:7].
+合 取 文+'尾'. 显 合 其 量. 显 合[6:8]. 显 文 其 量.
+"""
+        result = self.run_source(source, env={**os.environ, 'RU_GC_THRESHOLD': '1', 'RU_GC_STATS': '1'})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, '7\na甲😀\néé乙\n甲\n乙\na\n\n8\n乙尾\n7\n')
+        self.assertIn('RU_GC live=0', result.stderr)
+        # Cross the byte-length threshold so this exercises the optional index,
+        # not just the unchanged short-string path.
+        text = 'a甲😀éé乙' * 200
+        source = f"文 取 '{text}'. 别 取 文. 显 文 其 量.\n"
+        expected = str(len(text)) + '\n'
+        for start, stop in [(0, 199), (199, 999), (999, 1400), (2, 13), (1400, 1400), (0, 1400)]:
+            source += f'显 别[{start}:{stop}]. 显 文 其 量.\n'
+            expected += text[start:stop] + '\n' + str(len(text)) + '\n'
+        result = self.run_source(source, env={**os.environ, 'RU_GC_THRESHOLD': '1', 'RU_GC_STATS': '1'})
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, expected)
+        self.assertIn('RU_GC live=0', result.stderr)
+
     def test_closures_scopes_recursion_and_named_evaluation_order(self):
         source = """
 算 阶乘 值 为 数:

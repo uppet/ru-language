@@ -712,6 +712,34 @@ def _member(context, owner, node, obj, name, bind):
         if name == '地址':
             bind([])
             return NativeScalar(PRIMITIVES['指针'], obj.address, (obj,))
+        if name in ('读字节', '写字节', '复制到'):
+            # Do not permit byte writes through structured storage: that would
+            # bypass pointer-field anchors and typed view ownership.
+            if obj.typ is not None or obj.parent is not None:
+                _fault('字节操作只支持无结构的拥有缓冲')
+            if name == '读字节':
+                b = bind(['位'])
+                offset = _bounded(b['位'], 0, obj.size - 1, '字节位置')
+                return float(C.c_ubyte.from_address(obj.address + offset).value)
+            if name == '写字节':
+                b = bind(['位', '值'])
+                offset = _bounded(b['位'], 0, obj.size - 1, '字节位置')
+                value = _bounded(b['值'], 0, 255, '字节值')
+                obj.check_mutation()
+                C.c_ubyte.from_address(obj.address + offset).value = value
+                return None
+            b = bind(['目标', '源位', '目标位', '个数'])
+            target = _expect(b['目标'], NativeMemory, '字节复制目标需要拥有缓冲')
+            target.check()
+            if target.typ is not None or target.parent is not None:
+                _fault('字节操作只支持无结构的拥有缓冲')
+            source_at = _bounded(b['源位'], 0, obj.size, '复制源位置')
+            target_at = _bounded(b['目标位'], 0, target.size, '复制目标位置')
+            count = _bounded(b['个数'], 0, min(obj.size - source_at, target.size - target_at), '复制个数')
+            target.check_mutation()
+            bulk(count)
+            C.memmove(target.address + target_at, obj.address + source_at, count)
+            return None
         if name == '读U32LE阵':
             b = bind(['字节偏移', '个数'])
             offset, count = b['字节偏移'], b['个数']

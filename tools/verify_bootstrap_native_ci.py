@@ -83,7 +83,8 @@ def stage3(directory):
     return directory/('stage3.exe' if sys.platform == 'win32' else 'stage3')
 
 
-REQUIRED_NATIVE_CASES = {'frontend': ['BootstrapNativeFrontendTests.test_default_denies_native_even_dormant_or_raw_alias',
+REQUIRED_NATIVE_CASES = {'frontend': ['BootstrapNativeFrontendTests.test_zidai_module_requires_native',
+              'BootstrapNativeFrontendTests.test_default_denies_native_even_dormant_or_raw_alias',
               'BootstrapNativeFrontendTests.test_dynamic_structure_fields_are_runtime_values_not_abi_shapes',
               'BootstrapNativeFrontendTests.test_import_all_native_wrappers_preserve_static_signature_checks',
               'BootstrapNativeFrontendTests.test_known_ordinary_methods_are_not_native_by_name',

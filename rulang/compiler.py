@@ -28,7 +28,7 @@ class Compiler:
     supports_mi_llvm = False
     _cache_local_bindings = True
 
-    def __init__(self, program, source_name='<源码>', modules=None, full_runtime=False, allow_native=False, source_prefix_maps=(), mi_manifest=None, mi_backend='c'):
+    def __init__(self, program, source_name='<源码>', modules=None, full_runtime=False, allow_native=False, source_prefix_maps=(), mi_manifest=None, mi_backend='c', native_analysis=None):
         if mi_backend not in ('c', 'llvm') or (mi_backend == 'llvm' and not mi_manifest):
             raise RuError('独立密后端须为 c／llvm，LLVM 密核需要显式清单', category='能力错误')
         self.mi_backend = mi_backend
@@ -65,7 +65,8 @@ class Compiler:
             native_modules = ModuleGraph(self.root)
             native_modules.update(self.modules)
             native_modules.sources = self.source_texts
-            self.native_plan = NativeCPlan(native_modules)
+            self.native_plan = (NativeCPlan(native_modules, diagnostics=native_analysis)
+                                if native_analysis is not None else NativeCPlan(native_modules))
         from .c_runtime import walk_nodes
         self.can_panic = self.native_enabled or full_runtime or any(n.kind in ('panic', 'try') for n in walk_nodes(self.modules))
         self.counter = 0
@@ -112,7 +113,7 @@ class Compiler:
                 pruned_modules.update(pruned)
                 pruned_modules.sources = source_texts
                 self.__init__(program, source_name, modules=pruned_modules, full_runtime=True, allow_native=allow_native,
-                              source_prefix_maps=self.source_path_mapper, mi_manifest=mi_manifest, mi_backend=mi_backend)
+                              source_prefix_maps=self.source_path_mapper, mi_manifest=mi_manifest, mi_backend=mi_backend, native_analysis=native_analysis)
                 self.source_texts = source_texts
                 self.full_runtime = False
                 self.can_panic = self.native_enabled or any(n.kind in ('panic', 'try') for n in walk_nodes(self.modules))

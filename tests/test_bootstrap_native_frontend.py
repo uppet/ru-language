@@ -29,6 +29,16 @@ class BootstrapNativeFrontendTests(unittest.TestCase):
             result=subprocess.run(args,capture_output=True,text=True,encoding='utf-8',timeout=120)
             return result,metadata.read_text(encoding='utf-8') if metadata.exists() else ''
 
+    def test_zidai_module_requires_native(self):
+        source = "库 取 外言 '如:字带'. 缓 取 库 其 新建 2. 缓 其 增 65. 显 (缓 其 量)(). (缓 其 关闭)()."
+        result, metadata = self.compile(source)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('ru_native_builtins', metadata)
+        result, metadata = self.compile(source, native=False)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(metadata, '')
+        self.assertIn('原生', result.stderr)
+
     def test_production_win32_exact_shape_prototypes(self):
         from rulang.native_c import C_TYPES
         fixture=ROOT/'tests/fixtures/native/notepad_win32.ru'
