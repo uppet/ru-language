@@ -1,5 +1,6 @@
 """Command-line entry point, C/JavaScript compilation and incremental REPL."""
 import argparse
+import json
 import os
 from pathlib import Path
 import shlex
@@ -112,6 +113,10 @@ class _StyleRejected(Exception):
     """The complete style diagnostic set has already been printed."""
 
 
+def _report_native_analysis(summary):
+    print(json.dumps(summary, ensure_ascii=False, sort_keys=True), file=sys.stderr)
+
+
 def compiler_command(selected, windows=None):
     """Accept an executable path verbatim, or a quoted compiler command."""
     if os.path.isfile(selected):
@@ -126,7 +131,9 @@ def compiler_command(selected, windows=None):
     return parts
 
 
-def build(program, source_path, output, cc=None, emit_c=None, modules=None, target="c", full_runtime=False, allow_native=False, source_prefix_maps=(), style_check=None, emit_llvm=None, llvm_clang=None, mi_manifest=None, assets=None):
+def build(program, source_path, output, cc=None, emit_c=None, modules=None, target="c", full_runtime=False, allow_native=False, source_prefix_maps=(), style_check=None, emit_llvm=None, llvm_clang=None, mi_manifest=None, assets=None, native_analysis=None):
+    if native_analysis is not None and target != 'c':
+        raise RuError('--native-analysis 只适用于 C 目标', category='能力错误')
     if target not in ("c", "js", "llvm", "ui"):
         raise RuError("编译目标须为 c、js、llvm 或 ui", category="编译错误")
     if target != 'llvm' and (emit_llvm is not None or llvm_clang is not None):
@@ -195,7 +202,7 @@ def build(program, source_path, output, cc=None, emit_c=None, modules=None, targ
             os.replace(page, output)
         return output, "如UI 网页（自包含 HTML）"
     generated = Compiler(program, str(source_path), modules=modules, full_runtime=full_runtime, allow_native=allow_native,
-                         source_prefix_maps=source_prefix_maps, mi_manifest=mi_manifest).compile()
+                         source_prefix_maps=source_prefix_maps, mi_manifest=mi_manifest, native_analysis=native_analysis).compile()
     if style_check is not None:
         style_check()
     if emit_c:
@@ -310,6 +317,7 @@ def make_parser():
         p = sub.add_parser(name, help=help_text)
         p.add_argument("source")
         if name == "check":
+            p.add_argument("--native-analysis", action="store_true", help="在标准错误输出原生签名分析 JSON 统计（含失败统计，不执行程序）")
             p.add_argument("--strict-style", action="store_true", help="将缺少完整语句结束句点的书写提示作为错误；默认只在标准错误提示")
             p.add_argument("--target", choices=("c", "python", "llvm"), default="c", help="c（默认）或 llvm 检查可编译性；python 仅解析和验证模块，不执行代码或加载 DLL")
             p.add_argument("--allow-native", action="store_true", help="允许静态检查 Windows x64 原生 C 编译；不执行代码或加载 DLL")
@@ -317,6 +325,7 @@ def make_parser():
             p.add_argument("--allow-native", action="store_true", help="信任本地原生代码，开启 Windows x64 ABI；须放在源文件路径之前")
             p.add_argument("args", nargs=argparse.REMAINDER, help="传给元初的外参；可使用 -- 分隔")
     p = sub.add_parser("build", help="编译为独立原生程序或 Node.js JavaScript")
+    p.add_argument("--native-analysis", action="store_true", help="在标准错误输出原生签名分析 JSON 统计（含失败统计）")
     p.add_argument("source")
     p.add_argument("--strict-style", action="store_true", help="将缺少完整语句结束句点的书写提示作为错误；默认只在标准错误提示")
     p.add_argument("-o", "--output", help="输出路径；C 默认去掉源文件扩展名，JS 默认为同名 .js")
@@ -499,8 +508,11 @@ def main(argv=None):
             # is an actual program argument and must be preserved.
             return interpreter.execute_entry(args.args if args.command == "run" else [])
         elif args.command == "check":
+            if args.native_analysis and args.target != 'c':
+                raise RuError('--native-analysis 只适用于 C 目标', category='能力错误')
             if args.target == "c":
-                Compiler(program, modules.root, modules=modules, allow_native=args.allow_native).compile()
+                Compiler(program, modules.root, modules=modules, allow_native=args.allow_native,
+                         native_analysis=_report_native_analysis if args.native_analysis else None).compile()
             elif args.target == 'llvm' and not args.allow_native:
                 from .llvm_compiler import LLVMCompiler
                 LLVMCompiler(program, modules.root, modules=modules).compile()
@@ -516,7 +528,8 @@ def main(argv=None):
                                      modules=modules, target=args.target, full_runtime=args.full_runtime, allow_native=args.allow_native,
                                      source_prefix_maps=args.source_prefix_map, style_check=check_style,
                                      emit_llvm=args.emit_llvm, llvm_clang=args.llvm_clang,
-                                     mi_manifest=args.experimental_mi_manifest, assets=args.assets)
+                                     mi_manifest=args.experimental_mi_manifest, assets=args.assets,
+                                     native_analysis=_report_native_analysis if args.native_analysis else None)
             if args.target == "js":
                 print(f"已编译：{result}\n运行目标：{compiler}；未执行")
             elif args.target == 'llvm':

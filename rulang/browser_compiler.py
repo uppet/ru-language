@@ -22,7 +22,7 @@ from .modules import (
 # Windows an absolute slash path gains a drive and native separators when
 # resolved; keeping the slash spelling would collect the same root AST twice.
 ROOT = str(Path('/__rushu_browser__/root.ru').resolve())
-ALLOWED_MODULES = (frozenset(STANDARD_MODULES) | frozenset(BUNDLED_THIRD_PARTY_MODULES)) - {"如:密"}
+ALLOWED_MODULES = (frozenset(STANDARD_MODULES) | frozenset(BUNDLED_THIRD_PARTY_MODULES)) - {"如:密", "如:字带"}
 FORBIDDEN_NAMES = frozenset({'读', '件', '录', '件作成果', '读取', '显出', '错误'})
 MAX_NODES = 20000
 

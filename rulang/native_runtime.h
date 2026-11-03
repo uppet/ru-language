@@ -844,7 +844,7 @@ static Env *ru_native_builtins(Env *parent)
 }
 static int ru_native_member(Val receiver, const char *name, size_t argc, const char **keys, Val *args, int line, Val *out)
 {
-    RuNative *object; Val bound[3];
+    RuNative *object; Val bound[4]; /* Largest member arity: byte copy. */
     const char *one[] = {"值"}, *field[] = {"字段"}, *text[] = {"句"}, *path[] = {"路径"};
     if (receiver.kind != RU_NATIVE) return 0;
     if (rn_platform_thread() != ru_native_thread_id) ru_fail(line, "原生对象只能在所属执行线程使用");
@@ -934,6 +934,42 @@ static int ru_native_member(Val receiver, const char *name, size_t argc, const c
         rn_memory_check(object, line);
         if (!strcmp(name, "大小")) { RN_BIND(0, NULL); RN_RETURN(v_num((double)object->as.memory.size)); }
         if (!strcmp(name, "地址")) { RuNativeRaw raw; RN_BIND(0, NULL); memset(&raw, 0, sizeof(raw)); raw.p = object->as.memory.data; RN_RETURN(rn_scalar(ru_native_primitives[RN_PTR], raw, receiver, line)); }
+        if (!strcmp(name, "读字节") || !strcmp(name, "写字节") || !strcmp(name, "复制到")) {
+            if (object->as.memory.type || object->as.memory.parent)
+                ru_fail(line, "字节操作只支持无结构的拥有缓冲");
+            if (!strcmp(name, "读字节")) {
+                const char *parameters[] = {"位"}; size_t offset;
+                RN_BIND(1, parameters);
+                offset = rn_bounded(bound[0], 0, object->as.memory.size - 1, line, "字节位置");
+                RN_RETURN(v_num((double)object->as.memory.data[offset]));
+            }
+            if (!strcmp(name, "写字节")) {
+                const char *parameters[] = {"位", "值"}; size_t offset, byte;
+                RN_BIND(2, parameters);
+                offset = rn_bounded(bound[0], 0, object->as.memory.size - 1, line, "字节位置");
+                byte = rn_bounded(bound[1], 0, 255, line, "字节值");
+                rn_memory_check_mutation(object, line);
+                object->as.memory.data[offset] = (unsigned char)byte;
+                RN_RETURN(v_null());
+            }
+            {
+                const char *parameters[] = {"目标", "源位", "目标位", "个数"};
+                RuNative *target; size_t source_at, target_at, count, available;
+                RN_BIND(4, parameters);
+                target = rn_expect(bound[0], RN_MEMORY, line, "字节复制目标需要拥有缓冲");
+                rn_memory_check(target, line);
+                if (target->as.memory.type || target->as.memory.parent)
+                    ru_fail(line, "字节操作只支持无结构的拥有缓冲");
+                source_at = rn_bounded(bound[1], 0, object->as.memory.size, line, "复制源位置");
+                target_at = rn_bounded(bound[2], 0, target->as.memory.size, line, "复制目标位置");
+                available = object->as.memory.size - source_at;
+                if (available > target->as.memory.size - target_at) available = target->as.memory.size - target_at;
+                count = rn_bounded(bound[3], 0, available, line, "复制个数");
+                rn_memory_check_mutation(target, line);
+                memmove(target->as.memory.data + target_at, object->as.memory.data + source_at, count);
+                RN_RETURN(v_null());
+            }
+        }
         if (!strcmp(name, "读U32LE阵")) { const char *parameters[] = {"字节偏移", "个数"}; RN_BIND(2, parameters); RN_RETURN(rn_read_u32le_array(object, bound[0], bound[1], line)); }
         if (!strcmp(name, "解UTF8") || !strcmp(name, "解UTF16")) { RN_BIND(0, NULL); RN_RETURN(rn_decode(object, !strcmp(name, "解UTF16"), line)); }
         if (!strcmp(name, "读")) { RN_BIND(1, field); RN_RETURN(rn_memory_read(object, bound[0], line)); }

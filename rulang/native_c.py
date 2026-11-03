@@ -8,6 +8,7 @@ Unknown signature components are a compilation error, not a runtime ABI guess.
 from dataclasses import dataclass
 from itertools import product
 from pathlib import Path
+from time import perf_counter
 
 from .frontend import Node, RuError, bind_arguments
 
@@ -29,6 +30,7 @@ RAW_FIELDS = {name: ('p' if name == '指针' else name if name in ('f32', 'f64')
 MAX_CALLBACKS = 1024
 MAX_SIGNATURES = 1024
 MAX_STATIC_ALTERNATIVES = 128
+MAX_ANALYSIS_STEPS = 200000
 MAX_CALL_SUMMARIES = 4096
 MAX_SUMMARY_FUNCTIONS = 256
 MAX_SUMMARY_DEPENDENCIES = 256
@@ -266,7 +268,10 @@ class NativeCPlan:
     ``emit_c()`` goes after native_runtime.h.  The runtime owns marshalling,
     callback lifetime/containment and the process-wide 1024 non-reused slots.
     """
-    def __init__(self, modules):
+    def __init__(self, modules, *, diagnostics=None):
+        self._diagnostics = diagnostics
+        self._module_steps = {}
+        self._function_counts = {}
         self.modules = dict(modules)
         self.sources = getattr(modules, 'sources', {})
         self.signatures = []
@@ -293,13 +298,32 @@ class NativeCPlan:
         self._steps = 0
         self._path = next(iter(self.modules), '<源码>')
         self._native_path = str((Path(__file__).parent / 'stdlib' / '密.ru').resolve())
+        started = perf_counter()
+        completed = False
+        try:
+            self._analyze()
+            completed = True
+        finally:
+            if diagnostics is not None:
+                diagnostics({
+                    'schema': 1, 'phase': 'native-signatures',
+                    'completed': completed, 'seconds': perf_counter() - started,
+                    'modules': len(self.modules), 'signatures': len(self.signatures),
+                    'steps': self._steps, 'step_limit': MAX_ANALYSIS_STEPS,
+                    'function_evaluations': self._function_evaluations,
+                    'summary_hits': self._summary_hits,
+                    'module_steps': dict(self._module_steps),
+                    'function_evaluations_by_site': dict(self._function_counts),
+                })
+
+    def _analyze(self):
         for path in self.modules:
             self._module(path)
         # Check dormant functions as well. Native standard-library forwarding
         # functions are templates; their real call sites provide the ABI values.
         index = 0
         for _ in range(MAX_STATIC_ALTERNATIVES):
-            before = (self._state(), tuple(self.signatures))
+            before = (self._fixed_point_state(), tuple(self.signatures))
             while index < len(self._functions):
                 fn = self._functions[index]
                 index += 1
@@ -310,7 +334,7 @@ class NativeCPlan:
             # after all later joins; never trust registration-time state alone.
             for fn in tuple(self._deferred_functions.values()):
                 self._invoke(fn, [(None, UNKNOWN) for _ in fn.node.data['params']], fn.node)
-            if before == (self._state(), tuple(self.signatures)) and index == len(self._functions):
+            if before == (self._fixed_point_state(), tuple(self.signatures)) and index == len(self._functions):
                 break
         else:
             raise RuError('无法静态确定延迟回调捕获的原生描述符；请使用不变的原生签名', category='原生编译错误')
@@ -337,6 +361,12 @@ class NativeCPlan:
         self.callback_signatures = frozenset(self.callback_signatures)
 
     def _changed(self, owner=None):
+        # All abstract mutations (including new scopes/containers/functions,
+        # descriptor inputs and signatures) advance this monotone generation.
+        # An unchanged generation proves a fixed point without repeatedly
+        # serializing the complete module graph. A changed generation may cause
+        # conservative extra passes for newly allocated unreachable values;
+        # it can never stop earlier than structural equality would.
         # The global stamp only proves that a completed body had no effects.
         # Reuse depends on the owners it observed, not unrelated local writes.
         if owner is not None:
@@ -462,6 +492,9 @@ class NativeCPlan:
             self._changed()
         return self._function_cache[key]
 
+    def _fixed_point_state(self):
+        return self._revision
+
     def _state(self):
         # Snapshot the reachable graph, not its expansion along every path.
         # Shared containers can form diamonds/cycles; their identity and each
@@ -541,9 +574,9 @@ class NativeCPlan:
             elif kind == 'loop':
                 self._expr(d.get('count'), env)
                 for _ in range(MAX_STATIC_ALTERNATIVES):
-                    before = self._state()
+                    before = self._fixed_point_state()
                     returns.extend(self._block(d['body'], env))
-                    if self._state() == before:
+                    if self._fixed_point_state() == before:
                         break
                 else:
                     self._unresolved(node, '循环携带的原生描述符（静态数据流未收敛）')
@@ -574,8 +607,15 @@ class NativeCPlan:
         if node is None:
             return None
         self._steps += 1
-        if self._steps > 200000:
-            self._error(node, '原生签名静态分析超过复杂度上限；请简化签名构造和包装函数')
+        if self._diagnostics is not None:
+            self._module_steps[self._path] = self._module_steps.get(self._path, 0) + 1
+        if self._steps > MAX_ANALYSIS_STEPS:
+            self._error(node, '原生签名静态分析超过复杂度上限；'
+                        f'已分析 {self._steps} 步（上限 {MAX_ANALYSIS_STEPS}），'
+                        f'{len(self.modules)} 个模块，{len(self.signatures)} 个签名，'
+                        f'{self._function_evaluations} 次函数分析，{self._summary_hits} 次摘要命中；'
+                        '此位置仅为停止处，不一定是耗时来源；可用 --native-analysis 查看统计；'
+                        '请简化签名构造和包装函数')
         d, kind = node.data, node.kind
         if kind in ('string', 'number', 'fact'):
             return d['value']
@@ -971,6 +1011,9 @@ class NativeCPlan:
         for value in actuals.values():
             self._observe_value(value)
         self._function_evaluations += 1
+        if self._diagnostics is not None:
+            site = f'{function.path}:{function.node.token.line}:{function.node.token.col}'
+            self._function_counts[site] = self._function_counts.get(site, 0) + 1
         try:
             values = self._block(function.node.data['body'], env)
             result = _merge(*values) if values else UNKNOWN

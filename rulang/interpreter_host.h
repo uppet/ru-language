@@ -169,7 +169,7 @@ static double ru_interpreter_heap_bytes(void)
     RuHeap *heap;double total=0;
     for(heap=ru_heap;heap;heap=heap->next) {
         switch(heap->kind) {
-        case RU_STR: total+=sizeof(RuString)+((RuString *)heap)->len+1;break;
+        case RU_STR: total+=ru_string_allocation_size(((RuString *)heap)->len,0);break;
         case RU_ARRAY: total+=sizeof(RuArray)+((RuArray *)heap)->capacity*sizeof(Val);break;
         case RU_MAP: total+=sizeof(RuMap)+((RuMap *)heap)->capacity*sizeof(RuMapEntry);break;
         case RU_OBJECT: total+=sizeof(RuObject)+((RuObject *)heap)->len*sizeof(Val);break;

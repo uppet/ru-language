@@ -22,12 +22,12 @@ RENAMED = {'如观': '如:观', '如竞': '如:竞', '如:竞赛': '如:竞'}
 
 class ModuleNameTests(unittest.TestCase):
     def test_canonical_names_are_the_only_standard_names(self):
-        expected = {'如:观', '如:竞', '如:文本', '如:数学', '如:随机', '如:密'}
+        expected = {'如:观', '如:竞', '如:文本', '如:数学', '如:随机', '如:密', '如:字带'}
         self.assertEqual(set(STANDARD_MODULES), expected)
         # Browser JS allows every bundled module (standard library plus the
-        # 如见／如UI third-party bundles) except the 密 crypto module.
+        # 如见／如UI third-party bundles) except the native 密 and 字带 modules.
         self.assertEqual(ALLOWED_MODULES,
-                         (set(STANDARD_MODULES) | set(BUNDLED_THIRD_PARTY_MODULES)) - {'如:密'})
+                         (set(STANDARD_MODULES) | set(BUNDLED_THIRD_PARTY_MODULES)) - {'如:密', '如:字带'})
         for name, filename in STANDARD_MODULES.items():
             self.assertEqual(resolve_import(name, '/tmp/main.ru'),
                              str((ROOT / 'rulang' / 'stdlib' / filename).resolve()))
@@ -98,8 +98,8 @@ class ModuleNameTests(unittest.TestCase):
     def test_bare_product_names_remain_ordinary_identifiers(self):
         # Module spellings do not reserve new language identifiers.
         output = io.StringIO()
-        Interpreter(stdout=output).execute(parse('如观 取 7. 如竞 取 8. 显 如观. 显 如竞.'))
-        self.assertEqual(output.getvalue(), '7\n8\n')
+        Interpreter(stdout=output).execute(parse('如观 取 7. 如竞 取 8. 字带 取 9. 显 如观. 显 如竞. 显 字带.'))
+        self.assertEqual(output.getvalue(), '7\n8\n9\n')
 
 
 if __name__ == '__main__':
