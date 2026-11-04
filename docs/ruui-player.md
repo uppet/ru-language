@@ -1,6 +1,11 @@
 # 如声播放器（ruui-player）试用说明
 
-如语言（ru-language）自带的移动端音乐播放器示例，基于 如UI 声明式 UI 库 + 如:声 音频库，SDL2 渲染。暗色主题 + 薄荷绿 accent，对照 Spotify 式移动端四屏设计稿实现。
+如语言（ru-language）自带的移动端音乐播放器示例，基于 如UI 声明式 UI 库 + 如:声 音频门面。暗色主题 + 薄荷绿 accent，对照 Spotify 式移动端四屏设计稿实现。
+
+> 基座说明（player-ruaudio-v2 起）：上游 wip 移除了 SDL target 与 SDL_mixer 后端。
+> 现播放器跑在 **如UI 网页目标**（`--target ui`，自包含 HTML，浏览器打开即交互）；
+> 如:声 为静默桩（调用安全空转、无声），档服务探测已停用（浏览器宿主暂无目录列举，
+> 待 档 服务恢复后接回扫库）。UI 全部七屏、交互、收藏、循环逻辑照常工作。
 
 ## 功能一览
 
@@ -9,55 +14,28 @@
 - **底部导航**：5 项，播放中/队列时隐藏
 - **收藏**：搜索/曲库列表行右侧 ♡ 点击收藏；喜欢屏列出；播放中屏底行也可收藏
 - **循环**：列表循环 / 单曲循环（更多屏切换，播完自动接歌）
-- **曲库**：启动自动扫描 `examples/player/music/`（wav/mp3/ogg），更多屏可手动刷新
 
-## 环境要求
-
-- Linux（其他系统未验证）
-- Python 3.9+
-- C 编译器（gcc/clang）
-- SDL2 + SDL2_mixer 开发包
-
-Debian/Ubuntu：
+## 运行（如UI 网页目标）
 
 ```bash
-sudo apt-get install build-essential python3 libsdl2-dev libsdl2-mixer-dev
+python3 ru build examples/ruui-player.ru --target ui -o player.html
+# 用浏览器打开 player.html 即可交互（页面 480x840，建议窄窗口）
 ```
 
-## 检出与运行
+无需 C 编译器 / SDL。依赖同仓库其余目标：Python 3.9+。
+
+## 截图（无头 Chrome + playwright）
 
 ```bash
-git clone https://github.com/uppet/ru-language.git
-cd ru-language
-git checkout player-ruaudio     # 播放器开发分支
-
-# 构建（须在仓库根目录跑：曲库用相对路径 examples/player/music/）
-RU_SDL_WITH_MIXER=1 python3 ru build examples/ruui-player.ru --target sdl -o /tmp/ru-player
-
-# 运行
-/tmp/ru-player
+scripts/ui-shot.sh 0 v7_s0.png   # 屏 0..6；自动注入 道/曲 假状态
 ```
 
-窗口 480×840。点击交互全部可用：导航切屏、chips 筛选、点行播放、心形收藏、滑杆定位/音量、圆形键暂停续播、◀◀▶▶ 切歌。
+脚本会临时改 `屏 取 [..]` 并构建 ui 目标，起本地 http.server 后用无头 Chrome 截图，
+结束自动还原源文件。
 
-## 无头截图（不需要显示器/声卡）
+## 已知限制（静默桩期间）
 
-```bash
-bash scripts/ui-shot.sh 0 shot_home.png    # 屏号 0-6，缺省输出 shot_<N>.png
-```
-
-机制：`RU_HEADLESS_SMOKE=1` 构建 smoke 版二进制（渲染 N 帧写出 `smoke.png` 即退出），脚本临时把入口屏号写进源码，构建 → dummy SDL 驱动运行 → 拷图 → 自动还原。同时注入一首假曲目让迷你播放条有内容。
-
-屏号：0 首页  1 搜索  2 曲库  3 喜欢  4 更多  5 播放中  6 队列
-
-## 代码结构
-
-- `examples/ruui-player.ru`（~390 行）：全部播放器逻辑——纯声明式 UI 树 + 事件作块，无手写绘制
-- `rulang/thirdparty/如UI/如UI.ru`：UI 库（行/列/叠/滚/文/钮/选/滑/盘/块/图载/文入 + 大字/染色/彩/圆/透/可按/度/充/占/间 修饰器）
-- `scripts/ui-shot.sh`：截图脚本
-
-## 已知限制
-
-- 喜欢列表仅会话内保存（无持久化存储 API）
-- 歌词、歌手/专辑页筹备中（点了会弹提示）
-- 其他 5 个 ruui 示例（counter/mixer/notepad/quiz/textfield）编译通过，但本机链接报 `ru_audio_set_host` 未定义——SDL 宿主链接问题，与播放器无关
+- 无声：如:声 全部调用空转，播 返回声道 0，进度/时长 0。
+- 曲库为空：档服务未接入，启动不再扫描 `examples/player/music/`；
+  可在源码里注入 `曲 取 [['曲目.mp3']].` 体验列表/播放中/队列交互。
+- 屏 5 播放中 的唱盘图为 图载 'assets/cover.png' 占位自绘（叠 自绘圆盘）。
