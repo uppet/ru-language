@@ -5,6 +5,7 @@ loads a DLL, imports ctypes, or synthesizes executable memory.  Native calls and
 callbacks are ordinary, exactly typed C functions generated for declared shapes.
 Unknown signature components are a compilation error, not a runtime ABI guess.
 """
+from collections import OrderedDict
 from dataclasses import dataclass
 from itertools import product
 from pathlib import Path
@@ -32,6 +33,9 @@ MAX_SIGNATURES = 1024
 MAX_STATIC_ALTERNATIVES = 128
 MAX_ANALYSIS_STEPS = 200000
 MAX_CALL_SUMMARIES = 4096
+MAX_EXPRESSION_SUMMARIES = 16384
+MAX_EXPRESSION_DEPENDENCIES = 256
+MAX_LITERAL_ARRAYS = 1024
 MAX_SUMMARY_FUNCTIONS = 256
 MAX_SUMMARY_DEPENDENCIES = 256
 
@@ -84,10 +88,23 @@ class _Opaque:
         self._version = 0
 
 
+class _Binding:
+    """A live name token, including absence before a later shadowing bind."""
+    def __init__(self, owner, name):
+        self.owner, self.name = owner, name
+
+    @property
+    def _version(self):
+        return self.owner._binding_versions.get(self.name, 0)
+
+
 class _Env:
-    def __init__(self, changed, observed, parent=None, kind="module", fixed=(), private=False):
+    def __init__(self, changed, observed, parent=None, kind="module", fixed=(), private=False, read=None):
         self._changed = changed
         self._observed = observed
+        self._read = read or (lambda owner, name: observed(owner))
+        self._binding_versions = {}
+        self._bindings = {}
         self._version = 0
         self.values = {}
         self.local_origins = {}
@@ -99,7 +116,7 @@ class _Env:
     def get(self, name):
         # A missing name is a dependency too: a later local binding can shadow
         # the parent value that this lookup currently returns.
-        self._observed(self)
+        self._read(self, name)
         if name in self.values:
             value = self.values[name]
             if self.kind != 'module' and name not in self.fixed_locals:
@@ -109,7 +126,7 @@ class _Env:
                 # including reads first discovered through a later callable.
                 outer = self.parent
                 while outer is not None:
-                    self._observed(outer)
+                    self._read(outer, name)
                     if name in outer.values:
                         return _merge(value, outer.get(name))
                     outer = outer.parent
@@ -129,6 +146,7 @@ class _Env:
             if _same(old, value):
                 return
         self.values[name] = value
+        self._binding_versions[name] = self._binding_versions.get(name, 0) + 1
         self._changed(self)
 
     def bind(self, name, value, node=None):
@@ -166,25 +184,61 @@ class _Module:
 
 
 class _SummaryFrame:
-    """Bounded evidence for one body; incomplete evidence is never reusable."""
-    def __init__(self, function):
-        self.functions = {id(function.node)}
+    """Bounded evidence for one transfer, never truncated into a usable proof.
+
+    Expressions retain precise private binding dependencies. Whole functions
+    may elide private scopes only after proving their first-read versions are
+    stable, or using the original unchanged-global-revision proof. Ephemeral
+    private evidence also crosses nested evaluations and converged loops.
+    """
+    def __init__(self, function=None, *, track_private=None):
+        self.functions = {id(function.node)} if function is not None else set()
+        self.track_private = function is None if track_private is None else track_private
+        self.dependency_limit = (MAX_EXPRESSION_DEPENDENCIES if self.track_private
+                                 else MAX_SUMMARY_DEPENDENCIES)
         self.dependencies = {}
         self.complete = True
+        self.private_reads = {}
+        self.replay_complete = True
+
+    def read(self, owner, name, version=None):
+        """Keep the first private read, never a post-write replacement."""
+        key = (owner, name)
+        if not self.replay_complete or key in self.private_reads:
+            return
+        if len(self.private_reads) >= MAX_SUMMARY_DEPENDENCIES:
+            self.replay_complete = False
+            return
+        self.private_reads[key] = owner._binding_versions.get(name, 0) if version is None else version
+
+    def replay_stable(self):
+        """Interned allocations and private initialization are now idempotent."""
+        return (self.replay_complete and
+                all(owner._version == version for owner, version in self.dependencies.items()) and
+                all(owner._binding_versions.get(name, 0) == version
+                    for (owner, name), version in self.private_reads.items()))
 
     def observe(self, owner, version=None):
+        if isinstance(owner, _Binding) and not self.track_private:
+            if owner.owner.private:
+                self.read(owner.owner, owner.name, version)
+                return
+            if (owner.owner in self.dependencies and
+                    (version is None or owner._version == version)):
+                return
         # A scope with no nested function/literal/method anywhere in its body
         # cannot escape to a child callable that writes it independently. Its
         # contents on re-entry are determined by this call context and external
         # owners still tracked below. Keeping every such child scope creates
         # false fanout overflow.
-        # The global revision still prevents caching the evaluation that changes
-        # any local state; arrays, objects, captures and modules are never elided.
+        # Initial private writes need the separate first-read/replay proof;
+        # unchanged global revision remains the conservative fallback. Arrays,
+        # objects, captures and modules are never elided.
         if isinstance(owner, _Env) and owner.private:
             return
         if not self.complete or owner in self.dependencies:
             return
-        if len(self.dependencies) >= MAX_SUMMARY_DEPENDENCIES:
+        if len(self.dependencies) >= self.dependency_limit:
             self.complete = False
             return
         # Retain the first read, even if a later write changes this owner.
@@ -196,6 +250,16 @@ class _SummaryFrame:
                 self.complete = False
             else:
                 self.functions.add(function)
+
+    def absorb(self, frame):
+        self.include(frame.dependencies.items(), frame.functions, frame.complete)
+        self.replay_complete = self.replay_complete and frame.replay_complete
+        for key, version in frame.private_reads.items():
+            if key not in self.private_reads:
+                if len(self.private_reads) >= MAX_SUMMARY_DEPENDENCIES:
+                    self.replay_complete = False
+                    break
+                self.private_reads[key] = version
 
     def include(self, dependencies, functions, complete=True):
         self.complete = self.complete and complete
@@ -252,6 +316,15 @@ def _merge(*values):
     return result[0] if len(result) == 1 else _Choice(tuple(result))
 
 
+def _same_returns(accumulated, final):
+    # A failed optimization proof must not raise a new error before a later
+    # body statement. The ordinary function-return join retains that limit.
+    try:
+        return _same(_merge(*accumulated), _merge(*final))
+    except RuError:
+        return False
+
+
 class NativeCPlan:
     """Analyze a resolved ``{source_path: [Node, ...]}`` module graph.
 
@@ -278,6 +351,10 @@ class NativeCPlan:
         self.callback_signatures = set()
         self._revision = 0
         self._call_summaries = {}
+        self._expression_summaries = OrderedDict()
+        self._expression_hits = 0
+        self._literal_array_items = {}
+        self._literal_array_hits = 0
         self._summary_frames = []
         self._summary_hits = 0
         self._function_evaluations = 0
@@ -312,6 +389,8 @@ class NativeCPlan:
                     'steps': self._steps, 'step_limit': MAX_ANALYSIS_STEPS,
                     'function_evaluations': self._function_evaluations,
                     'summary_hits': self._summary_hits,
+                    'expression_hits': self._expression_hits,
+                    'literal_array_hits': self._literal_array_hits,
                     'module_steps': dict(self._module_steps),
                     'function_evaluations_by_site': dict(self._function_counts),
                 })
@@ -367,8 +446,9 @@ class NativeCPlan:
         # serializing the complete module graph. A changed generation may cause
         # conservative extra passes for newly allocated unreachable values;
         # it can never stop earlier than structural equality would.
-        # The global stamp only proves that a completed body had no effects.
-        # Reuse depends on the owners it observed, not unrelated local writes.
+        # The global stamp proves zero effects for expression summaries and
+        # loop convergence. Whole-function first-call reuse additionally uses
+        # observed owner versions and private binding-read evidence.
         if owner is not None:
             owner._version += 1
         self._revision += 1
@@ -376,6 +456,19 @@ class NativeCPlan:
     def _observe(self, owner):
         if self._summary_frames:
             self._summary_frames[-1].observe(owner)
+
+    def _read(self, owner, name):
+        if not self._summary_frames:
+            return
+        frame = self._summary_frames[-1]
+        if owner.private:
+            frame.read(owner, name)
+        if frame.track_private:
+            if name not in owner._bindings:
+                owner._bindings[name] = _Binding(owner, name)
+            frame.observe(owner._bindings[name])
+        else:
+            frame.observe(owner)
 
     def _observe_value(self, value):
         """Keep live alias owners, without freezing a closure's whole graph.
@@ -397,7 +490,7 @@ class NativeCPlan:
                 continue
             if item in visited:
                 continue
-            if len(visited) >= MAX_SUMMARY_DEPENDENCIES:
+            if len(visited) >= frame.dependency_limit:
                 frame.complete = False
                 break
             visited.add(item)
@@ -456,7 +549,7 @@ class NativeCPlan:
             return self._scope_cache[key]
         fixed = set(fixed) | {node.data['name'] for node in body if node.kind == 'function'}
         env = _Env(self._changed, self._observe, parent, kind, fixed,
-                   kind != 'module' and self._private_body(body))
+                   kind != 'module' and self._private_body(body), read=self._read)
         self._envs.append(env)
         self._changed()
         if site is not None:
@@ -573,13 +666,34 @@ class NativeCPlan:
                 returns.extend(self._block(d['rescue'], rescue))
             elif kind == 'loop':
                 self._expr(d.get('count'), env)
+                # A final zero-change iteration witnesses idempotent private
+                # state. Preserve all external observations and all returns;
+                # only transient private reads may be replaced by that witness.
+                loop_frame = _SummaryFrame(track_private=False)
+                loop_returns = []
                 for _ in range(MAX_STATIC_ALTERNATIVES):
                     before = self._fixed_point_state()
-                    returns.extend(self._block(d['body'], env))
+                    frame = _SummaryFrame(track_private=False)
+                    self._summary_frames.append(frame)
+                    try:
+                        iteration_returns = self._block(d['body'], env)
+                        for value in iteration_returns:
+                            self._observe_value(value)
+                    finally:
+                        self._summary_frames.pop()
+                    loop_returns.extend(iteration_returns)
+                    loop_frame.absorb(frame)
                     if self._fixed_point_state() == before:
+                        if (loop_frame.complete and frame.replay_complete and
+                                _same_returns(loop_returns, iteration_returns)):
+                            loop_frame.private_reads = dict(frame.private_reads)
+                            loop_frame.replay_complete = True
                         break
                 else:
                     self._unresolved(node, '循环携带的原生描述符（静态数据流未收敛）')
+                returns.extend(loop_returns)
+                if self._summary_frames:
+                    self._summary_frames[-1].absorb(loop_frame)
             elif kind == 'scope':
                 scope = self._environment(env, 'block', id(node), d['body'])
                 returns.extend(self._block(d['body'], scope))
@@ -616,6 +730,38 @@ class NativeCPlan:
                         f'{self._function_evaluations} 次函数分析，{self._summary_hits} 次摘要命中；'
                         '此位置仅为停止处，不一定是耗时来源；可用 --native-analysis 查看统计；'
                         '请简化签名构造和包装函数')
+        if MAX_EXPRESSION_SUMMARIES <= 0 or node.kind not in ('call', 'invoke', 'member', 'index', 'binary', 'unary', 'convert',
+                             'array', 'slice', 'map', 'new', 'function_ref'):
+            return self._expr_body(node, env, reference)
+        # Lookup itself already consumed one expression step. A hit avoids
+        # the actual descendant traversal, not the nontermination guard.
+        key = (id(node), id(env), reference)
+        summary = self._expression_summaries.get(key)
+        if (summary is not None and
+                all(owner._version == version for owner, version in summary[0]) and
+                not self._active.intersection(summary[2])):
+            if self._summary_frames:
+                self._summary_frames[-1].include(summary[0], summary[2])
+            self._expression_summaries.move_to_end(key)
+            self._expression_hits += 1
+            return summary[1]
+        revision = self._revision
+        frame = _SummaryFrame()
+        self._summary_frames.append(frame)
+        try:
+            result = self._expr_body(node, env, reference)
+            if revision == self._revision and frame.complete:
+                if key not in self._expression_summaries and len(self._expression_summaries) >= MAX_EXPRESSION_SUMMARIES:
+                    self._expression_summaries.popitem(last=False)
+                self._expression_summaries[key] = (tuple(frame.dependencies.items()), result, frozenset(frame.functions))
+                self._expression_summaries.move_to_end(key)
+            return result
+        finally:
+            self._summary_frames.pop()
+            if self._summary_frames:
+                self._summary_frames[-1].absorb(frame)
+
+    def _expr_body(self, node, env, reference=False):
         d, kind = node.data, node.kind
         if kind in ('string', 'number', 'fact'):
             return d['value']
@@ -629,7 +775,20 @@ class NativeCPlan:
                 return self._invoke(value, self._arguments(d['args'], env), node)
             return value if reference else self._implicit(value, node)
         if kind == 'array':
-            items = tuple(self._expr(item, env) for item in d['items'])
+            # Only immutable primitive items are shared across call contexts.
+            # Every environment still owns its distinct mutable _Array below.
+            # The first visit evaluates/charges every literal before caching.
+            literal_items = self._literal_array_items.get(id(node))
+            if literal_items is not None:
+                items = literal_items
+                self._literal_array_hits += 1
+            else:
+                items = tuple(self._expr(item, env) for item in d['items'])
+                if (MAX_LITERAL_ARRAYS > 0 and
+                        all(item.kind in ('string', 'number', 'fact', 'null') for item in d['items'])):
+                    if len(self._literal_array_items) >= MAX_LITERAL_ARRAYS:
+                        del self._literal_array_items[next(iter(self._literal_array_items))]
+                    self._literal_array_items[id(node)] = items
             key = (id(node), id(env))
             if key not in self._array_cache:
                 self._array_cache[key] = _Array(items)
@@ -1018,12 +1177,14 @@ class NativeCPlan:
             values = self._block(function.node.data['body'], env)
             result = _merge(*values) if values else UNKNOWN
             self._observe_value(result)
-            # A body may read a capture, then widen it. Its return is not a
-            # summary of the resulting state until a later stable evaluation.
+            # A read-then-write capture (or private local) cannot summarize
+            # its exit state. Keep first versions through nested evaluations.
+            # Interned allocations/private writes can be reused on the first
+            # call only when that stricter replay evidence remains stable.
             # Bound each retained recursion footprint as well as entry count.
             # A larger footprint may still be analyzed, but never truncated
             # into an unsound reusable summary.
-            if self._revision == revision and frame.complete:
+            if frame.complete and (self._revision == revision or frame.replay_stable()):
                 if key not in self._call_summaries and len(self._call_summaries) >= MAX_CALL_SUMMARIES:
                     del self._call_summaries[next(iter(self._call_summaries))]
                 self._call_summaries[key] = (tuple(frame.dependencies.items()), result,
@@ -1032,8 +1193,7 @@ class NativeCPlan:
         finally:
             self._summary_frames.pop()
             if self._summary_frames:
-                self._summary_frames[-1].include(frame.dependencies.items(), frame.functions,
-                                                frame.complete)
+                self._summary_frames[-1].absorb(frame)
             self._path = previous
             self._call_sites.pop()
             self._active.remove(id(function.node))
