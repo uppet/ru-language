@@ -39,8 +39,15 @@ def file_identity(path):
     path = Path(path).resolve()
     if not stat.S_ISREG(path.stat().st_mode):
         raise ValueError('build input must be a regular file: ' + str(path))
-    content = path.read_bytes()
-    return {'path': str(path), 'sha256': digest(content), 'size': len(content)}
+    # Every observation opens and hashes the actual bytes again. Bound memory
+    # for large tool executables without caching identities between checks.
+    checksum = hashlib.sha256()
+    size = 0
+    with path.open('rb') as stream:
+        while chunk := stream.read(1024 * 1024):
+            checksum.update(chunk)
+            size += len(chunk)
+    return {'path': str(path), 'sha256': checksum.hexdigest(), 'size': size}
 
 
 def verify_identities(identities):

@@ -1,5 +1,6 @@
 """Host contract: opt-in and packaging only, no Python source frontend fallback."""
 from contextlib import ExitStack
+import io
 import json
 from pathlib import Path
 import tempfile
@@ -216,6 +217,47 @@ class BootstrapNativeHostTests(unittest.TestCase):
         self.assertEqual(self.calls, [])
         self.assertFalse((self.root/'proof.json').exists())
         self.assertEqual(self.output.read_bytes(), b'preserved')
+
+    def test_tool_observations_remain_five_independent_opens_per_build(self):
+        paths = {Path(p).resolve() for p in
+                 [self.toolchain.clang[0], *self.toolchain.tools.values()]}
+        counts = {p: 0 for p in paths}
+        original = Path.open
+        def observe(path, *args, **kwargs):
+            if path.resolve() in paths:
+                self.assertEqual(args, ('rb',))
+                counts[path.resolve()] += 1
+            return original(path, *args, **kwargs)
+        with patch.object(Path, 'open', observe):
+            self.invoke()
+            self.assertEqual(set(counts.values()), {5})
+            self.invoke()
+            self.assertEqual(set(counts.values()), {10})
+
+    def test_changes_between_adjacent_tool_observations_still_reject(self):
+        target = Path(self.toolchain.tools['llvm-as'])
+        original = bootstrap.file_identity
+        baseline = target.read_bytes()
+        for change_on_read in (2, 4):
+            with self.subTest(change_on_read=change_on_read):
+                target.write_bytes(baseline)
+                self.calls.clear()
+                reads = 0
+                def mutate(path):
+                    nonlocal reads
+                    result = original(path)
+                    if Path(path).resolve() == target:
+                        reads += 1
+                        if reads == change_on_read:
+                            target.write_bytes(b'changed-between-adjacent-observations')
+                    return result
+                with patch.object(bootstrap, 'file_identity', side_effect=mutate):
+                    with self.assertRaisesRegex(RuntimeError, 'LLVM tool input changed'):
+                        self.invoke(proof=self.root/'proof.json')
+                self.assertEqual(reads, change_on_read + 1)
+                self.assertEqual(len(self.calls), 0 if change_on_read == 2 else 1)
+                self.assertEqual(self.output.read_bytes(), b'preserved')
+                self.assertFalse((self.root/'proof.json').exists())
 
     def test_tool_command_redirection_rejects_same_bytes_different_path(self):
         original = self.toolchain.compile
@@ -615,6 +657,60 @@ class PinnedLinkerSelectionTests(unittest.TestCase):
         self.assertEqual(diagnostic['dry_run_stderr_sha256'],bootstrap.digest(raw))
         self.assertEqual(diagnostic['command'],self.command)
         self.assertEqual(diagnostic['status'],'rejected-diagnostic-only')
+
+
+class FileIdentityTests(unittest.TestCase):
+    def test_chunk_boundaries_match_full_byte_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'input'
+            for size in (0, 1, 1048575, 1048576, 1048577, 2097169):
+                with self.subTest(size=size):
+                    data = (bytes(range(256)) * (size // 256 + 1))[:size]
+                    path.write_bytes(data)
+                    self.assertEqual(bootstrap.file_identity(path), {
+                        'path': str(path.resolve()), 'sha256': bootstrap.digest(data), 'size': size})
+
+    def test_short_reads_count_observed_bytes_not_stat_size(self):
+        class ShortReader(io.BytesIO):
+            def read(self, size=-1):
+                self.requested.append(size)
+                return super().read(min(size, 3))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'input'
+            path.write_bytes(b'different stat length')
+            data = b'actual bytes'
+            stream = ShortReader(data)
+            stream.requested = []
+            with patch.object(Path, 'open', return_value=stream) as opened:
+                identity = bootstrap.file_identity(path)
+            opened.assert_called_once_with('rb')
+            self.assertTrue(stream.closed)
+            self.assertGreater(len(stream.requested), 2)
+            self.assertEqual(set(stream.requested), {1048576})
+            self.assertEqual(identity, {'path': str(path.resolve()),
+                                       'sha256': bootstrap.digest(data), 'size': len(data)})
+
+    def test_missing_nonregular_and_read_errors_propagate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'input'
+            with self.assertRaises(FileNotFoundError):
+                bootstrap.file_identity(path)
+            with self.assertRaisesRegex(ValueError, 'regular file'):
+                bootstrap.file_identity(directory)
+            path.write_bytes(b'input')
+            denied = PermissionError('denied')
+            with patch.object(Path, 'open', side_effect=denied):
+                with self.assertRaises(PermissionError) as error:
+                    bootstrap.file_identity(path)
+            self.assertIs(error.exception, denied)
+            stream = io.BytesIO(b'input')
+            broken = OSError('read failed')
+            with patch.object(Path, 'open', return_value=stream), \
+                    patch.object(stream, 'read', side_effect=broken):
+                with self.assertRaises(OSError) as error:
+                    bootstrap.file_identity(path)
+            self.assertIs(error.exception, broken)
+            self.assertTrue(stream.closed)
 
 
 if __name__ == '__main__':
