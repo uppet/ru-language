@@ -1,6 +1,8 @@
 """Memoization must reduce real work without changing static native semantics."""
 from collections import Counter
 from contextlib import ExitStack
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -11,7 +13,8 @@ from rulang.native_c import NativeCPlan, NativeCSignature
 
 
 PREFIX = "密 取 外言 '如:密'.\n"
-PATH = '/tmp/native_analysis_scaling.ru'
+# Match the loader's canonical module identity on every platform.
+PATH = str((Path(tempfile.gettempdir()) / 'native_analysis_scaling.ru').resolve())
 
 
 class CountingPlan(NativeCPlan):
