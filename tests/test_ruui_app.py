@@ -132,9 +132,10 @@ class AppPageSmokeTest(unittest.TestCase):
         code = (ROOT / 'examples' / 'ruui-quiz.ru').read_text(encoding='utf-8')
         html = build_app_html(code)
         # No external references: single <script type="module">, no src=, no link.
+        # （data: 的 favicon 占位除外——它恰恰是用于抑制浏览器对外请求 favicon 的。）
         self.assertEqual(html.count('<script type="module">'), 1)
         self.assertNotIn(' src=', html)
-        self.assertNotIn('<link', html)
+        self.assertNotIn('<link', html.replace('<link rel="icon" href="data:,">', ''))
         self.assertIn('mouse_down', html)  # host forwards pointer events
         self.assertIn('requestAnimationFrame', html)  # host drives the frame loop
 

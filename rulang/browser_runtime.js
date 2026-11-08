@@ -3,9 +3,13 @@
     helpers: builtin('如观工具', [], 'helpers', 'graphicsKind'),
     canvas: builtin('如观画布', [], 'canvas', 'graphicsKind'),
     recorder: builtin('如观绘图目标', [], 'recorder', 'graphicsKind'),
-    image: builtin('如观图像', [], 'image', 'graphicsKind')
+    image: builtin('如观图像', [], 'image', 'graphicsKind'),
+    dir: builtin('如档工具', [], 'dir', 'dirKind'),
+    audio: builtin('如声工具', [], 'audio', 'audioKind')
   };
   builtins.values.__如观 = new Instance(browserTypes.helpers,dict());
+  builtins.values.__如档 = new Instance(browserTypes.dir,dict());
+  builtins.values.__如声 = new Instance(browserTypes.audio,dict());
   let browserCanvas = null, browserSteps = 0, browserOutputBytes = 0;
   let browserPhase='initialization',browserRecording=null;
   const browserEncoder = new TextEncoder();
@@ -132,13 +136,52 @@
   const browserTextAligns=Object.freeze({左:'left',中:'center',右:'right'});
   const browserTextBaselines=Object.freeze({上:'top',中:'middle',下:'bottom',基线:'alphabetic'});
   function browserMember(m,receiver,name,args,loc){
+    // 宿主目录桥（__如档）：列 径 → 换行分隔的相对路径表，宿主无桥时得空串。
+    if(receiver.type.dirKind==='dir'){
+      if(name!=='列')return fail(m,'未知如档工具成员：'+name,loc);
+      const a=argsBind(m,name,args,['径'],loc);
+      if(typeof a.径!=='string'||browserEncoder.encode(a.径).length>512)return fail(m,'如档列目录径 须为句，最长 512 字节',loc);
+      m.lastMemberProcedure=false;
+      if(own(__ruHost,'listAssets')&&typeof __ruHost.listAssets==='function')return String(__ruHost.listAssets(a.径));
+      return '';
+    }
+    // 宿主音频桥（__如声）：全部同步委托 __ruHost.audio*；无桥时安全空转（播 得 -1）。
+    if(receiver.type.audioKind==='audio'){
+      const audio=num=>{if(typeof num!=='number'||!Number.isFinite(num)||num<-1||num>1000000)return fail(m,'声道须为范围内有限数',loc);return num;};
+      m.lastMemberProcedure=false;
+      if(name==='播'){
+        const a=argsBind(m,name,args,['径','循环'],loc);
+        if(typeof a.径!=='string'||!a.径||browserEncoder.encode(a.径).length>512)return fail(m,'如声播路径 须为非空句，最长 512 字节',loc);
+        if(typeof __ruHost.audioPlay==='function')return __ruHost.audioPlay(a.径,a.循环===true);
+        return -1;
+      }
+      if(name==='停'||name==='暂停'||name==='复'){
+        const a=argsBind(m,name,args,['声道'],loc);
+        if(typeof __ruHost['audio'+(name==='停'?'Stop':name==='暂停'?'Pause':'Resume')]==='function')__ruHost['audio'+(name==='停'?'Stop':name==='暂停'?'Pause':'Resume')](audio(a.声道));
+        return true;
+      }
+      if(name==='音量'){
+        const a=argsBind(m,name,args,['声道','小'],loc);
+        if(typeof __ruHost.audioVolume==='function')__ruHost.audioVolume(audio(a.声道),audio(a.小));
+        return a.小;
+      }
+      if(name==='进度'){const a=argsBind(m,name,args,['声道'],loc);return typeof __ruHost.audioProgress==='function'?__ruHost.audioProgress(audio(a.声道)):-1;}
+      if(name==='时长'){const a=argsBind(m,name,args,['声道'],loc);return typeof __ruHost.audioDuration==='function'?__ruHost.audioDuration(audio(a.声道)):0;}
+      if(name==='在播'){const a=argsBind(m,name,args,['声道'],loc);return typeof __ruHost.audioPlaying==='function'?__ruHost.audioPlaying(audio(a.声道)):true;}
+      if(name==='定位'){
+        const a=argsBind(m,name,args,['声道','秒'],loc);
+        if(typeof __ruHost.audioSeek==='function')__ruHost.audioSeek(audio(a.声道),audio(a.秒));
+        return true;
+      }
+      return fail(m,'未知如声工具成员：'+name,loc);
+    }
     const kind=receiver.type.graphicsKind;if(!kind)return MISSING;
     const bad=message=>fail(m,message,loc);
     const num=(value,label,low=-100000,high=100000,integer=false)=>{
       if(typeof value!=='number'||!Number.isFinite(value)||value<low||value>high||(integer&&!Number.isInteger(value)))bad(label+'须为范围内'+(integer?'整数':'有限数'));
       return value;
     };
-    const color=(value,optional=false)=>{if(optional&&value===null)return '';if(typeof value!=='string'||![7,9].includes(value.length)||!/^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$/.test(value))bad('颜色须为 #RRGGBB 或 #RRGGBBAA 文字');return value.toLowerCase();};
+    const color=(value,optional=false)=>{if(optional&&(value===null||value===''))return '';if(typeof value!=='string'||![7,9].includes(value.length)||!/^#[0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?$/.test(value))bad('颜色须为 #RRGGBB 或 #RRGGBBAA 文字');return value.toLowerCase();};
     if(kind==='helpers'){
       if(name==='颜色'){
         const channels=['红','绿','蓝','不透明度'],a=argsBind(m,name,args,channels,loc);

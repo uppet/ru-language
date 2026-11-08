@@ -10,6 +10,8 @@ from collections import deque
 from dataclasses import dataclass
 import math
 import os
+import os.path
+from pathlib import Path
 import base64
 import re
 import secrets
@@ -92,7 +94,8 @@ def install_graphics(owner):
     if _TYPES is None:
         _TYPES = {}
         for kind, name in (("helpers", "如观工具"), ("canvas", "如观画布"),
-                           ("recorder", "如观绘图目标"), ("image", "如观图像")):
+                           ("recorder", "如观绘图目标"), ("image", "如观图像"),
+                           ("dir", "如档工具"), ("audio", "如声工具")):
             node = Node("type", Token("IDENT", name, 0, 0),
                         {"name": name, "parent": None, "fields": [], "methods": []})
             typ = RuType(_BUILTIN_OWNER, node, fields={}, methods={}, state=2)
@@ -100,6 +103,8 @@ def install_graphics(owner):
             _TYPES[kind] = typ
     parent = Scope(owner.global_scope.parent)
     parent.values["__如观"] = Instance(_TYPES["helpers"], {})
+    parent.values["__如档"] = Instance(_TYPES["dir"], {})
+    parent.values["__如声"] = Instance(_TYPES["audio"], {})
     owner.global_scope.parent = parent
     owner.graphics_host = None
 
@@ -820,11 +825,44 @@ def graphics_member(owner, n, receiver, name, args):
             fail(label + "须为范围内" + ("整数" if integer else "有限数"))
         return int(value) if integer else value
     def color(value, optional=False):
-        if optional and value is None:
+        if optional and (value is None or value == ""):
             return ""
         if not isinstance(value, str) or not _COLOR.fullmatch(value):
             fail("颜色须为 #RRGGBB 或 #RRGGBBAA 文字" + ("，空表示不绘制" if optional else ""))
         return value.lower()
+    if kind == "dir":
+        # 如档桥：列 径 → 换行分隔的相对路径表（仅文件）。根＝当前工作目录，
+        # 拒绝对径与 .. 越界；目录不存在得空串。
+        if name != "列":
+            fail("未知如档工具成员：" + name)
+        bound = bind_arguments(name, args, ("径",), fail)
+        path = bound["径"]
+        if not isinstance(path, str) or not path:
+            fail("如档列目录径 须为非空句")
+        if os.path.isabs(path) or ".." in Path(path).parts:
+            fail("如档列目录径 拒绝对径与 .. 越界")
+        owner.last_member_procedure = False
+        try:
+            entries = sorted(p.name for p in Path(path).iterdir() if p.is_file())
+        except OSError:
+            entries = []
+        return True, "\n".join(entries)
+    if kind == "audio":
+        # 如声桥：Python 宿主无音频后端，安全空转（播 得 -1，播放器提示打不开）。
+        params = {"播": ("径", "循环"), "停": ("声道",), "暂停": ("声道",),
+                  "复": ("声道",), "音量": ("声道", "小"), "进度": ("声道",),
+                  "时长": ("声道",), "在播": ("声道",), "定位": ("声道", "秒")}
+        if name not in params:
+            fail("未知如声工具成员：" + name)
+        bind_arguments(name, args, params[name], fail)
+        owner.last_member_procedure = False
+        if name == "播":
+            return True, -1.0
+        if name == "进度":
+            return True, -1.0
+        if name == "时长":
+            return True, 0.0
+        return True, True
     if kind == "helpers":
         if name == "颜色":
             params = ("红", "绿", "蓝", "不透明度")

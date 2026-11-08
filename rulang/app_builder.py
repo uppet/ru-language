@@ -12,6 +12,8 @@ from pathlib import Path
 
 MAX_EMBEDDED_ASSETS = 16 * 1024 * 1024
 ASSET_IMAGE_TYPES = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg"}
+ASSET_AUDIO_TYPES = {"wav": "audio/wav", "mp3": "audio/mpeg", "ogg": "audio/ogg",
+                     "flac": "audio/flac", "m4a": "audio/mp4"}
 
 
 def _embed_assets(assets_dir):
@@ -33,9 +35,14 @@ def _embed_assets(assets_dir):
         key = path.relative_to(root).as_posix()
         raw = path.read_bytes()
         media = ASSET_IMAGE_TYPES.get(path.suffix.lower().lstrip("."))
+        audio = ASSET_AUDIO_TYPES.get(path.suffix.lower().lstrip("."))
         if media is not None:
             payload = "data:" + media + ";base64," + base64.b64encode(raw).decode("ascii")
             assets[key] = {"kind": "image", "data": payload}
+            total += len(payload.encode("utf-8"))
+        elif audio is not None:
+            payload = "data:" + audio + ";base64," + base64.b64encode(raw).decode("ascii")
+            assets[key] = {"kind": "audio", "data": payload}
             total += len(payload.encode("utf-8"))
         else:
             try:
@@ -62,6 +69,42 @@ const RuHost = (() => {
   let rafId = 0;
   const images = new Map();
   const files = new Map();
+
+  // 音频管理器（如声桥）：声道句柄 → HTMLAudioElement。
+  // 自动播放策略拒绝时标记 rejected，在播 对其返回真——播放器按 在播 驱动自动接歌，
+  // 假装在播可避免无手势环境里每帧跳歌；用户点播放键即恢复真播放。
+  const audioHandles = new Map();
+  let audioNextHandle = 1;
+
+  function audioResolve(path) {
+    const asset = Object.prototype.hasOwnProperty.call(ASSETS, path) ? ASSETS[path] : null;
+    if (asset && asset.kind === 'audio') return asset.data;
+    if (/^https?:\/\//.test(path)) return path;
+    // 曲库常以构建机路径播放（如 examples/player/music/样例.wav），资产表则以
+    // --assets 目录为根；按文件名兜底命中内嵌资产，两种根约定都能工作。
+    const base = path.slice(path.lastIndexOf('/') + 1);
+    const byName = Object.prototype.hasOwnProperty.call(ASSETS, base) ? ASSETS[base] : null;
+    if (byName && byName.kind === 'audio') return byName.data;
+    return null;
+  }
+
+  function audioState(handle) {
+    const state = audioHandles.get(handle);
+    return state && !state.failed ? state : null;
+  }
+
+  function listAssets(path) {
+    let prefix = String(path || '');
+    if (prefix.startsWith('./')) prefix = prefix.slice(2);
+    if (prefix && !prefix.endsWith('/')) prefix += '/';
+    const keys = Object.keys(ASSETS).sort();
+    let matched = keys.filter((key) => key.startsWith(prefix));
+    // 曲库目录常以构建机路径给出（如 examples/player/music/）；资产表则以 --assets
+    // 目录为根。前缀一条没中时退回全量列举，让两种根约定都能工作。
+    if (!matched.length && prefix) matched = keys;
+    const cut = (key) => (prefix && key.startsWith(prefix) ? key.slice(prefix.length) : key);
+    return matched.map(cut).join('\n');
+  }
 
   function loadEvent(type, id, error) {
     runtime.dispatch({ canvas_id: canvasId, event: { type, id, error } });
@@ -458,6 +501,65 @@ const RuHost = (() => {
       ctx.font = size + 'px ' + FONT;
       return ctx.measureText(text).width;
     },
+    listAssets,
+    audioPlay(path, loop) {
+      const src = audioResolve(path);
+      if (!src) return -1;
+      const el = new Audio(src);
+      el.loop = !!loop;
+      el.preload = 'auto';
+      // starting＝play() 已请求但 'playing' 未至：在播 对其返真，防播放器
+      // 首帧把未起播误判成播完而自动接歌。
+      const state = { el, starting: true, rejected: false, failed: false };
+      el.addEventListener('playing', () => { state.starting = false; });
+      el.addEventListener('pause', () => { state.starting = false; });
+      el.addEventListener('error', () => { state.starting = false; state.failed = true; });
+      const handle = audioNextHandle++;
+      audioHandles.set(handle, state);
+      el.play().catch(() => { state.starting = false; state.rejected = true; });
+      return handle;
+    },
+    audioStop(handle) {
+      const state = audioState(handle);
+      if (!state) return;
+      state.el.pause();
+      state.el.currentTime = 0;
+    },
+    audioPause(handle) {
+      const state = audioState(handle);
+      if (state) { state.starting = false; state.el.pause(); }
+    },
+    audioResume(handle) {
+      const state = audioState(handle);
+      if (!state) return;
+      state.rejected = false;
+      state.starting = true;
+      state.el.play().catch(() => { state.starting = false; state.rejected = true; });
+    },
+    audioVolume(handle, level) {
+      const state = audioState(handle);
+      if (!state) return;
+      state.el.volume = Math.min(1, Math.max(0, level / 100));
+    },
+    audioProgress(handle) {
+      const state = audioState(handle);
+      return state ? state.el.currentTime : -1;
+    },
+    audioDuration(handle) {
+      const state = audioState(handle);
+      if (!state) return 0;
+      return Number.isFinite(state.el.duration) ? state.el.duration : 0;
+    },
+    audioPlaying(handle) {
+      const state = audioHandles.get(handle);
+      if (!state || state.failed) return true;
+      if (state.starting || state.rejected) return true; // 起播中／自动播放被拒：佯真防自动接歌空转。
+      return !state.el.paused && !state.el.ended;
+    },
+    audioSeek(handle, seconds) {
+      const state = audioState(handle);
+      if (state) state.el.currentTime = seconds;
+    },
     emit(e) {
       if (e.type === 'graphics') {
         if (e.width && canvas.width !== e.width) { canvas.width = e.width; canvas.height = e.height; }
@@ -506,6 +608,7 @@ _PAGE = """<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
 <title>{title}</title>
 <style>
   html, body {{ margin: 0; padding: 0; background: #16181d; height: 100%; }}

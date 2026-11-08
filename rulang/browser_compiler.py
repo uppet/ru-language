@@ -126,7 +126,7 @@ class BrowserJSCompiler(JSCompiler):
         start = runtime.index("  for (const [name, fields] of [['件'")
         end = runtime.index('  const contestTypes', start)
         runtime = runtime[:start] + runtime[end:]
-        runtime = runtime.replace("'__实用']);", "'__实用','__如观']);")
+        runtime = runtime.replace("'__实用']);", "'__实用','__如观','__如档','__如声']);")
         runtime = runtime.replace('      const a = contestMember', '      const g = browserMember(m,receiver,name,args,loc); if (g !== MISSING) return g;\n      const a = contestMember')
         insertion = Path(__file__).with_name('browser_runtime.js').read_text(encoding='utf-8')
         runtime = runtime.replace('  return {NO_RETURN,', insertion + '\n  return {browserTick,browserDispatch,browserFlush,browserReset,NO_RETURN,')

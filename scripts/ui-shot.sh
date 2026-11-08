@@ -30,7 +30,7 @@ s = s.replace("曲 取 [[]].", "曲 取 [['样例.mp3']].")
 open(路径, 'w', encoding='utf-8').write(s)
 PY
 
-python3 ru build "$源" --target ui -o "$临时/app.html" >/dev/null
+python3 ru build "$源" --target ui --assets examples/player/music -o "$临时/app.html" >/dev/null
 
 (cd "$临时" && python3 -m http.server "$端口" >/dev/null 2>&1) &
 服务=$!
