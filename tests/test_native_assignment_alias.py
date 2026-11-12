@@ -8,7 +8,7 @@ from rulang import native_c as n, native_tiered as t
 from rulang.frontend import parse, RuError
 from rulang.modules import load_module_graph
 P = "密 取 外言 '如:密'. I 取 密 其 i32. F 取 密 其 f64. V 取 密 其 无值. "
-PATH = str(Path(tempfile.gettempdir()) / 'native-assignment-alias.ru')
+PATH = str((Path(tempfile.gettempdir()) / 'native-assignment-alias.ru').resolve())
 
 def plan(source, cls=n.NativeCPlan):
     return cls(load_module_graph(PATH, parse(P + source)))
