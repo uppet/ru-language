@@ -59,14 +59,14 @@ class Compiler:
         self.program = program
         self.native_plan = None
         if self.native_enabled:
-            from .native_c import NativeCPlan
+            from .native_tiered import build_native_c_plan
             # The ABI planner diagnoses imported call sites too. Preserve the
             # original text instead of letting CLI excerpts fall back to root.
             native_modules = ModuleGraph(self.root)
             native_modules.update(self.modules)
             native_modules.sources = self.source_texts
-            self.native_plan = (NativeCPlan(native_modules, diagnostics=native_analysis)
-                                if native_analysis is not None else NativeCPlan(native_modules))
+            self.native_plan = (build_native_c_plan(native_modules, diagnostics=native_analysis)
+                                if native_analysis is not None else build_native_c_plan(native_modules))
         from .c_runtime import walk_nodes
         self.can_panic = self.native_enabled or full_runtime or any(n.kind in ('panic', 'try') for n in walk_nodes(self.modules))
         self.counter = 0

@@ -5,13 +5,13 @@ loads a DLL, imports ctypes, or synthesizes executable memory.  Native calls and
 callbacks are ordinary, exactly typed C functions generated for declared shapes.
 Unknown signature components are a compilation error, not a runtime ABI guess.
 """
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from dataclasses import dataclass
 from itertools import product
 from pathlib import Path
 from time import perf_counter
 
-from .frontend import Node, RuError, bind_arguments
+from .frontend import Node, RuError, bind_arguments, validate
 
 
 # These IDs are the ABI between generated code and native_runtime.h.
@@ -29,13 +29,13 @@ RAW_FIELDS = {name: ('p' if name == '指针' else name if name in ('f32', 'f64')
                     else 'u' if name.startswith('u') else 'i')
               for name in C_TYPES if name != '无值'}
 MAX_CALLBACKS = 1024
-MAX_SIGNATURES = 1024
-MAX_STATIC_ALTERNATIVES = 128
-MAX_ANALYSIS_STEPS = 200000
+SCALAR_LITERAL_PRECISION = 128  # Widening threshold; never rejects data candidates.
+# Expression visits are diagnostics, never a whole-program admission quota.
 MAX_CALL_SUMMARIES = 4096
 MAX_EXPRESSION_SUMMARIES = 16384
 MAX_EXPRESSION_DEPENDENCIES = 256
 MAX_LITERAL_ARRAYS = 1024
+_STATEMENT_CHUNK_SIZE = 3
 MAX_SUMMARY_FUNCTIONS = 256
 MAX_SUMMARY_DEPENDENCIES = 256
 
@@ -71,6 +71,8 @@ UNKNOWN = _Unknown()
 # Analysis-only numeric top: unlike UNKNOWN it absorbs later numeric constants
 # in joins, so widening a large data table remains a monotone fixed point.
 NUMBER = _Unknown()
+# Unknown string literal history; never a proven ABI name/convention.
+STRING = _Unknown()
 NATIVE = object()
 LIBRARY = object()
 
@@ -78,6 +80,11 @@ LIBRARY = object()
 class _Array:
     def __init__(self, items):
         self.items = tuple(items)
+        # Losing positional/ABI knowledge must not lose aliases. Once invalid,
+        # retain one monotone reachability value per original initializer slot.
+        self.reachable = ()
+        self.assigned = ()
+        self.projection = None
         self._version = 0
 
 
@@ -85,6 +92,7 @@ class _Opaque:
     """Reachable values in an object whose member semantics are not modeled."""
     def __init__(self, values):
         self.values = tuple(values)
+        self.assigned = ()
         self._version = 0
 
 
@@ -197,6 +205,7 @@ class _SummaryFrame:
         self.dependency_limit = (MAX_EXPRESSION_DEPENDENCIES if self.track_private
                                  else MAX_SUMMARY_DEPENDENCIES)
         self.dependencies = {}
+        self.path_sensitive = False
         self.complete = True
         self.private_reads = {}
         self.replay_complete = True
@@ -288,37 +297,123 @@ def _same(left, right):
     return left is right or left == right
 
 
+def _merge_key(value):
+    """Keys equivalent to _same for the recognized, closed analysis domain.
+
+    Unknown/extension values use the original comparator, including against
+    keyed values. Nested choices likewise retain the recursive comparator.
+    """
+    kind = type(value)
+    if kind is bool:
+        return ('bool', value)
+    if kind in (int, float):
+        return ('number', value)
+    if kind is str:
+        return ('string', value)
+    if value is None:
+        return ('none',)
+    if kind in (_Array, _Opaque, _Module, _Env, _Binding, _Unknown, object):
+        return ('identity', id(value))
+    if kind is _Function and type(value.declared) is bool:
+        return ('function', id(value.node), id(value.env), value.declared)
+    if kind is _Type and type(value.name) is str:
+        return ('type', value.name)
+    if (kind is NativeCSignature and type(value.result) is str
+            and type(value.params) is tuple and all(type(x) is str for x in value.params)):
+        return ('signature', value.result, value.params)
+    if (kind is _Operation and type(value.name) is str
+            and (value.receiver is None or type(value.receiver) in
+                 (_Array, _Opaque, _Module, _Env, _Binding, _Unknown, object))):
+        return ('operation', value.name, id(value.receiver))
+    return None
+
+
 def _merge(*values):
     result = []
+    keys = set()
+    fallback = []
     numeric = False
+    string = False
+    numeric_count = 0
+    string_count = 0
+
+    def remove_literals(kinds):
+        nonlocal result, keys, fallback, numeric_count, string_count
+        result = [item for item in result if type(item) not in kinds]
+        keys = set()
+        fallback = []
+        numeric_count = string_count = 0
+        for item in result:
+            key = _merge_key(item)
+            if key is None:
+                fallback.append(item)
+            else:
+                keys.add(key)
+            numeric_count += type(item) in (int, float)
+            string_count += type(item) is str
+
+    def append_unique(alternative):
+        nonlocal numeric_count, string_count
+        key = _merge_key(alternative)
+        if key is None or fallback:
+            # Preserve comparator direction/order for extension values.
+            duplicate = any(_same(alternative, item) for item in result)
+        else:
+            duplicate = key in keys
+        if duplicate:
+            return
+        result.append(alternative)
+        if key is None:
+            fallback.append(alternative)
+        else:
+            keys.add(key)
+        numeric_count += type(alternative) in (int, float)
+        string_count += type(alternative) is str
+
     for value in values:
         for alternative in _alternatives(value):
             if alternative is NUMBER:
-                result = [item for item in result if type(item) not in (int, float)]
+                if numeric_count:
+                    remove_literals((int, float))
                 numeric = True
+            elif alternative is STRING:
+                if string_count:
+                    remove_literals((str,))
+                string = True
+            elif string and type(alternative) is str:
+                continue
             elif numeric and type(alternative) in (int, float):
                 continue
-            if not any(_same(alternative, item) for item in result):
-                result.append(alternative)
-            if len(result) > MAX_STATIC_ALTERNATIVES:
-                # Numeric literals have no owner/callable/descriptor identity.
-                # Losing their exact values only broadens subsequent indexing;
-                # ABI consumers still reject this unknown numeric value. Never
-                # erase nonnumeric alternatives or mutable container aliases.
-                nonnumeric = [item for item in result if type(item) not in (int, float)]
-                if len(nonnumeric) < len(result):
-                    result = nonnumeric + ([] if numeric else [NUMBER])
+            append_unique(alternative)
+            if len(result) > SCALAR_LITERAL_PRECISION:
+                if numeric_count:
+                    remove_literals((int, float))
+                    if not numeric:
+                        result.append(NUMBER)
+                        keys.add(_merge_key(NUMBER))
                     numeric = True
-                if len(result) > MAX_STATIC_ALTERNATIVES:
-                    raise RuError('原生签名静态分析的候选值超过 128 上限；请简化描述符数据流', category='原生编译错误')
+                if string_count:
+                    remove_literals((str,))
+                    if not string:
+                        result.append(STRING)
+                        keys.add(_merge_key(STRING))
+                    string = True
     if not result:
         return UNKNOWN
     return result[0] if len(result) == 1 else _Choice(tuple(result))
 
 
+def _reachable_values(*values):
+    # An invalid array cannot supply scalar/type information. Keep every owner,
+    # callable and descriptor constructor that an unknown operation can affect,
+    # but do not accumulate irrelevant scalar histories after invalidation.
+    return _merge(*(item for value in values for item in _alternatives(value)
+                    if isinstance(item, (_Array, _Opaque, _Function, _Module, _Operation))))
+
+
 def _same_returns(accumulated, final):
-    # A failed optimization proof must not raise a new error before a later
-    # body statement. The ordinary function-return join retains that limit.
+    # A failed optimization proof must not move an error before a later body
+    # statement; the ordinary return join remains the semantic evaluation site.
     try:
         return _same(_merge(*accumulated), _merge(*final))
     except RuError:
@@ -331,7 +426,7 @@ class NativeCPlan:
     Supported static dataflow includes primitive/module/function aliases,
     import-all, named arguments, local declarations, closure captures and finite
     conditional alternatives. Descriptor cells use conservative monotone joins;
-    loops iterate to a bounded fixed point and unsupported mutable/callable
+    loops iterate to a monotone fixed point and unsupported mutable/callable
     escapes are rejected when they prevent ABI resolution. Functions are analyzed
     with their static actuals. Recursion is accepted only for a proven pure
     scalar self-recursive subset; other recursive paths are rejected;
@@ -348,10 +443,14 @@ class NativeCPlan:
         self.modules = dict(modules)
         self.sources = getattr(modules, 'sources', {})
         self.signatures = []
+        self._signature_index = {}
         self.callback_signatures = set()
         self._revision = 0
         self._call_summaries = {}
         self._expression_summaries = OrderedDict()
+        # AST-only slices are shared by every environment, never per-context.
+        self._block_chunks = {}
+        self._block_hits = 0
         self._expression_hits = 0
         self._literal_array_items = {}
         self._literal_array_hits = 0
@@ -370,53 +469,87 @@ class NativeCPlan:
         self._called = set()
         self._active = set()
         self._call_sites = []
+        self._heap_context = ()
+        self._capture_contexts = {}
         self._deferred_functions = {}
+        self._deferred_queue = deque()
+        self._deferred_pending = set()
+        self._deferred_dependencies = {}
+        self._deferred_watchers = {}
+        self._deferred_untracked = {}
         self._signature_inputs = {}
         self._steps = 0
         self._path = next(iter(self.modules), '<源码>')
         self._native_path = str((Path(__file__).parent / 'stdlib' / '密.ru').resolve())
         started = perf_counter()
-        completed = False
+        self._analysis_completed = False
+        failure_kind = None
         try:
             self._analyze()
-            completed = True
+            self._analysis_completed = True
+        except (MemoryError, RecursionError) as error:
+            # Finite source may still require expensive context-sensitive work.
+            # Report actual host exhaustion, not a fixed project-size quota or
+            # an unresolved ABI guess. Never expose a partial native plan.
+            failure_kind = 'memory' if isinstance(error, MemoryError) else 'host-stack'
+            self.signatures = ()
+            self._signature_index.clear()
+            self.callback_signatures = frozenset()
+            detail = '宿主内存不足' if failure_kind == 'memory' else '宿主分析调用栈耗尽'
+            raise RuError('原生签名静态分析未完成：' + detail +
+                          '；未生成原生 ABI 计划。可使用 --native-analysis 查看统计',
+                          category='资源错误') from None
         finally:
             if diagnostics is not None:
-                diagnostics({
-                    'schema': 1, 'phase': 'native-signatures',
-                    'completed': completed, 'seconds': perf_counter() - started,
-                    'modules': len(self.modules), 'signatures': len(self.signatures),
-                    'steps': self._steps, 'step_limit': MAX_ANALYSIS_STEPS,
-                    'function_evaluations': self._function_evaluations,
-                    'summary_hits': self._summary_hits,
-                    'expression_hits': self._expression_hits,
-                    'literal_array_hits': self._literal_array_hits,
-                    'module_steps': dict(self._module_steps),
-                    'function_evaluations_by_site': dict(self._function_counts),
-                })
+                try:
+                    diagnostics({
+                        'schema': 2, 'phase': 'native-signatures',
+                        'completed': self._analysis_completed, 'seconds': perf_counter() - started,
+                        'resource_failure': failure_kind,
+                        'modules': len(self.modules), 'signatures': len(self.signatures),
+                        'steps': self._steps, 'step_limit': None,
+                        'function_evaluations': self._function_evaluations,
+                        'summary_hits': self._summary_hits,
+                        'expression_hits': self._expression_hits,
+                        'block_hits': self._block_hits,
+                        'literal_array_hits': self._literal_array_hits,
+                        'module_steps': dict(self._module_steps),
+                        'function_evaluations_by_site': dict(self._function_counts),
+                    })
+                except Exception:
+                    # Diagnostic output is best-effort while another failure or
+                    # cancellation is propagating. It must not replace that
+                    # cause, especially after an allocation failure.
+                    if self._analysis_completed:
+                        raise
+
 
     def _analyze(self):
+        # Termination relies on the language's declaration/binding rules.
+        # Internal callers may supply AST dictionaries without the module
+        # loader; reject illegal strong hoist/rebind cycles before inference.
+        for body in self.modules.values():
+            validate(body)
         for path in self.modules:
             self._module(path)
         # Check dormant functions as well. Native standard-library forwarding
         # functions are templates; their real call sites provide the ABI values.
         index = 0
-        for _ in range(MAX_STATIC_ALTERNATIVES):
-            before = (self._fixed_point_state(), tuple(self.signatures))
+        # Propagate only after an observed owner changes. A long acyclic chain
+        # is ordinary project size, not evidence of nonconvergence: it must not
+        # consume a fixed global number of passes. New escaped functions are
+        # queued once; the existing conservative call/loop/value rules apply
+        # inside every transfer, including synchronous callback registration.
+        while index < len(self._functions) or self._deferred_queue:
             while index < len(self._functions):
                 fn = self._functions[index]
                 index += 1
                 if id(fn.node) not in self._called and fn.path != self._native_path:
                     self._invoke(fn, [(None, UNKNOWN) for _ in fn.node.data['params']], fn.node)
-            # A callback or escaped callable may run after registration, when
-            # captured descriptor cells have changed. Revisit these summaries
-            # after all later joins; never trust registration-time state alone.
-            for fn in tuple(self._deferred_functions.values()):
-                self._invoke(fn, [(None, UNKNOWN) for _ in fn.node.data['params']], fn.node)
-            if before == (self._fixed_point_state(), tuple(self.signatures)) and index == len(self._functions):
-                break
-        else:
-            raise RuError('无法静态确定延迟回调捕获的原生描述符；请使用不变的原生签名', category='原生编译错误')
+            if self._deferred_queue:
+                key = self._deferred_queue.popleft()
+                self._deferred_pending.discard(key)
+                self._revisit_deferred(key)
         # Late-discovered methods/callbacks may invalidate aliases that fed an
         # earlier constructor. The static subset requires those descriptor arrays
         # to remain provable after all effect summaries have settled.
@@ -424,20 +557,20 @@ class NativeCPlan:
             self._path = path
             if params.items is None:
                 self._unresolved(origin, '被后续作用影响的原生签名参数阵')
+            self._before_signature_revalidation(params, result, origin)
             possibilities = [_alternatives(item) for item in params.items]
-            count = 1
-            for choices in possibilities:
-                count *= len(choices)
-            if count > MAX_STATIC_ALTERNATIVES:
-                self._unresolved(origin, '被后续作用影响的原生参数类型组合')
+            # Reject unknown late aliases before a potentially large product.
+            if any(not isinstance(item, _Type) for choices in possibilities for item in choices):
+                self._unresolved(origin, '被后续作用影响的原生参数类型')
             for items in product(*possibilities):
-                if any(not isinstance(item, _Type) for item in items):
-                    self._unresolved(origin, '被后续作用影响的原生参数类型')
                 signature = NativeCSignature(result, tuple(item.name for item in items))
-                if signature not in self.signatures:
+                if signature not in self._signature_index:
                     self._unresolved(origin, '被后续作用改变的原生签名')
         self.signatures = tuple(self.signatures)
         self.callback_signatures = frozenset(self.callback_signatures)
+
+    def _before_signature_revalidation(self, params, result, origin):
+        pass
 
     def _changed(self, owner=None):
         # All abstract mutations (including new scopes/containers/functions,
@@ -452,6 +585,13 @@ class NativeCPlan:
         if owner is not None:
             owner._version += 1
         self._revision += 1
+        # Incomplete dependency evidence never licenses a skipped transfer.
+        # Such tasks subscribe to all changes, including newly allocated owners.
+        for key in tuple(self._deferred_untracked):
+            self._queue_deferred(key)
+        if owner is not None:
+            for key in tuple(self._deferred_watchers.get(owner, ())):
+                self._queue_deferred(key)
 
     def _observe(self, owner):
         if self._summary_frames:
@@ -504,9 +644,11 @@ class NativeCPlan:
                     if item.parent is not None:
                         pending.append(item.parent)
                 elif isinstance(item, _Array):
-                    pending.extend(item.items or ())
+                    pending.extend(item.items if item.items is not None else item.reachable)
+                    pending.extend(item.assigned)
                 else:
                     pending.extend(item.values)
+                    pending.extend(item.assigned)
 
     def _error(self, node, message):
         path = self._path
@@ -577,6 +719,7 @@ class NativeCPlan:
         return self._private_body_cache[key]
 
     def _function(self, node, env, declared=True):
+        self._path_dependent()
         key = (id(node), id(env))
         if key not in self._function_cache:
             value = _Function(node, env, self._path, declared)
@@ -595,6 +738,8 @@ class NativeCPlan:
         pending, owners, choices = [], {}, {}
 
         def value_key(value):
+            if value is STRING:
+                return ('string-top',)
             if type(value) is bool:
                 return ('fact', value)
             if type(value) in (int, float):
@@ -622,18 +767,105 @@ class NativeCPlan:
         records = []
         for owner in pending:
             if isinstance(owner, _Array):
-                values = None if owner.items is None else tuple(value_key(v) for v in owner.items)
+                values = (None, tuple(value_key(v) for v in owner.reachable)) if owner.items is None else (
+                    tuple(value_key(v) for v in owner.items), ())
                 kind = 'array'
             else:
                 values = tuple(value_key(v) for v in owner.values)
                 kind = 'object'
+            if owner.assigned:
+                values = (values, ('assigned', tuple(value_key(v) for v in owner.assigned)))
             records.append((id(owner), kind, values))
         return roots, tuple(sorted(records))
 
-    def _block(self, body, env):
-        for node in body:
-            if node.kind == 'function':
-                env.put(node.data['name'], self._function(node, env))
+    def _block(self, body, env, *, hoisted=False):
+        # Summarize bounded statement transfers as well as expressions. A
+        # large function can exceed the dependency bound while small ordered
+        # regions are independently stable. Keep their original environment,
+        # return order, full first-read evidence and recursive-call footprint.
+        # These entries compete in the existing expression LRU, not a new
+        # capacity. A hit still consumes a step; misses charge their expressions.
+        if not hoisted:
+            # Hoist exactly once over the entire original body. Re-hoisting
+            # a later chunk would overwrite an earlier statement's rebinding.
+            for node in body:
+                if node.kind == 'function':
+                    env.put(node.data['name'], self._function(node, env))
+        if len(body) > _STATEMENT_CHUNK_SIZE and MAX_EXPRESSION_SUMMARIES > 0:
+            chunks = self._block_chunks.get(id(body))
+            if chunks is None:
+                chunks = tuple(body[start:start + _STATEMENT_CHUNK_SIZE]
+                               for start in range(0, len(body), _STATEMENT_CHUNK_SIZE))
+                self._block_chunks[id(body)] = chunks
+            return [value for chunk in chunks for value in self._block(chunk, env, hoisted=True)]
+        if not body or MAX_EXPRESSION_SUMMARIES <= 0:
+            return self._block_body(body, env)
+        key = ('block', id(body), id(env))
+        summary_key = key
+        summary = self._expression_summaries.get(summary_key)
+        if summary is None:
+            summary_key = ('closed-block', id(body))
+            summary = self._expression_summaries.get(summary_key)
+        if (summary is not None and
+                all(owner._version == version for owner, version in summary[0]) and
+                not self._active.intersection(summary[2])):
+            if summary[3]:
+                self._path_dependent()
+            self._charge(body[0])
+            if self._summary_frames:
+                self._summary_frames[-1].include(summary[0], summary[2])
+            self._expression_summaries.move_to_end(summary_key)
+            self._block_hits += 1
+            return summary[1]
+        revision = self._revision
+        frame = _SummaryFrame()
+        self._summary_frames.append(frame)
+        try:
+            result = self._block_body(body, env)
+            # A hit is charged one step, so it may contribute at most one
+            # return item. Replaying an accumulated loop-return list could
+            # otherwise multiply duplicate items exponentially without visits.
+            # Do not merge here: that could move a candidate-validation error
+            # ahead of later statements. Multi-return blocks simply run again.
+            if len(result) <= 1 and frame.complete and (revision == self._revision or frame.replay_stable()):
+                # Only literal primitive expression statements may cross envs.
+                # Empty version evidence alone is not sufficient: an idempotent
+                # private binding write still initializes a fresh environment.
+                if (not result and self._closed_primitive_block(body)
+                        and revision == self._revision and frame.replay_complete
+                        and not frame.dependencies and not frame.private_reads
+                        and not frame.functions and not frame.path_sensitive):
+                    key = ('closed-block', id(body))
+                if key not in self._expression_summaries and len(self._expression_summaries) >= MAX_EXPRESSION_SUMMARIES:
+                    self._expression_summaries.popitem(last=False)
+                self._expression_summaries[key] = (tuple(frame.dependencies.items()), result, frozenset(frame.functions), frame.path_sensitive)
+                self._expression_summaries.move_to_end(key)
+            return result
+        finally:
+            self._summary_frames.pop()
+            if self._summary_frames:
+                self._summary_frames[-1].absorb(frame)
+
+    @staticmethod
+    def _closed_primitive_block(body):
+        pending = []
+        for statement in body:
+            if statement.kind != 'expr':
+                return False
+            pending.append(statement.data['expr'])
+        while pending:
+            node = pending.pop()
+            if node.kind in ('number', 'string', 'fact', 'null'):
+                continue
+            if node.kind == 'unary':
+                pending.append(node.data['expr'])
+            elif node.kind == 'binary' and node.data['op'] != '对':
+                pending.extend((node.data['left'], node.data['right']))
+            else:
+                return False
+        return True
+
+    def _block_body(self, body, env):
         returns = []
         for node in body:
             d, kind = node.data, node.kind
@@ -671,7 +903,7 @@ class NativeCPlan:
                 # only transient private reads may be replaced by that witness.
                 loop_frame = _SummaryFrame(track_private=False)
                 loop_returns = []
-                for _ in range(MAX_STATIC_ALTERNATIVES):
+                while True:
                     before = self._fixed_point_state()
                     frame = _SummaryFrame(track_private=False)
                     self._summary_frames.append(frame)
@@ -689,8 +921,6 @@ class NativeCPlan:
                             loop_frame.private_reads = dict(frame.private_reads)
                             loop_frame.replay_complete = True
                         break
-                else:
-                    self._unresolved(node, '循环携带的原生描述符（静态数据流未收敛）')
                 returns.extend(loop_returns)
                 if self._summary_frames:
                     self._summary_frames[-1].absorb(loop_frame)
@@ -698,11 +928,15 @@ class NativeCPlan:
                 scope = self._environment(env, 'block', id(node), d['body'])
                 returns.extend(self._block(d['body'], scope))
             elif kind == 'assign':
-                self._expr(d['expr'], env)
+                # Runtime selects receiver/index before evaluating the RHS.
+                # Member-style 位 stores its index expressions in args.
                 target = d['target']
                 receiver = self._expr(target.data.get('receiver'), env)
-                self._invalidate(receiver, node)
                 self._children(target.data.get('index'), env)
+                self._children(target.data.get('args'), env)
+                value = self._expr(d['expr'], env)
+                self._invalidate(receiver, node)
+                self._retain_assignment(receiver, value, target, node)
             else:
                 self._children(d, env)
         return returns
@@ -717,29 +951,27 @@ class NativeCPlan:
             for child in value:
                 self._children(child, env)
 
-    def _expr(self, node, env, reference=False):
-        if node is None:
-            return None
+    def _charge(self, node):
         self._steps += 1
         if self._diagnostics is not None:
             self._module_steps[self._path] = self._module_steps.get(self._path, 0) + 1
-        if self._steps > MAX_ANALYSIS_STEPS:
-            self._error(node, '原生签名静态分析超过复杂度上限；'
-                        f'已分析 {self._steps} 步（上限 {MAX_ANALYSIS_STEPS}），'
-                        f'{len(self.modules)} 个模块，{len(self.signatures)} 个签名，'
-                        f'{self._function_evaluations} 次函数分析，{self._summary_hits} 次摘要命中；'
-                        '此位置仅为停止处，不一定是耗时来源；可用 --native-analysis 查看统计；'
-                        '请简化签名构造和包装函数')
+
+    def _expr(self, node, env, reference=False):
+        if node is None:
+            return None
+        self._charge(node)
         if MAX_EXPRESSION_SUMMARIES <= 0 or node.kind not in ('call', 'invoke', 'member', 'index', 'binary', 'unary', 'convert',
                              'array', 'slice', 'map', 'new', 'function_ref'):
             return self._expr_body(node, env, reference)
         # Lookup itself already consumed one expression step. A hit avoids
-        # the actual descendant traversal, not the nontermination guard.
+        # the actual descendant traversal; visit accounting remains exact.
         key = (id(node), id(env), reference)
         summary = self._expression_summaries.get(key)
         if (summary is not None and
                 all(owner._version == version for owner, version in summary[0]) and
                 not self._active.intersection(summary[2])):
+            if summary[3]:
+                self._path_dependent()
             if self._summary_frames:
                 self._summary_frames[-1].include(summary[0], summary[2])
             self._expression_summaries.move_to_end(key)
@@ -753,7 +985,7 @@ class NativeCPlan:
             if revision == self._revision and frame.complete:
                 if key not in self._expression_summaries and len(self._expression_summaries) >= MAX_EXPRESSION_SUMMARIES:
                     self._expression_summaries.popitem(last=False)
-                self._expression_summaries[key] = (tuple(frame.dependencies.items()), result, frozenset(frame.functions))
+                self._expression_summaries[key] = (tuple(frame.dependencies.items()), result, frozenset(frame.functions), frame.path_sensitive)
                 self._expression_summaries.move_to_end(key)
             return result
         finally:
@@ -775,8 +1007,9 @@ class NativeCPlan:
                 return self._invoke(value, self._arguments(d['args'], env), node)
             return value if reference else self._implicit(value, node)
         if kind == 'array':
+            self._path_dependent()
             # Only immutable primitive items are shared across call contexts.
-            # Every environment still owns its distinct mutable _Array below.
+            # Each finite allocation context still owns its mutable _Array.
             # The first visit evaluates/charges every literal before caching.
             literal_items = self._literal_array_items.get(id(node))
             if literal_items is not None:
@@ -789,14 +1022,24 @@ class NativeCPlan:
                     if len(self._literal_array_items) >= MAX_LITERAL_ARRAYS:
                         del self._literal_array_items[next(iter(self._literal_array_items))]
                     self._literal_array_items[id(node)] = items
-            key = (id(node), id(env))
+            key = (id(node), self._heap_context or id(env))
             if key not in self._array_cache:
                 self._array_cache[key] = _Array(items)
                 self._changed()
             else:
                 value = self._array_cache[key]
                 self._observe(value)
-                if value.items is not None:
+                if value.items is None:
+                    merged = tuple(_reachable_values(old, new)
+                                   for old, new in zip(value.reachable, items))
+                    if not all(_same(old, new) for old, new in zip(value.reachable, merged)):
+                        value.reachable = merged
+                        self._changed(value)
+                    # This allocation site was already exposed to an unknown
+                    # effect. A fresh initializer can introduce a new alias,
+                    # or an older opaque child can gain new reachable owners.
+                    self._invalidate(value, node)
+                else:
                     merged = tuple(_merge(old, new) for old, new in zip(value.items, items))
                     if not all(_same(old, new) for old, new in zip(value.items, merged)):
                         value.items = merged
@@ -866,11 +1109,21 @@ class NativeCPlan:
                     else:
                         values.extend(item.items)
                 else:
-                    values.append(item if isinstance(item, _Opaque) else UNKNOWN)
+                    if isinstance(item, _Array):
+                        # An unknown child can have different member semantics
+                        # from this array. Keep its live alias graph in an opaque
+                        # projection instead of applying array-only shortcuts.
+                        if item.projection is None:
+                            item.projection = _Opaque((item,))
+                            self._changed()
+                        values.append(item.projection)
+                    else:
+                        values.append(item if isinstance(item, _Opaque) else UNKNOWN)
         return _merge(*values)
 
     def _opaque(self, node, env, values):
-        key = (id(node), id(env))
+        self._path_dependent()
+        key = (id(node), self._heap_context or id(env))
         if key not in self._opaque_cache:
             self._opaque_cache[key] = _Opaque(values)
             self._changed()
@@ -927,48 +1180,116 @@ class NativeCPlan:
             self._invalidate(value, node)
         return UNKNOWN
 
+    def _retain_assignment(self, receiver, value, target, node):
+        # Losing the receiver's old positional knowledge must not lose the new
+        # RHS alias. Record it after invalidating OLD contents: a plain store
+        # does not itself mutate the newly stored value. Future unknown uses
+        # traverse this separate monotone edge set, including literal re-entry.
+        for owner in _alternatives(receiver):
+            if isinstance(owner, (_Array, _Opaque)):
+                self._observe(owner)
+                retained = tuple(item for item in _alternatives(_reachable_values(*owner.assigned, value))
+                                 if isinstance(item, (_Array, _Opaque, _Function, _Module, _Operation)))
+                if not _same(_Choice(owner.assigned), _Choice(retained)):
+                    owner.assigned = retained
+                    self._changed(owner)
+            else:
+                # An untracked destination may retain or mutate the RHS; no
+                # concrete owner exists on which a future read can find it.
+                self._invalidate(value, node)
+
     def _invalidate(self, value, node, visited=None):
+        # Walk the owner graph, not its expansion along every path. Retained
+        # aliases may form deep diamonds/cycles after their ABI shape is lost.
+        def captures(env):
+            # A child callable may change an ancestor. Snapshot each scope only
+            # after processing the preceding scope, matching depth-first effects.
+            while env is not None and env.kind != 'module':
+                self._observe(env)
+                yield from tuple(env.values.values())
+                env = env.parent
+
         visited = set() if visited is None else visited
-        for item in _alternatives(value):
+        pending = [iter(_alternatives(value))]
+        exhausted = object()
+        while pending:
+            item = next(pending[-1], exhausted)
+            if item is exhausted:
+                pending.pop()
+                continue
             if id(item) in visited:
                 continue
             visited.add(id(item))
+            children = ()
             if isinstance(item, _Array):
                 self._observe(item)
-                children = item.items or ()
                 if item.items is not None:
+                    item.reachable = tuple(_reachable_values(child) for child in item.items)
                     item.items = None
                     self._changed(item)
-                for child in children:
-                    self._invalidate(child, node, visited)
+                children = item.reachable + item.assigned
             elif isinstance(item, _Opaque):
                 self._observe(item)
-                for child in item.values:
-                    self._invalidate(child, node, visited)
+                children = item.values + item.assigned
             elif isinstance(item, _Module):
                 self._observe(item.env)
-                for child in tuple(item.env.values.values()):
-                    self._invalidate(child, node, visited)
+                children = tuple(item.env.values.values())
             elif isinstance(item, _Operation) and item.name in ('签名', '回调', '类型'):
                 self._unresolved(node, '传给未知调用的原生描述符构造器')
             elif isinstance(item, _Function):
                 self._defer(item)
                 self._invoke(item, [(None, UNKNOWN) for _ in item.node.data['params']], node)
-                outer = item.env
-                while outer is not None and outer.kind != 'module':
-                    self._observe(outer)
-                    for child in tuple(outer.values.values()):
-                        self._invalidate(child, node, visited)
-                    outer = outer.parent
+                children = captures(item.env)
+            pending.append(iter(child for value in children for child in _alternatives(value)))
+
+    def _queue_deferred(self, key):
+        if key not in self._deferred_pending:
+            self._deferred_pending.add(key)
+            self._deferred_queue.append(key)
 
     def _defer(self, function):
         key = (id(function.node), id(function.env))
         if key not in self._deferred_functions:
             self._deferred_functions[key] = function
+            self._queue_deferred(key)
             self._changed()
+
+    def _revisit_deferred(self, key):
+        function = self._deferred_functions[key]
+        for owner in self._deferred_dependencies.pop(key, ()):
+            watchers = self._deferred_watchers[owner]
+            watchers.pop(key, None)
+            if not watchers:
+                del self._deferred_watchers[owner]
+        self._deferred_untracked.pop(key, None)
+        frame = _SummaryFrame()
+        revision = self._revision
+        self._summary_frames.append(frame)
+        try:
+            self._invoke(function, [(None, UNKNOWN) for _ in function.node.data['params']], function.node)
+        finally:
+            self._summary_frames.pop()
+        # A missing or shadowed binding is an owner dependency too. Waking on
+        # any write to that environment is conservative, even for a name read.
+        owners = {owner.owner if isinstance(owner, _Binding) else owner
+                  for owner in frame.dependencies}
+        owners.update(owner for owner, _ in frame.private_reads)
+        self._deferred_dependencies[key] = owners
+        for owner in owners:
+            self._deferred_watchers.setdefault(owner, {})[key] = None
+        if not frame.complete or not frame.replay_complete:
+            self._deferred_untracked[key] = None
+            if self._revision != revision:
+                self._queue_deferred(key)
+        elif self._revision != revision and not frame.replay_stable():
+            # A read-then-write transfer must be revisited at its new input,
+            # never summarized by replacing first-read versions with exit ones.
+            self._queue_deferred(key)
 
     def _context_key(self, value):
         self._observe_value(value)
+        if value is STRING:
+            return ('string-top',)
         if type(value) is bool:
             return ('fact', value)
         if type(value) in (int, float):
@@ -982,6 +1303,11 @@ class NativeCPlan:
         return value
 
     def _check_capture_targets(self, function, context):
+        # Module bindings are never captured write targets of a function.
+        # Do not observe unrelated historical private scopes for this check.
+        # Actual body reads and escaped closure environments remain observed.
+        if function.env.kind == 'module':
+            return
         key = ((id(function.node), context), id(function.env), 'function')
         env = self._scope_cache.get(key)
         if env is None:
@@ -1110,7 +1436,20 @@ class NativeCPlan:
             return True
         return statements(data['body']) and bool(returns)
 
+    def _path_dependent(self):
+        for frame in self._summary_frames:
+            frame.path_sensitive = True
+
     def _invoke(self, function, args, node):
+        previous = self._heap_context
+        if isinstance(function, _Function):
+            self._heap_context += ((id(node), id(function.node)),)
+        try:
+            return self._invoke_heap_body(function, args, node)
+        finally:
+            self._heap_context = previous
+
+    def _invoke_heap_body(self, function, args, node):
         if isinstance(function, _Choice):
             return _merge(*(self._invoke(value, args, node) for value in function.values))
         if isinstance(function, _Operation):
@@ -1133,16 +1472,27 @@ class NativeCPlan:
                     self._invalidate(value, node)
                 return UNKNOWN
             self._error(node, 'C 原生后端无法证明此递归路径与原生描述符无关；仅支持无捕获、无容器或成员访问、仅有标量运算与直接自调用的递归函数；请将其他递归改为迭代')
-        context = tuple(self._context_key(actuals[name]) for name in names)
+        actual_context = tuple(self._context_key(actuals[name]) for name in names)
+        context = (self._heap_context, actual_context)
+        scope_context = (self._heap_context, actual_context if self._private_body(function.node.data['body']) else ())
+        if function.env.kind != 'module':
+            capture_key = (id(function.node), id(function.env), actual_context)
+            previous_contexts = self._capture_contexts.setdefault(capture_key, set())
+            for previous_context in previous_contexts:
+                self._check_capture_targets(function, previous_context)
+            previous_contexts.add(scope_context)
         # Reusing a historical local after a parent introduces the same name
         # could hide a newly captured write or a read before that write. Reject
         # this unsupported scope transition before any cached body can skip it.
-        self._check_capture_targets(function, context)
+        self._check_capture_targets(function, scope_context)
         key = (self._context_key(function), context)
-        summary = self._call_summaries.get(key)
+        portable_key = (self._context_key(function), actual_context)
+        summary = self._call_summaries.get(key) or self._call_summaries.get(portable_key)
         if (summary is not None and
                 all(owner._version == version for owner, version in summary[0]) and
                 not self._active.intersection(summary[2])):
+            if summary[3]:
+                self._path_dependent()
             # The body's observed state is unchanged. Its effects and discovered
             # signatures already persist in the shared analysis.
             # Descendant calls must not hide a newly active recursive edge.
@@ -1151,7 +1501,7 @@ class NativeCPlan:
             self._summary_hits += 1
             return summary[1]
         self._active.add(id(function.node))
-        env = self._environment(function.env, 'function', (id(function.node), context),
+        env = self._environment(function.env, 'function', (id(function.node), scope_context),
                                 function.node.data['body'], names)
         for name, value in actuals.items():
             # Parameters always create local cells, even when a captured
@@ -1185,10 +1535,12 @@ class NativeCPlan:
             # A larger footprint may still be analyzed, but never truncated
             # into an unsound reusable summary.
             if frame.complete and (self._revision == revision or frame.replay_stable()):
+                if not frame.path_sensitive:
+                    key = portable_key
                 if key not in self._call_summaries and len(self._call_summaries) >= MAX_CALL_SUMMARIES:
                     del self._call_summaries[next(iter(self._call_summaries))]
                 self._call_summaries[key] = (tuple(frame.dependencies.items()), result,
-                                             frozenset(frame.functions))
+                                             frozenset(frame.functions), frame.path_sensitive)
             return result
         finally:
             self._summary_frames.pop()
@@ -1218,48 +1570,54 @@ class NativeCPlan:
         if name == '签名':
             values = self._bind(name, args, ['返回', '参数', '约定'], node)
             conventions = _alternatives(values['约定'])
-            if UNKNOWN in conventions:
+            if UNKNOWN in conventions or STRING in conventions:
                 self._unresolved(node, '原生调用约定')
             if any(c not in ('win64', 'cdecl') for c in conventions):
                 self._error(node, '调用约定只支持 win64 或 cdecl；不支持变参')
             result_types = _alternatives(values['返回'])
-            results = []
-            for result, params in product(result_types, _alternatives(values['参数'])):
+            parameter_arrays = _alternatives(values['参数'])
+            # Validate every alternative before enumerating any ABI product.
+            # In particular, a last-slot UNKNOWN must not trigger exponential
+            # work over earlier valid slots before it is rejected.
+            if any(not isinstance(result, _Type) for result in result_types):
+                self._unresolved(node, '原生签名的返回类型或参数阵')
+            prepared = []
+            for params in parameter_arrays:
                 if isinstance(params, _Array):
                     self._observe(params)
-                if not isinstance(result, _Type) or not isinstance(params, _Array) or params.items is None:
+                if not isinstance(params, _Array) or params.items is None:
                     self._unresolved(node, '原生签名的返回类型或参数阵')
-                origin_path, origin = self._path, node
-                if origin_path == self._native_path:
-                    for candidate_path, candidate in reversed(self._call_sites):
-                        if candidate_path != self._native_path:
-                            origin_path, origin = candidate_path, candidate
-                            break
-                input_key = (id(params), result.name, id(node))
-                if input_key not in self._signature_inputs:
-                    self._changed()
-                self._signature_inputs[input_key] = (params, result.name, origin_path, origin)
                 if len(params.items) > 64:
                     self._error(node, '签名参数须为不超过 64 项的阵')
-                possibilities = [_alternatives(item) for item in params.items]
-                count = 1
-                for choices in possibilities:
-                    count *= len(choices)
-                if count > MAX_STATIC_ALTERNATIVES:
-                    self._unresolved(node, '有限原生参数类型组合')
-                for parameters in product(*possibilities):
-                    if any(not isinstance(item, _Type) for item in parameters):
-                        self._unresolved(node, '原生签名的参数类型')
-                    if result.name == '结构' or any(item.name in ('结构', '无值') for item in parameters):
-                        self._error(node, '首版不支持按值传递结构或无值参数；请显式传结构地址')
-                    signature = NativeCSignature(result.name, tuple(item.name for item in parameters))
-                    if signature not in self.signatures:
-                        if len(self.signatures) >= MAX_SIGNATURES:
-                            self._error(node, 'C 原生签名数量超过 1024 上限')
-                        self.signatures.append(signature)
+                possibilities = tuple(_alternatives(item) for item in params.items)
+                if any(not isinstance(item, _Type) for choices in possibilities for item in choices):
+                    self._unresolved(node, '原生签名的参数类型')
+                if (any(result.name == '结构' for result in result_types) or
+                        any(item.name in ('结构', '无值') for choices in possibilities for item in choices)):
+                    self._error(node, '首版不支持按值传递结构或无值参数；请显式传结构地址')
+                prepared.append((params, possibilities))
+            results = {}
+            for result in result_types:
+                for params, possibilities in prepared:
+                    origin_path, origin = self._path, node
+                    if origin_path == self._native_path:
+                        for candidate_path, candidate in reversed(self._call_sites):
+                            if candidate_path != self._native_path:
+                                origin_path, origin = candidate_path, candidate
+                                break
+                    input_key = (id(params), result.name, id(node))
+                    if input_key not in self._signature_inputs:
                         self._changed()
-                    results.append(signature)
-            return _merge(*results)
+                    self._signature_inputs[input_key] = (params, result.name, origin_path, origin)
+                    for parameters in product(*possibilities):
+                        signature = NativeCSignature(result.name, tuple(item.name for item in parameters))
+                        if signature not in self._signature_index:
+                            self._signature_index[signature] = len(self.signatures)
+                            self.signatures.append(signature)
+                            self._changed()
+                        results[signature] = None
+            alternatives = tuple(results)
+            return alternatives[0] if len(alternatives) == 1 else _Choice(alternatives) if alternatives else UNKNOWN
         if name == '回调':
             values = self._bind(name, args, ['签名', '算', '失败值'], node)
             signatures = self._require_signatures(values['签名'], node, '原生回调签名')
@@ -1289,7 +1647,21 @@ class NativeCPlan:
                 'static void *ru_native_generated_callback(int, unsigned);\n')
 
     def emit_c(self):
+        try:
+            return self._emit_c_complete()
+        except (MemoryError, RecursionError) as error:
+            detail = '宿主内存不足' if isinstance(error, MemoryError) else '宿主生成调用栈耗尽'
+            raise RuError('原生 C 代码生成未完成：' + detail + '；未返回部分 C 源码',
+                          category='资源错误') from None
+
+    def _emit_c_complete(self):
         """Emit exact typed thunks. No libffi, Python, executable allocation or JIT."""
+        if not getattr(self, '_analysis_completed', False):
+            raise RuError('原生签名分析未完成；禁止生成部分 ABI 计划', category='原生编译错误')
+        # Generated/runtime signature IDs are Windows x64 C signed int.
+        # This is representability, not a project-size admission quota.
+        if len(self.signatures) - 1 > 0x7fffffff:
+            raise RuError('原生 ABI 计划超出 C signature ID 的 signed int 可表示范围；未生成代码', category='资源错误')
         lines = [
             '/* Ahead-of-time primitive ABI thunks: Windows x64 only. */',
             '#if !defined(_WIN32) || defined(_M_ARM64) || defined(_M_ARM64EC) || (!defined(_M_X64) && !defined(__x86_64__))',

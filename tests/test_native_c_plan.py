@@ -135,6 +135,140 @@ class NativeCAnalysisTests(unittest.TestCase):
             for old_b, new_b in snapshots:
                 self.assertEqual(old_a == old_b, new_a == new_b)
 
+    def test_invalid_array_history_is_versioned_and_observed(self):
+        value = plan('')
+        env = value._module_values[str(Path('/tmp/native_c_plan.ru').resolve())].env
+        node = parse('空.')[0]
+        first = native_c._Array((native_c._Type('i32'),))
+        later = native_c._Array((native_c._Type('f64'),))
+        opaque = native_c._Opaque((first,))
+        root = native_c._Array((opaque,))
+        env.values['root'] = root
+        value._invalidate(root, node)
+        self.assertIsNone(root.items)
+        self.assertEqual(root.reachable, (opaque,))
+        self.assertIsNone(first.items)
+        before = value._state()
+        opaque.values = (native_c._Choice((first, later)),)
+        # Structural snapshots inspect retained edges, not only versions.
+        self.assertNotEqual(value._state(), before)
+        value._changed(opaque)
+        frame = native_c._SummaryFrame()
+        value._summary_frames.append(frame)
+        value._observe_value(root)
+        self.assertTrue(frame.complete)
+        self.assertEqual(set(frame.dependencies), {root, opaque, first, later})
+        value._invalidate(root, node)
+        self.assertIsNone(later.items)
+        self.assertFalse(frame.replay_stable())
+        value._summary_frames.pop()
+
+    def test_invalid_array_projection_is_one_live_opaque_owner(self):
+        value = plan('')
+        node = parse('空.')[0]
+        root = native_c._Array(())
+        value._invalidate(root, node)
+        first = value._index(root, 0)
+        self.assertIsInstance(first, native_c._Opaque)
+        self.assertEqual(first.values, (root,))
+        for position in range(1000):
+            self.assertIs(value._index(root, position), first)
+        later = native_c._Array((native_c._Type('f64'),))
+        root.reachable = (later,)
+        value._changed(root)
+        value._member(first, '量', [], node, False)
+        self.assertIsNone(later.items)
+
+    def test_invalid_array_walk_is_cycle_safe_and_does_not_truncate_owners(self):
+        value = plan('')
+        node = parse('空.')[0]
+        root = native_c._Array(())
+        shared = root
+        owners = [root]
+        for _ in range(2048):
+            shared = native_c._Array((None, shared, shared))
+            owners.append(shared)
+        root.items = (native_c._Opaque((shared,)),)
+        value._invalidate(shared, node)
+        self.assertTrue(all(owner.items is None for owner in owners))
+        self.assertTrue(all(owner.reachable for owner in owners))
+        revision = value._revision
+        value._invalidate(shared, node)
+        self.assertEqual(value._revision, revision)
+        frame = native_c._SummaryFrame()
+        value._summary_frames.append(frame)
+        value._observe_value(shared)
+        self.assertFalse(frame.complete)
+        self.assertLessEqual(len(frame.dependencies), native_c.MAX_EXPRESSION_DEPENDENCIES)
+        value._summary_frames.pop()
+
+    def test_invalid_array_walk_snapshots_ancestor_captures_lazily(self):
+        value = plan('')
+        module = value._module_values[str(Path('/tmp/native_c_plan.ru').resolve())].env
+        outer = value._environment(module, 'function')
+        inner = value._environment(outer, 'function')
+        root_node = parse('算 根: 得 空. 法')[0]
+        child_node = parse('算 子: 得 空. 法')[0]
+        root_function = native_c._Function(root_node, inner, '<test>')
+        child_function = native_c._Function(child_node, module, '<test>')
+        inner.values['child'] = child_function
+        later = native_c._Array((native_c._Type('f64'),))
+
+        def invoke(function, *_):
+            if function is child_function:
+                outer.put('late', later)
+            return native_c.UNKNOWN
+
+        with patch.object(value, '_invoke', side_effect=invoke):
+            value._invalidate(native_c._Array((root_function,)), root_node)
+        self.assertIs(outer.values['late'], later)
+        self.assertIsNone(later.items)
+
+    def test_invalid_array_initializer_growth_advances_owner_version(self):
+        value = plan('')
+        env = value._module_values[str(Path('/tmp/native_c_plan.ru').resolve())].env
+        literal = parse('箱 取 [当前].')[0].data['expr']
+        first = native_c._Array((native_c._Type('i32'),))
+        later = native_c._Array((native_c._Type('f64'),))
+        env.put('当前', first)
+        root = value._expr(literal, env)
+        value._invalidate(root, literal)
+        version = root._version
+        env.put('当前', later)
+        frame = native_c._SummaryFrame()
+        value._summary_frames.append(frame)
+        self.assertIs(value._expr(literal, env), root)
+        value._summary_frames.pop()
+        self.assertEqual(root._version, version + 1)
+        self.assertEqual(native_c._alternatives(root.reachable[0]), (first, later))
+        self.assertIsNone(later.items)
+        self.assertFalse(frame.replay_stable())
+        version = root._version
+        self.assertIs(value._expr(literal, env), root)
+        self.assertEqual(root._version, version)
+
+    def test_invalid_array_history_retains_every_owner_without_candidate_quota(self):
+        value = plan('')
+        node = parse('空.')[0]
+        owners = [native_c._Array(()) for _ in range(129)]
+        # Finite allocation identities are retained per slot without a quota.
+        # Growing a valid input must not truncate unknown-call alias effects.
+        root = native_c._Array(owners * 2)
+        value._invalidate(root, node)
+        self.assertEqual(root.reachable, tuple(owners * 2))
+        self.assertTrue(all(owner.items is None for owner in owners))
+        merged = native_c._reachable_values(*owners[:-1])
+        self.assertEqual(native_c._alternatives(merged), tuple(owners[:-1]))
+        self.assertEqual(native_c._alternatives(
+            native_c._reachable_values(merged, owners[-1])), tuple(owners))
+        self.assertIs(native_c._reachable_values(*range(1000)), native_c.UNKNOWN)
+        constructor = native_c._Operation('签名', native_c.NATIVE)
+        root = native_c._Array((constructor,))
+        with self.assertRaisesRegex(RuError, '传给未知调用的原生描述符构造器'):
+            value._invalidate(root, node)
+        self.assertEqual(root.reachable, (constructor,))
+
+
     def test_shared_opaque_source_graph_preserves_late_native_alias_validation(self):
         chain = '根 取 [密 其 i32].\n'
         previous = '根'
@@ -389,12 +523,21 @@ class NativeCAnalysisTests(unittest.TestCase):
                 别名 取 表[读]. 未知 别名.
             """)
 
-    def test_numeric_widening_does_not_raise_nonnumeric_candidate_limit(self):
-        for values in (
-                ','.join(f"'item{value}'" for value in range(129)),
-                ','.join(f'[{value},{value + 1}]' for value in range(129))):
-            with self.subTest(values=values[:40]), self.assertRaisesRegex(RuError, '128 上限'):
-                plan(PREFIX + '表 取 [' + values + ']. 显 表[读].')
+    def test_wide_nonnumeric_data_keeps_strings_and_every_mutable_owner(self):
+        for kind, values in (
+                ('string', ','.join(f"'item{value}'" for value in range(129))),
+                ('array', ','.join(f'[{value},{value + 1}]' for value in range(129)))):
+            with self.subTest(kind=kind):
+                value = plan(PREFIX + '表 取 [' + values + ']. 选择 取 表[读].')
+                selected = next(env.values['选择'] for env in value._envs if '选择' in env.values)
+                if kind == 'string':
+                    self.assertIs(selected, native_c.STRING)
+                else:
+                    owners = native_c._alternatives(selected)
+                    self.assertEqual(len(owners), 129)
+                    self.assertEqual(len({id(owner) for owner in owners}), 129)
+                    self.assertTrue(all(isinstance(owner, native_c._Array) for owner in owners))
+
 
     def test_dynamic_array_mutation_cannot_smuggle_signature(self):
         for mutation in ("参数们 其 增 (密 其 f32).", "参数们[0] 取 密 其 f64."):
@@ -768,7 +911,7 @@ class NativeCAnalysisTests(unittest.TestCase):
             算 叶 值: 叶阵 取 [值]. 得 叶阵[0] + 1. 法
             算 枝 值: 枝阵 取 [值]. 得 叶 (枝阵[0]). 法
             算 树 值: 树阵 取 [值]. 得 枝 (树阵[0]). 法
-            树 7. 树 7. 树 7. 树 7.
+            循 4 次 树 7. 环
         """
         expected = plan(source).signatures
         with patch('rulang.native_c.MAX_SUMMARY_DEPENDENCIES', 3):
@@ -783,6 +926,7 @@ class NativeCAnalysisTests(unittest.TestCase):
         # private lexical scopes, live array owners remain dependencies. The
         # leaf dependency must propagate even when the branch itself was a hit.
         self.assertNotIn(id(root.node), cached_nodes)
+
 
     def test_private_scope_fanout_does_not_consume_live_owner_budget(self):
         # Distinct scalar contexts create private analysis scopes, but no
@@ -799,11 +943,9 @@ class NativeCAnalysisTests(unittest.TestCase):
         self.assertTrue(all(len(summary[0]) <= native_c.MAX_SUMMARY_DEPENDENCIES
                             for summary in value._call_summaries.values()))
 
-    def test_private_scope_elision_preserves_expression_work_limit(self):
-        value = NativeCPlan.__new__(NativeCPlan)
+    def test_private_scope_elision_preserves_bounded_caches_not_a_size_quota(self):
         statement = parse('显 1.')[0]
-        with self.assertRaisesRegex(RuError, '超过复杂度上限'):
-            value.__init__({'/tmp/native_budget.ru': [statement] * 200001})
+        value = NativeCPlan({'/tmp/native_budget.ru': [statement] * 200001})
         self.assertEqual(value._steps, 200001)
         self.assertEqual(native_c.MAX_SUMMARY_DEPENDENCIES, 256)
         self.assertEqual(native_c.MAX_SUMMARY_FUNCTIONS, 256)
@@ -964,7 +1106,7 @@ class NativeCAnalysisTests(unittest.TestCase):
                 用. 用. 用. 参数们 其 增 (密 其 f64).
                 S 取 密 其 签名 (用) ([]) 'cdecl'.
             """, None),
-            'opaque_alias_gains_child': ("""
+            'fresh_opaque_call_does_not_mutate_previous_pair': ("""
                 算 外:
                     甲 取 [密 其 i32]. 乙 取 [密 其 f64]. 当前 取 甲.
                     算 包: 得 当前 对 0. 法
@@ -973,7 +1115,7 @@ class NativeCAnalysisTests(unittest.TestCase):
                     当前 取 乙. 包. 触碰 袋.
                     得 密 其 签名 (密 其 i32) 乙 'cdecl'.
                 法 外.
-            """, None),
+            """, {NativeCSignature('i32', ('f64',))}),
             'late_callback_capture': ("""
                 算 外:
                     型 取 密 其 i32.
@@ -1019,6 +1161,7 @@ class NativeCAnalysisTests(unittest.TestCase):
                         self.assertEqual(set(value.signatures), expected)
                         outcomes.append((value.signatures, value.callback_signatures))
                 self.assertEqual(outcomes[0], outcomes[1])
+
 
     def test_reused_local_cannot_hide_a_later_capture_target(self):
         cases = {
@@ -1177,8 +1320,11 @@ class NativeCAnalysisTests(unittest.TestCase):
                 环
             """,
         }
-        expected = {NativeCSignature(name, ()) for name in ('i32', 'f64', 'u8')}
         for name, source in cases.items():
+            # A fresh function-local bind never changes the module binding.
+            # Other capture/block/conditional cases retain their old alternatives.
+            types = ('i32', 'u8') if name == 'function_module_read' else ('i32', 'f64', 'u8')
+            expected = {NativeCSignature(kind, ()) for kind in types}
             with self.subTest(case=name):
                 outcomes = []
                 for plan_type in (NativeCPlan, WithoutSummaryHits):
@@ -1187,6 +1333,7 @@ class NativeCAnalysisTests(unittest.TestCase):
                     self.assertEqual(set(value.signatures), expected)
                     outcomes.append((value.signatures, value.callback_signatures))
                 self.assertEqual(outcomes[0], outcomes[1])
+
 
     def test_late_ancestor_read_keeps_mutable_array_alias(self):
         with self.assertRaisesRegex(RuError, '无法静态确定'):
@@ -1299,24 +1446,42 @@ class NativeCAnalysisTests(unittest.TestCase):
                 """ + mutation + "S 取 密 其 签名 (首 参数们) ([]) 'cdecl'.")
 
     def test_cached_callback_is_revisited_after_late_capture_change(self):
-        value = plan(PREFIX + """
+        warm_hits = []
+        class RecordingPlan(NativeCPlan):
+            def _expr_body(self, node, env, reference=False):
+                result = super()._expr_body(node, env, reference)
+                old = env.values.get('型')
+                if (isinstance(result, native_c._Type) and result.name == 'f64' and
+                        isinstance(old, native_c._Type) and old.name == 'i32'):
+                    warm_hits.append(self._summary_hits)
+                return result
+
+        # Disable outer expression/block shortcuts so this fixture proves an
+        # actual call-summary hit before the later capture write.
+        with patch.object(native_c, 'MAX_EXPRESSION_SUMMARIES', 0):
+            value = RecordingPlan(load_module_graph('/tmp/cached-callback.ru', parse(PREFIX + """
             算 外:
                 型 取 密 其 i32.
                 算 回 值:
                     S 取 密 其 签名 型 ([]) 'cdecl'.
                     得 0.
                 法
-                回 0. 回 0. 回 0.
+                循 2 次 循 3 次 回 0. 环 环
                 签 取 密 其 签名 (密 其 i32) ([密 其 i32]) 'cdecl'.
                 回调 取 密 其 回调 签 (算 回) 0.
                 型 取 密 其 f64.
                 得 回调.
             法
             外.
-        """)
+        """)))
         self.assertIn(NativeCSignature('f64', ()), value.signatures)
         self.assertEqual(value.callback_signatures, {NativeCSignature('i32', ('i32',))})
         self.assertGreater(value._summary_hits, 0)
+        self.assertTrue(warm_hits)
+        self.assertGreater(warm_hits[0], 0, 'cache must be hit before the late write')
+
+
+
 
     def test_cached_array_return_does_not_hide_late_method_effects(self):
         with self.assertRaisesRegex(RuError, '无法静态确定'):
@@ -1379,7 +1544,10 @@ class NativeCAnalysisTests(unittest.TestCase):
             树 7. 树 7. 树 7. 树 7.
         """
         expected = plan(source).signatures
-        with patch('rulang.native_c.MAX_SUMMARY_FUNCTIONS', 2):
+        # Isolate function-summary footprints: a stable statement block may
+        # otherwise skip the repeated call before it reaches that cache.
+        with patch('rulang.native_c.MAX_SUMMARY_FUNCTIONS', 2), \
+                patch('rulang.native_c.MAX_EXPRESSION_SUMMARIES', 0):
             value = plan(source)
         self.assertEqual(value.signatures, expected)
         self.assertGreater(value._summary_hits, 0)
