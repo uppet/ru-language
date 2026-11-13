@@ -20,7 +20,18 @@ PATH = str((Path(tempfile.gettempdir()) / 'native_analysis_scaling.ru').resolve(
 class CountingPlan(NativeCPlan):
     def __init__(self, *args, **kwargs):
         self.body_visits = Counter()
+        self.statement_visits = 0
+        self.largest_return_list = 0
         super().__init__(*args, **kwargs)
+
+    def _block(self, *args, **kwargs):
+        result = super()._block(*args, **kwargs)
+        self.largest_return_list = max(self.largest_return_list, len(result))
+        return result
+
+    def _block_body(self, body, env):
+        self.statement_visits += len(body)
+        return super()._block_body(body, env)
 
     def _expr_body(self, node, env, reference=False):
         self.body_visits[node.kind] += 1
@@ -110,16 +121,22 @@ class NativeAnalysisScalingTests(unittest.TestCase):
         """, {NativeCSignature(name, ()) for name in ('i32', 'f64', 'u8')})
 
     def test_first_call_nested_private_read_before_bind_is_not_replayed(self):
-        # The leaf's first return contains only the global type. Its own bind
-        # changes a future fresh invocation's conservative local/ancestor join.
-        # That read-before-write evidence must survive propagation to the root.
-        self.assert_equivalent("""
+        # Every runtime invocation has fresh locals; its later local bind
+        # cannot retroactively change an earlier module read. Captured-cell
+        # read-before-write is separately required to retain both types.
+        source = ("""
             型 取 密 其 i32.
             算 叶: 旧 取 型. 型 取 密 其 f64. 得 旧. 法
             算 枝: 得 叶. 法
             枝.
             S 取 密 其 签名 (枝) ([]) 'cdecl'.
-        """, {NativeCSignature('i32', ()), NativeCSignature('f64', ())})
+        """)
+        self.assert_equivalent(source, {NativeCSignature('i32', ())})
+        # The same source nested in a function captures a live cell; its
+        # later write MUST remain visible, unlike a fresh module shadow.
+        self.assert_equivalent('算 容: ' + source + ' 得 空. 法 容.',
+                               {NativeCSignature('i32', ()), NativeCSignature('f64', ())})
+
 
     def test_capture_read_before_write_and_unknown_escape_match_uncached_analysis(self):
         self.assert_equivalent("""
@@ -156,8 +173,8 @@ class NativeAnalysisScalingTests(unittest.TestCase):
                 """ + mutation + "S 取 密 其 签名 (首) ([]) 'cdecl'.",
                     error='无法静态确定')
 
-    def test_opaque_alias_growing_reachability_preserves_error(self):
-        self.assert_equivalent("""
+    def test_fresh_pair_is_independent_but_rebound_pair_keeps_alias_effect(self):
+        source = """
             算 外:
                 甲 取 [密 其 i32]. 乙 取 [密 其 f64]. 当前 取 甲.
                 算 包: 得 当前 对 0. 法
@@ -166,7 +183,91 @@ class NativeAnalysisScalingTests(unittest.TestCase):
                 当前 取 乙. 包. 触碰 袋.
                 得 密 其 签名 (密 其 i32) 乙 'cdecl'.
             法 外.
+        """
+        self.assert_equivalent(source, {NativeCSignature('i32', ('f64',))})
+        self.assert_equivalent(source.replace('当前 取 乙. 包.', '当前 取 乙. 袋 取 包.'),
+                               error='无法静态确定')
+
+
+    def test_invalid_array_reinitialization_keeps_new_initializer_aliases(self):
+        for effect in ('果 其 增 0.', '果[0] 取 0.', '未知 果.'):
+            with self.subTest(effect=effect):
+                self.assert_equivalent("""
+                    旧阵 取 [密 其 i32]. 新阵 取 [密 其 f64]. 当前 取 旧阵.
+                    算 包裹 参数: 果 取 [当前].
+                """ + effect + """
+                        得 果.
+                    法
+                    包裹 0. 当前 取 新阵. 包裹 0.
+                    签 取 密 其 签名 (密 其 i32) 新阵 'cdecl'.
+                """, error='无法静态确定')
+
+    def test_invalid_array_reinitialization_keeps_opaque_callback_effects(self):
+        self.assert_equivalent("""
+            旧阵 取 [密 其 i32]. 新阵 取 [密 其 f64]. 当前 取 旧阵.
+            作 改 盒: 盒[0][0] 取 'bad'. 为
+            回们 取 [算 改]. 片 取 回们[:].
+            算 包裹 参数: 果 取 [当前]. 调 取 片[0]. 调 果. 得 果. 法
+            包裹 0. 当前 取 新阵. 包裹 0.
+            签 取 密 其 签名 (密 其 i32) 新阵 'cdecl'.
         """, error='无法静态确定')
+
+    def test_invalid_array_retains_late_opaque_children_through_projections(self):
+        for effect in ('未知 壳.', '未知 壳[0].', '未知 (壳 其 位 0).',
+                       '未知 壳[:].', '未知 (壳 其 段 0 1).',
+                       '壳[0] 其 量.', '壳[0] 其 含 0.'):
+            with self.subTest(effect=effect):
+                source = """
+                    算 外:
+                        甲 取 [密 其 i32]. 乙 取 [密 其 f64]. 当前 取 甲.
+                        算 袋: 得 当前 对 0. 法
+                        袋值 取 袋. 壳 取 [袋值]. 未知 壳.
+                        当前 取 乙. 袋.
+                """ + effect + """
+                        得 密 其 签名 (密 其 i32) 乙 'cdecl'.
+                    法 外.
+                """
+                self.assert_equivalent(source, {NativeCSignature('i32', ('f64',))})
+                # This time the new child really enters the already-invalid
+                # old owner; every projection/cache path must invalidate beta.
+                self.assert_equivalent(source.replace('当前 取 乙. 袋.',
+                    '当前 取 乙. 壳[0] 取 袋.'), error='无法静态确定')
+
+
+    def test_invalid_array_reachability_invalidates_call_and_loop_summaries(self):
+        for body in ('未知 值.', '循 2 次 未知 值. 环'):
+            with self.subTest(body=body):
+                source = """
+                    算 外:
+                        甲 取 [密 其 i32]. 乙 取 [密 其 f64]. 当前 取 甲.
+                        算 袋: 得 当前 对 0. 法
+                        算 触碰 值:
+                """ + body + """
+                            得 空.
+                        法
+                        袋值 取 袋. 壳 取 [袋值].
+                        触碰 壳. 触碰 壳. 触碰 壳.
+                        当前 取 乙. 袋. 触碰 壳.
+                        得 密 其 签名 (密 其 i32) 乙 'cdecl'.
+                    法 外.
+                """
+                self.assert_equivalent(source, {NativeCSignature('i32', ('f64',))})
+                # This time the new child really enters the already-invalid
+                # old owner; every projection/cache path must invalidate beta.
+                self.assert_equivalent(source.replace('当前 取 乙. 袋.',
+                    '当前 取 乙. 壳[0] 取 袋.'), error='无法静态确定')
+
+
+    def test_retained_callback_cycle_uses_existing_native_recursion_guard(self):
+        # The unknown operation may invoke the callback again. Discarding the
+        # invalid array's children used to hide this unproved recursive edge.
+        self.assert_equivalent("""
+            算 外:
+                算 内: 未知 包. 得 0. 法
+                包 取 [算 内]. 未知 包. 得 0.
+            法 外.
+            签 取 密 其 签名 (密 其 i32) ([]) 'cdecl'.
+        """, error='无法证明此递归路径与原生描述符无关')
 
     def test_recursion_acceptance_and_rejection_match_uncached_analysis(self):
         self.assert_equivalent("""
@@ -204,7 +305,7 @@ class NativeAnalysisScalingTests(unittest.TestCase):
         self.assertEqual(value._summary_hits, 1)
 
     def test_loop_refinement_does_not_erase_a_read_before_the_loop(self):
-        self.assert_equivalent("""
+        source = ("""
             型 取 密 其 i32.
             算 F:
                 旧 取 型.
@@ -213,9 +314,15 @@ class NativeAnalysisScalingTests(unittest.TestCase):
             法
             F.
             S 取 密 其 签名 (F) ([]) 'cdecl'.
-        """, {NativeCSignature('i32', ()), NativeCSignature('f64', ())})
+        """)
+        self.assert_equivalent(source, {NativeCSignature('i32', ())})
+        # The same source nested in a function captures a live cell; its
+        # later write MUST remain visible, unlike a fresh module shadow.
+        self.assert_equivalent('算 容: ' + source + ' 得 空. 法 容.',
+                               {NativeCSignature('i32', ()), NativeCSignature('f64', ())})
 
-    def test_loop_with_different_early_return_does_not_prove_first_call_replay(self):
+
+    def test_captured_type_write_does_not_prove_first_call_replay(self):
         class RecordingReturns(CountingPlan):
             def __init__(self, *args, **kwargs):
                 self.root_calls = []
@@ -229,15 +336,15 @@ class NativeAnalysisScalingTests(unittest.TestCase):
                 return result
 
         source = PREFIX + """
+            算 外:
             型 取 密 其 i32.
-            算 造 值: 得 [1]. 法
             算 F:
                 循 2 次
-                    得 造 型.
+                    得 型.
                     型 取 密 其 f64.
                 环
             法
-            F. F.
+            F. F. 得 空. 法 外.
         """
         values = []
         for limit in (0, native_c.MAX_EXPRESSION_SUMMARIES):
@@ -248,12 +355,46 @@ class NativeAnalysisScalingTests(unittest.TestCase):
                 last, last_cached = value.root_calls[1]
                 self.assertIsInstance(first, native_c._Choice)
                 self.assertEqual(len(first.values), 2)
-                self.assertTrue(all(isinstance(item, native_c._Array) for item in first.values))
-                self.assertIsInstance(last, native_c._Array)
+                self.assertEqual({item.name for item in first.values}, {'i32', 'f64'})
+                self.assertEqual({item.name for item in native_c._alternatives(last)}, {'i32', 'f64'})
                 self.assertFalse(first_cached)
                 self.assertTrue(last_cached)
                 values.append(value)
         self.assertEqual(outcome(values[0]), outcome(values[1]))
+
+
+    def test_different_accumulated_return_cannot_refresh_final_loop_witness(self):
+        source = PREFIX + """
+            参数 取 [密 其 i32].
+            算 F:
+                循 2 次
+                    得 参数[0].
+                    参数 其 增 0.
+                环
+            法
+            F.
+        """
+        original = native_c._same_returns
+        for limit in (0, native_c.MAX_EXPRESSION_SUMMARIES):
+            comparisons = []
+            def compare(accumulated, final):
+                result = original(accumulated, final)
+                comparisons.append((tuple(accumulated), tuple(final), result))
+                return result
+            with self.subTest(expression_limit=limit), \
+                    patch.object(native_c, 'MAX_EXPRESSION_SUMMARIES', limit), \
+                    patch.object(native_c, '_same_returns', side_effect=compare):
+                analyze(source)
+                differences = [(earlier, final) for earlier, final, same in comparisons if not same]
+                self.assertTrue(differences, 'must exercise unequal loop-return proof')
+                self.assertTrue(any(
+                    any(isinstance(x, native_c._Type) and x.name == 'i32'
+                        for value in earlier for x in native_c._alternatives(value))
+                    and all(isinstance(x, native_c._Opaque)
+                            for value in final for x in native_c._alternatives(value))
+                    for earlier, final in differences))
+                with self.assertRaisesRegex(RuError, '无法静态确定'):
+                    analyze(source + "S 取 密 其 签名 (F) ([]) 'cdecl'.")
 
     def test_loop_return_alias_mutation_preserves_error_and_location(self):
         self.assert_equivalent("""
@@ -288,23 +429,21 @@ class NativeAnalysisScalingTests(unittest.TestCase):
                 errors.append(failure(error))
         self.assertEqual(errors[0], errors[1])
 
-    def test_loop_return_proof_preserves_normal_final_return_alternative_limit(self):
+    def test_loop_return_widening_preserves_all_nonstring_effects(self):
         returns = ''.join(f"得 '值{index}'.\n" for index in range(129))
-        source = PREFIX + '算 F:\n循 1 次\n' + returns + '环\n法\nF.'
-        errors = []
+        source = PREFIX + '算 F:\n循 1 次\n' + returns + '环\n法\n值 取 F.'
+        results = []
         for proof_enabled in (True, False):
             with self.subTest(proof_enabled=proof_enabled), ExitStack() as stack:
                 options = {}
                 if not proof_enabled:
                     stack.enter_context(patch.object(native_c, '_same_returns', return_value=False))
                     options = {'expression_limit': 0, 'literal_limit': 0, 'legacy_calls': True}
-                with self.assertRaisesRegex(RuError, '候选值超过 128 上限') as caught:
-                    analyze(source, **options)
-                self.assertEqual(caught.exception.category, '原生编译错误')
-                # The ordinary return-join error has no attached source text;
-                # preserve all of its existing metadata, not just its message.
-                errors.append(vars(caught.exception))
-        self.assertEqual(errors[0], errors[1])
+                value = analyze(source, **options)
+                self.assertIs(value._module_values[PATH].env.get('值'), native_c.STRING)
+                results.append(outcome(value))
+        self.assertEqual(results[0], results[1])
+
 
     def test_compound_expression_hits_survive_unrelated_binding_writes(self):
         value = CountingPlan({PATH: []})
@@ -365,14 +504,19 @@ class NativeAnalysisScalingTests(unittest.TestCase):
         expr = parse('显 M 其 F.')[0].data['expr']
         result = value._expr(expr, env)
         self.assertIsInstance(result, native_c._Array)
+        # First implicit invocation may allocate its new callsite owner.
+        # Warm the same context, then require real cache hits in both modes.
+        self.assertIs(value._expr(expr, env), result)
         self.assertIn((id(expr), id(env), False), value._expression_summaries)
         reference = value._expr(expr, env, reference=True)
         self.assertIsInstance(reference, native_c._Function)
+        self.assertIs(value._expr(expr, env, reference=True), reference)
         self.assertIn((id(expr), id(env), True), value._expression_summaries)
         visits = sum(value.body_visits.values())
         self.assertIs(value._expr(expr, env), result)
         self.assertIs(value._expr(expr, env, reference=True), reference)
         self.assertEqual(sum(value.body_visits.values()), visits)
+
 
     def test_expression_recursion_footprint_overflow_is_not_truncated(self):
         source = PREFIX + """
@@ -405,6 +549,109 @@ class NativeAnalysisScalingTests(unittest.TestCase):
         source += "S 取 密 其 签名 型9 ([]) 'cdecl'.\n"
         source += ''.join(f'型{i} 取 型{i - 1}.\n' for i in reversed(range(1, 10)))
         return source + '环'
+
+    def test_nested_loop_returns_remain_bounded_by_charged_visits(self):
+        for depth in (4, 8, 12, 16, 20):
+            with self.subTest(depth=depth):
+                body = '得 1.'
+                for index in range(depth):
+                    body = '循 2 次 ' + body + f' 局{index} 取 1. 环 '
+                source = '算 F: ' + body + ' 法 F.'
+                cached = analyze(source)
+                uncached = analyze(source, expression_limit=0)
+                self.assertEqual(outcome(cached), outcome(uncached))
+                self.assertEqual(cached.largest_return_list, uncached.largest_return_list)
+                self.assertLessEqual(cached.largest_return_list, depth + 1)
+                self.assertLessEqual(cached.largest_return_list, cached._steps)
+                self.assertTrue(all(len(entry[1]) <= 1 for key, entry in
+                                    cached._expression_summaries.items() if key[0] == 'block'))
+
+    def test_multiple_returns_are_not_merged_or_cached_as_a_block(self):
+        value = analyze('算 F: 得 1. 得 1. 法 F.')
+        function = next(fn for fn in value._functions if fn.node.data.get('name') == 'F')
+        env = next(env for key, env in value._scope_cache.items()
+                   if key[0][0] == id(function.node))
+        self.assertNotIn(('block', id(function.node.data['body']), id(env)),
+                         value._expression_summaries)
+
+    def test_cached_statement_block_retains_active_recursion_footprint(self):
+        value = analyze(PREFIX + '算 叶: 得 密 其 i32. 法 算 枝: 得 叶. 法 枝.')
+        branch = next(fn for fn in value._functions if fn.node.data.get('name') == '枝')
+        leaf = next(fn for fn in value._functions if fn.node.data.get('name') == '叶')
+        env = next(env for key, env in value._scope_cache.items()
+                   if key[0][0] == id(branch.node))
+        body = branch.node.data['body']
+        key = ('block', id(body), id(env))
+        self.assertIn(id(leaf.node), value._expression_summaries[key][2])
+        before = value._block_hits
+        value._block(body, env)
+        self.assertEqual(value._block_hits, before + 1)
+        value._active.add(id(leaf.node))
+        with self.assertRaisesRegex(RuError, '递归'):
+            value._block(body, env)
+        self.assertEqual(value._block_hits, before + 1)
+
+    def test_statement_block_footprint_overflow_is_not_cached_or_truncated(self):
+        source = PREFIX + ('算 甲: 得 密 其 i32. 法 算 乙: 得 密 其 f64. 法 '
+                           '算 枝: 甲. 得 乙. 法 枝.')
+        with patch.object(native_c, 'MAX_SUMMARY_FUNCTIONS', 1):
+            value = analyze(source)
+        branch = next(fn for fn in value._functions if fn.node.data.get('name') == '枝')
+        env = next(env for key, env in value._scope_cache.items()
+                   if key[0][0] == id(branch.node))
+        self.assertNotIn(('block', id(branch.node.data['body']), id(env)),
+                         value._expression_summaries)
+        self.assertTrue(all(len(entry[2]) <= 1 for entry in value._expression_summaries.values()))
+        self.assertEqual(outcome(value), outcome(analyze(source, expression_limit=0)))
+
+    def test_statement_chunk_boundaries_preserve_first_reads_and_returns(self):
+        for width in (0, 1, 2, 3, 4, 5):
+            with self.subTest(padding=width):
+                padding = '垫 取 0. ' * width
+                source = ('型 取 密 其 i32. 算 外: 旧 取 型. ' + padding +
+                    "型 取 密 其 f64. 得 旧. 法 外. S 取 密 其 签名 (外) ([]) 'cdecl'.")
+                self.assert_equivalent(source, {NativeCSignature('i32', ())})
+                # The same source nested in a function captures a live cell; its
+                # later write MUST remain visible, unlike a fresh module shadow.
+                self.assert_equivalent('算 容: ' + source + ' 得 空. 法 容.',
+                                       {NativeCSignature('i32', ()), NativeCSignature('f64', ())})
+
+
+    def test_statement_chunks_reuse_work_when_function_dependencies_overflow(self):
+        source = PREFIX + '甲 取 [密 其 i32]. 乙 取 [密 其 f64]. 算 F: '
+        source += '甲[0]. 乙[0]. ' + '1 + 2. ' * 40 + '得 空. 法 ' + 'F(). ' * 8
+        with patch.object(native_c, 'MAX_SUMMARY_DEPENDENCIES', 1):
+            cached = analyze(source)
+            uncached = analyze(source, expression_limit=0)
+        self.assertEqual(outcome(cached), outcome(uncached))
+        self.assertLess(cached.statement_visits * 2, uncached.statement_visits)
+        self.assertLess(cached._steps, uncached._steps)
+        self.assertLessEqual(len(cached._expression_summaries), native_c.MAX_EXPRESSION_SUMMARIES)
+
+    def test_statement_chunks_keep_whole_body_function_hoisting(self):
+        padding = '垫 取 0. ' * 20
+        self.assert_equivalent(
+            "算 外: S 取 密 其 签名 (迟) ([]) 'cdecl'. " + padding +
+            '算 迟: 得 密 其 i32. 法 得 S. 法 外.',
+            {NativeCSignature('i32', ())})
+
+    def test_statement_chunks_keep_first_read_before_later_binding(self):
+        padding = '垫 取 0. ' * 20
+        source = ('型 取 密 其 i32. 算 外: 旧 取 型. ' + padding +
+            "型 取 密 其 f64. 得 旧. 法 外. S 取 密 其 签名 (外) ([]) 'cdecl'.")
+        self.assert_equivalent(source, {NativeCSignature('i32', ())})
+        # The same source nested in a function captures a live cell; its
+        # later write MUST remain visible, unlike a fresh module shadow.
+        self.assert_equivalent('算 容: ' + source + ' 得 空. 法 容.',
+                               {NativeCSignature('i32', ()), NativeCSignature('f64', ())})
+
+
+    def test_statement_chunks_invalidate_returned_mutable_alias(self):
+        padding = '垫 取 0. ' * 20
+        self.assert_equivalent(
+            '参数 取 [密 其 i32]. 算 外: ' + padding + '得 参数. 法 外. 外. '
+            "参数[0] 取 密 其 f64. S 取 密 其 签名 (密 其 i32) (外) 'cdecl'.",
+            error='参数阵')
 
     def test_synthetic_scale_reduces_actual_expression_visits(self):
         source = self.scale_source()
@@ -476,9 +723,13 @@ class NativeAnalysisScalingTests(unittest.TestCase):
             self.assertIsInstance(first, native_c._Array)
             self.assertIsInstance(second, native_c._Array)
             self.assertIsNot(first, second)
-            self.assertIs(first, again)
+            # Same scalar actuals do not make distinct runtime calls aliases.
+            self.assertIsNot(first, again)
+            self.assertIsNot(second, again)
             self.assertIsNone(first.items)
             self.assertEqual(second.items, (1, True, '字', None))
+            self.assertEqual(again.items, (1, True, '字', None))
+
 
     def test_nested_literal_arrays_do_not_share_inner_mutable_owners(self):
         source = """
@@ -532,42 +783,40 @@ class NativeAnalysisScalingTests(unittest.TestCase):
                 self.assertEqual(outcome(bounded), outcome(expected))
                 self.assertGreater(bounded.body_visits['fact'], cached.body_visits['fact'])
 
-    def test_first_literal_array_evaluation_charges_every_item(self):
-        # A literal-content cache may only remove repeat work, not exempt a
-        # first, oversized data table from the normal expression budget.
+    def test_first_literal_array_evaluation_counts_every_item_without_size_quota(self):
+        # The literal cache removes repeat work, not the measured first visit.
+        # Both sides of the retired whole-program boundary must succeed.
         statement = parse('显 [1].')[0]
         array = statement.data['expr']
         item = array.data['items'][0]
-        array.data['items'] = [item] * 199999
-        valid = CountingPlan({PATH: [statement]})
-        self.assertEqual(valid._steps, 200000)
-        self.assertEqual(valid.body_visits['number'], 199999)
-        array.data['items'] = [item] * 200000
-        invalid = CountingPlan.__new__(CountingPlan)
-        with self.assertRaisesRegex(RuError, '超过复杂度上限'):
-            invalid.__init__({PATH: [statement]})
-        self.assertEqual(invalid._steps, 200001)
-        self.assertEqual(invalid.body_visits['number'], 199999)
-        self.assertFalse(invalid._literal_array_items)
+        for count in (199999, 200000, 250000):
+            with self.subTest(count=count):
+                array.data['items'] = [item] * count
+                value = CountingPlan({PATH: [statement]})
+                self.assertEqual(value._steps, count + 1)
+                self.assertEqual(value.body_visits['number'], count)
 
-    def test_repeated_leaf_expressions_preserve_exact_200000_step_guard(self):
-        # Reuse one AST node deliberately: memoization cannot turn the work
-        # limit into a count of distinct syntax nodes or unique cache entries.
+    def test_repeated_leaf_expressions_have_no_whole_program_quota(self):
+        # Repeated visits still count. Normal source growth cannot turn a
+        # previously accepted static native plan into an error at 200001.
         statement = parse('显 1.')[0]
-        errors = []
-        self.assertEqual(native_c.MAX_ANALYSIS_STEPS, 200000)
         for limit in (0, native_c.MAX_EXPRESSION_SUMMARIES):
             with self.subTest(limit=limit), patch.object(native_c, 'MAX_EXPRESSION_SUMMARIES', limit):
-                valid = CountingPlan({PATH: [statement] * 200000})
-                self.assertEqual(valid._steps, 200000)
-                self.assertEqual(valid.body_visits['number'], 200000)
-                invalid = CountingPlan.__new__(CountingPlan)
-                with self.assertRaisesRegex(RuError, '超过复杂度上限') as caught:
-                    invalid.__init__({PATH: [statement] * 200001})
-                self.assertEqual(invalid._steps, 200001)
-                self.assertEqual(invalid.body_visits['number'], 200000)
-                errors.append(failure(caught.exception))
-        self.assertEqual(errors[0], errors[1])
+                for count in (200000, 200001, 250000):
+                    value = CountingPlan({PATH: [statement] * count})
+                    self.assertEqual(value._steps, count)
+                    self.assertEqual(value.body_visits['number'], count)
+                    self.assertEqual(value.signatures, ())
+
+    def test_independent_modules_do_not_share_an_admission_quota(self):
+        statement = parse('显 1.')[0]
+        graph = {f'{PATH}.{i}': [statement] * 25000 for i in range(9)}
+        reports = []
+        value = CountingPlan(graph, diagnostics=reports.append)
+        self.assertEqual(value._steps, 225000)
+        self.assertTrue(reports[0]['completed'])
+        self.assertIsNone(reports[0]['step_limit'])
+        self.assertEqual(sum(reports[0]['module_steps'].values()), 225000)
 
 
 if __name__ == '__main__':

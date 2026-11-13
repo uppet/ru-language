@@ -10,7 +10,7 @@ from rulang.cli import main
 from rulang.compiler import Compiler
 from rulang.frontend import RuError, parse
 from rulang.modules import load_module_graph
-from rulang.native_c import NativeCPlan
+from rulang.native_tiered import build_native_c_plan
 
 
 class NativeCSourceDiagnosticTests(unittest.TestCase):
@@ -51,9 +51,9 @@ class NativeCSourceDiagnosticTests(unittest.TestCase):
 
             def analyze(modules):
                 seen.append((dict(modules), dict(modules.sources)))
-                return NativeCPlan(modules)
+                return build_native_c_plan(modules)
 
-            with patch('rulang.native_c.NativeCPlan', side_effect=analyze):
+            with patch('rulang.native_tiered.build_native_c_plan', side_effect=analyze):
                 Compiler(graph[graph.root], graph.root, modules=graph,
                          allow_native=True).compile()
             self.assertGreaterEqual(len(seen), 2, 'fixture must exercise stdlib pruning')

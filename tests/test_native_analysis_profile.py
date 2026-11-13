@@ -30,18 +30,42 @@ class NativeAnalysisProfileTests(unittest.TestCase):
         self.assertTrue(report['completed'])
         self.assertEqual(report['steps'], sum(report['module_steps'].values()))
         self.assertEqual(report['function_evaluations'], sum(report['function_evaluations_by_site'].values()))
-        self.assertEqual(report['step_limit'], 200000)
+        self.assertEqual(report['schema'], 2)
+        self.assertIsNone(report['step_limit'])
+        self.assertIsNone(report['resource_failure'])
         self.assertGreaterEqual(report['seconds'], 0)
 
-    def test_budget_error_retains_statistics_and_stop_location_caveat(self):
+    def test_actual_resource_failure_reports_and_cannot_emit_partial_abi(self):
+        for error, expected in ((MemoryError, 'memory'), (RecursionError, 'host-stack')):
+            with self.subTest(error=error):
+                reports = []
+                value = NativeCPlan.__new__(NativeCPlan)
+                original = NativeCPlan._analyze
+                def exhausted(plan):
+                    original(plan)
+                    self.assertTrue(plan.signatures)
+                    raise error()
+                with patch.object(NativeCPlan, '_analyze', exhausted):
+                    with self.assertRaisesRegex(RuError, '未生成原生 ABI 计划') as caught:
+                        value.__init__(self.graph(), diagnostics=reports.append)
+                self.assertEqual(caught.exception.category, '资源错误')
+                self.assertEqual(len(reports), 1)
+                self.assertFalse(reports[0]['completed'])
+                self.assertIsNone(reports[0]['step_limit'])
+                self.assertEqual(reports[0]['resource_failure'], expected)
+                self.assertEqual(value.signatures, ())
+                with self.assertRaisesRegex(RuError, '禁止生成部分 ABI'):
+                    value.emit_c()
+
+    def test_cancellation_is_not_swallowed_or_mistaken_for_success(self):
         reports = []
-        with patch('rulang.native_c.MAX_ANALYSIS_STEPS', 10):
-            with self.assertRaisesRegex(RuError, '此位置仅为停止处'):
-                NativeCPlan(self.graph(), diagnostics=reports.append)
-        self.assertEqual(len(reports), 1)
+        value = NativeCPlan.__new__(NativeCPlan)
+        with patch.object(NativeCPlan, '_analyze', side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt):
+                value.__init__(self.graph(), diagnostics=reports.append)
         self.assertFalse(reports[0]['completed'])
-        self.assertEqual(reports[0]['steps'], 11)
-        self.assertEqual(reports[0]['step_limit'], 10)
+        with self.assertRaisesRegex(RuError, '禁止生成部分 ABI'):
+            value.emit_c()
 
     def test_abi_error_also_reports_and_is_not_replaced(self):
         reports = []
